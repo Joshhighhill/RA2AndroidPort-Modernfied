@@ -196,10 +196,12 @@ void draw_cameo_text(SDL_Renderer* ren, ra2engine::TextureCache& tc, int x, int 
 // the same 0xAF black fill with a 1 px UI-colour frame, placed left of the
 // pointer over the sidebar and below-right of it elsewhere, clamped on screen].
 void draw_tooltip_box(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& text, int px, int py,
-                      int screen_w, int screen_h, bool left_of_pointer) {
+                      int screen_w, int screen_h, bool left_of_pointer, double scale = 1.0) {
     if (text.empty()) return;
     const SDL_Color col = hud_ui_color();
-    const int w = hud_text_width(text) + 8, h = hud_text_height(text) + 6;
+    // W6-01-12: `scale` > 1 on a touch canvas (the box grows with the text).
+    const int w = static_cast<int>((hud_text_width(text) + 8) * scale);
+    const int h = static_cast<int>((hud_text_height(text) + 6) * scale);
     int x = left_of_pointer ? px - w - 4 : px + 12;
     int y = py + (left_of_pointer ? 0 : 18);
     x = std::clamp(x, 0, std::max(0, screen_w - w));
@@ -210,7 +212,8 @@ void draw_tooltip_box(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std:
     SDL_RenderFillRect(ren, &r);
     SDL_SetRenderDrawColor(ren, col.r, col.g, col.b, 255);
     SDL_RenderDrawRect(ren, &r);
-    hud_text(ren, tc, text, x + 4, y + 3, col, kHudLeft, false);
+    hud_text(ren, tc, text, x + static_cast<int>(4 * scale), y + static_cast<int>(3 * scale), col, kHudLeft,
+             false, true, scale);
 }
 
 // "UIName $Cost" with every space turned into a newline [RE: FUN_0067F580].

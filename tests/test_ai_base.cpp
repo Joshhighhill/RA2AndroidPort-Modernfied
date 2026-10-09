@@ -1,3 +1,4 @@
+#include <set>
 #include "doctest.h"
 #include "../engine/ai_base.hpp"
 #include "ra2assets/rules.hpp"
@@ -295,6 +296,66 @@ TEST_CASE("ai_base: build_base_plan topologically prereq-sorts the plan") {
         build_base_plan(v, cat, roster, ai, mods_for(AiDifficulty::Difficult));
     CHECK(count_nodes_of(hard_plan, cat.defenses[0]) == kAiDefenseTarget[2]);
     CHECK(kAiDefenseTarget[0] < kAiDefenseTarget[2]);
+}
+
+TEST_CASE("ai_base: W6-03-06 skirmish plan spreads defences and walls through the build-out") {
+    // [RE: FUN_005052d0 -- one refinery in the topo sort, AIExtraRefineries
+    // more at rand(first,n-1)+1, the per-difficulty defence placeholders at
+    // rand(3,n-1)+1; FUN_004fe200 resolves a placeholder into a wall with
+    // AIPickWallDefensePercent once a defence stands ahead of it.]
+    auto roster = ai_roster();
+    auto cat = ai_catalog();
+    AiRules ai;
+    ai.extra_refineries = 2;   // Brutal
+    ai.pick_wall_pct = 50;
+    BaseView v;
+    v.own = {bv(0)};
+    const DifficultyMods hard = mods_for(AiDifficulty::Difficult);
+    std::uint32_t rng = 0x1234567u;
+    const auto plan = build_base_plan(v, cat, roster, ai, hard, &rng);
+    CHECK(plan[0].type == cat.conyard);
+    CHECK(plan[1].type == cat.power);
+    CHECK(count_nodes_of(plan, cat.refinery) == 3);   // 1 + AIExtraRefineries
+    const int ndef = count_nodes_of(plan, cat.defenses[0]);
+    const int nwall = count_nodes_of(plan, cat.wall);
+    CHECK(ndef >= 1);
+    CHECK(nwall >= 1);
+    CHECK(ndef + nwall <= hard.defense_target);
+    // Interleaved: a defence comes before the LAST core (non-defence,
+    // non-wall) node -- not a tail block after the whole build-out.
+    int last_core = -1;
+    for (int i = 0; i < (int)plan.size(); ++i)
+        if (plan[i].type != cat.defenses[0] && plan[i].type != cat.wall) last_core = i;
+    CHECK(first_node_of(plan, cat.defenses[0]) < last_core);
+    // A wall never precedes the first defence; every node is buildable from
+    // the nodes before it (the head-only walk never wedges).
+    CHECK(first_node_of(plan, cat.defenses[0]) < first_node_of(plan, cat.wall));
+    std::vector<int> built;
+    for (const auto& n : plan) {
+        for (const std::string& tok : roster[n.type].prerequisite) {
+            bool met = false;
+            for (int b : built) {
+                if (roster[b].id == tok) met = true;
+                if (tok == "PROC" && b == cat.refinery) met = true;
+            }
+            CHECK_MESSAGE(met, "node type ", n.type, " blocked on ", tok);
+        }
+        built.push_back(n.type);
+    }
+    // Ids stay unique; the same seed gives the same plan.
+    std::set<int> ids;
+    for (const auto& n : plan) ids.insert(n.id);
+    CHECK(ids.size() == plan.size());
+    std::uint32_t rng2 = 0x1234567u;
+    const auto again = build_base_plan(v, cat, roster, ai, hard, &rng2);
+    REQUIRE(again.size() == plan.size());
+    for (std::size_t i = 0; i < plan.size(); ++i) CHECK(again[i].type == plan[i].type);
+    // Without the skirmish knobs the legacy plan is untouched.
+    AiRules legacy;
+    std::uint32_t rng3 = 0x1234567u;
+    const auto old = build_base_plan(v, cat, roster, legacy, hard, &rng3);
+    CHECK(count_nodes_of(old, cat.refinery) == legacy.refinery_limit);
+    CHECK(rng3 == 0x1234567u);
 }
 
 TEST_CASE("ai_base: the plan is head-first prereq-satisfiable from a lone ConYard") {

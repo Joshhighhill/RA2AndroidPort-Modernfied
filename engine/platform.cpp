@@ -1,4 +1,5 @@
 #include "platform.hpp"
+#include <algorithm>
 #include "touch_gestures.hpp"
 
 #include <SDL.h>
@@ -79,11 +80,35 @@ Platform Platform::create(const char* title, int w, int h, bool hidden) {
 
 // G-89: RA2.INI [Video] ScreenWidth/ScreenHeight -> the window size; the engine
 // keeps rendering at its logical size, scaled by SDL.
-void Platform::set_window_size(int w, int h) {
-    if (!p_ || w <= 0 || h <= 0) return;
+// W6-06-12: a size larger than the display or than the renderer's largest
+// texture (a spanned multi-monitor size, a value from another machine) made
+// every start fail (CreateTexture INVALIDCALL); it now falls back to 1280x720
+// (fitted to the display) and returns false so the caller rewrites [Video].
+// [RE-FALLBACK: the original's video init falls back to a supported mode.]
+bool Platform::set_window_size(int w, int h) {
+    if (!p_ || w <= 0 || h <= 0) return false;
+    bool ok = true;
+    int maxw = 0, maxh = 0;
+    SDL_Rect db{0, 0, 0, 0};
+    int di = SDL_GetWindowDisplayIndex(p_->window);
+    if (di < 0) di = 0;
+    if (SDL_GetDisplayBounds(di, &db) == 0 && db.w > 0 && db.h > 0) { maxw = db.w; maxh = db.h; }
+    SDL_RendererInfo ri;
+    if (SDL_GetRendererInfo(p_->renderer, &ri) == 0 && ri.max_texture_width > 0 && ri.max_texture_height > 0) {
+        maxw = maxw > 0 ? std::min(maxw, ri.max_texture_width) : ri.max_texture_width;
+        maxh = maxh > 0 ? std::min(maxh, ri.max_texture_height) : ri.max_texture_height;
+    }
+    if ((maxw > 0 && w > maxw) || (maxh > 0 && h > maxh)) {
+        SDL_Log("[video] RA2.INI ScreenWidth x ScreenHeight %dx%d does not fit (max %dx%d): using 1280x720", w, h,
+                maxw, maxh);
+        ok = false;
+        w = maxw > 0 ? std::min(1280, maxw) : 1280;
+        h = maxh > 0 ? std::min(720, maxh) : 720;
+    }
     SDL_SetWindowResizable(p_->window, SDL_TRUE);
     SDL_SetWindowSize(p_->window, w, h);
     SDL_SetWindowPosition(p_->window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+    return ok;
 }
 void Platform::set_fullscreen(bool on) {
     if (!p_) return;

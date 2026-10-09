@@ -325,7 +325,14 @@ public:
 
     // ---- per-object observers (Presentation calls these) ------------------
     // Health-condition edges drive the damage smoke of units and buildings.
+    // W6-06-04: a loaded game starts with no particle systems (they are not
+    // in the save). The next observe_damage treats every object as if it had
+    // been healthy, so each damaged unit / building gets its damage smoke
+    // back (the systems the original's full save would have restored).
+    void after_load() { seed_damage_ = true; }
     void observe_damage(const ra2engine::World& w, const BuildingAssets& ba) {
+        const bool seed = seed_damage_;
+        seed_damage_ = false;
         const auto& us = w.units();
         if (ucond_.size() < us.size()) { ucond_.resize(us.size(), -1); usmoke_.resize(us.size(), 0); }
         for (std::size_t i = 0; i < us.size(); ++i) {
@@ -333,6 +340,7 @@ public:
             const bool live = u.alive && u.die_time < 0.0 && u.cargo_of < 0;
             const int cond = !live ? 3 : condition(u.hp, u.max_hp);
             int& prev = ucond_[i];
+            if (seed && prev < 0 && live) prev = 0;
             if (prev >= 0 && cond != prev) {
                 if (cond == 3 || cond == 0) {   // dead / healthy again
                     if (usmoke_[i]) kill_system(usmoke_[i]);
@@ -352,6 +360,7 @@ public:
             const bool live = b.alive && b.state != ra2engine::Building::State::Dead;
             const int cond = !live ? 3 : condition(b.hp, b.max_hp);
             int& prev = bcond_[i];
+            if (seed && prev < 0 && live) prev = 0;
             if (prev >= 0 && cond != prev) {
                 if (cond == 3 || cond == 0) {
                     if (bsmoke_[i]) kill_system(bsmoke_[i]);
@@ -1384,6 +1393,7 @@ private:
     std::map<std::string, std::unique_ptr<VoxelDef>> vox_defs_;
     std::map<std::string, std::string> unit_ids_;
     std::vector<int> ucond_, bcond_, usmoke_, bsmoke_;
+    bool seed_damage_ = false;   // W6-06-04: the next observe_damage follows a load
     long wakes_ = 0, v3_puffs_ = 0, splashes_ = 0;
     long long instant_key_ = 0;
 };

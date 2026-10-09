@@ -6,8 +6,8 @@ Read-only audit. No engine code was changed.
 ## Fix status (wave-6 fix agent #5, branch `w6fix-pres`)
 
 Base `409e807`. One commit per fix. Before | after crops (JPEG, the "before" half is the audit's own shot from
-`e2b569e`) are in `05-evidence/fix/`. Save format **v25** (was v24). Gate re-pin: `--demo-saveload` only (cause in
-README: the new saved `timer_text_`; proven by rebuilding with v24 and without the field, which prints the old pin).
+`e2b569e`) are in `05-evidence/fix/`. Save format **v27** after merging master (v26) (was v25 on the pre-merge branch). Gate re-pins: `--demo-saveload` and
+`--demo-campaign` (causes in README: the newly saved `timer_text_`; the campaign gate differs only in its saved-trigger byte count).
 
 | Item | Status | Commit | Evidence / check |
 |---|---|---|---|

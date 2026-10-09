@@ -62,17 +62,18 @@
         const long f = campaign_->frame_count();
         for (std::size_t i = campaign_texts_posted_; i < obj.size(); ++i)
             if (campaign_texts_seen_ || f - obj[i].frame <= 300)
-                post_message(hud_wrap(obj[i].text, std::max(playfield_w_ - 32, 400)));
+                post_message(hud_wrap(obj[i].text, static_cast<int>(std::max(playfield_w_ - 32, 400) / hud_touch_scale())));
         campaign_texts_posted_ = obj.size();
         campaign_texts_seen_ = true;
     }
     void draw_messages(SDL_Renderer* ren, ra2engine::TextureCache& tc) const {
         int y = 8;
         const SDL_Color col = hud_ui_color();
+        const double sc = hud_touch_scale();   // W6-01-12: 1.5x on a touch canvas
         for (const HudMsg& m : msgs_) {
             if (m.expire <= msg_clock_) continue;
-            hud_text(ren, tc, m.text, 8, y, col, kHudLeft, false, true);
-            y += hud_text_height(m.text) + 4;
+            hud_text(ren, tc, m.text, 8, y, col, kHudLeft, false, true, sc);
+            y += static_cast<int>(hud_text_height(m.text) * sc) + 4;
         }
     }
     // W6-05-04/05 [RE: TacticalClass draw FUN_006a45a0 -> FUN_006a5280]: the
@@ -152,10 +153,11 @@
     }
     void draw_timer_stack(SDL_Renderer* ren, ra2engine::TextureCache& tc) {
         build_timer_stack();
-        const int fh = hud_line_h();
+        const double sc = hud_touch_scale();   // W6-01-12: 1.5x on a touch canvas
+        const int fh = static_cast<int>((hud_line_h() + 2) * sc);
         for (std::size_t i = 0; i < timer_lines_.size(); ++i)
-            hud_text(ren, tc, timer_lines_[i].text, playfield_w_ - 3, kWinH - (fh + 2) * static_cast<int>(i + 1),
-                     timer_lines_[i].col, kHudRight, false, true);
+            hud_text(ren, tc, timer_lines_[i].text, playfield_w_ - 3, kWinH - fh * static_cast<int>(i + 1),
+                     timer_lines_[i].col, kHudRight, false, true, sc);
     }
     void draw_end_banner(SDL_Renderer* ren, ra2engine::TextureCache& tc, const std::string& s) const {
         if (s.empty()) return;

@@ -65,7 +65,8 @@ public:
     int width() const; int height() const;
     // G-89: physical window size (RA2.INI [Video]) and desktop fullscreen;
     // rendering stays at the logical size given to create().
-    void set_window_size(int w, int h);
+    // W6-06-12: false = the size did not fit and 1280x720 was used instead.
+    bool set_window_size(int w, int h);
     void set_fullscreen(bool on);
     // W2-AR-06: change the LOGICAL canvas (e.g. a wider game view on a 20:9
     // phone); input is remapped to it. No-op when unchanged.

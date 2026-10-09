@@ -21,8 +21,12 @@ if (localPropsFile.exists()) {
 }
 
 // W2-AR-11/-23: ONE version source -- the repo's VERSION file (semver) for
-// versionName and the commit count for versionCode (the manifest no longer
-// repeats them). The native RA2_VERSION string adds the git hash (CMake).
+// versionName and versionCode (the manifest no longer repeats them).
+// W6-06-15: versionCode = major*10000000 + minor*100000 + patch*1000 + build
+// (build = -Pra2.buildNumber=0..999, default 0), NOT the commit count: a
+// build from a branch with fewer commits (or a shallow clone, count 1) was a
+// downgrade the phone refused. 0.9.0 -> 900000, above every commit-count
+// code shipped before (~1000), so the installed builds update in place. The native RA2_VERSION string adds the git hash (CMake).
 // W4-AM-12: versionName also carries the commit ("0.9.0+g1a2b3c4", "-dirty"
 // with local edits) so two builds can be told apart in Settings > Apps; the
 // SAME string is passed to the native build as RA2_VERSION (shown on the main
@@ -38,15 +42,21 @@ def ra2Git = { List<String> args ->
         return p.exitValue() == 0 ? out : null
     } catch (ignored) { return null }
 }
-def ra2Count = ra2Git(['rev-list', '--count', 'HEAD'])
-if (ra2Count) ra2VersionCode = ra2Count.toInteger()
+def ra2Semver = (ra2VersionBase =~ /^(\d+)\.(\d+)\.(\d+)/)
+if (!ra2Semver.find()) throw new GradleException("VERSION must start with MAJOR.MINOR.PATCH: '" + ra2VersionBase + "'")
+def ra2Build = (project.findProperty('ra2.buildNumber') ?: '0').toString().toInteger()
+if (ra2Build < 0 || ra2Build > 999) throw new GradleException("ra2.buildNumber must be 0..999")
+ra2VersionCode = ra2Semver.group(1).toInteger() * 10000000 + ra2Semver.group(2).toInteger() * 100000 +
+                 ra2Semver.group(3).toInteger() * 1000 + ra2Build
 def ra2Desc = ra2Git(['describe', '--always', '--dirty', '--abbrev=7'])
 if (ra2Desc) ra2VersionName = ra2VersionBase + '+g' + ra2Desc
 
 // W2-AR-11: release signing from keystore.properties (gitignored):
 //   storeFile=<path>  storePassword=...  keyAlias=...  keyPassword=...
-// Without it the release APK is signed with the debug key (side-load /
-// emulator testing only -- Play needs the real upload key).
+// W6-06-15: without it assembleRelease FAILS (a debug-signed "release"
+// can never be updated by a properly signed one), unless
+// -Pra2.allowDebugSigning=true asks for a debug-key release on purpose
+// (side-load / emulator testing). The key itself is user decision U-4.
 def keystorePropsFile = rootProject.file('keystore.properties')
 def keystoreProps = null
 if (keystorePropsFile.exists()) {
@@ -135,7 +145,11 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    // W6-06-16: LICENSE + THIRD_PARTY_NOTICES.md ship in the APK's assets/
+    // (the same texts are embedded in the engine's Options > About page).
+    sourceSets.main.assets.srcDirs += ["$buildDir/generated/ra2-notices"]
     applicationVariants.all { variant ->
+        tasks["merge${variant.name.capitalize()}Assets"].dependsOn("ra2CopyNotices")
         tasks["merge${variant.name.capitalize()}Assets"]
             .dependsOn("externalNativeBuild${variant.name.capitalize()}")
     }
@@ -169,4 +183,21 @@ android {
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
+}
+
+// W6-06-15: refuse a release build signed with the debug key (see above).
+gradle.taskGraph.whenReady { graph ->
+    def wantsRelease = graph.allTasks.any { it.name ==~ /(assemble|bundle|package)Release/ }
+    if (wantsRelease && keystoreProps == null && project.findProperty('ra2.allowDebugSigning') != 'true') {
+        throw new GradleException("Release signing: android/keystore.properties is missing (storeFile, " +
+                "storePassword, keyAlias, keyPassword). Pass -Pra2.allowDebugSigning=true for a test build " +
+                "signed with the debug key.")
+    }
+}
+
+// W6-06-16: copy the licence + notices into the generated assets folder.
+tasks.register('ra2CopyNotices', Copy) {
+    from(rootProject.file('../LICENSE'))
+    from(rootProject.file('../THIRD_PARTY_NOTICES.md'))
+    into("$buildDir/generated/ra2-notices")
 }

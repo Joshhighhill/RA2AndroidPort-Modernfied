@@ -13,26 +13,40 @@ project(ra2_android CXX C)
 # Repo root: android/app/jni -> android/app -> android -> <repo>.
 get_filename_component(RA2_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
 
-# SDL2 sources: reuse the copy the desktop build already fetched via
-# FetchContent (release-2.30.9). Overridable with -DSDL2_SRC_DIR=... if it
-# lives elsewhere. Built here as a subproject so we get libSDL2.so + its
-# Android JNI glue (which dlopen()s libmain.so and calls SDL_main).
+# SDL2 sources (W6-06-14: a fresh checkout builds with no desktop build dir):
+#   1. -DSDL2_SRC_DIR=<SDL 2.30.9 source> or env RA2_SDL2_SRC_DIR;
+#   2. the desktop build's FetchContent copy (<repo>/build/_deps/sdl2-src),
+#      when it exists (saves a download);
+#   3. else the pinned release tarball (cmake/sdl2_pin.cmake: URL + SHA-256),
+#      downloaded once into this ABI's build dir.
+# Built here as a subproject so we get libSDL2.so + its Android JNI glue
+# (which dlopen()s libmain.so and calls SDL_main).
+include("${RA2_ROOT}/cmake/sdl2_pin.cmake")
 if(NOT DEFINED SDL2_SRC_DIR)
     if(DEFINED ENV{RA2_SDL2_SRC_DIR})
-        # A git worktree / CI checkout without its own desktop build/ dir can
-        # point at any SDL 2.30.9 source tree (e.g. the main checkout's).
         set(SDL2_SRC_DIR "$ENV{RA2_SDL2_SRC_DIR}")
-    else()
+    elseif(EXISTS "${RA2_ROOT}/build/_deps/sdl2-src/CMakeLists.txt")
         set(SDL2_SRC_DIR "${RA2_ROOT}/build/_deps/sdl2-src")
+    else()
+        include(FetchContent)
+        FetchContent_Declare(sdl2_android
+            URL "${RA2_SDL2_URL}"
+            URL_HASH SHA256=${RA2_SDL2_SHA256})
+        FetchContent_GetProperties(sdl2_android)
+        if(NOT sdl2_android_POPULATED)
+            FetchContent_Populate(sdl2_android)
+        endif()
+        set(SDL2_SRC_DIR "${sdl2_android_SOURCE_DIR}")
     endif()
 endif()
 get_filename_component(SDL2_SRC_DIR "${SDL2_SRC_DIR}" ABSOLUTE)
 if(NOT EXISTS "${SDL2_SRC_DIR}/CMakeLists.txt")
     message(FATAL_ERROR
-        "SDL2 sources not found at ${SDL2_SRC_DIR}. Run the desktop CMake "
-        "configure once (it FetchContent-downloads SDL2 to build/_deps/sdl2-src) "
-        "or pass -DSDL2_SRC_DIR=<path to SDL 2.30.9 source>.")
+        "SDL2 sources not found at ${SDL2_SRC_DIR}. Pass -DSDL2_SRC_DIR=<path to "
+        "SDL ${RA2_SDL2_VERSION} source> (or set RA2_SDL2_SRC_DIR), or allow the "
+        "download of ${RA2_SDL2_URL}.")
 endif()
+message(STATUS "SDL2 source: ${SDL2_SRC_DIR}")
 
 # W2-AR-30: SDL internal asserts -- app/build.gradle passes SDL_ASSERTIONS per
 # build type (debug: enabled, release: release = SDL_assert compiled out).
@@ -59,6 +73,7 @@ set_target_properties(main PROPERTIES
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF)
 target_include_directories(main PRIVATE
+    "${RA2_GENERATED_DIR}"   # W6-06-16: ra2_notices.inc (cmake/ra2_sources.cmake)
     "${RA2_ROOT}/include"
     "${RA2_ROOT}/engine"
     "${RA2_ROOT}/third_party")

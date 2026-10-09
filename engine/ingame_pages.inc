@@ -190,7 +190,8 @@ public:
                 label = s.header.description.empty() ? s.file_name : s.header.description;
                 bad = s.wrong_version || s.damaged;
                 if (s.damaged) when = "Damaged";   // W2-AR-21
-                else if (bad) when = "Wrong version";
+                // W6-06-01: say which way (until saves carry over, decision D-1).
+                else if (bad) when = s.header.version < ra2engine::save::kFormatVersion ? "Older version" : "Newer version";
                 else if (s.header.unix_time > 0) when = format_time(s.header.unix_time);
             }
             p.label(p.fit(label, r.w - 130), r.x + 3, r.y, r.w - 130, r.h, 0, !bad);
@@ -315,7 +316,10 @@ private:
         const ra2engine::save::SlotEntry* s = selected_slot();
         if (mode_ == Load) {
             if (s->damaged) { message_ = "This saved game is damaged."; return None; }   // W2-AR-21
-            if (s->wrong_version) { message_ = "This saved game is from another version."; return None; }
+            if (s->wrong_version) {   // W6-06-01: plain words, and why
+                message_ = "Saved by another version of the engine: it cannot be loaded.";
+                return None;
+            }
             path_ = s->path;
             close();
             return DoLoad;

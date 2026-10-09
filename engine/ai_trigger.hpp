@@ -37,8 +37,8 @@ constexpr int kCondHouseMetric3 = 3;        // inline house-metric — UNUSED in
 constexpr int kCondHouseCredits = 4;        // HouseCredits: OWNER house
                                             // credits [op] N (NOT "enemy
                                             // credits") [RE: §2]
-constexpr int kCondIronCurtainCharged = 5;  // inert -> FALSE (superweapons absent)
-constexpr int kCondChronoSphereCharged = 6; // inert -> FALSE (superweapons absent)
+constexpr int kCondIronCurtainCharged = 5;  // W6-03-05: own Curtain charge >= AIMinorSuperReadyPercent
+constexpr int kCondChronoSphereCharged = 6; // W6-03-05: own Sphere charge >= AIMinorSuperReadyPercent
 constexpr int kCondCivilianHouseOwns = 7;   // neutral/civilian house owns
                                             // [op] N — FALSE without a
                                             // neutral house [RE: §2]
@@ -97,6 +97,13 @@ struct TriggerView {
     // member (the original's FUN_0041ff00 buildable test inside
     // ConditionMet, ai-trigger.md §5). EMPTY = no filter.
     std::vector<char> team_buildable;
+    // W6-03-05 [RE: FUN_0041f0f0 / FUN_0041f1a0]: the owner's Iron Curtain
+    // (SW type 1) / Chronosphere (type 3) charge fraction, -1 when the house
+    // has none; ct=5/6 are TRUE once it is >= minor_ready (Rules+0xd70,
+    // [General] AIMinorSuperReadyPercent=.7).
+    double iron_charge = -1.0;
+    double chrono_charge = -1.0;
+    double minor_ready = 0.7;
 };
 
 // select_trigger's answer: which trigger fired and which TeamType(s) to

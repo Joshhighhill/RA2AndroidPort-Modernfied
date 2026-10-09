@@ -1,0 +1,27 @@
+# sk-walls -- W6-03-01: a lone wall segment must NOT keep a defeated house
+# alive. Walls are overlays once placed in the original ([OverlayTypes]
+# 3=GAWALL, 27=NAWALL) and Insignificant=yes, so the ShortGame last-building
+# rule never counts them. Kill house 1, give it one NAWALL, require WON.
+set render_every 300
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Easy Enemy"
+click start
+until 120 scene == game
+require scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+wait 600
+cheat kill_house 1
+cheat place NAWALL 1 building 0:GACNST +8 +0
+wait 2
+assert buildings(1) == 1
+assert units(1) == 0
+assert defeated(1) == 1
+until 60 world_outcome == WON
+until 900 outcome == WON
+end

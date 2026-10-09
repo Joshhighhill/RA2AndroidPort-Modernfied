@@ -112,11 +112,25 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
         return own ? Action::Sell : Action::NoSell;
     }
     const auto& us = world_.units();
-    const int idx = unit_under(px, py);
+    int idx = unit_under(px, py);
     int cx = 0, cy = 0;
     resolve_ground_cell(px, py, cx, cy);
-    const int b = world_.building_at_cell(cx, cy);
+    // W6-01-01: the object pick (touch: a building's drawn art first).
+    const int b_art = ev_touch_ ? building_art_at(px, py) : -1;
+    const int b = b_art >= 0 ? b_art : pick_building(px, py, false);
     const bool units_sel = any_own_selected();
+    // Touch [engine deviation, W6-01-01 / W6-01-06]: a finger has no cursor
+    // preview, so the generous selection box (kHitHalfW x kHitUp) only claims
+    // a tap that lands on nothing better. Outside a unit's BODY (the
+    // original's hotspot ellipse, unit_body_hit):
+    //   * a tap on a building's drawn art picks the building;
+    //   * with own units selected, a tap beside an own unit is a ground tap
+    //     (the order), not a re-select -- crowds have no gaps otherwise.
+    // Enemy units keep the generous box (attack orders stay easy to give).
+    if (ev_touch_ && idx >= 0 && !unit_body_hit(idx, px, py)) {
+        if (b_art >= 0) idx = -1;
+        else if (units_sel && !shift && world_.controllable(us[idx].house)) idx = -1;
+    }
 
     if (!units_sel) {
         if (idx >= 0 && world_.controllable(us[idx].house)) return shift ? Action::ToggleSelect : Action::Select;
@@ -155,6 +169,17 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
         }
         if (world_.controllable(u.house)) {
             if (shift) return Action::ToggleSelect;
+            // W6-01-06 [engine deviation, touch]: with two or more units
+            // selected, a tap on a unit OF THE SELECTION is an order to its
+            // cell (the army moves there), not a re-select that drops the
+            // army. A deliberate select is a tap on an own unit that is NOT
+            // selected; a deploy needs a lone selection (or DPLY).
+            if (ev_touch_ && u.selected) {
+                int nsel = 0;
+                for (const Unit& su : us)
+                    if (su.selected && world_.controllable(su.house) && su.alive && su.die_time < 0.0) ++nsel;
+                if (nsel >= 2) return cell_walkable(cx, cy) ? Action::Move : Action::NoMove;
+            }
             // ACTION_SELF: clicking the selected unit itself deploys / unloads it.
             if (u.selected) {
                 const bool can = (!u.cargo.empty()) || u.abil.deployer || u.deployed ||
@@ -203,21 +228,50 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
 
 void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
     const Action a = classify(px, py, shift, mod_ctrl_, mod_alt_);
+    const int slop = ev_touch_ ? kDblSlopTouch : kDblSlopO;
+    const bool is_double = last_click_t_ != 0 &&
+                           (t_ms - last_click_t_) <= (ev_touch_ ? kDblMsTouch : kDblMsO) &&
+                           std::abs(px - last_click_x_) <= slop &&
+                           std::abs(py - last_click_y_) <= slop;
+    // W6-01-05 [engine deviation, touch]: a finger's double tap on an own
+    // unit selects every on-screen unit of its type and never deploys. The
+    // second tap would otherwise land on the now-selected unit (ACTION_SELF
+    // = deploy / unload, or a crowd order, W6-01-06). A single tap on the
+    // lone selected unit, slower than the double-tap window, still deploys.
+    const bool own_tap = [&] {
+        if (!ev_touch_) return false;
+        const int i = unit_under(px, py);
+        return i >= 0 && world_.controllable(world_.units()[i].house) &&
+               (a == Action::Select || a == Action::Deploy ||
+                ((a == Action::Move || a == Action::NoMove) && unit_body_hit(i, px, py)));
+    }();
+    if (own_tap && !shift && is_double && touch_last_kind_ == 1) {
+        touch_deploy_wait_ = -1.0;   // the first tap's deferred deploy is dropped
+        selected_building_ = -1;
+        commit_double(px, py);
+        last_click_t_ = 0;
+        touch_last_kind_ = 0;
+        return;
+    }
+    touch_deploy_wait_ = -1.0;   // any other tap drops a pending touch deploy
+    touch_last_kind_ = own_tap ? 1 : 0;
+    if (own_tap && a != Action::Select) {   // remember the tap for the double
+        last_click_t_ = t_ms ? t_ms : 1;
+        last_click_x_ = px;
+        last_click_y_ = py;
+    }
     switch (a) {
         case Action::None:
             return;
         case Action::Select: {
-            const int slop = ev_touch_ ? kDblSlopTouch : kDblSlopO;
-            const bool is_double = (t_ms - last_click_t_) <= (ev_touch_ ? kDblMsTouch : kDblMsO) &&
-                                   std::abs(px - last_click_x_) <= slop &&
-                                   std::abs(py - last_click_y_) <= slop;
             selected_building_ = -1;
             if (is_double) {
                 commit_double(px, py);
                 last_click_t_ = 0;
+                touch_last_kind_ = 0;
             } else {
                 commit_click(px, py, false);
-                last_click_t_ = t_ms;
+                last_click_t_ = t_ms ? t_ms : 1;
                 last_click_x_ = px;
                 last_click_y_ = py;
             }
@@ -229,9 +283,7 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
             return;
         case Action::SelectBuilding:
         case Action::SetPrimary: {
-            int cx = 0, cy = 0;
-            resolve_ground_cell(px, py, cx, cy);
-            const int b = world_.building_at_cell(cx, cy);
+            const int b = pick_building(px, py, ev_touch_);   // W6-01-01
             if (b < 0) return;
             if (a == Action::SetPrimary || !is_unit_factory_type(world_.buildings()[b].type)) {
                 if (a == Action::SetPrimary) {
@@ -258,7 +310,7 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
                 } else {
                     int cx = 0, cy = 0;
                     resolve_ground_cell(px, py, cx, cy);
-                    const int b = world_.building_at_cell(cx, cy);
+                    const int b = pick_building(px, py, ev_touch_);   // W6-01-01
                     world_.mark_player_order();   // W4-SQ
                     if (b >= 0) world_.order_attack_building(b);
                     else world_.order_attack_cell_selected(cx, cy);   // G16: ground
@@ -270,7 +322,8 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
             issue_order(px, py);
             return;
         case Action::Deploy:
-            actions_.deploy_clicked = true;
+            if (ev_touch_) touch_deploy_wait_ = kDblMsTouch / 1000.0;   // W6-01-05 (touch_tick)
+            else actions_.deploy_clicked = true;
             return;
         case Action::Move:
         case Action::NoMove:
@@ -360,6 +413,7 @@ void Input::handle_original(const InputEvent& ev) {
             return;
         case InputEvent::PointerUp:
             if (ev.button == InputEvent::Right) {
+                if (ev.touch) { last_click_t_ = 0; touch_last_kind_ = 0; }   // W6-01-05: no double across it
                 if (r_down_ && !r_drag_) {
                     if (placement_active()) actions_.place_cancelled = true;
                     // W4-AM-07: a finger HOLD cancels an armed mode but never

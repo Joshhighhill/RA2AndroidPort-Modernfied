@@ -12,6 +12,11 @@ int touch_mode() const {
     if (input_.base_mode() == ra2engine::Input::BaseMode::Repair) return 2;
     return 0;
 }
+// --- W6-01-12: HUD message / objective / tooltip text is drawn 1.5x on a
+// touch canvas (game.fnt's 13-row cells are ~8 dp tall at 1:1 on a phone);
+// a mouse keeps the original 1:1. Cameo captions are baked into the art.
+double hud_touch_scale() const { return (touch_ui_ && !mouse_present_) ? 1.5 : 1.0; }
+
 bool touch_banner_visible() const {
     return touch_ui_ && !mouse_present_ && touch_mode() != 0 && !menu_.open_ && !sld_.is_open() &&
            !input_locked_;
@@ -46,15 +51,20 @@ void touch_cancel_mode() {
 }
 void draw_touch_mode_banner(SDL_Renderer* ren) {
     if (!touch_banner_visible()) return;
-    static const char* kText[5] = {"", "SELL MODE - TAP A BUILDING", "REPAIR MODE - TAP A BUILDING",
-                                   "PLACE - TAP THE GROUND, TAP AGAIN TO BUILD", "TARGET - TAP THE MAP"};
+    static const char* kText[5] = {"", "SELL - TAP A BUILDING, TAP AGAIN TO SELL",
+                                   "REPAIR - TAP A BUILDING, TAP AGAIN TO REPAIR",
+                                   "PLACE - TAP THE GROUND, TAP AGAIN TO BUILD",
+                                   "TARGET - TAP THE MAP, TAP AGAIN TO FIRE"};
     const SDL_Rect b = touch_banner_rect();
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(ren, 20, 24, 28, 0xC8);
     SDL_RenderFillRect(ren, &b);
     SDL_SetRenderDrawColor(ren, 230, 190, 60, 0xF0);
     SDL_RenderDrawRect(ren, &b);
-    draw_text(ren, kText[touch_mode()], b.x + 10, b.y + (b.h - 14) / 2, 2, 240, 220, 120);
+    const std::string aim = touch_aim_text();   // W6-01-02 / -07
+    const std::string line = aim.empty() ? std::string(kText[touch_mode()]) : aim;
+    const int scale = static_cast<int>(line.size()) * 12 <= b.w - 76 ? 2 : 1;
+    draw_text(ren, line, b.x + 10, b.y + (b.h - 7 * scale) / 2, scale, 240, 220, 120);
     const SDL_Rect c = touch_cancel_rect();
     SDL_SetRenderDrawColor(ren, 150, 40, 30, 0xE0);
     SDL_RenderFillRect(ren, &c);
@@ -62,6 +72,133 @@ void draw_touch_mode_banner(SDL_Renderer* ren) {
     SDL_RenderDrawRect(ren, &c);
     draw_text(ren, "X", c.x + (c.w - 15) / 2, c.y + (c.h - 21) / 2, 3, 245, 235, 215);
 }
+
+// --- W6-01-02 / W6-01-07: a confirming second tap for sell, repair and a
+// superweapon [engine deviation, touch only]. With a mouse the hovered object
+// shows the sell / repair / target cursor BEFORE the click (FUN_00692010 ->
+// the mode cursor); a finger has no hover, so the first tap only aims: it
+// highlights the building (sell / repair) or draws the target area (SW) and
+// the banner names it; a second tap on the SAME building / cell commits it
+// through the normal Input path. A tap elsewhere re-aims. The modes stay
+// armed after a commit, exactly as with the mouse. SW targeting wins over a
+// base mode, as in Input::handle. Called from the touch router after the
+// banner's [X] and the cameo popup had their chance.
+bool touch_confirm_tap(ra2engine::InputEvent& ev) {
+    const bool on_map = !(sidebar_up_ && lay_.contains(ev.x, ev.y));
+    const bool ptr = ev.kind == ra2engine::InputEvent::PointerDown || ev.kind == ra2engine::InputEvent::PointerUp;
+    const ra2engine::Input::BaseMode bm = input_.base_mode();
+    const bool bmode = bm == ra2engine::Input::BaseMode::Sell || bm == ra2engine::Input::BaseMode::Repair;
+    if (!bmode) touch_aim_bld_ = -1;
+    if (!input_.sw_targeting()) touch_aim_cx_ = touch_aim_cy_ = INT_MIN;
+    if (!ptr || !on_map || ev.button != ra2engine::InputEvent::Left || input_.placement_active()) return false;
+    if (ev.kind == ra2engine::InputEvent::PointerUp) {
+        if (touch_aim_swallow_up_) {
+            touch_aim_swallow_up_ = false;
+            return true;
+        }
+        return false;
+    }
+    if (input_.sw_targeting()) {
+        int cx = 0, cy = 0;
+        input_.resolve_ground_cell(ev.x, ev.y, cx, cy);
+        if (cx == touch_aim_cx_ && cy == touch_aim_cy_) {   // confirm: Input fires
+            touch_aim_cx_ = touch_aim_cy_ = INT_MIN;
+            return false;
+        }
+        touch_aim_cx_ = cx;
+        touch_aim_cy_ = cy;
+        touch_aim_swallow_up_ = true;
+        return true;
+    }
+    if (bmode) {
+        const int bi = input_.pick_building(ev.x, ev.y, true);
+        const bool own = bi >= 0 && world_.buildings()[static_cast<std::size_t>(bi)].house == 0;
+        if (own && bi == touch_aim_bld_) {   // the confirming tap: Input commits it
+            touch_aim_bld_ = -1;
+            return false;
+        }
+        touch_aim_bld_ = own ? bi : -1;
+        touch_aim_swallow_up_ = true;
+        return true;
+    }
+    return false;
+}
+// The aimed building / target cell of touch_confirm_tap, drawn over the map.
+void draw_touch_aim(SDL_Renderer* ren) {
+    if (!touch_ui_ || mouse_present_) return;
+    auto diamond = [&](int cx, int cy, Uint8 r, Uint8 g, Uint8 b) {
+        const ra2assets::MapCell* mc = a_.map.at(cx, cy);
+        const ra2engine::ScreenPt p = ra2engine::cell_to_screen(cx, cy, mc ? mc->level : 0, 60, 30, 15);
+        const int x = p.x + cam_.x, y = p.y + cam_.y;
+        SDL_SetRenderDrawColor(ren, r, g, b, 0xF0);
+        for (int d = 0; d < 3; ++d) {   // 3 px thick
+            const SDL_Point q[5] = {{x + 30, y + d}, {x + 60 - 2 * d, y + 15}, {x + 30, y + 30 - d},
+                                    {x + 2 * d, y + 15}, {x + 30, y + d}};
+            SDL_RenderDrawLines(ren, q, 5);
+        }
+    };
+    SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+    const auto& bs = world_.buildings();
+    if (touch_aim_bld_ >= 0 && touch_aim_bld_ < static_cast<int>(bs.size())) {
+        const ra2engine::Building& b = bs[static_cast<std::size_t>(touch_aim_bld_)];
+        const bool sell = input_.base_mode() == ra2engine::Input::BaseMode::Sell;
+        for (int j = 0; j < b.fh; ++j)
+            for (int i = 0; i < b.fw; ++i)
+                diamond(b.cx + i, b.cy + j, sell ? 255 : 80, sell ? 60 : 255, sell ? 40 : 80);
+    }
+    if (input_.sw_targeting() && touch_aim_cx_ != INT_MIN) {
+        using T = ra2engine::SuperweaponType;
+        const T t = static_cast<T>(input_.sw_armed_type());
+        // The area the SW acts on: Iron Curtain / Chronosphere 3x3 [world.hpp
+        // fire_superweapon_at], the Nuke its [NUKE] CellSpread, the storm its
+        // [LightningStormSpecial] CellSpread; a paradrop marks the cell.
+        double rad = 0.0;
+        if (t == T::Nuke) rad = world_.sw_cell_spread(0, t);
+        else if (t == T::LightningStorm) rad = world_.sw_params().storm_cell_spread;
+        const int sq = (t == T::IronCurtain || t == T::ChronoSphere || t == T::ChronoWarp) ? 1 : 0;
+        for (int j = -sq; j <= sq; ++j)
+            for (int i = -sq; i <= sq; ++i) diamond(touch_aim_cx_ + i, touch_aim_cy_ + j, 255, 220, 60);
+        if (rad > 0.0) {   // a cell-space circle is an iso ellipse on screen
+            const ra2assets::MapCell* mc = a_.map.at(touch_aim_cx_, touch_aim_cy_);
+            const ra2engine::ScreenPt p =
+                ra2engine::cell_to_screen(touch_aim_cx_, touch_aim_cy_, mc ? mc->level : 0, 60, 30, 15);
+            const double ox = p.x + cam_.x + 30, oy = p.y + cam_.y + 15;
+            SDL_SetRenderDrawColor(ren, 255, 90, 40, 0xE0);
+            const int steps = 180;
+            // cell offset (r cos a, r sin a) -> screen ((dx-dy)*30, (dx+dy)*15)
+            auto sp = [&](double a, double& sx, double& sy) {
+                const double dx = rad * std::cos(a), dy = rad * std::sin(a);
+                sx = ox + (dx - dy) * 30.0;
+                sy = oy + (dx + dy) * 15.0;
+            };
+            for (int k = 0; k < steps; ++k) {
+                double x0, y0, x1, y1;
+                sp(6.2831853 * k / steps, x0, y0);
+                sp(6.2831853 * (k + 1) / steps, x1, y1);
+                for (int d = 0; d < 2; ++d)
+                    SDL_RenderDrawLine(ren, static_cast<int>(x0), static_cast<int>(y0) + d, static_cast<int>(x1),
+                                       static_cast<int>(y1) + d);
+            }
+        }
+    }
+}
+// The banner line while a touch tap is aimed (W6-01-02 / -07); "" = none.
+std::string touch_aim_text() const {
+    const auto& bs = world_.buildings();
+    if (touch_aim_bld_ >= 0 && touch_aim_bld_ < static_cast<int>(bs.size())) {
+        const int t = bs[static_cast<std::size_t>(touch_aim_bld_)].type;
+        std::string name =
+            (t >= 0 && t < static_cast<int>(ba_.roster.size())) ? tt_ui_name(ba_.roster[(size_t)t].id) : "";
+        for (char& c : name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        const bool sell = input_.base_mode() == ra2engine::Input::BaseMode::Sell;
+        return std::string(sell ? "TAP AGAIN TO SELL " : "TAP AGAIN TO REPAIR ") + name;
+    }
+    if (input_.sw_targeting() && touch_aim_cx_ != INT_MIN) return "TAP THE SAME SPOT AGAIN TO FIRE";
+    return "";
+}
+int touch_aim_bld_ = -1;
+int touch_aim_cx_ = INT_MIN, touch_aim_cy_ = INT_MIN;
+bool touch_aim_swallow_up_ = false;
 
 // --- W4-AM-07: the hold ring at the finger (fills up until the hold fires) ---
 void draw_touch_hold_ring(SDL_Renderer* ren) {
@@ -137,6 +274,10 @@ bool touch_snap_sidebar(ra2engine::InputEvent& ev) const {
     for (const ra2engine::SbRect& t : lay_.tabs) consider(t);
     consider(lay_.scroll_up);
     consider(lay_.scroll_dn);
+    // W6-01-13: the 72x18 Options button (the visible way into the menu when
+    // gesture navigation hides Back) snaps like the other small buttons.
+    const ra2engine::SbRect ob{lay_.opt_btn.x, lay_.opt_btn.y, ba_.sb_optbtn.width(), ba_.sb_optbtn.height()};
+    if (ba_.has_optbtns) consider(ob);   // (`best` may point at ob: it lives to the end)
     if (ba_.has_repair_sell) {
         consider(lay_.repair_btn);
         consider(lay_.sell_btn);
@@ -151,6 +292,7 @@ bool touch_snap_sidebar(ra2engine::InputEvent& ev) const {
 // Returns true when the event was consumed.
 bool touch_ui_handle(ra2engine::InputEvent& ev) {
     if (!ev.touch) return false;
+    if (cameo_menu_handle(ev)) return true;   // W6-01-03 cameo popup
     // The mode banner's [X].
     if (touch_banner_visible() && (ev.kind == ra2engine::InputEvent::PointerDown ||
                                    ev.kind == ra2engine::InputEvent::PointerUp) &&
@@ -169,6 +311,7 @@ bool touch_ui_handle(ra2engine::InputEvent& ev) {
         touch_swallow_up_ = false;
         return true;
     }
+    if (touch_confirm_tap(ev)) return true;   // W6-01-02 / W6-01-07
     if (ev.kind == ra2engine::InputEvent::Pan) {
         if (!(sidebar_up_ && lay_.contains(ev.x0, ev.y0))) return false;   // the map scrolls
         // W4-AM-11: a drag that starts on the radar scrolls the view with it.
@@ -190,3 +333,116 @@ bool touch_ui_handle(ra2engine::InputEvent& ev) {
 }
 int touch_strip_acc_ = 0;
 bool touch_swallow_up_ = false;
+
+// --- W6-01-03: a cameo HOLD on touch shows its tooltip only ------------------
+// [engine deviation, touch] With a mouse, hovering a cameo shows the tooltip
+// with no side effect [RE: FUN_0067F580] and a RIGHT click suspends, then
+// abandons [RE: FUN_006AA390]. A finger's only tooltip gesture is a hold, so
+// a hold must not also be the right click: it shows the name + price (above
+// the finger, hud_tooltip.inc) and, when that cameo has something in
+// production, opens a small popup beside it with the right-click actions:
+//   [PAUSE] / [RESUME]  suspend / resume (right click / left click)
+//   [CANCEL]            abandon one (a queued copy first, else the current)
+//   [ALL]               abandon every queued copy (Shift + right click)
+// A tap anywhere else closes it (and acts normally).
+struct CameoMenuBtn { int id; const char* label; SDL_Rect r; };
+enum : int { CM_PAUSE = 1, CM_RESUME, CM_CANCEL, CM_ALL };
+// Production state of cameo `type` on the active tab: current / held / count.
+void cameo_menu_state(int type, bool& current, bool& held, bool& ready, int& count) const {
+    current = held = ready = false;
+    count = 0;
+    if (active_tab_ >= 2) {
+        const ra2engine::QueueCat cat = rp_cat_of_unit(type);
+        current = queues_.producing(cat) == type;
+        held = held_.count(static_cast<int>(cat)) != 0;
+        ready = current && queues_.ready(cat);
+        count = queued_count(type, cat);
+    } else {
+        const ra2engine::QueueCat bcat =
+            (active_tab_ == 1) ? ra2engine::QueueCat::Defense : ra2engine::QueueCat::Structure;
+        const ra2engine::ProductionState& bq = queues_.state(bcat);
+        current = bq.slot.type == type;
+        held = current && held_.count(static_cast<int>(bcat)) != 0;
+        ready = current && bq.slot.ready;
+        count = current ? 1 : 0;
+    }
+}
+std::vector<CameoMenuBtn> cameo_menu_buttons() const {
+    std::vector<CameoMenuBtn> out;
+    if (cm_type_ < 0 || cm_tab_ != active_tab_) return out;
+    bool current = false, held = false, ready = false;
+    int count = 0;
+    cameo_menu_state(cm_type_, current, held, ready, count);
+    if (count <= 0 && !current) return out;
+    if (current && held) out.push_back({CM_RESUME, "RESUME", {}});
+    else if (current && !ready) out.push_back({CM_PAUSE, "PAUSE", {}});
+    out.push_back({CM_CANCEL, "CANCEL", {}});
+    if (active_tab_ >= 2 && count >= 2) out.push_back({CM_ALL, "ALL", {}});
+    // Stacked to the LEFT of the cameo (the finger rests on the cameo).
+    const int bw = 84, bh = 44, gap = 2;
+    const int n = static_cast<int>(out.size());
+    int y = cm_y_ + cm_h_ / 2 - (n * bh + (n - 1) * gap) / 2;
+    y = std::clamp(y, 0, std::max(0, kWinH - n * (bh + gap)));
+    for (int i = 0; i < n; ++i) out[i].r = SDL_Rect{cm_x_ - bw - 6, y + i * (bh + gap), bw, bh};
+    return out;
+}
+void cameo_menu_open(int type, const ra2engine::SbRect& r) {
+    cm_type_ = type;
+    cm_tab_ = active_tab_;
+    cm_x_ = r.x;
+    cm_y_ = r.y;
+    cm_h_ = r.h;
+    if (cameo_menu_buttons().empty()) cm_type_ = -1;   // nothing to pause / cancel
+}
+void cameo_menu_do(int id) {
+    const int type = cm_type_;
+    cm_type_ = -1;
+    if (type < 0) return;
+    switch (id) {
+        case CM_PAUSE: cameo_click(type, /*right=*/true, false); return;    // SUSPEND
+        case CM_RESUME: cameo_click(type, /*right=*/false, false); return;  // PRODUCE = resume
+        case CM_ALL: cameo_click(type, /*right=*/true, /*shift=*/true); return;
+        case CM_CANCEL:
+            if (active_tab_ >= 2) {   // a queued copy first, else the current one
+                const ra2engine::QueueCat cat = rp_cat_of_unit(type);
+                std::vector<int>& bl = backlog_[static_cast<int>(cat)];
+                const auto last = std::find(bl.rbegin(), bl.rend(), type);
+                if (last != bl.rend()) bl.erase(std::next(last).base());
+                else if (queues_.producing(cat) == type) refund_cancel(cat);
+            } else {
+                const ra2engine::QueueCat bcat =
+                    (active_tab_ == 1) ? ra2engine::QueueCat::Defense : ra2engine::QueueCat::Structure;
+                if (queues_.state(bcat).slot.type == type) refund_cancel(bcat);
+            }
+            return;
+        default: return;
+    }
+}
+// Router hook: true when the event was consumed by the open popup.
+bool cameo_menu_handle(const ra2engine::InputEvent& ev) {
+    if (cm_type_ < 0) return false;
+    const bool ptr = ev.kind == ra2engine::InputEvent::PointerDown || ev.kind == ra2engine::InputEvent::PointerUp;
+    if (!ptr) return false;
+    for (const CameoMenuBtn& b : cameo_menu_buttons())
+        if (ev.x >= b.r.x && ev.x < b.r.x + b.r.w && ev.y >= b.r.y && ev.y < b.r.y + b.r.h) {
+            if (ev.kind == ra2engine::InputEvent::PointerUp) cameo_menu_do(b.id);
+            return true;
+        }
+    if (ev.kind == ra2engine::InputEvent::PointerDown) cm_type_ = -1;   // a tap elsewhere closes it
+    return false;
+}
+void draw_cameo_menu(SDL_Renderer* ren) {
+    const std::vector<CameoMenuBtn> bs = cameo_menu_buttons();
+    if (bs.empty()) return;
+    SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+    for (const CameoMenuBtn& b : bs) {
+        SDL_SetRenderDrawColor(ren, b.id == CM_PAUSE || b.id == CM_RESUME ? 30 : 120, 30, 28, 0xE0);
+        SDL_RenderFillRect(ren, &b.r);
+        SDL_SetRenderDrawColor(ren, 230, 190, 60, 0xF0);
+        SDL_RenderDrawRect(ren, &b.r);
+        const std::string l = b.label;
+        const int lw = static_cast<int>(l.size()) * 12 - 2;
+        draw_text(ren, l, b.r.x + (b.r.w - lw) / 2, b.r.y + (b.r.h - 14) / 2, 2, 240, 230, 210);
+    }
+}
+int cm_type_ = -1, cm_tab_ = -1, cm_x_ = 0, cm_y_ = 0, cm_h_ = 0;

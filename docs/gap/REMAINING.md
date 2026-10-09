@@ -258,7 +258,7 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
 | R-080 | The AI never fields fixed-wing aircraft (Harrier, Black Eagle) (W2-AN still-open, 04#17) | AI | MINOR | FIXED (w5-abil 7818961; ORCA/BEAG in the AI roster, built onto airfield pads; play abil-ai-air) | `engine/world.cpp:3047` skips `fixed_wing`; `engine/ai_skirmish.inc:32` | M | N |
-| R-081 | The skirmish AI never garrisons buildings. Deploy and base-defence responses work (W2-SK-10) | AI | MINOR | FIXED (w5-abil 7818961, RE-FALLBACK choice rule; play abil-ai-air) | no AI caller of `order_occupy` | M | N |
+| R-081 | The skirmish AI never garrisons buildings. Deploy and base-defence responses work (W2-SK-10) | AI | MINOR | REVERTED (w6fix-ai W6-03-09: the RE-FALLBACK garrison rule locked the AI start force in civilian buildings; switched off until RE-W6-b finds the original trigger) | `engine/world_w5.cpp` `kAiGarrisonCivilian` | M | Y |
 | R-082 | Difficulty pacing is not calibrated against an original capture. The Armor and Groundspeed handicaps are not applied, so Brutal units are not tougher or faster (RE-Q5, G-63 part) | AI | MINOR | RE-FALLBACK (w5-abil: AssignHandicap FUN_004F6DD0 traced; ReceiveDamage divides by the COUNTRY armor mult, no reader of house Armor/Groundspeed found -- left unapplied, docs/re/abilities-w5.md §12) | `engine/ai_base.hpp:101-105` | M | Y |
 | R-083 | AI behaviour fallbacks (about 55 markers): xorshift RNG instead of the lockstep RNG, wall ring and placement scan, team tie-break, base-defence triggers dropped, target picker proxy, moves abandoned after 10 s, 60 s boarding cap (RE-A4 and others) | AI | MINOR | RE-FALLBACK | `engine/ai_base.cpp:9,48,176`; `engine/ai_team.cpp:157,309,385`; `engine/ai_trigger.cpp:113`; `engine/world.cpp:2587,3093,3919` | L | Y |
 | R-084 | On May Day (2 ore mines) AI-vs-AI ends with no winner after 40 min. This may be faithful | AI | MINOR | OPEN | `docs/gap/wave2/03-skirmish-match.md` §7.3 | S | Y |
@@ -339,7 +339,7 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
 | R-150 | Hotkeys that are parsed but do nothing: CombatantSelect, Follow, VeterancyNav, PlaceBeacon, AllToCheer and PlanningMode. The PowerToggle, Planning and Beacon modes are not modelled; the beacon, alliance and taunt keys are swallowed (W2-SK-28) | Controls/Touch | MINOR | PARTIAL (w5-audio 43e3fe9): Follow/CombatantSelect/Health+VeterancyNav/AllToCheer/CenterOnRadarEvent/ScreenCapture done; w5-audio2 7e0d1ed: PowerToggle mode (no UI arms it in YR 1.001; --play cheat + trigger hook); PlanningMode open; beacons/alliances/taunts network-only (RE) | `engine/hotkeys.cpp:14-22`; `engine/input.cpp:225-227` | M | N |
-| R-151 | Touch targets on phone: shell campaign and load list rows are about 14 dp, and the sidebar tabs about 21 dp (an art limit). View bookmarks have no touch path (W4-AM-08 rest, W2-AR-07 part) | Controls/Touch | MINOR | PARTIAL (w5-android: campaign list snaps a finger to the nearest row; sidebar near-miss snap from w4fix-ctl; save/load list rows and the ~21 dp tab width remain) | `engine/sidebar.hpp:31,40` | S | N |
+| R-151 | Touch targets on phone: shell campaign and load list rows are about 14 dp, and the sidebar tabs about 21 dp (an art limit). View bookmarks have no touch path (W4-AM-08 rest, W2-AR-07 part) | Controls/Touch | MINOR | PARTIAL (w5-android: campaign list snaps a finger to the nearest row; sidebar near-miss snap from w4fix-ctl; w6fix-touch: view bookmarks 1-3 on the command column's MORE page, the Options button snaps; save/load list rows and the ~21 dp tab width remain) | `engine/sidebar.hpp:31,40` | S | N |
 | R-152 | IME: the SAVE button sits above the visible area while typing, and prefilled text is not selected on focus (W2-AR-15) | Controls/Touch | MINOR | FIXED (w5-android: IME rect spans SAVE..edit, SAVE stays above the keyboard on the emulator; prefilled text selected, typing/Backspace replace it) | `engine/app_robust.inc:177-188`; `engine/ingame_pages.inc:67` | S | N |
 | R-153 | SDL clamps touches in the shell's pillarbox bars to the viewport edge (harmless today) | Controls/Touch | COSMETIC | OPEN | SDL `SDL_render.c:825-830` | S | N |
 
@@ -388,7 +388,7 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
-| R-200 | No movies. MOVIES01/02.MIX on this install are 4-byte stubs, so there are no intro, briefing or win videos and no in-game movies (actions 10/100/116/117; ALL01 67/68/69). Play Movies and Sneak Peeks are greyed. Overlaps U-5 (W2-UI-26, A1-10, W4-SQ-13, 06#15, R8) | Data-limits | MINOR | DATA-LIMIT | `engine/main.cpp:7278`; `docs/gap/wave4/03-all01-opening.md:274` | – | N |
+| R-200 | No movies. MOVIES01/02.MIX on this install are 4-byte stubs, so there are no intro, briefing or win videos and no in-game movies (actions 10/100/116/117; ALL01 67/68/69). Play Movies and Sneak Peeks are greyed. Overlaps U-5 (W2-UI-26, A1-10, W4-SQ-13, 06#15, R8) | Data-limits | MINOR | DATA-LIMIT (w6fix-rel: Play Movies goes live and lists the campaign movies when the player supplies movie files, W6-06-13; the Android importer copies them, W6-06-06; Sneak Peeks stays greyed) | `engine/main.cpp:7278`; `docs/gap/wave4/03-all01-opening.md:274` | – | N |
 | R-201 | YR-only art is absent from the RA2 archives: NABNKR and NAINDP are unbuildable, SCHP has no voxel under the clone's naming, and the CASIN01E/S/W stop signs have no file (the original draws nothing either) | Data-limits | COSMETIC | DATA-LIMIT | `src/asset_fs.cpp:58`; `docs/gap/wave3/03-asset-anim-systems.md` census | – | N |
 
 ### Mission-proof agent P3 (branch `p3-missions`)
@@ -399,7 +399,7 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 | R-P3-2 | Destroyed*All events counted Insignificant/DontScore objects (flags, lamps, gates, guard shacks), so ALL06's BadGuy1 could never be "all destroyed"; RegisterGain/Loss FUN_004FF520/004FF370 skip them | Campaign | BLOCKER (ALL06) | FIXED (p3-missions 4a51b4b) | `engine/campaign_runtime.inc` tracked() | S | Y (done) |
 | R-P3-3 | A parasite (dog, terror drone) whose host left the world by a path bypassing the ability death pass stayed carried forever, unkillable and counted for its house | Units & abilities | MAJOR | FIXED (p3-missions e2d2cc4) | `engine/world_abilities.cpp` parasite pass | S | N |
 | R-P3-4 | ALL05: in failed real-order attempts Tanya died and the mission stayed RUNNING (the map loses via `Tanya Dies` -> `Mission Failed`); the tag hand-over when `Change Tanya House` re-creates her was not checked | Campaign | MINOR | OPEN | scratch runs, wave4/05 "P3 status" | S | N |
-| R-P3-5 | The clone's building pick is ground-based (footprint cells only); clicking a building's upper art does not target it, and a big army standing round a building covers its footprint so a click selects an own tank. The play harness works round it (`building ...:near`); a player would hit the same wall | Controls | MINOR | OPEN | `engine/input.cpp` building_under | M | Y |
+| R-P3-5 | The clone's building pick is ground-based (footprint cells only); clicking a building's upper art does not target it, and a big army standing round a building covers its footprint so a click selects an own tank. The play harness works round it (`building ...:near`); a player would hit the same wall | Controls | MINOR | FIXED for touch (w6fix-touch: the art pick, W6-01-01); the mouse keeps the original foundation + hotspot pick (`docs/re/object-pick.md`) | `engine/input.cpp` pick_building | M | Y |
 
 ### Mission-proof agent P2 (branch `p2-missions`)
 
@@ -427,14 +427,14 @@ Rows R-151, R-152, R-160..R-163, R-170..R-172 and R-180..R-184 carry their `w5-a
 
 ## Wave-6 agent #5 (presentation) status (branch `w6fix-pres`)
 
-Full per-item table: `docs/gap/wave6/05-presentation.md` "Fix status". Save format v25 (MapTriggerSystem `timer_text_`); gate re-pin `--demo-saveload` only.
+Full per-item table: `docs/gap/wave6/05-presentation.md` "Fix status". Save format v27 after the master merge (MapTriggerSystem `timer_text_`); gate re-pins `--demo-saveload` and `--demo-campaign` (saved-trigger byte count only).
 
 | Item | Status |
 |---|---|
 | W6-05-01 campaign house colours from `Color=` | FIXED (`b000536`) |
 | W6-05-02 tiles outside `iso*.mix` (black holes ALL03/04/06/08, SOV01, SOV08) | FIXED (`a8a6a46`) |
 | W6-05-03 lamp-light strips (ALL02/05, SOV07/11) | FIXED (`9a6ffb5`) |
-| W6-05-04 TimerText label + bottom-right timer | FIXED (`b2fa93f`, save v25) |
+| W6-05-04 TimerText label + bottom-right timer | FIXED (`b2fa93f`, save v27 after the merge) |
 | W6-05-05 superweapon `ShowTimer` countdowns | FIXED (`b2fa93f`) |
 | W6-05-06 CreateSound / ImpactLandSound / Working+NotWorkingSound | FIXED (`e24699f`) |
 | W6-04-27 sound batch | FIXED (`e24699f`) except Robot Tank Activate/DeactivateSound (no sim state) and HasRadialIndicator (a draw) |
@@ -480,3 +480,43 @@ Fixed on the way to the ALL09/ALL10/SOV04 proofs (details and RE citations: `doc
 | P4-4 | Crushable= wall overlays (sandbags, prison fences) could not be crushed by Crusher vehicles | FIXED (`629b1e3`, RE-FALLBACK, save v23) |
 | P4-5 | Wall=yes warheads do not damage wall overlays (force-firing a wall does nothing); only crushing removes one | OPEN (not needed by the P4 proofs) |
 | P4-6 | ALL09 not won by real orders: `m-all09-opening` proves the opening to the airport + paradrop phase (pre-P3-merge runs reached the BadGuy1 ConYard capture), then BadGuy1's Attk Response teams overrun the force; needs a finer micro script | OPEN (tactical) |
+
+## Wave-6 fix agent #6 status (branch `w6fix-rel`)
+
+Shell, save/load, Android lifecycle and release: W6-06-02..16 and W6-01-10 are FIXED or PARTIAL
+as listed in `docs/gap/wave6/06-shell-release.md` section 6. Still open: W6-06-01 (save
+compatibility, decision D-1; only the messages were made clear), W6-06-17 (re-stage the phone
+package -- controller), W6-06-18 (real-phone performance = R-170). User decisions U-2 (name /
+icon), U-3 (licence wording; the About page carries a placeholder line) and U-4 (signing key;
+release builds now refuse the debug key unless `-Pra2.allowDebugSigning=true`) are unchanged.
+Save format v25; no gate re-pinned.
+
+## Wave-6 touch fixes (branch `w6fix-touch`)
+
+`docs/gap/wave6/01-touch.md` §5 has the per-item status. FIXED: W6-01-01 (art pick on touch;
+hit maps >= 94 % for every tested type, `01-evidence-fix/`), -02, -03, -04, -05, -06, -07,
+-08, -11, -12, -13, -14 (needs a gesture-navigation phone to confirm), -15. PARTIAL: -09
+(page 2 of the command column incl. view bookmarks 1-3; View 4, CombatantSelect,
+health/veterancy nav and cheer still have no touch path), -16 (overlay moved; real arm64 numbers still R-170).
+Not this branch: -10 (release agent). R-P3-5 is fixed for touch.
+
+## Wave-6 fix agent #3 (branch `w6fix-ai`, skirmish AI)
+
+Details, RE citations and runs: `docs/gap/wave6/03-skirmish-ai.md` §6 and `docs/re/ai-base.md` §7. Save **v25** (v26 after merging with w6fix-rel); no gate re-pin.
+
+| ID | Item | Status |
+|---|---|---|
+| W6-03-01 | Walls / Insignificant structures kept a defeated house alive and were AI targets | FIXED (`sk-walls.play` WON) |
+| W6-03-02 | 1v3 Brutal end-game stall | FIXED (1v3 Brutal Arena LOST at min ≈ 10.5; `sk-1v3.play`) |
+| W6-03-03 | `AIVirtualPurifiers` income bonus missing | FIXED |
+| W6-03-04 | Nearest-forever enemy, no anger | FIXED (anger table, damage feed, hate delays; saved) |
+| W6-03-05 | SW picker target set; invented IC/Chrono auto-fire; ct=5/6 and scripts 55-57 inert | FIXED |
+| W6-03-06 | No base defences for 18-21 min | FIXED (first defence at min 5) |
+| W6-03-07 | AI hoards money | OPEN (RE W6-c done: no runtime reader of WarLimit/BarracksLimit, no surplus spending found) |
+| W6-03-08 | No raise-money recovery | FIXED (`--ai-soak --ruin-ai-at`) |
+| W6-03-09 | Start infantry garrisoned for the whole game | FIXED (invented rule off) |
+| W6-03-10 | Difficulty spread | PARTIAL (`MultiplayerAICM` 5x Brutal start money added; strength ordered, time-to-kill vs a passive player not monotonic -- the nearest-unit quarry chase, R-083) |
+| W6-03-11 | Score screen time source | RE done (W6-d: wall-clock elapsed timer, `timeGetTime()>>4` / 60); implementation belongs to agent #6 |
+| W6-a | Paranoid computer alliance in skirmish | ANSWERED yes; IMPLEMENTED (`apply_computer_alliance`) |
+| W6-b | Original AI garrisoning | OPEN (occupied civilian buildings are Insignificant, so they never keep a house alive) |
+| -- | Campaign houses: MultiplayerAICM is also applied to computer houses in campaigns by `FUN_006862d0` (no session gate seen) | OPEN, campaign owner (agent #2) |

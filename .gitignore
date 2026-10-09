@@ -30,3 +30,5 @@
 /android/keystore.properties
 *.jks
 *.keystore
+# W6-06-02 release packages (scripts/package-win.ps1)
+/dist/
