@@ -134,6 +134,11 @@ struct AiRules {
     // W6-02-09 [RE: FUN_0050ca10 -- Rules+0x1208 Engineer, +0x1224 Thief,
     // +0x125c MCV, +0x1278 APC (Passengers > 0); rulesmd 1,1,1 each].
     int sw_value_engineer = 1, sw_value_thief = 1, sw_value_mcv = 1, sw_value_apc = 1;
+    // W6-03-06 [RE: FUN_005052d0 / FUN_004fe200] the skirmish plan knobs,
+    // resolved at house+0x184 by make_ai_slot_config. -1 (every synthetic and
+    // campaign config) keeps the legacy deterministic plan.
+    int extra_refineries = -1;   // [General] AIExtraRefineries=2,1,0 (Rules+0x1378)
+    int pick_wall_pct = -1;      // [General] AIPickWallDefensePercent=50,25,10 (Rules+0xdd8)
 };
 
 // mods for difficulty d: values from groups[d], defense_target from
@@ -275,9 +280,19 @@ struct BuildDecision {
 // !progress FORCE-EMIT
 // cycle-breaker guarantees termination on an unsatisfiable/cyclic prereq set.
 // Catalog gaps (-1) are skipped.
+//
+// W6-03-06: with `rng` and ai.extra_refineries >= 0 (a skirmish house) the
+// plan follows FUN_005052d0 instead: ONE refinery in the topo sort, then
+// AIExtraRefineries more at rand(firstRefinery, n-1)+1, then the per-difficulty
+// base-defence placeholders each at rand(3, n-1)+1 -- spread through the
+// whole build-out rather than a tail block. A placeholder resolves (in plan
+// order) like FUN_004fe200's -1 node: with rand(0,99) < AIPickWallDefensePercent
+// and a defence ahead of it, a wall node; else a defence whose prereqs the
+// plan before it meets (none -> the node is dropped).
 std::vector<PlannedNode> build_base_plan(const BaseView& view, const AiCatalog& cat,
                                          const std::vector<BuildingTypeDef>& roster,
-                                         const AiRules& ai, const DifficultyMods& mods);
+                                         const AiRules& ai, const DifficultyMods& mods,
+                                         std::uint32_t* rng = nullptr);
 
 // Walk the ordered plan ONE structure at a time [RE-GATE APPLIED: ai-base.md
 // §1/§2/§2a — FUN_004fe200 is a HEAD-ONLY dispatcher; the single

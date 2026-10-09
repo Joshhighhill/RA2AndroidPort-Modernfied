@@ -2869,7 +2869,7 @@ void World::step_ai_houses(double dt) {
         //    still exercise that lazy path directly.)
         if (rec.state.plan.empty()) {
             const BaseView v0 = make_ai_base_view(h, rec);
-            rec.state.plan = build_base_plan(v0, cfg.catalog, cfg.roster, cfg.ai, cfg.mods);
+            rec.state.plan = build_base_plan(v0, cfg.catalog, cfg.roster, cfg.ai, cfg.mods, &rec.state.rng);
             // Continue the stable-id counter past the ids build_base_plan
             // assigned (identical to next_build's own sync).
             rec.state.next_node_id = 0;

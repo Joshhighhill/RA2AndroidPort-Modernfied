@@ -149,6 +149,16 @@ ra2engine::AiHouseConfig make_ai_slot_config(const ra2engine::SkirmishSlot& s, d
         const int c = ra2engine::difficulty_class_index(s.diff);
         acfg.team.harvesters_per_refinery = c < (int)v.size() ? std::atoi(v[(std::size_t)c].c_str()) : 1;
     }
+    {   // W6-03-06 [RE: FUN_005052d0 Rules+0x1378 / FUN_004fe200 Rules+0xdd8] at
+        // house+0x184: AIExtraRefineries=2,1,0 and AIPickWallDefensePercent=50,25,10.
+        const int c = ra2engine::difficulty_class_index(s.diff);
+        auto at = [&](const char* key, int def) {
+            const std::vector<std::string> v = aiside::csv_tokens(rules.section_string("General", key, ""));
+            return c < (int)v.size() ? std::max(0, std::atoi(v[(std::size_t)c].c_str())) : def;
+        };
+        acfg.ai.extra_refineries = at("AIExtraRefineries", 0);
+        acfg.ai.pick_wall_pct = at("AIPickWallDefensePercent", 0);
+    }
     {   // W6-03-03 [RE: FUN_00522a80; loader FUN_0066cf70 -> Rules+0x1320]:
         // AIVirtualPurifiers=4,2,0 ;h,m,e -- the skirmish AI's harvest bonus.
         const std::vector<std::string> v =
