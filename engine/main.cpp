@@ -1959,6 +1959,18 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
                 // facing never slewed onto a target, so the vehicle aim gate
                 // (FireError::FACING) held the Giant Squid's / Dolphin's fire forever.
                 d.combat.rot = rules.rot(e.id);
+            } else if (e.vehicle && !art.voxel(image)) {
+                // W6-04-10 [rules [DRON] TechLevel=4 Prerequisite=NAWEAP; artmd
+                // [DRON] Voxel=no]: a LAND SHP vehicle (the Terror Drone) went to
+                // the voxel loader, failed and was dropped -- no cameo, and the
+                // AI roster lost it too. It rides the infantry path, the same
+                // registration as the campaign (W3-FIX-A) and the cheat spawn
+                // (W2-GA-11 draws it with the SHP-vehicle frame rule); it is
+                // still built at the War Factory (UnitTypeDef::is_vehicle).
+                const ResolvedUnit ru = resolve_combat_unit(rules, e.id);
+                d.combat = ru.combat;
+                d.combat.is_vehicle = false;
+                d.combat.speed_cps = speed_to_cps(ru.speed);
             } else if (e.vehicle) {
                 VehicleAssets va = load_vehicle_assets(dir, ra2, ua.pal, e.id);
                 if (!va.ok) continue;                 // assets missing -> drop
@@ -5846,7 +5858,9 @@ public:
             MixFile conquer = ra2_.open_nested("conquer.mix");
             for (const std::vector<ra2engine::UnitTypeDef>* defs : {&ur_.defs, &ur_ai_.defs})
                 for (const ra2engine::UnitTypeDef& d : *defs) {
-                    if (d.is_vehicle || ua_.shps.count(d.combat.image)) continue;
+                    // W6-04-10: a land SHP vehicle (DRON) rides the infantry
+                    // path (combat.is_vehicle false) and needs its SHP here.
+                    if ((d.is_vehicle && d.combat.is_vehicle) || ua_.shps.count(d.combat.image)) continue;
                     try {
                         ua_.shps.emplace(d.combat.image, load_unit_shp(conquer, d.combat.image));
                         ua_.anims.emplace(d.combat.image, anim_from_art(art_, d.combat.image));
