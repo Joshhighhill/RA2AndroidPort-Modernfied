@@ -15,6 +15,19 @@ Engine fixes from docs/gap/wave6/02-missions.md (W6-02-01..05, 07, 08, 11, 12, 1
 - **TRN02 (Boot Camp 2): WON by real orders** (`m-trn02-real`, `gen/mk_trn02.py`).
 - **ALL09 paradrop correction (W6-02-19):** the captured Tech Airport grants ParaDropSpecial (Type=ParaDrop): an Allied owner drops AllyParaDropNum = **6** GIs per cycle (AmerParaDrop's 8 is the American power).
 - Real-order scripts re-run after the fixes: see the table in docs/gap/wave6/02-missions.md ("Mission scripts after the fixes"). SOV01 / SOV07 / SOV12 / ALL12-opening adapted; ALL05, ALL06, ALL10, ALL11, SOV09 now fail with the bisected causes listed there.
+## W6 restore R1 status (branch `w6r1`, on master 11ea069)
+
+Generator-only changes; no engine bug found, no gate re-pinned.
+
+| Script | Result | Difficulty | play_hash | Change |
+|---|---|---|---|---|
+| `m-all05-real` (`gen/mk_all05.py`) | **WON** f5561 | Normal (loading-screen default) | `dd42d4dd6a32152e` | The bisected cause (W6-02-11) was not the spy: the first spy still reaches the red plant (blackout at f~710). Tanya, left idle while the spy walked, auto-acquired a passing Conscript with the original threat radius, chased it north to (108,119) and the red dogs one-shot her at f~670 ('Tanya Dies' -> LOST, W6-02-14). She now keeps the dog-first micro (`act`) until the blackout. |
+| `m-all06-real` (`gen/mk_all06.py`) | **WON** f34825 | **Easy** (`set campaign ALL06u.MAP GDI 0`) | `3d03f0b40d706910` | First divergence vs the pre-wave-6 win: f900 (Prism demo, BadGuy1 37 units vs 36); by f6000 the start force is down to 13 units (was 22), BadGuy1 fields 35 units at f12000 (was 23), massing 55 Grizzlies takes until f21157 (was f18875). BadGuy2's Shock Troopers, Rhinos and a rebuilt Tesla Coil destroy the 58-tank sweep (killers: SHK, HTNK, defences; 58 -> 0, BadGuy2 loses 3 buildings). On Easy the same plan razes BadGuy2 with 54 tanks left. Sweep clicks are now sent only while a Grizzly is selected (one `click unit 0:MTNK:0` landed on a building and selected nothing -> `no building 2:TESLA:near`). |
+
+Also re-run, unchanged: `m-all01` PASS (f2304, `eb02e33e4f82942d`), `m-sov01-real` PASS (f6679, `7df46a58430c01e5`).
+
+Observed, not changed (outside this task): BadGuy2's dogs fire at Grizzlies (~580 `BadTeeth` shots in 500 frames during the sweep). `BadTeeth`'s warhead `ParasiteDog` has Verses 0% against heavy armour, which the original treats as no legal target. No Grizzly death was credited to a dog, so the shots do not affect the result.
+
 ## W4-FIX-SEQ status (wave-4 fix agent 4, branch `w4fix-seq`)
 
 The same no-input runs (`scratch\play\sq-*.play`, 400 campaign seconds) were re-run on the fixed tree; real-order play

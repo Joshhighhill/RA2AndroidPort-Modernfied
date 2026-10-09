@@ -43,11 +43,11 @@ Temporary env toggles (removed before hand-back) bisected each regression to one
 | m-sov07-real, m-sov12-real | PASS on Easy | W6-02-11/16; on Normal the defence no longer holds. Easy = player ROF x0.8, computers x1.2. |
 | m-all12-real (opening) | PASS after a script change | W6-02-11 area guard: BadGuy1's Area Guard tanks (2 x range) attack the Con Yard; the IFVs are sent at them. |
 | **m-trn02-real (new)** | **WON** (real orders, `mk_trn02.py`) | needs W6-02-15. |
-| m-all05-real | FAIL | W6-02-11 (toggle 1 alone restores the win): the first disguised spy no longer reaches its power plant, so no blackout; Tanya then dies waiting. Not re-tuned. |
+| m-all05-real | FAIL -> **WON (R1, `w6r1`)** | W6-02-11: the spy still blacks out the plant; idle Tanya chased a Conscript into the red dogs. R1: she keeps her micro while waiting (wave4/05 "W6 restore R1"). |
 | m-all10-real | FAIL (RUNNING at the end) | W6-02-16 / W6-02-18 (either toggle restores the win): BadGuy2's waiting full-strength team (14 units) stays at its Con Yard and the broke army cannot clear it. |
 | m-all11-real | FAIL | W6-02-18: hydrofoil / Dreadnought patrols attack-move through the IFV staging area. With it off it still ends RUNNING (w6fix-units transport Size, see the coordinator note on the GHOST:8 / FV~:8 pairs). |
 | m-sov09-real | FAIL | the opening's timing (SOV09 is now Easy-calibrated: no Yuri wastes its slot on a car, SEALs engage at range + 1); not re-tuned. |
-| m-all06-real | FAIL (RUNNING at f140096) | long sweep; not bisected (802 s per run). |
+| m-all06-real | FAIL (RUNNING at f140096) -> **WON on Easy (R1, `w6r1`)** | Normal: BadGuy2 destroys the 58-tank sweep (see wave4/05 "W6 restore R1"). |
 | SOV08 V3 siege attempt | not won | the V3 cameo clicks queued nothing (only one V3 built, f10385); the Vlad2 flak circles also cover every 18-cell V3 site west of the White House except (84,22)/(84,23) (path within 9.7 of a flak). Generator not committed. |
 | ALL12 / SOV09 / ALL09 / SOV10 full wins | not attempted | time spent on the regressions above. |
 

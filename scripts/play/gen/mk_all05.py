@@ -18,7 +18,10 @@ when the base has no Tesla Power Plant (NAPOWR) left.
 
 Tanya's micro (act): shoot the nearest dog first, then the nearest enemy in
 range, else continue the order; never chase out of the leash. `repeat` keeps
-the script small (play_script.cpp expands it).
+the script small (play_script.cpp expands it). W6 (R1): Tanya keeps that micro
+while the first spy walks to the red plant -- with the original threat radius
+(weapon range + 1, W6-02-11) she no longer stands safe; idle, she chased a
+passing Conscript north and the red dogs one-shot her (Tanya Dies -> LOST).
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -74,6 +77,7 @@ def c4(h, bid, n_alive, plant=80, spec=None):
 # 1-2: the red base
 act("click cell 104 134", 20, r=7)
 act("click cell 103 124", 30, r=7)
+act("click cell 103 124", 90, cond="blackout(4) == 0", r=7)
 p.add("until 900 blackout(4) > 0", "click unit 2:SPY:0", "click building 4:NAPOWR:1",
       "click unit 2:SPY:1", "click building 4:NATECH:0")
 c4(4, "NAPOWR", 3)
