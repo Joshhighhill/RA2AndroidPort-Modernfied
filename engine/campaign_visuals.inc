@@ -24,6 +24,9 @@ private:
                      bool moved = false; int cx = 0, cy = 0; };   // W4-MC-05: the camera the pan last set
     CampPan camp_pan_;
     std::vector<std::string> camp_anims_, camp_psys_;
+    // W6-06-04: the trigger-started particle systems (saved while alive).
+    struct TrigFx { std::string name; double x, y, z; int id; };
+    std::vector<TrigFx> trig_fx_;
     bool camp_lists_ = false;
 
     // PlayAnimAt / ParticleAnim index spaces. [RE: the AnimTypeClass and
@@ -135,7 +138,11 @@ private:
             case 88: {   // ParticleAnim
                 camp_load_lists();
                 if (r.value < 0 || r.value >= (int)camp_psys_.size() || !camp_wp(r.waypoint, x, y, lv)) break;
-                pres_.effects().spawn_system(camp_psys_[(std::size_t)r.value], x * 256.0, y * 256.0, lv * 104.0);
+                {
+                    const std::string& nm = camp_psys_[(std::size_t)r.value];
+                    const int id = pres_.effects().spawn_system(nm, x * 256.0, y * 256.0, lv * 104.0);
+                    if (id) trig_fx_.push_back({nm, x * 256.0, y * 256.0, lv * 104.0, id});   // W6-06-04
+                }
                 break;
             }
             case 104: {   // FlashTeam

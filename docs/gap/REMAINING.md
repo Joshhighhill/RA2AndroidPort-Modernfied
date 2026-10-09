@@ -388,7 +388,7 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
-| R-200 | No movies. MOVIES01/02.MIX on this install are 4-byte stubs, so there are no intro, briefing or win videos and no in-game movies (actions 10/100/116/117; ALL01 67/68/69). Play Movies and Sneak Peeks are greyed. Overlaps U-5 (W2-UI-26, A1-10, W4-SQ-13, 06#15, R8) | Data-limits | MINOR | DATA-LIMIT | `engine/main.cpp:7278`; `docs/gap/wave4/03-all01-opening.md:274` | – | N |
+| R-200 | No movies. MOVIES01/02.MIX on this install are 4-byte stubs, so there are no intro, briefing or win videos and no in-game movies (actions 10/100/116/117; ALL01 67/68/69). Play Movies and Sneak Peeks are greyed. Overlaps U-5 (W2-UI-26, A1-10, W4-SQ-13, 06#15, R8) | Data-limits | MINOR | DATA-LIMIT (w6fix-rel: Play Movies goes live and lists the campaign movies when the player supplies movie files, W6-06-13; the Android importer copies them, W6-06-06; Sneak Peeks stays greyed) | `engine/main.cpp:7278`; `docs/gap/wave4/03-all01-opening.md:274` | – | N |
 | R-201 | YR-only art is absent from the RA2 archives: NABNKR and NAINDP are unbuildable, SCHP has no voxel under the clone's naming, and the CASIN01E/S/W stop signs have no file (the original draws nothing either) | Data-limits | COSMETIC | DATA-LIMIT | `src/asset_fs.cpp:58`; `docs/gap/wave3/03-asset-anim-systems.md` census | – | N |
 
 ### Mission-proof agent P3 (branch `p3-missions`)
@@ -459,6 +459,16 @@ Fixed on the way to the ALL09/ALL10/SOV04 proofs (details and RE citations: `doc
 | P4-4 | Crushable= wall overlays (sandbags, prison fences) could not be crushed by Crusher vehicles | FIXED (`629b1e3`, RE-FALLBACK, save v23) |
 | P4-5 | Wall=yes warheads do not damage wall overlays (force-firing a wall does nothing); only crushing removes one | OPEN (not needed by the P4 proofs) |
 | P4-6 | ALL09 not won by real orders: `m-all09-opening` proves the opening to the airport + paradrop phase (pre-P3-merge runs reached the BadGuy1 ConYard capture), then BadGuy1's Attk Response teams overrun the force; needs a finer micro script | OPEN (tactical) |
+
+## Wave-6 fix agent #6 status (branch `w6fix-rel`)
+
+Shell, save/load, Android lifecycle and release: W6-06-02..16 and W6-01-10 are FIXED or PARTIAL
+as listed in `docs/gap/wave6/06-shell-release.md` section 6. Still open: W6-06-01 (save
+compatibility, decision D-1; only the messages were made clear), W6-06-17 (re-stage the phone
+package -- controller), W6-06-18 (real-phone performance = R-170). User decisions U-2 (name /
+icon), U-3 (licence wording; the About page carries a placeholder line) and U-4 (signing key;
+release builds now refuse the debug key unless `-Pra2.allowDebugSigning=true`) are unchanged.
+Save format v25; no gate re-pinned.
 
 ## Wave-6 touch fixes (branch `w6fix-touch`)
 

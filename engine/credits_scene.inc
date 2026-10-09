@@ -11,8 +11,10 @@
 
 class CreditsScene : public Scene {
 public:
-    CreditsScene(const Rules& rules, bool no_audio, const MenuArt& art)
-        : rules_(rules), no_audio_(no_audio), art_(art) {
+    // W6-06-07: `to_main` = the end-of-campaign roll (returns to the main
+    // menu, not to Movies & Credits).
+    CreditsScene(const Rules& rules, bool no_audio, const MenuArt& art, bool to_main = false)
+        : rules_(rules), no_audio_(no_audio), art_(art), to_main_(to_main) {
         try {
             const std::string dir = env_install_dir();
             ra2assets::MixFile ra2 = ra2assets::MixFile::open_path(dir + "ra2.mix");
@@ -81,10 +83,12 @@ public:
     Scene* next() override {
         if (!done_) return nullptr;
         done_ = false;
+        if (to_main_) return new MainMenuScene(rules_, no_audio_, art_);
         return new ShellScene(rules_, no_audio_, art_, PAGE_MOVIES);
     }
     void play_probe(ra2play::Probe& p) override {
         p.scene = "credits";
+        p.set("credits_to_main", to_main_ ? 1 : 0);
         p.set("credit_lines", static_cast<int>(lines_.size()));
         p.set("credit_scroll", static_cast<int>(scroll_));
     }
@@ -99,4 +103,10 @@ private:
     std::vector<Line> lines_;
     double scroll_ = 0.0;
     bool done_ = false;
+    bool to_main_ = false;
 };
+
+Scene* make_campaign_credits_scene(bool no_audio) {
+    if (g_menu_rules && g_menu_art) return new CreditsScene(*g_menu_rules, no_audio, *g_menu_art, /*to_main=*/true);
+    return make_main_menu_scene(no_audio);
+}

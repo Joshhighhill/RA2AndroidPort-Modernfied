@@ -1,0 +1,58 @@
+# campaign-end-w6 -- W6-06-07 / W6-06-08 / W6-06-11 acceptance.
+#  * Winning the last Allied mission (ALL12, [Basic] EndOfGame=yes) leaves
+#    Continue live on the Campaign Results page [RE: Do_Win FUN_006850b0 --
+#    EndOfGame -> the battle's FinalMovie, then the credits, then the menu].
+#    This install's MOVIES0x.MIX are stubs, so the movie is skipped and the
+#    credits roll straight away; they end on the MAIN menu.
+#  * The graph rows are named by side (GUI:Allies / GUI:Soviets), never by
+#    the map's INI house ids, and the map's own objects are not "Built".
+#  * Esc / Android Back on the Results page = Continue (its default button).
+#  * Then ALL01 lost: no First / Second Place panel after a failed mission,
+#    and Back = Main Menu (Continue is greyed).
+set render_every 600
+set on_quit continue
+set campaign ALL12s.MAP GDI
+
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+require scene == game
+wait 60
+cheat camp_fire Mission_Victory
+until 900 outcome == WON
+until 900 scene == result
+require scene == result
+assert end_of_game == 1                                   @W6-06-07
+assert graph_me_name == Allies                            @W6-06-08
+assert graph_them_name == Soviets                         @W6-06-08
+assert graph_them_built < 10                              @W6-06-08:built
+assert graph_me_built < 10                                @W6-06-08:built
+shot all12_result
+key escape
+until 120 scene == credits                                @W6-06-07 @W6-06-11
+require scene == credits
+assert credits_to_main == 1                               @W6-06-07
+wait 30
+key escape
+until 60 scene == "shell:Main Menu"                       @W6-06-07
+
+# ALL01 lost: no places panel, Back = Main Menu.
+click button "Single Player"
+click button "New Campaign"
+click well:allied
+click button Load
+until 30 scene == campaign-load
+click start
+until 300 scene == game
+require scene == game
+wait 30
+cheat kill_house 0
+until 900 outcome == LOST
+until 300 scene == result
+require scene == result
+assert places_shown == 0                                  @W6-06-08:places
+assert graph_me_name == Allies                            @W6-06-08
+shot all01_lost_result
+key escape
+until 60 scene == "shell:Main Menu"                       @W6-06-11
+end

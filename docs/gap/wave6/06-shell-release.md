@@ -89,3 +89,30 @@ Files the agent owns: `engine/savegame.*`, `engine/save_fields.hpp`, `engine/pre
 7. **W6-06-12** (S): clamp the window size and handle non-finite volumes.
 8. **W6-06-14 + W6-06-15 + W6-06-16** (S): vendored SDL, version-based `versionCode`, a release build that refuses the debug key, notices in the APK and an About row. Then re-stage the phone package (W6-06-17). The keystore and the texts wait on U-3/U-4.
 9. Later: W6-06-13 (after U-5), and W6-06-18 (needs a real phone).
+
+## 6. Fix status (wave-6 fix agent #6, branch `w6fix-rel`)
+
+Save format **v25** (v24 + the optional `PFX ` section, W6-06-04). No gate
+moved: `--demo-saveload` prints its pin `4cf40c63a14f07e7`.
+
+| ID | Status | What changed | Proof |
+|---|---|---|---|
+| W6-06-01 | PARTIAL (D-1 open) | Not frozen/migrated (user decision D-1). The load list says "Older version" / "Newer version" and a refused load says "Saved by another version of the engine: it cannot be loaded."; an unreadable/other-version AUTOSAVE is explained on the Resume page before it is removed; INSTALL / PHONE-README no longer promise that saves survive updates. | `engine/ingame_pages.inc`, `engine/resume_scene.inc` (Stale) |
+| W6-06-02 | FIXED | MinGW runtime linked statically (only `SDL2.dll` + Windows system DLLs remain), VERSIONINFO resource, `scripts/package-win.ps1` -> `dist/ra2engine-<ver>-win64/` + `.zip`, INSTALL.md section 2. | package script import check + `--version` with PATH = Windows only; the unzipped package ran `shell-smoke` PASS from a scratch folder |
+| W6-06-03 | FIXED | `Presentation::after_load` starts the SW event cursor at the loaded World's newest event. | `scripts/play/save-w6-fx.play` (ALL05 `evareq(EVA_NuclearSiloDetected)` equal to the uninterrupted run); SOV11 Iron Curtain the same |
+| W6-06-04 | FIXED | Damage smoke rebuilt on the first effects tick after a load; live trigger particle systems (action 88) saved in section `PFX ` and respawned. | `save-w6-fx.play` (`fx_systems` 1 = 1, was 0) |
+| W6-06-05 | FIXED | Launcher shortcut "Import game files" and Options > Game Files (Android) open the importer at any time; saves/settings kept. | emulator (see README section of this branch) |
+| W6-06-06 | FIXED | Importer copies by pattern: the 11 names + `expand##/ecache##/elocal##.mix`, `thememd.mix`, `MOVIES##/MOVMD##.MIX`, `*.bik` (into `Movies/`), also from a `Movies` sub-folder. INSTALL movie note fixed. | emulator |
+| W6-06-07 | FIXED | Results -> PostScore / PreMapSelect movies -> next mission; EndOfGame: Continue live -> battle FinalMovie (when present) -> credits -> main menu; SkipScore honoured. | `scripts/play/campaign-end-w6.play` (ALL12 won -> credits -> main menu) |
+| W6-06-08 | FIXED | Rows named by side (GUI:Allies / GUI:Soviets); map-placed objects not Built; no First/Second Place after a loss or a tie (a colour key instead). | `campaign-end-w6.play` |
+| W6-06-09 | FIXED | Shell-style Resume page (mission name, play time); MAIN MENU / Back asks before discarding; the autosave is kept until the resumed game ends. | `scripts/play/lifecycle-w6.play` |
+| W6-06-10 | FIXED | RA2.INI `[Engine] ResumeCampaign=` checkpoint on a won Results page; offered at start as "Continue Campaign?"; cleared when a mission starts or the player leaves for the menu. | `lifecycle-w6.play` |
+| W6-06-11 | FIXED | Esc/Back on Results = Continue (else Main Menu); Back on the campaign loading screen = main menu. | `campaign-end-w6.play`, `lifecycle-w6.play` |
+| W6-06-12 | FIXED | Window size clamped to the display / renderer texture limit with a 1280x720 fallback that rewrites `[Video]`; non-finite volumes -> default. | unit test `settings: a non-finite volume ...`; manual run with 20000x15000 + `nan` |
+| W6-06-13 | FIXED | Play Movies live when movie files exist; `movies_page.inc` lists the campaign's movies that are present and plays them. Sneak Peeks stays greyed. | `scripts/play/movies-w6.play` (run with `RA2_MOVIE_DIR`) |
+| W6-06-14 | FIXED | `cmake/sdl2_pin.cmake` (tarball URL + SHA-256) for both builds; the jni build downloads it when no desktop build dir exists. | `assembleDebug` in the fresh worktree (no `build/`) |
+| W6-06-15 | FIXED (key = U-4) | versionCode = major*10^7 + minor*10^5 + patch*10^3 + `-Pra2.buildNumber` (0.9.0 -> 900000, above the old commit-count codes); `assemble/bundle/packageRelease` fail without `keystore.properties` unless `-Pra2.allowDebugSigning=true`. | emulator `adb install -r` over the old APK |
+| W6-06-16 | FIXED (wording = U-3) | `LICENSE` + `THIRD_PARTY_NOTICES.md` in the APK `assets/` and the desktop zip; Options > About (version, disclaimer, licence placeholder line + LICENSE, notices embedded at build time); notices gained the MinGW-w64 runtime. | `scripts/play/about-w6.play`; `unzip -l` of the APK |
+| W6-06-17 | NOT DONE (controller) | Re-staging `D:\RA2-phone` is the controller's; `docs/PHONE-README.txt` updated. | – |
+| W6-06-18 | SKIPPED | Needs a real phone. | – |
+| W6-01-10 | FIXED | `RA2Activity.onDestroy` without `isFinishing()` -> `nativeKeepAutosave()`; `configChanges` += density, fontScale, colorMode, touchscreen, mcc, mnc, fontWeightAdjustment, grammaticalGender. | `lifecycle-w6.play` (`lifecycle relaunch`); emulator |

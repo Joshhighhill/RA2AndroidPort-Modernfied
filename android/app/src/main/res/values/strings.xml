@@ -14,4 +14,8 @@
     <string name="setup_copying">Copying %1$s …</string>
     <string name="setup_imported">Imported %1$d file(s).</string>
     <string name="setup_failed">Import failed: %1$s</string>
+    <string name="setup_title_ready">Red Alert 2 game files</string>
+    <string name="shortcut_import_short">Import game files</string>
+    <string name="shortcut_import_long">Import or replace the game files</string>
+    <string name="setup_reimport_note">You can import again at any time to add or replace files (campaign maps, music, patches, movies): long-press the app icon and choose Import game files, or in the game open Options, then Game Files. Your saves and settings are kept. If the game was already running, it reads the new files the next time it starts.</string>
 </resources>

@@ -181,6 +181,14 @@ TEST_CASE("settings: load applies the original clamps (FUN_005d8b00)") {
     CHECK(s.detail_level == 0);
 }
 
+TEST_CASE("settings: a non-finite volume falls back to the default (W6-06-12)") {
+    const Settings d;
+    Settings s = load_settings(IniDoc::parse("[Audio]\nSoundVolume=nan\nVoiceVolume=-nan\nScoreVolume=inf\n"));
+    CHECK(s.sound_volume == d.sound_volume);
+    CHECK(s.voice_volume == d.voice_volume);
+    CHECK(s.score_volume == d.score_volume);
+}
+
 TEST_CASE("settings: store->load round-trips every persisted field") {
     Settings a;
     a.game_speed = 5; a.difficulty = 2; a.scroll_method = 1; a.scroll_rate = 6;

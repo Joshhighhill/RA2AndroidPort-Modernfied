@@ -1,0 +1,64 @@
+# lifecycle-w6 -- W6-01-10 / W6-06-09 / W6-06-10 / W6-06-11 acceptance.
+#  A. Android background autosave, then an activity restart (`lifecycle
+#     relaunch`: the running GameScene is destroyed as on a config change,
+#     the app starts again). The autosave must survive the teardown and the
+#     start must show the shell-style Resume page; MAIN MENU asks first
+#     (Cancel keeps it); RESUME reloads the game at the saved frame.
+#  B. The resumed mission is won: the autosave is gone (a normal end), the
+#     Campaign Results page checkpoints the next mission; a restart on the
+#     Results page offers "Continue Campaign?" and Continue opens ALL03's
+#     loading screen. Back (Esc) there returns to the main menu and drops the
+#     checkpoint, so the next start is the plain main menu.
+set render_every 600
+set on_quit continue
+set campaign ALL02s.MAP GDI
+
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+require scene == game
+wait 150
+lifecycle background
+wait 3
+let cf0 = campaign_frame
+lifecycle relaunch
+until 30 scene == resume                               @W6-01-10
+require scene == resume
+assert resume_kind == autosave                         @W6-01-10
+assert resume_map == ALL02s.MAP                        @W6-06-09
+shot resume_autosave
+click menu
+wait 2
+assert confirm_open == 1                               @W6-06-09:confirm
+click confirm:no
+wait 2
+assert scene == resume                                 @W6-06-09:confirm
+click resume
+until 900 scene == game and sf > 5
+require scene == game
+assert campaign_frame >= $cf0 and campaign_frame <= $cf0+8    @W6-06-09:resume
+
+# B. Win the resumed mission (m-all02's route).
+until 6000 objectives >= 1
+cheat camp_capture ENGINEER 13 CACOLO01
+cheat kill_house 7
+cheat kill_house 8
+until 9000 outcome == WON
+until 900 scene == result
+require scene == result
+assert next_map == ALL03u.MAP
+shot result_won
+lifecycle relaunch
+until 30 scene == resume                               @W6-06-10
+require scene == resume
+assert resume_kind == campaign                         @W6-06-10
+assert resume_map == ALL03u.MAP                        @W6-06-10
+shot resume_campaign
+click resume
+until 60 scene == campaign-load                        @W6-06-10
+assert map == ALL03u.MAP                               @W6-06-10
+key escape
+until 60 scene == "shell:Main Menu"                    @W6-06-11:loading-back
+lifecycle relaunch
+until 30 scene == "shell:Main Menu"                    @W6-06-10:cleared
+end

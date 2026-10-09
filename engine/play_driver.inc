@@ -81,6 +81,19 @@ public:
         return true;
     }
 
+    // W6-01-10: `lifecycle relaunch` (run_scene_driver asks once per frame).
+    bool want_relaunch() override {
+        const bool r = relaunch_;
+        relaunch_ = false;
+        return r;
+    }
+    ::Scene* relaunch_scene() override {
+        ra2engine::os_set_keep_autosave(false);   // the "new process"
+        if (::Scene* r = make_resume_scene(/*no_audio=*/true)) return r;
+        return make_main_menu_scene(/*no_audio=*/true);
+    }
+    bool relaunch_ = false;
+
     // Both probe surfaces of the current scene, merged (G's typed keys win).
     void probe(Probe& p) {
         if (!scene_ptr_) return;
@@ -386,6 +399,26 @@ private:
             view_cy_ = cy;
             have_view_ = true;
             return kNext;
+        }
+        // W6-01-10 / W6-06-09: `lifecycle background|foreground` queues the
+        // Android app event (the background autosave); `lifecycle relaunch`
+        // ends the running scene as an activity restart does (destructors run,
+        // the autosave is kept) and starts again from the app's startup path
+        // (the Resume page, else the main menu).
+        if (op == "lifecycle") {
+            ++pc_;
+            const std::string a = lower(c.args[0]);
+            ra2engine::InputEvent e;
+            if (a == "background") e.kind = ra2engine::InputEvent::AppBackground;
+            else if (a == "foreground") e.kind = ra2engine::InputEvent::AppForeground;
+            else if (a == "relaunch") {
+                ra2engine::os_set_keep_autosave(true);
+                relaunch_ = true;
+                emit("PLAY lifecycle relaunch L" + std::to_string(c.line), true);
+                return kConsume;
+            } else { fail(c, "lifecycle background|foreground|relaunch"); return kNext; }
+            q_.push_back(e);
+            return kConsume;
         }
         // ---- input gestures (each consumes the frame) ----
         last_input_line_ = c.line;
