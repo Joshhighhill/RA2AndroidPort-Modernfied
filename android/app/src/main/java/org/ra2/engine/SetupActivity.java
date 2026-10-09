@@ -82,7 +82,7 @@ public class SetupActivity extends Activity {
         return null;
     }
 
-    private TextView status;
+    private TextView status, title;
     private ProgressBar progress;
     private Button importButton, startButton, exitButton;
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -158,7 +158,7 @@ public class SetupActivity extends Activity {
         root.setBackgroundColor(Color.BLACK);
         root.setPadding(dp(24), dp(16), dp(24), dp(16));
 
-        TextView title = new TextView(this);
+        title = new TextView(this);
         title.setText(R.string.setup_title);
         title.setTextColor(Color.rgb(255, 200, 90));
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
@@ -197,6 +197,8 @@ public class SetupActivity extends Activity {
         StringBuilder sb = new StringBuilder();
         sb.append(getString(R.string.setup_intro)).append("\n\n");
         sb.append(getString(R.string.setup_folder)).append("\n  ").append(dir.getAbsolutePath()).append("\n\n");
+        // W6-06-05: opened to add / replace files with everything present.
+        title.setText(req.isEmpty() ? R.string.setup_title_ready : R.string.setup_title);
         if (req.isEmpty()) {
             sb.append(getString(R.string.setup_ready)).append("\n");
         } else {
