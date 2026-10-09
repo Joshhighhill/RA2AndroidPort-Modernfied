@@ -2462,6 +2462,8 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         d.crewed           = rules.section_flag(id, "Crewed", false);
         d.soylent          = (int)rules.section_double(id, "Soylent", 0.0);
         d.ore_purifier     = rules.section_flag(id, "OrePurifier", false);   // G-27
+        d.wall             = rules.section_flag(id, "Wall", false);            // W6-03-01
+        d.insignificant    = rules.section_flag(id, "Insignificant", false);   // W6-03-01
         // W2-SK-12/19/20: Capturable= / Spyable= / UnitRepair= (absent = no in
         // rulesmd: GAPILL/TESLA/ATESLA/NAMISL/GACSPH/GAGAP say false, walls say
         // nothing) and the factory category a spy's veterancy bonus follows.

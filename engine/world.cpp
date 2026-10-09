@@ -526,6 +526,22 @@ bool World::house_defeated(int h) const {
 
 int World::winning_team() const { return winning_team_; }
 
+// W6-03-01 [RE: rulesmd [OverlayTypes] 3=GAWALL, 27=NAWALL -- a placed
+// Wall=yes type is an overlay in the original, not a BuildingClass, so the
+// ShortGame "owns a building" count never sees it; Insignificant=yes types
+// (walls, tech/civilian structures, lamps; ObjectType +0x232) never keep a
+// house alive]. Untyped test buildings (type out of range) count as before.
+bool World::building_insignificant(const Building& b) const {
+    const std::vector<BuildingTypeDef>& bts = btypes();
+    if (b.type < 0 || b.type >= (int)bts.size()) return false;
+    return bts[b.type].wall || bts[b.type].insignificant;
+}
+
+bool World::building_is_wall(const Building& b) const {
+    const std::vector<BuildingTypeDef>& bts = btypes();
+    return b.type >= 0 && b.type < (int)bts.size() && bts[b.type].wall;
+}
+
 void World::step_victory() {
     if (!victory_enabled_) return;                           // firewall (spec §Global)
     const int n = house_count();
@@ -534,7 +550,7 @@ void World::step_victory() {
     std::vector<int> blds(n, 0), unts(n, 0);
     for (const Building& b : buildings_)
         if (b.alive && b.state != Building::State::Dead &&
-            b.house >= 0 && b.house < n) ++blds[b.house];
+            b.house >= 0 && b.house < n && !building_insignificant(b)) ++blds[b.house];
     // gF [RE: docs/re/mcv-deploy.md §5, HouseClass::AI FUN_004F8350]: under
     // ShortGame a house is defeated only when it owns no building AND no unit
     // of a [General] BaseUnit type (an MCV that can still found a base) --
@@ -3155,7 +3171,9 @@ void World::step_ai_houses(double dt) {
 
 bool World::ai_house_alive(int house) const {
     for (const Building& b : buildings_)
-        if (b.alive && b.house == house && b.state != Building::State::Dead) return true;
+        if (b.alive && b.house == house && b.state != Building::State::Dead &&
+            !building_insignificant(b))   // W6-03-01
+            return true;
     for (const Unit& u : units_)
         if (u.alive && u.die_time < 0.0 && u.house == house) return true;
     return false;
@@ -3239,6 +3257,7 @@ void World::ai_try_fire_superweapon(int house, HouseAiRec& rec) {
     std::vector<Cellxy> qties;
     for (const Building& b : buildings_) {
         if (!b.alive || b.state == Building::State::Dead || !is_enemy(house, b.house)) continue;
+        if (building_is_wall(b)) continue;   // W6-03-01: walls are overlays, never a target
         int v = ai.sw_value_building;
         const std::uint8_t bits = (b.type >= 0 && b.type < (int)tc.building_class.size())
                                       ? tc.building_class[b.type] : 0;
@@ -3393,6 +3412,7 @@ bool World::ai_quarry_exists(int house, const HouseAiRec& rec, int quarry) const
             return true;
     for (const Building& b : buildings_)
         if (b.alive && b.state != Building::State::Dead && is_enemy(house, b.house) &&
+            !building_is_wall(b) &&   // W6-03-01: walls are overlays, never a quarry
             quarry_building_match(quarry, b, rec.cfg.team))
             return true;
     return false;
@@ -3435,6 +3455,7 @@ int World::ai_pick_quarry_building(int house, const HouseAiRec& rec, int quarry,
     for (int i = 0; i < (int)buildings_.size(); ++i) {
         const Building& b = buildings_[i];
         if (!b.alive || b.state == Building::State::Dead || !is_enemy(house, b.house)) continue;
+        if (building_is_wall(b)) continue;   // W6-03-01: walls are overlays, never a quarry
         if (!quarry_building_match(quarry, b, rec.cfg.team)) continue;
         const long long dx = b.cx - nx, dy = b.cy - ny;
         const long long value = 1;                      // [RE-FALLBACK] proxy

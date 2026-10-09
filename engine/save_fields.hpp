@@ -857,6 +857,8 @@ template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.max_occupants);
     io(ar, v.bridge_repair_hut);
     io(ar, v.w5);   // wave-5 abilities (agent C)
+    io(ar, v.wall);            // W6-03-01 (v25)
+    io(ar, v.insignificant);   // W6-03-01 (v25)
 }
 
 // --- the live objects ---

@@ -1316,6 +1316,10 @@ public:
     // Alliance team for h (sentinel -1 -> own id). Non-combatant houses keep their
     // own team but never ally/enemy anyone (see is_enemy/are_allied, Task 4).
     int  house_team(int h) const;
+    // W6-03-01: Wall=/Insignificant= types never count for victory; walls are
+    // never an AI quarry (overlays in the original).
+    bool building_insignificant(const Building& b) const;
+    bool building_is_wall(const Building& b) const;
     bool house_combatant(int h) const;
     // Configure house h. Grows houses_ (and the per-house vectors, once T3 lands)
     // to h+1 with defaults if needed, sets houses_[h]=rec, and OPENS the firewall
