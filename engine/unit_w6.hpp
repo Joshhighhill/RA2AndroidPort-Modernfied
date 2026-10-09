@@ -86,6 +86,9 @@ struct BldTypeW6 {
     int wall_levels = 0;
     // W6-04-18: PowersUnit= -- the unit IMAGE this building keeps active ("" none).
     std::string powers_unit;
+    // R-210: Gate=yes (GAGATE_A / NAGATE_A ...) [RE: IsCellOccupied reads the
+    // building type's +0x16B7 flag -> the gate opens for an allied mover].
+    bool gate = false;
 };
 
 // W6-04-05: one wall OverlayType (rules Strength=, art DamageLevels=, Armor=wood).

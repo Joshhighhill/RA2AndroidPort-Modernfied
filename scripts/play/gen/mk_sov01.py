@@ -25,11 +25,21 @@ p.add("until 1200 units(0,SENGINEER) >= 1")
 # W6-02-11: idle units now engage at weapon range + 1 (not Sight), so the engineer
 # walks INSIDE the Conscript group to (97,92) (it used to trail it while the escorts
 # covered it from their Sight range), then on alone as before.
+# R-210: with the height gate the Conscripts and civilians no longer take cliff
+# steps, so the fight on the way plays out differently; the escort now stays with
+# the engineer for the second leg too (alone it met three GIs at (100,111)).
 p.select_types(["E2", "SENGINEER"]).add("click cell 97 92", "until 900 sel_moving == 0", "wait 60")
+p.select_types(["E2", "SENGINEER"]).add("click cell 99 95", "until 1500 sel_moving == 0", "wait 30")
 p.select_types(["SENGINEER"]).add("click cell 99 95", "until 1500 sel_moving == 0", "dump", "click unit 0:SENGINEER:0", "click building 4:CABHUT:1", "wait 20", "dump",
       "until 1800 bridge_destroyed < $broken", "assert units(0,SENGINEER) == 0", "assert outcome == RUNNING", "shot repaired")
 p.train("E2", 2, 25)
 p.add("wait 1500")
+# R-210: the starting Rhinos sit in the pocket west of the one-cell gully bridge
+# (45,84), broken at f0 like the east span; they used to drop into the gully and
+# climb out (a 4-level cliff both ways) to join the assault. The Conscripts now
+# clear the GIs in the (62..72, 84..85) corridor and go round to the gully first.
+p.select_types(["E2"]).add("click cell 66 85", "until 1800 sel_moving == 0", "wait 450")
+p.select_types(["E2"]).add("click cell 50 84", "until 1800 sel_moving == 0", "wait 300")
 for k in range(10):
     for piece in ["CAWA2A","CAWA2B","CAWA2C","CAWA2D"]:
         g = f"outcome == RUNNING and buildings(4,{piece}) > 0"
