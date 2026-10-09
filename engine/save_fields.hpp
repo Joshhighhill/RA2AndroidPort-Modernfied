@@ -548,6 +548,7 @@ template <class Ar> void fields(Ar& ar, VeterancyRules& v) {
 }
 template <class Ar> void fields(Ar& ar, WeaponStats& v) {
     io(ar, v.damage); io(ar, v.rof); io(ar, v.range); io(ar, v.verses);
+    io(ar, v.omni_fire);   // v25: W6-04-06
     io(ar, v.cell_spread); io(ar, v.percent_at_max);
     io(ar, v.affects_allies);   // v20: W5-B
     io(ar, v.inf_death); io(ar, v.prone_damage);   // W3-B
@@ -635,6 +636,7 @@ template <class Ar> void fields(Ar& ar, WeaponSpec& v) {
     io(ar, v.slot_set); io(ar, v.aa); io(ar, v.ag); io(ar, v.proj);   // wave-5 R-048
     io(ar, v.delay_kill); io(ar, v.delay_kill_frames); io(ar, v.delay_kill_at_max);   // P4 (v23)
     io(ar, v.burst);   // v25: W6-04-01
+    io(ar, v.omni_fire);   // v25: W6-04-06
 }
 template <class Ar> void fields(Ar& ar, AbilityProfile& v) {
     io(ar, v.fire_kind);

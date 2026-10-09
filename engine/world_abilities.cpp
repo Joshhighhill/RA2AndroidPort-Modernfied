@@ -295,6 +295,7 @@ void World::ability_apply_weapon_fields(Unit& u, const WeaponSpec& w) {
     u.w_damage = w.damage;
     u.w_rof = w.rof;
     u.w6.burst = w.burst;   // W6-04-01 (IFV HoverMissile 2, CRMP5 ...)
+    u.w6.omni_fire = w.omni_fire;   // W6-04-06
     u.w_range = w.range;
     u.w_verses = w.verses;
     u.w_cell_spread = w.cell_spread;

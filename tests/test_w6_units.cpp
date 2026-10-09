@@ -81,3 +81,21 @@ TEST_CASE("w6units W6-04-02: shrapnel keys come from the projectile, elite slots
     CHECK(sref.slot[0].shrapnel_count == 5);
     CHECK(sref.elite[0].shrapnel_count == 5);
 }
+
+TEST_CASE("w6units W6-04-06: OmniFire is read for every weapon slot (Aegis Medusa, launchers)") {
+    if (ra2fixture::rulesmd_bytes().empty()) { MESSAGE("no install"); return; }
+    const ra2assets::Rules& r = ra2fixture::rulesmd();
+    CHECK(resolve_weapon_slot(r, "Medusa").omni_fire);
+    CHECK(resolve_weapon_slot(r, "HornetLauncher").omni_fire);
+    CHECK(resolve_weapon_slot(r, "DredLauncher").omni_fire);
+    CHECK_FALSE(resolve_weapon_slot(r, "120mm").omni_fire);
+    // activate_weapon_slot carries the slot's OmniFire into the unit.
+    Unit u;
+    u.w2.valid = true;
+    u.w2.omni_fire = true;
+    u.vet.base.omni_fire = false;
+    activate_weapon_slot(u, 1, nullptr);
+    CHECK(u.w6.omni_fire);
+    activate_weapon_slot(u, 0, nullptr);
+    CHECK_FALSE(u.w6.omni_fire);
+}

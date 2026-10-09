@@ -811,7 +811,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                         // step_combat, using this same facing). Infantry are
                         // exempt -- zero behavior change. rof_cool untouched
                         // while unaimed.
-                        if (u.is_vehicle && !u.omni_fire &&
+                        if (u.is_vehicle && !u.omni_fire && !u.w6.omni_fire &&
                             !vehicle_aimed(u, facing_u16_from_delta(
                                                   static_cast<double>(nx) - u.fx,
                                                   static_cast<double>(ny) - u.fy)))
@@ -922,7 +922,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
             if (weapon_in_range(world, u, u.attack_cell_x * 256, u.attack_cell_y * 256,
                                 world.cell_level(u.attack_cell_x, u.attack_cell_y) * 104)) {
                 if (u.rof_cool <= 0.0) {
-                    if (u.is_vehicle && !u.omni_fire &&
+                    if (u.is_vehicle && !u.omni_fire && !u.w6.omni_fire &&
                         !vehicle_aimed(u, facing_u16_from_delta(
                                               static_cast<double>(u.attack_cell_x) - u.fx,
                                               static_cast<double>(u.attack_cell_y) - u.fy)))
@@ -1118,8 +1118,11 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                 // the target (step_turrets ran this frame, before step_combat,
                 // computing `want` from these same fx/fy, so the exact
                 // comparison in vehicle_aimed is well-defined). Infantry are
-                // exempt -- zero behavior change.
-                if (u.is_vehicle && !u.omni_fire &&
+                // exempt -- zero behavior change. W6-04-06 [RE: WeaponType
+                // OmniFire +0x12B bypasses the facing gate, aircraft.md §4]: an
+                // OmniFire weapon (Aegis Medusa, Carrier/Dreadnought launchers)
+                // fires without the hull or turret facing the target.
+                if (u.is_vehicle && !u.omni_fire && !u.w6.omni_fire &&
                     !vehicle_aimed(u, facing_u16_from_delta(v.fx - u.fx, v.fy - u.fy)))
                     continue;  // hold fire this frame; rof_cool untouched
                 try_fire(world, units, buildings, u, v, i, u.target, occ, launches, rof_rng);

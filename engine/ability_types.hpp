@@ -41,6 +41,7 @@ struct WeaponSpec {
     int delay_kill_frames = 0;
     double delay_kill_at_max = 1.0;
     int burst = 1;                     // W6-04-01: weapon Burst= (+0x9C)
+    bool omni_fire = false;            // W6-04-06: weapon OmniFire= (+0x12B)
 };
 
 // Per-type ability profile, resolved once from rules by the caller (World is
