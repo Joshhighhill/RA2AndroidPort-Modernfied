@@ -7409,14 +7409,15 @@ private:
     void draw_campaign_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc) {
         const long f = campaign_->frame_count();
         int y = 8;
+        const double sc = hud_touch_scale();   // W6-01-12: 1.5x on a touch canvas
         for (const HudMsg& m : msgs_)
-            if (m.expire > msg_clock_) y += hud_text_height(m.text) + 4;
+            if (m.expire > msg_clock_) y += static_cast<int>(hud_text_height(m.text) * sc) + 4;
         const SDL_Color col = hud_ui_color();
         for (const CampaignRuntime::Objective& o : campaign_->objectives()) {
             if (f - o.frame > 300) continue;
-            const std::string t = hud_wrap(o.text, playfield_w_ - 32);
-            hud_text(ren, tc, t, 8, y, col, kHudLeft, false, true);
-            y += hud_text_height(t) + 4;
+            const std::string t = hud_wrap(o.text, static_cast<int>((playfield_w_ - 32) / sc));
+            hud_text(ren, tc, t, 8, y, col, kHudLeft, false, true, sc);
+            y += static_cast<int>(hud_text_height(t) * sc) + 4;
         }
         // Mission timer (actions 23-27) when running.
         const ra2engine::MapTriggerSystem& ts = campaign_->triggers();
