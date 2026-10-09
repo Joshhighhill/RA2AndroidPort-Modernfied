@@ -204,6 +204,15 @@
             if (b.state == ra2engine::Building::State::Idle) p.add("built(" + hs + "," + id + ")", 1);
         }
         p.set("selected_building", input_.selected_building());
+        {   // W6-01-01: the selected building's rules id ("" none)
+            const int sb = input_.selected_building();
+            const auto& bs = world_.buildings();
+            std::string sid;
+            if (sb >= 0 && sb < static_cast<int>(bs.size()) && bs[(size_t)sb].type >= 0 &&
+                bs[(size_t)sb].type < static_cast<int>(ba_.roster.size()))
+                sid = ba_.roster[(size_t)bs[(size_t)sb].type].id;
+            p.set_s("selected_building_type", sid);
+        }
         {   // own objects inside the playfield view (camera opens on the player?)
             int on = 0;
             auto vis = [&](double fx, double fy) {
@@ -238,6 +247,11 @@
             p.set("touch_bar_open", touch_bar_open_ ? 1 : 0);
             p.set("touch_banner", touch_banner_visible() ? 1 : 0);
             p.set("touch_mode", touch_mode());
+            p.set("touch_aim", touch_aim_bld_);                 // W6-01-02 aimed building (-1 none)
+            p.set("touch_aim_sw", touch_aim_cx_ != INT_MIN ? 1 : 0);   // W6-01-07 SW target aimed
+            p.set("cameo_menu", cameo_menu_buttons().empty() ? 0 : 1); // W6-01-03 cameo popup up
+            p.set("touch_box", touch_box_ ? 1 : 0);             // W6-01-11 sticky BOX
+            p.set("touch_page2", touch_page2_ ? 1 : 0);         // W6-01-09 MORE page
             p.set("tooltip_up", tooltip_now().empty() ? 0 : 1);
             double vcx = 0, vcy = 0;
             if (campaign_) camp_view_cell(vcx, vcy);
@@ -320,10 +334,39 @@
                     ra2play::Rect{r.x, r.y, r.w, r.h};
             }
         }
+        // W6-01-01: `art:<ID>` -- a point on the UPPER art of house 0's first
+        // building of that type (an opaque pixel of the drawn frame, one fifth
+        // down, nearest the frame's centre column): a tap there is a tap on
+        // the tower head / the lab dome, not on the foundation.
+        if (ba_.ok) {
+            for (int bi = 0; bi < static_cast<int>(world_.buildings().size()); ++bi) {
+                const ra2engine::Building& b = world_.buildings()[static_cast<std::size_t>(bi)];
+                if (b.house != 0 || !b.alive || b.state == ra2engine::Building::State::Dead) continue;
+                if (b.type < 0 || b.type >= static_cast<int>(ba_.roster.size())) continue;
+                const std::string key = "art:" + ba_.roster[static_cast<std::size_t>(b.type)].id;
+                if (p.targets.count(key)) continue;
+                const BuildingArt& art = ba_.art[static_cast<std::size_t>(b.type)];
+                if (!art.ok || art.shp.count() <= 0) continue;
+                const ra2assets::MapCell* mc = a_.map.at(b.cx, b.cy);
+                const ra2engine::ScreenPt dp = ra2engine::building_draw_point(b.cx, b.cy, mc ? mc->level : 0);
+                const ra2assets::ShpFile::Frame f = art.shp.frame_info(0);
+                const int x0 = dp.x + cam_.x - art.shp.width() / 2 + f.x, y0 = dp.y + cam_.y - art.shp.height() / 2 + f.y;
+                const int yy = y0 + f.h / 5;
+                for (int d = 0; d < f.w; ++d) {
+                    const int xx = x0 + f.w / 2 + ((d & 1) ? -(d + 1) / 2 : d / 2);
+                    if (input_.building_art_at(xx, yy) == bi) {
+                        p.targets[key] = ra2play::Rect{xx, yy, 1, 1};
+                        break;
+                    }
+                }
+            }
+        }
         if (touch_banner_visible()) {
             const SDL_Rect r = touch_cancel_rect();
             p.targets["touch:cancel"] = ra2play::Rect{r.x, r.y, r.w, r.h};
         }
+        for (const CameoMenuBtn& b : cameo_menu_buttons())   // W6-01-03 popup buttons
+            p.targets[std::string("cmenu:") + b.label] = ra2play::Rect{b.r.x, b.r.y, b.r.w, b.r.h};
         std::string ids;
         for (int t = 0; t < 4; ++t) {
             for (int e : tab_buildable(t)) {

@@ -49,10 +49,11 @@
     void draw_messages(SDL_Renderer* ren, ra2engine::TextureCache& tc) const {
         int y = 8;
         const SDL_Color col = hud_ui_color();
+        const double sc = hud_touch_scale();   // W6-01-12: 1.5x on a touch canvas
         for (const HudMsg& m : msgs_) {
             if (m.expire <= msg_clock_) continue;
-            hud_text(ren, tc, m.text, 8, y, col, kHudLeft, false, true);
-            y += hud_text_height(m.text) + 4;
+            hud_text(ren, tc, m.text, 8, y, col, kHudLeft, false, true, sc);
+            y += static_cast<int>(hud_text_height(m.text) * sc) + 4;
         }
     }
     void draw_mission_timer(SDL_Renderer* ren, ra2engine::TextureCache& tc, long frames_left) const {

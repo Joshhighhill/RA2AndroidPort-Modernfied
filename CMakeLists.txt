@@ -112,7 +112,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_world.cpp engine/world.cpp
 # terrain_screen_bounds, which is defined in engine/world.cpp (already a
 # source above) rather than engine/iso_renderer.cpp so this stays SDL-free.
 target_sources(ra2assets_tests PRIVATE tests/test_input.cpp engine/input.cpp engine/input_original.cpp
-    tests/test_input_original.cpp)
+    tests/test_input_original.cpp tests/test_input_touch_w6.cpp)
 # G-04: KeyboardMD.ini hotkey table.
 target_sources(ra2assets_tests PRIVATE tests/test_hotkeys.cpp engine/hotkeys.cpp)
 # G-70/G-71: touch gesture layer.

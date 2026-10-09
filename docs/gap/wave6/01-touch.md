@@ -131,3 +131,24 @@ stood next to the building. With one GI at its foot, the Prism Tower became 0 % 
 9. **W6-01-08** (radar tap centres on touch) and **W6-01-15** (`set canvas WxH` in `--play`) (S).
 
 The real-phone fps and load numbers (R-170 / W6-01-16) still need the user's phone. INSTALL.md §5 has the steps.
+
+## 5. Fix status (branch `w6fix-touch`)
+
+| ID | Status | Fix |
+|---|---|---|
+| W6-01-01 | FIXED | `Input::pick_building`: mouse = the original (drawn-object hotspot `dx^2 + 0.5 dy^2 < 200` at the origin cell's centre, then the cell; `docs/re/object-pick.md`); touch = the drawn art first (main frame + ActiveAnim/IdleAnim/SuperAnim slots), and a unit's selection box only wins on its body. Hit maps in `01-evidence-fix/`: Prism 100 %, Tesla 100 %, Battle Lab 100 %, every type >= 94 %; the Prism head selects the tower with GIs at its foot (`ctl-touch-w6`). |
+| W6-01-02 | FIXED | Sell / repair on touch: tap = mark (outline + "TAP AGAIN TO SELL <NAME>"), second tap on the same building = commit. The dome tap no longer sells the ConYard (`ctl-touch-w6`). |
+| W6-01-03 | FIXED | A cameo hold shows the tooltip only; a popup beside the cameo has PAUSE / RESUME, CANCEL, ALL. |
+| W6-01-04 | FIXED | The touch tooltip sits above and left of the finger, at 1.5x. |
+| W6-01-05 | FIXED | A touch double tap = type select, never a deploy (a single tap on the lone selected deployer deploys after the 500 ms window). |
+| W6-01-06 | FIXED | With >= 2 selected, a tap on a unit of the selection is a move; a tap beside an own unit (box, not body) is ground; a tap on an unselected unit's body selects it. |
+| W6-01-07 | FIXED | Superweapon on touch: tap = target area preview (3x3 / CellSpread ellipse), second tap on the same cell = fire. |
+| W6-01-08 | FIXED | A touch radar tap always centres; a radar move needs MOVE armed. |
+| W6-01-09 | FIXED (part) | Command column page 2 (MORE): TYPE, HOME, EVT, NEXT, PREV, FOLW, teams 6-0, views V1-V3 (hold = SetView, tap = View). The popup's ALL replaces Shift+right on a cameo. View 4, CombatantSelect, Health/Veterancy nav and Cheer still have no touch path. |
+| W6-01-10 | not this branch | The release agent (#6). |
+| W6-01-11 | FIXED | Hold 600 -> 450 ms; sticky BOX toggle (one-finger drag boxes at once). Edge auto-scroll while band-dragging: not done. |
+| W6-01-12 | FIXED | Messages, objectives, tooltips 1.5x on touch canvases. |
+| W6-01-13 | FIXED | The Options button joins the sidebar near-miss snap (20 px). |
+| W6-01-14 | FIXED (needs a gesture-nav phone) | `setSystemGestureExclusionRects` for the left command-column strip and the right cameo strip (200 dp each, Android 10+). The cutout mode stays the default (no inset needed). |
+| W6-01-15 | FIXED | `--play` `set canvas WxH`; the edge-band trap is in `scripts/play/README.md`. |
+| W6-01-16 | PARTIAL | The perf overlay moved right of the command column; real arm64 numbers are still R-170. |

@@ -339,7 +339,7 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
 | R-150 | Hotkeys that are parsed but do nothing: CombatantSelect, Follow, VeterancyNav, PlaceBeacon, AllToCheer and PlanningMode. The PowerToggle, Planning and Beacon modes are not modelled; the beacon, alliance and taunt keys are swallowed (W2-SK-28) | Controls/Touch | MINOR | PARTIAL (w5-audio 43e3fe9): Follow/CombatantSelect/Health+VeterancyNav/AllToCheer/CenterOnRadarEvent/ScreenCapture done; w5-audio2 7e0d1ed: PowerToggle mode (no UI arms it in YR 1.001; --play cheat + trigger hook); PlanningMode open; beacons/alliances/taunts network-only (RE) | `engine/hotkeys.cpp:14-22`; `engine/input.cpp:225-227` | M | N |
-| R-151 | Touch targets on phone: shell campaign and load list rows are about 14 dp, and the sidebar tabs about 21 dp (an art limit). View bookmarks have no touch path (W4-AM-08 rest, W2-AR-07 part) | Controls/Touch | MINOR | PARTIAL (w5-android: campaign list snaps a finger to the nearest row; sidebar near-miss snap from w4fix-ctl; save/load list rows and the ~21 dp tab width remain) | `engine/sidebar.hpp:31,40` | S | N |
+| R-151 | Touch targets on phone: shell campaign and load list rows are about 14 dp, and the sidebar tabs about 21 dp (an art limit). View bookmarks have no touch path (W4-AM-08 rest, W2-AR-07 part) | Controls/Touch | MINOR | PARTIAL (w5-android: campaign list snaps a finger to the nearest row; sidebar near-miss snap from w4fix-ctl; w6fix-touch: view bookmarks 1-3 on the command column's MORE page, the Options button snaps; save/load list rows and the ~21 dp tab width remain) | `engine/sidebar.hpp:31,40` | S | N |
 | R-152 | IME: the SAVE button sits above the visible area while typing, and prefilled text is not selected on focus (W2-AR-15) | Controls/Touch | MINOR | FIXED (w5-android: IME rect spans SAVE..edit, SAVE stays above the keyboard on the emulator; prefilled text selected, typing/Backspace replace it) | `engine/app_robust.inc:177-188`; `engine/ingame_pages.inc:67` | S | N |
 | R-153 | SDL clamps touches in the shell's pillarbox bars to the viewport edge (harmless today) | Controls/Touch | COSMETIC | OPEN | SDL `SDL_render.c:825-830` | S | N |
 
@@ -399,7 +399,7 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 | R-P3-2 | Destroyed*All events counted Insignificant/DontScore objects (flags, lamps, gates, guard shacks), so ALL06's BadGuy1 could never be "all destroyed"; RegisterGain/Loss FUN_004FF520/004FF370 skip them | Campaign | BLOCKER (ALL06) | FIXED (p3-missions 4a51b4b) | `engine/campaign_runtime.inc` tracked() | S | Y (done) |
 | R-P3-3 | A parasite (dog, terror drone) whose host left the world by a path bypassing the ability death pass stayed carried forever, unkillable and counted for its house | Units & abilities | MAJOR | FIXED (p3-missions e2d2cc4) | `engine/world_abilities.cpp` parasite pass | S | N |
 | R-P3-4 | ALL05: in failed real-order attempts Tanya died and the mission stayed RUNNING (the map loses via `Tanya Dies` -> `Mission Failed`); the tag hand-over when `Change Tanya House` re-creates her was not checked | Campaign | MINOR | OPEN | scratch runs, wave4/05 "P3 status" | S | N |
-| R-P3-5 | The clone's building pick is ground-based (footprint cells only); clicking a building's upper art does not target it, and a big army standing round a building covers its footprint so a click selects an own tank. The play harness works round it (`building ...:near`); a player would hit the same wall | Controls | MINOR | OPEN | `engine/input.cpp` building_under | M | Y |
+| R-P3-5 | The clone's building pick is ground-based (footprint cells only); clicking a building's upper art does not target it, and a big army standing round a building covers its footprint so a click selects an own tank. The play harness works round it (`building ...:near`); a player would hit the same wall | Controls | MINOR | FIXED for touch (w6fix-touch: the art pick, W6-01-01); the mouse keeps the original foundation + hotspot pick (`docs/re/object-pick.md`) | `engine/input.cpp` pick_building | M | Y |
 
 ### Mission-proof agent P2 (branch `p2-missions`)
 
@@ -469,3 +469,12 @@ package -- controller), W6-06-18 (real-phone performance = R-170). User decision
 icon), U-3 (licence wording; the About page carries a placeholder line) and U-4 (signing key;
 release builds now refuse the debug key unless `-Pra2.allowDebugSigning=true`) are unchanged.
 Save format v25; no gate re-pinned.
+
+## Wave-6 touch fixes (branch `w6fix-touch`)
+
+`docs/gap/wave6/01-touch.md` §5 has the per-item status. FIXED: W6-01-01 (art pick on touch;
+hit maps >= 94 % for every tested type, `01-evidence-fix/`), -02, -03, -04, -05, -06, -07,
+-08, -11, -12, -13, -14 (needs a gesture-navigation phone to confirm), -15. PARTIAL: -09
+(page 2 of the command column incl. view bookmarks 1-3; View 4, CombatantSelect,
+health/veterancy nav and cheer still have no touch path), -16 (overlay moved; real arm64 numbers still R-170).
+Not this branch: -10 (release agent). R-P3-5 is fixed for touch.

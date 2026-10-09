@@ -313,6 +313,13 @@ private:
             else if (k == "on_quit") quit_continue_ = (v == "continue");
             else if (k == "cycle_max") cycle_max_ = std::max(1, std::atoi(v.c_str()));
             else if (k == "campaign") {}   // W2-CA-19: consumed by run_play (start scene)
+            else if (k == "canvas") {   // W6-01-15: `set canvas WxH` (or W H) -- before the game starts
+                int w = 0, h = 0;
+                if (c.args.size() > 2) { w = std::atoi(v.c_str()); h = std::atoi(c.args[2].c_str()); }
+                else if (std::sscanf(v.c_str(), "%dx%d", &w, &h) != 2) w = h = 0;
+                if (w >= 320 && h >= 240) { g_play_canvas_w = w & ~1; g_play_canvas_h = h & ~1; }
+                else fail(c, "set canvas WxH");
+            }
             else { fail(c, "unknown setting"); }
             ++pc_;
             return kNext;

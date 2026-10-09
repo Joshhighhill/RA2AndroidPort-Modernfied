@@ -52,6 +52,7 @@ A `"double quoted"` run is one argument.
 | Command | Meaning | Frames |
 |---|---|---|
 | `set render_every <n>` / `set max_frames <n>` / `set park <x> <y>` / `set states on\|off` / `set on_quit stop\|continue` | Run options. `render_every` renders (and presents) every n-th frame; shots always render. `on_quit continue` records `InputEvent::Quit` reaching the driver as a failure and keeps going (default `stop`: the run ends there, like the real program). | 0 |
+| `set canvas <W>x<H>` | W6-01-15: the game canvas a phone would get (e.g. `974x548`, the 6" 1080p phone of `docs/gap/wave6/01-touch.md`) instead of the harness's 1280x720. Put it **before** the game starts (it is read when the game scene is built); every later game scene of the run uses it. | 0 |
 | `set hz <n>` / `set dt <s>` / `set align <n>` | W3-B: the driver's fixed step for the WHOLE run (`RA2_PLAY_HZ=<n>` overrides it, to re-run a script at another render rate); `align N` makes every input / cheat wait for an anim tick that is a multiple of N (and, for frame-consuming input, later than the last input), so 60 Hz and 30 Hz runs feed identical input at identical logic ticks. `{tick}` in a `shot` name becomes the scene's `anim_tick`; `<out>/shots.txt` records each shot's `view`-target screen point (`scripts/play/anim_check.py`). | 0 |
 | `wait <n>` | Let n frames pass. | n |
 | `click <target> [right] [shift] [ctrl] [alt] [nopark] [soft]` | Move + press + release at the target (original scheme: left = select AND order, right = cancel/deselect). The pointer then parks at (560,360) next frame so it does not sit in an edge-scroll band. A `cameo:ID` on another tab clicks that tab first. A `building` target whose centre cannot be brought on screen (camera clamped at a map edge) falls back to its other foundation cells. `soft`: a target that cannot be found / shown is skipped (`PLAY skip`), not a failure. | 1 |
@@ -104,6 +105,24 @@ string literal on the right-hand side). A key whose family is a counting family
 `selected_type`, `can_build`, `cameo`, `cameo_tab`) reads 0 when absent; any
 other absent key fails the check with `missing-probe:<key>` — so a script
 written for a later phase degrades gracefully on an older tree.
+
+**Edge-band trap (W6-01-15).** A mouse `click` leaves the pointer where it
+clicked for one frame before it parks; a click inside the 24 px window-edge
+band (for example `click xy 900 700 right` near the bottom of a 720-px canvas,
+or with `nopark`) leaves the mouse there and the camera edge-scrolls every
+frame after. Click / right-click away from the edges (e.g. `click xy 900 650
+right nopark`), or use `touch` gestures, which never edge-scroll.
+
+**Touch (wave 6).** `touch tap|dtap|hold <target>` / `touch drag|boxdrag|pan2`
+drive the real `TouchGestures`. A `hold` lasts 700 ms (the hold fires at
+450 ms). Keys: `touch_ui`, `touch_bar_open`, `touch_banner`, `touch_mode`,
+`touch_aim` (the building a sell / repair tap has marked, -1 none),
+`touch_aim_sw` (a superweapon target is aimed), `cameo_menu` (the cameo popup
+is up), `touch_box` (sticky BOX), `touch_page2` (the command column's MORE
+page), `selected_building_type` (rules id). Targets: `touch:<label>` (the
+column's buttons on the current page), `touch:cancel`, `cmenu:PAUSE|RESUME|CANCEL|ALL`
+(the cameo popup), `art:<ID>` (a point on the UPPER art of house 0's first
+building of that type -- a tower's head, not its foundation).
 
 ## Probe keys
 
