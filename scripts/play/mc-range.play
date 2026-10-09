@@ -20,11 +20,17 @@ click unit 6:YURI:0
 click cell 36 75
 click unit 6:YURI:1
 click cell 37 75
-until 1500 ucy(1,FV,1) >= 72
+# The x=37 IFV patrol (FV:1) runs y=52..75 past the Yuris' posts. Since
+# W6-02-11 an idle Yuri auto-acquires at its threat radius (range 8 + 1), so
+# the order is given on the IFV's way back south while it is still ~11 cells
+# out (y=64), past both the weapon range and the auto-acquire radius: Yuri 0
+# must walk in and take it.
+until 1500 ucy(1,FV,1) <= 56
+until 600 ucy(1,FV,1) >= 64
 # right-click first: clicking an already-selected Yuri deploys him (he then
 # holds his post and never closes in).
 click xy 500 400 right
-click unit 6:YURI:1
+click unit 6:YURI:0
 click unit 1:FV:1
 until 600 units(6,FV) >= 1
 assert units(6,FV) >= 1 @R-205

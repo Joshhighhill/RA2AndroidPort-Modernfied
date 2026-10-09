@@ -863,6 +863,11 @@
                 std::string r;
                 if (w2_cheat(a, r)) return r;
             }
+            // A campaign verb that did nothing is not "unknown" (m-all04: camp_deploy
+            // while the MCV was still inside its landing craft).
+            if (!a.empty() && a[0].rfind("camp_", 0) == 0)
+                return a[0] + ": no effect (campaign only; no matching object -- camp_deploy needs a "
+                              "controllable MCV on the map, not inside a transport)";
             return "unknown cheat (have: kill_house H, damage_building H:TYPE[:n] DMG, credits N, "
                    "spawn TYPE H cell X Y | spawn TYPE H building H:T[:n] +DX +DY)";
         };

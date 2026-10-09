@@ -84,42 +84,11 @@ until 1800 harv(0,Harvesting) >= 1            @G-20:A
 until 2700 credits > $c1                      @G-20:A
 shot economy
 
-# --- 5. War Factory -> Rhino, Flak Track, War Miner ---------------------------------
-click tab:0
-click cameo:NAWEAP                            @G-03:A
-until 1800 queue_ready(structure) == 1        @G-03:A
-click cameo:NAWEAP                            @G-03:A
-place auto                                    @G-03:A
-until 300 built(0,NAWEAP) == 1                @G-03:A
-click tab:3
-assert cameo(HTNK) == 1                       @G-03:A
-assert cameo(HTK) == 1                        @G-22:A
-assert cameo(HARV) == 1                       @G-22:A
-# rulesmd [SMCV] Prerequisite=NAWEAP,NADEPT: the MCV needs a Service Depot.
-click tab:0
-click cameo:NADEPT                              @G-22:A
-until 1800 queue_ready(structure) == 1        @G-22:A
-click cameo:NADEPT                              @G-22:A
-place auto                                    @G-22:A
-until 300 built(0,NADEPT) == 1                  @G-22:A
-click tab:3
-assert cameo(SMCV) == 1                       @G-22:A
-click cameo:HTNK                              @G-03:A
-until 1500 units(0,HTNK) >= 1                 @G-03:A
-
-# --- 6. the Allied AI builds an ALLIED base and attacks ------------------------------
-assert buildings(1,GACNST) >= 1
-until 3000 buildings(1,GAPOWR) >= 1           @G-64:D
-assert buildings(1,NAPOWR) == 0               @G-64:D
-assert buildings(1,NAHAND) == 0               @G-64:D
-let u1 = units(1)
-let ul0 = units_lost(0)
-let hl0 = hp_lost(0)
-until 3000 units(1) > $u1                     @G-60:D
-until 6000 units_lost(0) > $ul0 or hp_lost(0) > $hl0 @G-60:D
-shot ai
-
-# --- 7. defences: the Tesla Coil is offered; a Sentry Gun kills attackers --------
+# Wave 6: the Medium Allied AI (AIVirtualPurifiers 4,2,0, anger table)
+# sends Grizzlies at the base around f4000 and kills the refinery first;
+# the Radar Tower needs it ([NARADR] Prerequisite=NAREFN), so the defences
+# are built while the economy is up, before the War Factory and the attack.
+# --- 5. defences: the Tesla Coil is offered; a Sentry Gun kills attackers --------
 # [TESLA] Prerequisite=POWER,RADAR,NACNST: a Radar Tower first.
 click tab:0
 click cameo:NARADR                            @G-26:A
@@ -146,6 +115,44 @@ cheat spawn E1 1 building 0:NALASR +3 +0
 cheat spawn E1 1 building 0:NALASR +3 +1
 until 450 units_lost(1) >= $ul1+2             @G-40:C
 shot defence
+
+# --- 6. War Factory -> Rhino, Flak Track, War Miner ---------------------------------
+click tab:0
+click cameo:NAWEAP                            @G-03:A
+until 1800 queue_ready(structure) == 1        @G-03:A
+click cameo:NAWEAP                            @G-03:A
+place auto                                    @G-03:A
+until 300 built(0,NAWEAP) == 1                @G-03:A
+click tab:3
+assert cameo(HTNK) == 1                       @G-03:A
+assert cameo(HTK) == 1                        @G-22:A
+# [HARV] Prerequisite=NAWEAP,PROC: the War Miner is offered while a refinery
+# stands (the AI's first raid often takes it out about now).
+if buildings(0,NAREFN) >= 1 then assert cameo(HARV) == 1    @G-22:A
+if buildings(0,NAREFN) == 0 then assert cameo(HARV) == 0    @G-22:A
+# rulesmd [SMCV] Prerequisite=NAWEAP,NADEPT: the MCV needs a Service Depot.
+click tab:0
+click cameo:NADEPT                              @G-22:A
+until 1800 queue_ready(structure) == 1        @G-22:A
+click cameo:NADEPT                              @G-22:A
+place auto                                    @G-22:A
+until 300 built(0,NADEPT) == 1                  @G-22:A
+click tab:3
+assert cameo(SMCV) == 1                       @G-22:A
+click cameo:HTNK                              @G-03:A
+until 1500 units(0,HTNK) >= 1                 @G-03:A
+
+# --- 7. the Allied AI builds an ALLIED base and attacks ------------------------------
+assert buildings(1,GACNST) >= 1
+until 3000 buildings(1,GAPOWR) >= 1           @G-64:D
+assert buildings(1,NAPOWR) == 0               @G-64:D
+assert buildings(1,NAHAND) == 0               @G-64:D
+let u1 = units(1)
+let ul0 = units_lost(0)
+let hl0 = hp_lost(0)
+until 3000 units(1) > $u1                     @G-60:D
+until 6000 units_lost(0) > $ul0 or hp_lost(0) > $hl0 @G-60:D
+shot ai
 
 # --- 8. win path ----------------------------------------------------------------
 cheat kill_house 1

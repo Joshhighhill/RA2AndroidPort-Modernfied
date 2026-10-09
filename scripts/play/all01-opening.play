@@ -6,6 +6,16 @@
 # does the original's 300 x DMISLWH 2% = 6 damage -- the Statue stands and the
 # mission keeps RUNNING. Houses: 2 = BadGuy2 (fleet), 5 = Other1 (Statue),
 # 6 = Other2 (Liberty Island Patriots).
+# fv-a: the Statue also takes the Patriots' own SAMWH bursts (75, special_1
+# 100%) when a DMISL is shot down in its dive right over it: DamageArea
+# (FUN_00489190) hits a building in the burst cell unless the burst is more
+# than two levels above it. How many land there moved with the RE'd W6-04
+# weapon fixes (bisected, HP at 4 min of 5117: 4297 on 7b77d57, 4722 after
+# W6-04-01 Burst, 3972 after W6-04-06 OmniFire, 3852 after W6-04-22 3-D
+# defence range; 3527 on fv-a), so > 4000 (DMISL hits alone) no longer
+# holds. Tanya, idle
+# at wp36, must still be alive: she used to follow a vanished target's stale
+# approach path to the Dreadnought pier and die (LOST at f~1800).
 set render_every 300
 set on_quit continue
 click button "Single Player"
@@ -38,6 +48,7 @@ shot o240
 assert rockets_launched(2) >= 8
 assert rockets_shot(2) > 0
 assert buildings(5,CANEWY04) == 1
-assert bhp(5,CANEWY04) > 4000
+assert bhp(5,CANEWY04) > 3000
 assert units(2,DRED) == 4
+assert units(0,TANY) == 1
 end expect RUNNING

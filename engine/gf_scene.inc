@@ -210,6 +210,7 @@ private:
                                               : sd == Sd::Soviet ? gf_csf("GUI:Soviets", "Soviets")
                                               : sd == Sd::Yuri   ? std::string("Yuri")
                                                                  : std::string("Neutral");
+                s.rows[(std::size_t)h].rival = h != 0 && sd != Sd::Neutral && !world_.are_allied(h, 0);
             }
             // Only the lobby's playing slots are listed (not the neutral house).
             s.rows[(std::size_t)h].listed = cfg_.slots.empty() || cfg_.slots[(std::size_t)h].combatant;

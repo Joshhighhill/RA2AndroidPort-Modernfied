@@ -277,7 +277,10 @@ struct GfSkirmishStats {
     // the end gets score += score/2 + Random(score/2, score). The rows are
     // shown sorted by score, highest first (qsort, comparator FUN_005C9500).
     struct Row { std::string name; int kills = 0, losses = 0, built = 0; long score = 0; bool listed = true;
-                 bool winner = false; int house = -1; };
+                 bool winner = false; int house = -1;
+                 // Campaign Results: a candidate for the "them" row -- a
+                 // fighting side (not Neutral/civilian) not allied to the player.
+                 bool rival = true; };
     std::vector<Row> rows;
 };
 Scene* gf_make_skirmish_result_scene(bool no_audio, const ra2engine::SkirmishConfig& cfg, int outcome,

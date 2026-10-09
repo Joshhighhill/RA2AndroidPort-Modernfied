@@ -380,11 +380,23 @@ private:
                   const GfSkirmishStats::Row* first = nullptr; const GfSkirmishStats::Row* second = nullptr; };
     Pair pair() const {
         Pair r;
+        // "Them" = the player's opponent: a fighting side not allied to the
+        // player (never a Neutral / civilian house, whose row would read
+        // "Neutral"), the active one with the best score, else the first
+        // rival listed. [RE-FALLBACK: the original's campaign score page
+        // compares the player's side with the enemy side; its house
+        // selection was not traced.]
+        const GfSkirmishStats::Row* quiet = nullptr;
         for (const GfSkirmishStats::Row& x : st_.rows) {
-            if (x.house == 0) r.me = &x;
-            else if (x.house > 0 && (x.kills > 0 || x.built > 0 || x.losses > 0) && (!r.them || x.score > r.them->score))
-                r.them = &x;
+            if (x.house == 0) { r.me = &x; continue; }
+            if (x.house < 0 || !x.rival) continue;
+            if (x.kills > 0 || x.built > 0 || x.losses > 0) {
+                if (!r.them || x.score > r.them->score) r.them = &x;
+            } else if (!quiet) {
+                quiet = &x;
+            }
         }
+        if (!r.them) r.them = quiet;
         if (r.me && r.them) {
             const bool me_first = r.me->score >= r.them->score;
             r.first = me_first ? r.me : r.them;
