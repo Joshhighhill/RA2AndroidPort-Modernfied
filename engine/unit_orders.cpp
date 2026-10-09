@@ -90,17 +90,25 @@ void World::order_scatter(int idx) {
     }
 }
 
+// R3 [RE: gamemd StopCommandClass::Execute FUN_0072ff70 (event 6),
+// GuardCommandClass FUN_0072fe30 (mission 0xB), ScatterCommandClass
+// FUN_007300b0 (event 7)]: each walks CurrentObjects (DAT_00a8dc24/30) and
+// sends the order for every selected object the player may command
+// (vtbl+0xA0); there is no Owner == PlayerPtr test. Selection itself already
+// admits the PlayerControl houses (W2-CA-02, house+0x1ED), so a mind-
+// controlled or map-PlayerControl unit (SOV09's Africans) obeys S / G / X
+// like house 0's. The clone tested house == 0 only.
 void World::order_stop_selected() {
     for (int i = 0; i < static_cast<int>(units_.size()); ++i)
-        if (units_[i].selected && units_[i].house == 0) order_stop(i);
+        if (units_[i].selected && controllable(units_[i].house)) order_stop(i);
 }
 void World::order_guard_selected() {
     for (int i = 0; i < static_cast<int>(units_.size()); ++i)
-        if (units_[i].selected && units_[i].house == 0) order_guard(i);
+        if (units_[i].selected && controllable(units_[i].house)) order_guard(i);
 }
 void World::order_scatter_selected() {
     for (int i = 0; i < static_cast<int>(units_.size()); ++i)
-        if (units_[i].selected && units_[i].house == 0) order_scatter(i);
+        if (units_[i].selected && controllable(units_[i].house)) order_scatter(i);
 }
 
 }  // namespace ra2engine
