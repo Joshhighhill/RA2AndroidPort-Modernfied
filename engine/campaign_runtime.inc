@@ -2123,6 +2123,10 @@ private:
                 // W6-02-07/08 [RE: Evaluate_Object FUN_006F71D0]: LegalTarget,
                 // IsInPlayfield, campaign Insignificant (World::legal_threat_*).
                 if (!w_.legal_threat_unit(house, (int)i)) continue;
+                // A still-disguised spy passes for a friend (the auto-acquire
+                // precedent, capture.md §Design 6) -- the W6-02-18 patrol scan
+                // must not see through it.
+                if (u.disguised) continue;
                 if (want_inf && u.is_vehicle) continue;
                 if (want_veh && !u.is_vehicle) continue;
                 const long d = (long)(u.cell_x - x) * (u.cell_x - x) + (long)(u.cell_y - y) * (u.cell_y - y);
