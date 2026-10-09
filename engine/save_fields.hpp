@@ -516,6 +516,7 @@ template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
     io(ar, v.sonic);   // v25: W6-04-09
     io(ar, v.wall_flags);   // v25: W6-04-04
     io(ar, v.shrapnel_count); io(ar, v.shrapnel_damage); io(ar, v.shrapnel_range); io(ar, v.shrapnel_verses);   // v25: W6-04-02
+    io(ar, v.min_range);   // v25: W6-04-22
 }
 // G16 world depth (agent G)
 template <class Ar> void fields(Ar& ar, World::DepthRules& v) {

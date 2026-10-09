@@ -189,10 +189,25 @@ void World::step_building_combat(double dt) {
             if (w5_.armed && t.w5.overpowerable) return b.w5.overpowered ? 1 : 0;
             return choose_weapon(t.weapon[0], t.weapon[1], unit_airborne(v), v.armor_ix);
         };
+        // W6-04-22 [RE: TechnoClass in-range test FUN_006F6750, combat.md §9]:
+        // 3-D distance from the building's centre (z = its level), the
+        // [ElevationModel] bonus FUN_006F6490 for a SubjectToElevation
+        // projectile, the cliff trace, and MinimumRange (+0xB8) refusing
+        // closer targets (the Grand Cannon's 3-cell dead zone). It was a 2-D
+        // hypot with no minimum. GuardRange still widens the reach.
+        int bx = 0, by = 0, bz = 0;
+        building_aim_lept(b, cell_level(b.cx, b.cy), bx, by, bz);
         auto in_range = [&](const Unit& v, int slot) {
-            const double r = (t.guard_range > 0.0 ? std::max(t.guard_range, t.weapon[slot].range)
-                                                  : t.weapon[slot].range) * kLept;
-            return std::hypot((v.fx - cx) * kLept, (v.fy - cy) * kLept) <= r;
+            const WeaponSlot& ws = t.weapon[slot];
+            Unit sh;
+            sh.w_range = t.guard_range > 0.0 ? std::max(t.guard_range, ws.range) : ws.range;
+            sh.w_proj = ws.proj;
+            const int tx = unit_lept_x(v), ty = unit_lept_y(v), tz = unit_lept_z(v);
+            if (ws.min_range > 0.0) {
+                const double dx = tx - bx, dy = ty - by, dz = tz - bz;
+                if (std::sqrt(dx * dx + dy * dy + dz * dz) < ws.min_range * kLept) return false;
+            }
+            return weapon_in_range_from(*this, sh, bx, by, bz, tx, ty, tz);
         };
         auto engageable = [&](int j) {
             if (j < 0 || j >= nu) return false;

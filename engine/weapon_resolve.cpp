@@ -40,6 +40,7 @@ WeaponSlot resolve_weapon_slot(const ra2assets::Rules& rules, const std::string&
     s.burst = std::max(1, static_cast<int>(rules.section_double(weapon, "Burst", 1.0)));
     s.sonic = rules.section_flag(wh, "Sonic", false);   // W6-04-09 (WarheadType +0x14B)
     s.wall_flags = warhead_wall_flags(rules, wh);         // W6-04-04
+    s.min_range = rules.section_double(weapon, "MinimumRange", 0.0);   // W6-04-22 (+0xB8)
     // W6-04-02: ShrapnelWeapon/ShrapnelCount are BulletType keys (the
     // projectile section), not WeaponType keys.
     const std::string sw = rules.section_string(proj, "ShrapnelWeapon", "");
