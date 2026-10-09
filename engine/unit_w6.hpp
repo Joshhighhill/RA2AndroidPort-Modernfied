@@ -15,6 +15,22 @@ struct UnitTypeW6 {
     // weapon's OmniFire= (fires without turning to face).
     bool omni_fire = false;
     bool sonic = false;   // W6-04-09: the PRIMARY warhead's Sonic=
+    // W6-04-15 [rules key, abilities-w5.md §6]: InfantryType
+    // OpenTransportWeapon= -- the slot a passenger fires out of an OpenTopped
+    // transport (E1/GGI 1, GHOST/TANY/BORIS 0); -1 = the normal choice.
+    int open_transport_weapon = -1;
+    // W6-04-16 [RE-FALLBACK: TechnoType AirRangeBonus added to the weapon
+    // range against an airborne target]: [FV] AirRangeBonus=4 (cells).
+    double air_range_bonus = 0.0;
+    // W6-04-29: DeployedCrushable=no (the deployed Guardian GI).
+    bool deployed_crushable = true;
+    // W6-04-30: CanApproachTarget=no (the Mirage Tank holds its disguise).
+    bool can_approach_target = true;
+    // W6-04-14 [RE-FALLBACK, rules semantics; MovementZone=CrusherAll]:
+    // OmniCrusher= (the Battle Fortress) crushes vehicles too;
+    // OmniCrushResistant= (BFRT, MCVs, SMIN) cannot be omni-crushed.
+    bool omni_crusher = false;
+    bool omni_crush_resistant = false;
 };
 
 // Per-unit state.

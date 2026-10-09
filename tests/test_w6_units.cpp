@@ -188,3 +188,27 @@ TEST_CASE("w6units W6-04-09: a Sonic hit on the host frees it from its parasite 
     CHECK(world.units()[0].cargo_of < 0);
     CHECK(world.units()[0].alive);
 }
+
+TEST_CASE("w6units W6-04-14/15/16/29/30: small rules keys resolve and gate crushing") {
+    Unit bfrt, tank, ggi, gi, mcv;
+    bfrt.crusher = true;
+    bfrt.is_vehicle = true;
+    bfrt.w6.t.omni_crusher = true;
+    tank.is_vehicle = true;
+    mcv.is_vehicle = true;
+    mcv.w6.t.omni_crush_resistant = true;
+    gi.crushable = true;
+    ggi.crushable = true;
+    ggi.deployed = true;
+    ggi.w6.t.deployed_crushable = false;
+    Unit rhino;
+    rhino.crusher = true;
+    rhino.is_vehicle = true;
+    CHECK(can_crush(bfrt, tank));          // OmniCrusher: vehicles too
+    CHECK_FALSE(can_crush(bfrt, mcv));     // OmniCrushResistant
+    CHECK_FALSE(can_crush(rhino, tank));   // a plain Crusher: infantry only
+    CHECK(can_crush(rhino, gi));
+    CHECK_FALSE(can_crush(rhino, ggi));    // deployed Guardian GI
+    ggi.deployed = false;
+    CHECK(can_crush(rhino, ggi));
+}

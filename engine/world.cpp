@@ -5045,7 +5045,7 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 for (int o : victims) {
                     if (o < 0 || o == self || o >= static_cast<int>(units.size())) continue;
                     Unit& v = units[o];
-                    if (v.crushable && !v.is_vehicle && v.house != u.house && v.alive &&
+                    if (can_crush(u, v) && v.house != u.house && v.alive &&   // W6-04-14/29
                         v.die_time < 0.0 && v.cargo_of < 0) {
                         v.hp = 0;
                         v.die_time = 0.0;

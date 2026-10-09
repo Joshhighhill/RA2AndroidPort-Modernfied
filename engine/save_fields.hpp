@@ -729,6 +729,9 @@ template <class Ar> void fields(Ar& ar, UnitW5& v) {
 // --- wave-6 #4 units/weapons (unit_w6.hpp), save v25 ---
 template <class Ar> void fields(Ar& ar, UnitTypeW6& v) {
     io(ar, v.burst); io(ar, v.omni_fire); io(ar, v.sonic);   // W6-04-09
+    io(ar, v.open_transport_weapon); io(ar, v.air_range_bonus); io(ar, v.deployed_crushable);   // W6-04-15/16/29
+    io(ar, v.can_approach_target);   // W6-04-30
+    io(ar, v.omni_crusher); io(ar, v.omni_crush_resistant);   // W6-04-14
 }
 template <class Ar> void fields(Ar& ar, UnitW6& v) {
     io(ar, v.t); io(ar, v.burst); io(ar, v.burst_index); io(ar, v.omni_fire);

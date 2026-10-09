@@ -200,6 +200,9 @@ void building_aim_lept(const Building& b, int level, int& x, int& y, int& z);
 // until World::arm_elevation (unit-test Worlds keep the plain 3-D check).
 bool weapon_in_range(const World& world, const Unit& u, int tx, int ty, int tz, int extra = 0);
 bool unit_in_weapon_range(const World& world, const Unit& u, const Unit& t);
+// W6-04-14/29: may crusher `u` squash `v` (OmniCrusher / OmniCrushResistant,
+// DeployedCrushable, else Crushable infantry)?
+bool can_crush(const Unit& u, const Unit& v);
 // The same test from an explicit shooter point.
 bool weapon_in_range_from(const World& world, const Unit& u, int ux, int uy, int uz, int tx, int ty,
                           int tz, int extra = 0);

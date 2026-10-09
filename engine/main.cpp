@@ -827,6 +827,13 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.w6.burst = tw.slot[0].valid ? tw.slot[0].burst : 1;   // W6-04-01
     r.combat.w6.omni_fire = tw.slot[0].valid && tw.slot[0].omni_fire;   // W6-04-06
     r.combat.w6.sonic = tw.slot[0].valid && tw.slot[0].sonic;           // W6-04-09
+    r.combat.w6.open_transport_weapon =   // W6-04-15
+        static_cast<int>(rules.section_double(unit_id, "OpenTransportWeapon", -1.0));
+    r.combat.w6.air_range_bonus = rules.section_double(unit_id, "AirRangeBonus", 0.0);   // W6-04-16
+    r.combat.w6.deployed_crushable = rules.section_flag(unit_id, "DeployedCrushable", true);   // W6-04-29
+    r.combat.w6.can_approach_target = rules.section_flag(unit_id, "CanApproachTarget", true);   // W6-04-30
+    r.combat.w6.omni_crusher = rules.section_flag(unit_id, "OmniCrusher", false);   // W6-04-14
+    r.combat.w6.omni_crush_resistant = rules.section_flag(unit_id, "OmniCrushResistant", false);   // W6-04-14
     r.combat.range = rules.weapon_range(primary);
     const std::string warhead = rules.weapon_warhead(primary);
     r.combat.verses = rules.verses(warhead);

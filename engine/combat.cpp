@@ -521,7 +521,22 @@ bool weapon_in_range_from(const World& world, const Unit& u, int ux, int uy, int
 }
 
 bool unit_in_weapon_range(const World& world, const Unit& u, const Unit& t) {
-    return weapon_in_range(world, u, unit_lept_x(t), unit_lept_y(t), unit_lept_z(t));
+    // W6-04-16 [RE-FALLBACK: TechnoType AirRangeBonus is added to the range
+    // against an airborne target]: the IFV ([FV] AirRangeBonus=4) reaches
+    // aircraft at 10 cells. 0 for every other type.
+    const int bonus = unit_airborne(t) ? ftol_i(u.w6.t.air_range_bonus * 256.0) : 0;
+    return weapon_in_range(world, u, unit_lept_x(t), unit_lept_y(t), unit_lept_z(t), bonus);
+}
+
+bool can_crush(const Unit& u, const Unit& v) {
+    if (v.is_aircraft || unit_airborne(v) || v.is_naval) return false;
+    // W6-04-14 [RE-FALLBACK, rules semantics]: an OmniCrusher crushes any
+    // ground unit that is not OmniCrushResistant (vehicles included).
+    if (u.w6.t.omni_crusher) return !v.w6.t.omni_crush_resistant;
+    // W6-04-29: a deployed DeployedCrushable=no infantry (the Guardian GI)
+    // cannot be run over.
+    if (v.deployed && !v.w6.t.deployed_crushable) return false;
+    return v.crushable && !v.is_vehicle;
 }
 
 AreaResult damage_area(const World& world, std::vector<Unit>& units,
@@ -1103,7 +1118,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         {
             const World::CrushRules& cr = world.crush_rules();
             const bool may = cr.armed && u.crusher && u.is_vehicle && !u.is_aircraft &&
-                             v.crushable && !v.is_vehicle && !v.is_aircraft && !unit_airborne(v) &&
+                             can_crush(u, v) &&   // W6-04-14/29
                              (world.house_is_computer(u.house) || cr.player_auto_crush || u.auto_crush);
             const int dx = unit_lept_x(v) - unit_lept_x(u), dy = unit_lept_y(v) - unit_lept_y(u),
                       dz = unit_lept_z(v) - unit_lept_z(u);
@@ -1171,7 +1186,8 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                         requests.push_back({i, u.guard_x, u.guard_y});
                 }
             } else if (!u.moving() && !u.is_aircraft && !(u.deploy_fire && u.deployed) &&
-                       !u.is_harvester && u.w_damage > 0) {
+                       !u.is_harvester && u.w_damage > 0 &&
+                       u.w6.t.can_approach_target) {   // W6-04-30: the Mirage holds
                 // W2-SK-25: close in on a sighted target inside the leash (the
                 // back ranks of a big fight used to stand idle out of range).
                 requests.push_back({i, v.cell_x, v.cell_y, /*approach=*/true});

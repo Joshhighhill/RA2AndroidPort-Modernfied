@@ -9,6 +9,7 @@
 #include "combat.hpp"   // deliver_hit_from, rearm_secs
 #include "group_move.hpp"   // nearest_free_cells
 #include "veterancy.hpp"    // has_ability (SCATTER)
+#include "weapon_unit.hpp"  // activate_weapon_slot (W6-04-15)
 #include "world.hpp"
 
 namespace ra2engine {
@@ -225,6 +226,12 @@ void World::step_w5(double dt) {
                 Unit& p = units_[(std::size_t)pi];
                 if (!p.alive || p.die_time >= 0.0) continue;
                 p.rof_cool = std::max(0.0, p.rof_cool - dt);
+                // W6-04-15 [rules OpenTransportWeapon=, abilities-w5.md §6]: a
+                // passenger fires that slot out of the transport (a GI's Para,
+                // not its M60); -1 keeps the current weapon.
+                if (p.w6.t.open_transport_weapon == 0 || (p.w6.t.open_transport_weapon == 1 && p.w2.valid))
+                    activate_weapon_slot(p, p.w6.t.open_transport_weapon,
+                                         veterancy_enabled() ? &veterancy_rules() : nullptr);
                 if (p.w_damage <= 0 || p.w_range <= 0.0) continue;
                 const double range = p.w_range + R.open_topped_range_bonus;
                 auto ok = [&](int j) {
