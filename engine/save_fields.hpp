@@ -70,6 +70,8 @@ struct SaveAccess {
         save::io(ar, r.team_state);
         save::io(ar, r.trigger_state);
         save::io(ar, r.enemy_house);   // W2-SK-08 (v13)
+        save::io(ar, r.anger);         // W6-03-04 (v25)
+        save::io(ar, r.hate_frames);   // W6-03-04 (v25)
     }
     template <class Ar> static void house_sw(Ar& ar, World::HouseSuperweapon& s) {
         save::io(ar, s.has_sw);
@@ -1254,6 +1256,7 @@ template <class Ar> void fields(Ar& ar, AiHouseConfig& v) {
     io(ar, v.multiple_factory);   // W2-SK-06 (v13)
     io(ar, v.fire_superweapons);  // W5-A IQ gate (v22)
     io(ar, v.virtual_purifiers);  // W6-03-03 (v25)
+    io(ar, v.hate_delay_frames);  // W6-03-04 (v25)
 }
 
 // --- skirmish config (the 'CONF' section: rebuilds the scene's assets) ---

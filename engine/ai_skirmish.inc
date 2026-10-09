@@ -158,6 +158,8 @@ ra2engine::AiHouseConfig make_ai_slot_config(const ra2engine::SkirmishSlot& s, d
         };
         acfg.ai.extra_refineries = at("AIExtraRefineries", 0);
         acfg.ai.pick_wall_pct = at("AIPickWallDefensePercent", 0);
+        // W6-03-04 [RE: FUN_006862d0 -> Rules+0x1178]: AIHateDelays=30,50,70 frames.
+        acfg.hate_delay_frames = at("AIHateDelays", 0);
     }
     {   // W6-03-03 [RE: FUN_00522a80; loader FUN_0066cf70 -> Rules+0x1320]:
         // AIVirtualPurifiers=4,2,0 ;h,m,e -- the skirmish AI's harvest bonus.

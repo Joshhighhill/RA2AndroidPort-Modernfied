@@ -209,6 +209,7 @@ void deliver_hit_from(std::vector<Unit>& units, Occupancy& occ, const Unit& u, i
     // W2-AN-04: an Iron-Curtained unit takes no damage.
     const int dmg = v.an.iron_left > 0.0 ? 0 : damage_vs(raw, u.w_verses, v.armor_ix);
     v.hp -= dmg;
+    feed_damage(false, victim_idx, u.house, dmg);   // W6-03-04 anger
     if (dmg > 0)   // W3-B fear (FUN_00517db5; inert unless armed)
         inf_on_hit(v.ia, attacker_idx >= 0 || attacker_building >= 0,
                    v.max_hp > 0 ? static_cast<double>(v.hp) / v.max_hp : 0.0);
@@ -256,6 +257,7 @@ void deliver_building_hit(std::vector<Unit>& units, std::vector<Building>& build
     if (b->vet_recv) raw = receive_damage(raw, b->armor_mult, false, 1.0);
     const int dmg = b->iron_left > 0.0 ? 0 : damage_vs(raw, u.w_verses, b->armor_ix);   // W2-AN-04
     b->hp -= dmg;
+    feed_damage(true, b_idx, u.house, dmg);   // W6-03-04 anger
     if (b->hp <= 0) {
         b->killed_by = attacker_idx;   // P5 [V3]: inert stamp
         kill_building(*b);
@@ -311,6 +313,7 @@ void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ, const Unit& a
                                           attacker.w_prone_damage);                // W3-B ProneDamage
         const int dmg = damage_vs(base, attacker.w_verses, w.armor_ix);
         w.hp -= dmg;
+        feed_damage(false, j, attacker.house, dmg);   // W6-03-04 anger
         if (dmg > 0)   // W3-B fear (inert unless armed)
             inf_on_hit(w.ia, true, w.max_hp > 0 ? static_cast<double>(w.hp) / w.max_hp : 0.0);
         if (w.hp <= 0) {
@@ -566,6 +569,7 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
                                       shooter.w_percent_at_max, h.dist);
         if (dmg <= 0) continue;
         w.hp -= dmg;
+        feed_damage(false, h.idx, shooter.house, dmg);   // W6-03-04 anger
         res.damage += dmg;
         if (res.first_unit < 0 || h.idx < res.first_unit) res.first_unit = h.idx;
         inf_on_hit(w.ia, src_unit >= 0 || src_building >= 0,   // W3-B fear
@@ -616,6 +620,7 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
                                         shooter.w_percent_at_max, d);
                 if (dmg < 1) dmg = 1;                    // FUN_005F4BA0: buildings floor at 1
                 b.hp -= dmg;
+                feed_damage(true, bi, shooter.house, dmg);   // W6-03-04 anger
                 res.damage += dmg;
                 if (b.hp <= 0) {
                     b.killed_by = src_unit;              // P5 [V3]
@@ -629,6 +634,11 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
             }
     }
     return res;
+}
+
+DamageFeed& damage_feed() {   // W6-03-04
+    static DamageFeed f;
+    return f;
 }
 
 int armor_index(const std::string& armor) {

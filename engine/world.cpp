@@ -482,6 +482,7 @@ bool World::are_allied(int a, int b) const {
 void World::set_pair_alliance(int a, int b, bool allied) {
     const int n = (int)houses_.size();
     if (a < 0 || b < 0 || a >= n || b >= n || a == b) return;
+    const bool was_allied = are_allied(a, b);
     if (ally_pairs_.size() != (std::size_t)n * n) {
         std::vector<std::uint8_t> m((std::size_t)n * n, 0);
         for (int i = 0; i < n; ++i)
@@ -491,6 +492,14 @@ void World::set_pair_alliance(int a, int b, bool allied) {
     }
     ally_pairs_[(std::size_t)a * n + b] = allied ? 1 : 0;
     ally_pairs_[(std::size_t)b * n + a] = allied ? 1 : 0;
+    // W6-03-04 [RE: FUN_004f9990 MakeAlly -> FUN_005045b0(-anger) toward the
+    // new ally; FUN_004f9db0 MakeEnemy -> FUN_005045b0(1)]: both directions.
+    for (int k = 0; k < 2; ++k) {
+        const int h = k ? b : a, o = k ? a : b;
+        if (!ai_enabled(h)) continue;
+        if (allied) ai_add_anger(h, o, -ai_anger(h, o));
+        else if (was_allied) ai_add_anger(h, o, 1);
+    }
 }
 
 void World::set_ally_view(int a, int b, bool allied) {
@@ -3197,41 +3206,107 @@ bool World::ai_base_centre(int hh, int& x, int& y) const {
     return false;
 }
 
-// W2-SK-08 [RE: ai-trigger.md deviations -- the original keeps ONE current
-// enemy per house (house+0x5600) that the trigger conditions, the threat view
-// and the team targeting read; RE-FALLBACK for the pick: the nearest living
-// enemy combatant by base centre (ConYard, else first building, else first
-// unit), re-picked only when it is defeated -- a 1v3 AI no longer averages
-// three bases into one meaningless centroid].
-void World::ai_pick_enemy_house(int house, HouseAiRec& rec) {
-    const int cur = rec.enemy_house;
-    if (cur >= 0 && cur < house_count() && is_enemy(house, cur) && house_combatant(cur) &&
-        ai_house_alive(cur))
-        return;
-    auto centre = [&](int hh, int& x, int& y) {
-        bool got = false;
-        for (const Building& b : buildings_) {
-            if (!b.alive || b.house != hh || b.state == Building::State::Dead) continue;
-            const bool cy = b.type >= 0 && b.type < (int)rec.cfg.roster.size() && rec.cfg.roster[b.type].conyard;
-            if (cy || !got) { x = b.cx; y = b.cy; got = true; if (cy) return true; }
-        }
-        if (got) return true;
-        for (const Unit& u : units_)
-            if (u.alive && u.die_time < 0.0 && u.house == hh) { x = u.cell_x; y = u.cell_y; return true; }
-        return false;
-    };
-    int ox = grid_w_ / 2, oy = grid_h_ / 2;
-    centre(house, ox, oy);
-    int best = -1;
-    long long bestd = 0;
-    for (int e = 0; e < house_count(); ++e) {
-        if (e == house || !is_enemy(house, e) || !house_combatant(e)) continue;
-        int ex = 0, ey = 0;
-        if (!centre(e, ex, ey)) continue;
-        const long long d = (long long)(ex - ox) * (ex - ox) + (long long)(ey - oy) * (ey - oy);
-        if (best < 0 || d < bestd) { best = e; bestd = d; }
+// W2-SK-08 / W6-03-04: the ONE current Enemy per computer house
+// (house+0x5600) that the trigger conditions, the threat view, the team
+// targeting and the superweapon AI read.
+//  * [RE: FUN_005045b0] anger: every damage a house's object takes adds
+//    anger toward the attacker's house (ReceiveDamage FUN_00700da0
+//    @0x7012FD, ai_note_damage); the Enemy is the living, non-allied house
+//    with the highest anger.
+//  * [RE: FUN_004fd320 lines 20-90] once the AIHateDelays timer (armed at the
+//    game start, FUN_006862d0) has run out, a computer house in a
+//    multiplayer session with no Enemy adds 1 anger toward the NEAREST
+//    other living house (base centre to base centre) on every AI tick --
+//    allies included, which the arg-max then filters out.
+//  * [RE: FUN_004fd320] an Enemy that is defeated has its anger removed
+//    and the Enemy is cleared to -1.
+bool World::ai_house_out(int h) const {
+    if (h < 0 || h >= house_count()) return true;
+    if (victory_enabled_) return house_defeated(h);
+    return !ai_house_alive(h);
+}
+
+void World::ai_add_anger(int house, int toward, int delta) {
+    if (!ai_enabled(house)) return;
+    HouseAiRec& rec = ai_houses_[house];
+    const int n = house_count();
+    if ((int)rec.anger.size() < n) rec.anger.resize((std::size_t)n, 0);
+    if (toward >= 0 && toward < n) rec.anger[(std::size_t)toward] += delta;
+    int best = 0, pick = -1;
+    for (int e = 0; e < n; ++e) {
+        const int a = rec.anger[(std::size_t)e];
+        if (a <= best || e == house || !is_enemy(house, e) || ai_house_out(e)) continue;
+        best = a;
+        pick = e;
     }
-    rec.enemy_house = best;
+    rec.enemy_house = pick;
+}
+
+void World::ai_damage_feed_cb(void* ctx, bool building, int victim, int attacker_house, int dmg) {
+    static_cast<World*>(ctx)->ai_note_damage(building, victim, attacker_house, dmg);
+}
+
+// [RE: FUN_00700da0 @0x7012CD-0x7012FD] anger delta =
+// ftol(type->vt+0xAC() * (damage / type+0xA0 Strength)); the +0xAC slot is
+// read as the type's Cost [RE-FALLBACK: slot identity inferred; a unit whose
+// type is not in the house's roster uses its strength, i.e. the damage].
+void World::ai_note_damage(bool building, int victim, int attacker_house, int dmg) {
+    int vh = -1, cost = 0, strength = 1;
+    if (building) {
+        if (victim < 0 || victim >= (int)buildings_.size()) return;
+        const Building& b = buildings_[(std::size_t)victim];
+        vh = b.house;
+        if (!ai_enabled(vh)) return;
+        const std::vector<BuildingTypeDef>& bts = btypes();
+        if (b.type >= 0 && b.type < (int)bts.size()) {
+            cost = bts[(std::size_t)b.type].cost;
+            strength = bts[(std::size_t)b.type].strength;
+        } else {
+            cost = strength = b.max_hp;
+        }
+    } else {
+        if (victim < 0 || victim >= (int)units_.size()) return;
+        const Unit& u = units_[(std::size_t)victim];
+        vh = u.house;
+        if (!ai_enabled(vh)) return;
+        const HouseAiRec& rec = ai_houses_[(std::size_t)vh];
+        const int t = ai_unit_type_of(rec, u);
+        strength = u.max_hp;
+        cost = (t >= 0) ? rec.cfg.team.unit_roster[(std::size_t)t].cost : u.max_hp;
+    }
+    if (strength <= 0) strength = 1;
+    const int delta = (int)((double)cost * ((double)dmg / (double)strength));
+    if (delta != 0) ai_add_anger(vh, attacker_house, delta);
+}
+
+void World::ai_pick_enemy_house(int house, HouseAiRec& rec) {
+    const int n = house_count();
+    if ((int)rec.anger.size() < n) rec.anger.resize((std::size_t)n, 0);
+    if (rec.hate_frames < (1 << 30)) ++rec.hate_frames;
+    // The hate-delay seed, on the house AI tick (FUN_004fd320 runs every
+    // 0x69 + rand(1,7) frames; RE-FALLBACK: a fixed 105-frame cadence).
+    if (rec.enemy_house < 0 && rec.cfg.hate_delay_frames >= 0 &&
+        rec.hate_frames >= rec.cfg.hate_delay_frames &&
+        (repair_frame_ + (std::uint64_t)house) % 105u == 0u) {
+        int ox = 0, oy = 0;
+        if (ai_base_centre(house, ox, oy)) {
+            int best = -1;
+            long long bestd = 0;
+            for (int e = 0; e < n; ++e) {
+                if (e == house || !house_combatant(e) || ai_house_out(e)) continue;
+                int ex = 0, ey = 0;
+                if (!ai_base_centre(e, ex, ey)) continue;
+                const long long d = (long long)(ex - ox) * (ex - ox) + (long long)(ey - oy) * (ey - oy);
+                if (best < 0 || d < bestd) { best = e; bestd = d; }
+            }
+            if (best >= 0) ai_add_anger(house, best, 1);
+        }
+    }
+    const int cur = rec.enemy_house;
+    if (cur >= 0 && (cur >= n || ai_house_out(cur) || !is_enemy(house, cur))) {
+        if (cur < n) ai_add_anger(house, cur, -rec.anger[(std::size_t)cur]);
+        rec.enemy_house = -1;
+    }
 }
 
 namespace {
@@ -3536,7 +3611,14 @@ int World::ai_find_typed_building(int house, const HouseAiRec& rec, int arg, boo
                   : b.house != house)
             continue;
         const long long dx = b.cx - nx, dy = b.cy - ny;
-        const long long d = dx * dx + dy * dy;
+        long long d = dx * dx + dy * dy;
+        // W6-03-04: an attack/capture order goes for the designated Enemy's
+        // (or the neutral house's) building first; another enemy's only as a
+        // fallback [RE-FALLBACK: the same Enemy-first rank as the quarry
+        // pickers (W2-SK-08)].
+        const bool other = enemy && rec.enemy_house >= 0 && b.house != rec.enemy_house &&
+                           b.house != neutral_house();
+        if (other) d = far ? d - 1000000000000LL : d + 1000000000000LL;
         if (best < 0 || (far ? d > bestd : d < bestd)) { best = i; bestd = d; }
     }
     return best;
@@ -4471,6 +4553,15 @@ void World::ai_fill_trigger_view(int house, const HouseAiRec& rec,
 }
 
 void World::step(double dt) {
+    // W6-03-04: arm the damage -> anger feed for this step (computer houses
+    // only; a strict no-op otherwise), disarmed on every exit.
+    struct FeedGuard {
+        DamageFeed saved;
+        FeedGuard(World* w, bool on) : saved(damage_feed()) {
+            if (on) { damage_feed().ctx = w; damage_feed().fn = &World::ai_damage_feed_cb; }
+        }
+        ~FeedGuard() { damage_feed() = saved; }
+    } feed_guard(this, ai_any_);
     // W2-SK-15: tombstoned units keep their slot (every target / team member /
     // cargo / parasite / projectile owner is a stable unit INDEX, so slots are
     // never erased or reused), but a dead slot releases its heap storage: the

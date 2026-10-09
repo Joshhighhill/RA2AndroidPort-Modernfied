@@ -694,6 +694,11 @@ struct AiHouseConfig {
     // [house+0x184] (Rules+0x1324; rulesmd 4,2,0 = h,m,e)]. 0 = none (the
     // campaign and every synthetic gate config).
     int virtual_purifiers = 0;
+    // W6-03-04 [RE: FUN_004fd320 / FUN_006862d0]: AIHateDelays[house+0x184]
+    // frames (rulesmd 30,50,70) before a computer house with no Enemy adds 1
+    // anger toward the nearest house each AI tick (multiplayer sessions only).
+    // -1 = never (the campaign and every synthetic config).
+    int hate_delay_frames = -1;
 };
 
 // Holds a reference to the (caller-owned, long-lived) MapFile plus the placed
@@ -2052,15 +2057,33 @@ private:
         AiTeamState team_state;  // AI-2 [RE: ai-team.md]
         AiTriggerState trigger_state;  // AI-3 [RE: ai-trigger.md]
         int enemy_house = -1;  // W2-SK-08: the ONE current enemy (house+0x5600), v9
+        // W6-03-04 [RE: HouseClass anger list house+0x5608 (house, anger)
+        // pairs, count +0x5614; FUN_005045b0]: anger toward each house index.
+        std::vector<int> anger;
+        // [RE: FUN_006862d0 arms house+0x5640/0x5648 = AIHateDelays[+0x184]
+        // frames at game start]: frames elapsed on that timer (saturating).
+        int hate_frames = 0;
     };
     std::vector<HouseAiRec> ai_houses_;  // index = house id (grown on demand)
     bool ai_any_ = false;                // the step() firewall bool
     void step_ai_houses(double dt);
-    void ai_pick_enemy_house(int house, HouseAiRec& rec);   // W2-SK-08
+    void ai_pick_enemy_house(int house, HouseAiRec& rec);   // W2-SK-08 / W6-03-04
+    void ai_note_damage(bool building, int victim, int attacker_house, int dmg);   // W6-03-04
+    static void ai_damage_feed_cb(void* ctx, bool building, int victim, int attacker_house, int dmg);
+    bool ai_house_out(int house) const;   // W6-03-04: house+0x1f5 (defeated)
     bool ai_house_alive(int house) const;                   // W2-SK-08
 public:
     int ai_enemy_house(int house) const {                   // W2-SK-08 (probe)
         return ai_enabled(house) ? ai_houses_[house].enemy_house : -1;
+    }
+    // W6-03-04 [RE: FUN_005045b0]: add `delta` anger toward `toward`, then the
+    // Enemy (house+0x5600) becomes the living, non-allied house with the
+    // HIGHEST anger (> 0; the first such house on a tie), else -1.
+    void ai_add_anger(int house, int toward, int delta);
+    int ai_anger(int house, int toward) const {             // probe
+        if (!ai_enabled(house)) return 0;
+        const std::vector<int>& a = ai_houses_[house].anger;
+        return toward >= 0 && toward < (int)a.size() ? a[toward] : 0;
     }
 private:
     void ai_try_fire_superweapon(int house, HouseAiRec& rec);   // [G-66]
