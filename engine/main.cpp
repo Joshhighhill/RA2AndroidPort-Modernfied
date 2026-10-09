@@ -6098,9 +6098,13 @@ public:
                     cameo_click(lay_.cameos[ci].type, /*right=*/false, ev.shift);
             } else {
                 // G-07: cameo RIGHT click: hold, then abandon (Shift: abandon all).
+                // W6-01-03: a finger HOLD is the tooltip gesture -- it never
+                // suspends / abandons; it opens the cameo popup instead.
                 const int ci = lay_.cameo_at(ev.x, ev.y);
-                if (ci >= 0 && ci < static_cast<int>(lay_.cameos.size()))
-                    cameo_click(lay_.cameos[ci].type, /*right=*/true, ev.shift);
+                if (ci >= 0 && ci < static_cast<int>(lay_.cameos.size())) {
+                    if (ev.touch && ev.hold) cameo_menu_open(lay_.cameos[ci].type, lay_.cameos[ci].rect);
+                    else cameo_click(lay_.cameos[ci].type, /*right=*/true, ev.shift);
+                }
             }
             return;  // consumed by the sidebar
         }
@@ -6567,6 +6571,7 @@ public:
         draw_touch_mode_banner(ren);   // W4-AM-03 (touch only)
         draw_touch_hint(ren);          // W4-AM-01 (touch only)
         draw_touch_hold_ring(ren);     // W4-AM-07 (touch only)
+        draw_cameo_menu(ren);          // W6-01-03 (touch only)
         if (campaign_) draw_campaign_overlay(ren, tc);   // P10 objectives / mission end (W2-UI-21)
         gf_render(ren, tc);   // gF: victory / defeat text during BorrowedTime (W2-UI-20 game font)
         // P7 overlays + the transient "game saved / load failed" banner.

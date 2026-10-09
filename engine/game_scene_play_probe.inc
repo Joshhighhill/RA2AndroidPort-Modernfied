@@ -360,6 +360,8 @@
             const SDL_Rect r = touch_cancel_rect();
             p.targets["touch:cancel"] = ra2play::Rect{r.x, r.y, r.w, r.h};
         }
+        for (const CameoMenuBtn& b : cameo_menu_buttons())   // W6-01-03 popup buttons
+            p.targets[std::string("cmenu:") + b.label] = ra2play::Rect{b.r.x, b.r.y, b.r.w, b.r.h};
         std::string ids;
         for (int t = 0; t < 4; ++t) {
             for (int e : tab_buildable(t)) {
