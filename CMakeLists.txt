@@ -323,9 +323,12 @@ target_link_libraries(art_census PRIVATE ra2assets)
 option(RA2_BUILD_ENGINE "Build the SDL2 engine/app (needs SDL2)" ON)
 if (RA2_BUILD_ENGINE)
   include(FetchContent)
+  # W6-06-14: pinned release tarball + hash (cmake/sdl2_pin.cmake).
+  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/sdl2_pin.cmake)
   FetchContent_Declare(SDL2
-    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-    GIT_TAG release-2.30.9)
+    URL ${RA2_SDL2_URL}
+    URL_HASH SHA256=${RA2_SDL2_SHA256}
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
   set(SDL_TEST OFF CACHE BOOL "" FORCE)
   set(SDL_SHARED ON CACHE BOOL "" FORCE)
   # W2-AR-30: SDL's internal SDL_assert()s are compiled OUT of optimised
