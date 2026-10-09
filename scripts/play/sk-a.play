@@ -152,7 +152,11 @@ until 1800 units(0,CMIN) >= 1                 @G-22:A
 # before this section's later steps need them; two Grizzlies stand guard by
 # the refinery (a player would defend), and "the AI trains" also counts units
 # it fielded and lost (our defenders now win the fights it starts).
-cheat spawn MTNK 0 building 0:GAREFN +0 +3
+# W6 (w6fix-ai): the AI now spreads its defences, earns its difficulty bonus
+# and retaliates by anger, so its first wave may already have razed the
+# refinery here -- guard the ConYard instead when the refinery is gone.
+if buildings(0,GAREFN) >= 1 then cheat spawn MTNK 0 building 0:GAREFN +0 +3
+if buildings(0,GAREFN) == 0 then cheat spawn MTNK 0 building 0:GACNST +0 +3
 cheat spawn MTNK 0 building 0:GAPILE +2 +2
 let u1 = units(1)
 let l1 = units_lost(1)

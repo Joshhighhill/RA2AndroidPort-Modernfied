@@ -3483,6 +3483,9 @@ void World::ai_try_fire_superweapon(int house, HouseAiRec& rec) {
 // object of the quarry stands in for FUN_0050cf90's Greatest_Threat]. A hidden
 // (cloaked/disguised) object scores rand(0, best + 10). Ties -> seeded random.
 bool World::ai_sw_pick_target(int house, HouseAiRec& rec, int enemy, int quarry, Cellxy& out) {
+    // TODO(w6fix-missions legal_threat): FUN_0050ca10 also scores 0 for an
+    // object whose cell is outside the usable map area (FUN_00577e90); unify
+    // with the shared IsInPlayfield / legal-target predicate after the merge.
     const AiTeamConfig& tc = rec.cfg.team;
     int best = 0;
     std::vector<Cellxy> ties;

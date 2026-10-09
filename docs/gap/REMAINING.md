@@ -258,7 +258,7 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
 | R-080 | The AI never fields fixed-wing aircraft (Harrier, Black Eagle) (W2-AN still-open, 04#17) | AI | MINOR | FIXED (w5-abil 7818961; ORCA/BEAG in the AI roster, built onto airfield pads; play abil-ai-air) | `engine/world.cpp:3047` skips `fixed_wing`; `engine/ai_skirmish.inc:32` | M | N |
-| R-081 | The skirmish AI never garrisons buildings. Deploy and base-defence responses work (W2-SK-10) | AI | MINOR | FIXED (w5-abil 7818961, RE-FALLBACK choice rule; play abil-ai-air) | no AI caller of `order_occupy` | M | N |
+| R-081 | The skirmish AI never garrisons buildings. Deploy and base-defence responses work (W2-SK-10) | AI | MINOR | REVERTED (w6fix-ai W6-03-09: the RE-FALLBACK garrison rule locked the AI start force in civilian buildings; switched off until RE-W6-b finds the original trigger) | `engine/world_w5.cpp` `kAiGarrisonCivilian` | M | Y |
 | R-082 | Difficulty pacing is not calibrated against an original capture. The Armor and Groundspeed handicaps are not applied, so Brutal units are not tougher or faster (RE-Q5, G-63 part) | AI | MINOR | RE-FALLBACK (w5-abil: AssignHandicap FUN_004F6DD0 traced; ReceiveDamage divides by the COUNTRY armor mult, no reader of house Armor/Groundspeed found -- left unapplied, docs/re/abilities-w5.md §12) | `engine/ai_base.hpp:101-105` | M | Y |
 | R-083 | AI behaviour fallbacks (about 55 markers): xorshift RNG instead of the lockstep RNG, wall ring and placement scan, team tie-break, base-defence triggers dropped, target picker proxy, moves abandoned after 10 s, 60 s boarding cap (RE-A4 and others) | AI | MINOR | RE-FALLBACK | `engine/ai_base.cpp:9,48,176`; `engine/ai_team.cpp:157,309,385`; `engine/ai_trigger.cpp:113`; `engine/world.cpp:2587,3093,3919` | L | Y |
 | R-084 | On May Day (2 ore mines) AI-vs-AI ends with no winner after 40 min. This may be faithful | AI | MINOR | OPEN | `docs/gap/wave2/03-skirmish-match.md` §7.3 | S | Y |
@@ -459,3 +459,24 @@ Fixed on the way to the ALL09/ALL10/SOV04 proofs (details and RE citations: `doc
 | P4-4 | Crushable= wall overlays (sandbags, prison fences) could not be crushed by Crusher vehicles | FIXED (`629b1e3`, RE-FALLBACK, save v23) |
 | P4-5 | Wall=yes warheads do not damage wall overlays (force-firing a wall does nothing); only crushing removes one | OPEN (not needed by the P4 proofs) |
 | P4-6 | ALL09 not won by real orders: `m-all09-opening` proves the opening to the airport + paradrop phase (pre-P3-merge runs reached the BadGuy1 ConYard capture), then BadGuy1's Attk Response teams overrun the force; needs a finer micro script | OPEN (tactical) |
+
+## Wave-6 fix agent #3 (branch `w6fix-ai`, skirmish AI)
+
+Details, RE citations and runs: `docs/gap/wave6/03-skirmish-ai.md` §6 and `docs/re/ai-base.md` §7. Save **v25**; no gate re-pin.
+
+| ID | Item | Status |
+|---|---|---|
+| W6-03-01 | Walls / Insignificant structures kept a defeated house alive and were AI targets | FIXED (`sk-walls.play` WON) |
+| W6-03-02 | 1v3 Brutal end-game stall | FIXED (1v3 Brutal Arena LOST at min ≈ 10.5; `sk-1v3.play`) |
+| W6-03-03 | `AIVirtualPurifiers` income bonus missing | FIXED |
+| W6-03-04 | Nearest-forever enemy, no anger | FIXED (anger table, damage feed, hate delays; saved) |
+| W6-03-05 | SW picker target set; invented IC/Chrono auto-fire; ct=5/6 and scripts 55-57 inert | FIXED |
+| W6-03-06 | No base defences for 18-21 min | FIXED (first defence at min 5) |
+| W6-03-07 | AI hoards money | OPEN (RE W6-c done: no runtime reader of WarLimit/BarracksLimit, no surplus spending found) |
+| W6-03-08 | No raise-money recovery | FIXED (`--ai-soak --ruin-ai-at`) |
+| W6-03-09 | Start infantry garrisoned for the whole game | FIXED (invented rule off) |
+| W6-03-10 | Difficulty spread | PARTIAL (`MultiplayerAICM` 5x Brutal start money added; strength ordered, time-to-kill vs a passive player not monotonic -- the nearest-unit quarry chase, R-083) |
+| W6-03-11 | Score screen time source | RE done (W6-d: wall-clock elapsed timer, `timeGetTime()>>4` / 60); implementation belongs to agent #6 |
+| W6-a | Paranoid computer alliance in skirmish | ANSWERED yes; IMPLEMENTED (`apply_computer_alliance`) |
+| W6-b | Original AI garrisoning | OPEN (occupied civilian buildings are Insignificant, so they never keep a house alive) |
+| -- | Campaign houses: MultiplayerAICM is also applied to computer houses in campaigns by `FUN_006862d0` (no session gate seen) | OPEN, campaign owner (agent #2) |

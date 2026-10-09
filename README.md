@@ -4306,3 +4306,26 @@ Everything is armed by `wire_w5` in the real `GameScene` only.
   scripts pass one at a time (the 8 new `pres-*` included; `probe-bridge` / `world-depth` now
   scroll 2 rows to xmp31s2 in the 80-map lobby); `--demo-combat` / `--demo-projectile` /
   `--demo-veterancy` print their pins -- no gate moved (every change is render-only).
+
+## Wave-6 fix #3: skirmish AI (branch `w6fix-ai`)
+
+Calibrated to gamemd.exe (RE: `docs/re/ai-base.md` §7; audit and status: `docs/gap/wave6/03-skirmish-ai.md` §6).
+
+- **Victory / targets:** `Wall=` and `Insignificant=` structures never keep a house alive and are never
+  AI quarries or superweapon targets (walls are overlays in the original).
+- **Enemy:** anger table fed by damage (`FUN_00700da0` → `FUN_005045b0`), `AIHateDelays` nearest-house
+  seed, arg-max Enemy, cleared on defeat/alliance. In a skirmish with no lobby teams every AI allies with
+  every other AI against the human (`FUN_00501460`, `MPBattleMD.ini AlliesAllowed=yes`).
+- **Economy / difficulty:** `AIVirtualPurifiers` (4,2,0) harvest bonus; `MultiplayerAICM` (400,0,0)
+  starting money; raise-money recovery (`FUN_004fdb30`); `AIExtraRefineries` + defence placeholders
+  spread through the plan (`FUN_005052d0`) with `AIPickWallDefensePercent` walls.
+- **Superweapons:** the house AI fires only Nuke/Storm/paradrop-class types at the Enemy
+  (`FUN_00509710`/`FUN_0050ca10`); the Iron Curtain and Chronosphere fire through the ct=5/6 AITriggers
+  and script actions 55/56/57. The invented house-level IC/Chrono auto-fire and the invented
+  civilian-garrison rule are gone.
+- **Probes / scripts:** `--ai-soak --ruin-ai-at MIN` (wreck the AI economy); `scripts/play/sk-walls.play`,
+  `scripts/play/sk-1v3.play` (new); `sk-a.play` guards its ConYard when the AI razed the refinery;
+  `abil-ai-air.play` now asserts no AI garrison.
+- **Save format v25.** No gate re-pin: `--demo-ai-base` `b61f283f7fd56db9`, `--demo-ai-team`
+  `fdd60988623ca3ef`, `--demo-ai-trigger` `287a87c0aefdfec7`, `--demo-skirmish` `fde3f587e747f765`,
+  `--demo-multihouse` `39412ae996cce8ae`, `--demo-superweapon` `e6969fed3e772bd3` all unchanged.
