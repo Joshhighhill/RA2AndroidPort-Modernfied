@@ -167,6 +167,9 @@ extern const PipArt* g_pips;
 extern double g_pip_yellow, g_pip_red;
 void draw_unit_pips(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u, int x, int y,
                     double yellow, double red);
+// W6-04-11 (hud_pips.inc): the flickering Ivan bomb over every bombed object.
+void draw_bomb_icons(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& world,
+                     const std::vector<ra2engine::Unit>& us, const ra2engine::Camera& cam);
 inline const ra2assets::TheaterChain& art_chain() {
     if (g_art_chain && !g_art_chain->yr_only) return *g_art_chain;
     return *ra2assets::theater_chain("TEMPERATE");
@@ -3953,6 +3956,12 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             ra2engine::draw_cargo_pips(ren, u, ra2engine::cargo_total_size(us, u),
                                        u.passengers_max, cam, W, H);
     }
+    // W6-04-11 [rules [AudioVisual] IvanIconFlickerRate=8 "this many frames
+    // and the icon goes back and forth within one of the 6 2-frame anims";
+    // RE-FALLBACK: the icon is conquer.mix bomb.shp, the anim picked by the
+    // fuse's elapsed sixth, drawn above the object]: a bombed object shows
+    // the flickering bomb, so the player sees what carries one.
+    draw_bomb_icons(ren, tc, world, us, cam);
     // P5 [RE: veterancy.md V13]: veterancy chevrons (no-op unless g_p5_art).
     draw_p5_chevrons(ren, tc, world, ua.pal, cam, W, H);
     // Live selection box on top (interactive only).

@@ -683,11 +683,13 @@ private:
             }
             fx_.spawn(name, u.fx, u.fy, u.level, lift, ox);
         }
-        if (wp->bolt || wp->laser) {   // W2-GA-15 Tesla / Prism beams
+        // W6-04-24: a slot-1 shot draws the Secondary's beam (Boris's Flare).
+        const FxWeapon* bw = u.w_active == 1 ? fx_.weapon2(u.image) : wp;
+        if (bw && (bw->bolt || bw->laser || bw->rad_beam || bw->line)) {   // W2-GA-15 Tesla / Prism beams
             double tx = 0, ty = 0, tl = 0;
             int tlev = 0;
             if (target_point(w, u.target, u.target_building, tx, ty, tlev, tl))
-                fx_.add_beam(u.fx, u.fy, u.level, u.is_vehicle ? 18.0 : 15.0, tx, ty, tlev, tl, *wp,
+                fx_.add_beam(u.fx, u.fy, u.level, u.is_vehicle ? 18.0 : 15.0, tx, ty, tlev, tl, *bw,
                              house_color(w, u.house));
         }
         if (!u.w_proj.flies()) {
