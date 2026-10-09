@@ -6636,6 +6636,16 @@ public:
             const std::string a = pa.current_track() + "\n" + (pa.music_on() ? "1" : "0") + "\n";
             f.sections[ra2engine::save::kTagAudio] = std::vector<uint8_t>(a.begin(), a.end());
         }
+        if (campaign_) {   // W6-06-04: the live trigger particle systems
+            std::string fx;
+            char ln[160];
+            for (const TrigFx& t : trig_fx_) {
+                if (!const_cast<Presentation&>(pres_).effects().system_alive(t.id)) continue;
+                std::snprintf(ln, sizeof ln, "%s %.3f %.3f %.3f\n", t.name.c_str(), t.x, t.y, t.z);
+                fx += ln;
+            }
+            if (!fx.empty()) f.sections[ra2engine::save::kTagParticles] = std::vector<uint8_t>(fx.begin(), fx.end());
+        }
         if (campaign_) {   // P10: the trigger runtime + the campaign host state
             f.sections[ra2engine::save::kTagTriggers] =
                 ra2engine::save::save_triggers(campaign_->trigger_system());
@@ -6731,6 +6741,17 @@ private:
                 else if (!track.empty()) pres_.sound().jukebox_play(track);
                 loaded_track_ = track;
                 loaded_audio_ = true;
+            }
+            pres_.after_load(world_);   // W6-06-03/-04: no EVA replay, damage smoke rebuilt
+            trig_fx_.clear();
+            if (const std::vector<uint8_t>* px = f.section(ra2engine::save::kTagParticles)) {   // W6-06-04
+                std::istringstream in(std::string(px->begin(), px->end()));
+                std::string nm;
+                double x = 0, y = 0, z = 0;
+                while (in >> nm >> x >> y >> z) {
+                    const int id = pres_.effects().spawn_system(nm, x, y, z);
+                    if (id) trig_fx_.push_back({nm, x, y, z, id});
+                }
             }
             banner_ = "GAME LOADED";   // W2-UI-21: the original posts no message after a load
         } else {

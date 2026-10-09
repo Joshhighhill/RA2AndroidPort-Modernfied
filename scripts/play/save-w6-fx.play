@@ -1,0 +1,77 @@
+# save-w6-fx -- W6-06-03 / W6-06-04 acceptance (from the wave-6 audit's
+# saverr3-ALL05s): save mid-mission, play 450 campaign frames, load, play to
+# the same frame. Besides the world state, the superweapon EVA requests must
+# not be replayed by the load and the damage smoke must be back.
+set render_every 3000
+set on_quit continue
+set campaign ALL05s.MAP GDI
+until 60 scene == campaign-load
+click start
+until 600 scene == game
+wait 900
+let cf0 = campaign_frame
+dump
+key f10
+wait 2
+click "menu:SAVE GAME"
+wait 2
+click dialog:action
+wait 2
+assert banner == "Mission Saved"            @W6-06:save
+let cfs = campaign_frame
+until 3000 campaign_frame >= $cfs+450
+let a_cf = campaign_frame
+let a_u0 = units(0)
+let a_u1 = units(1)
+let a_u2 = units(2)
+let a_b0 = buildings(0)
+let a_b1 = buildings(1)
+let a_cr = credits
+let a_hc1 = house_credits(1)
+let a_tf = triggers_fired
+let a_ob = objectives
+let a_ul0 = units_lost(0)
+let a_ul1 = units_lost(1)
+let a_hp1 = hp_lost(1)
+let a_mv0 = moving(0)
+let a_mv1 = moving(1)
+let a_cx = cam_x
+let a_cy = cam_y
+let a_out = outcome
+let a_mt = music_track
+let a_eva = evareq(EVA_NuclearSiloDetected)
+let a_fx = fx_systems
+let a_fxp = fx_particles
+dump
+key f10
+wait 2
+click "menu:LOAD GAME"
+wait 2
+click dialog:row0
+click dialog:action
+until 900 scene == game and sf > 5
+assert campaign_frame == $cf0                 @W6-06:load-frame
+until 3000 campaign_frame >= $a_cf
+assert campaign_frame == $a_cf                @W6-06:align
+assert units(0) == $a_u0                      @W6-06:rt
+assert units(1) == $a_u1                      @W6-06:rt
+assert units(2) == $a_u2                      @W6-06:rt
+assert buildings(0) == $a_b0                  @W6-06:rt
+assert buildings(1) == $a_b1                  @W6-06:rt
+assert credits == $a_cr                       @W6-06:rt
+assert house_credits(1) == $a_hc1             @W6-06:rt
+assert triggers_fired == $a_tf                @W6-06:rt
+assert objectives == $a_ob                    @W6-06:rt
+assert units_lost(0) == $a_ul0                @W6-06:rt
+assert units_lost(1) == $a_ul1                @W6-06:rt
+assert hp_lost(1) == $a_hp1                   @W6-06:rt
+assert moving(0) == $a_mv0                    @W6-06:rt
+assert moving(1) == $a_mv1                    @W6-06:rt
+assert cam_x == $a_cx                         @W6-06:rt-cam
+assert cam_y == $a_cy                         @W6-06:rt-cam
+assert outcome == $a_out                      @W6-06:rt
+assert music_track == $a_mt                   @W6-06:rt-music
+assert evareq(EVA_NuclearSiloDetected) == $a_eva   @W6-06-03
+assert fx_systems == $a_fx                   @W6-06-04
+dump
+end

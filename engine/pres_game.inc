@@ -118,6 +118,14 @@ public:
     // W3-FX: the trigger visuals (campaign_visuals.inc) drive these.
     PresFx& fx() { return fx_; }
     PresEffects& effects() { return effects_; }
+    // W6-06-03: after a load, the World's SW event feed (saved with it) is
+    // already announced: start the cursor at its newest event so loading
+    // does not replay "Nuclear silo detected" / "Reinforcements ready".
+    // W6-06-04: and rebuild the damage smoke on the next effects tick.
+    void after_load(const ra2engine::World& w) {
+        for (const ra2engine::SwEvent& e : w.sw_events()) sw_seen_ = std::max(sw_seen_, e.seq);
+        effects_.after_load();
+    }
     // Action 55 / any caller: a radar event at a cell (the minimap flash).
     bool radar_ping(int type, double x, double y) {
         return radar_event(std::clamp(type, 0, 16), x, y);
