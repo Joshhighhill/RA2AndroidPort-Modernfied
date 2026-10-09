@@ -9,6 +9,7 @@
 #include "occupancy.hpp"
 #include "pathfind.hpp"  // Cellxy
 #include "abil_w5.hpp"   // wave-5 abilities (BldTypeW5 / BldW5)
+#include "unit_w6.hpp"   // wave-6 #4 (BldW6)
 
 namespace ra2engine {
 
@@ -99,6 +100,7 @@ struct BuildingTypeDef {
     bool wall = false;              // Wall=
     bool insignificant = false;     // Insignificant=
     BldTypeW5 w5;                   // wave-5 abilities (abil_w5.hpp)
+    BldTypeW6 w6;                   // wave-6 #4 (unit_w6.hpp): wall damage levels
 };
 
 // A placed building instance.
@@ -190,6 +192,7 @@ struct Building {
     // and does not work (defences go offline). Inert default (false).
     bool power_off = false;
     BldW5 w5;                        // wave-5 abilities (abil_w5.hpp)
+    BldW6 w6;                        // wave-6 #4 units/weapons (unit_w6.hpp)
 };
 
 // Foundation origin convention [RE: building-render.md §2, pre-hunt]: the

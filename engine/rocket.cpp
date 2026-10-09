@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "ra2assets/rules.hpp"
+#include "weapon_resolve.hpp"   // warhead_wall_flags (W6-04-04)
 
 namespace ra2engine {
 
@@ -48,6 +49,7 @@ RocketWarhead resolve_warhead(const ra2assets::Rules& rules, const std::string& 
     w.id = id;
     w.spread = rules.section_double(id, "CellSpread", 0.0);
     w.pmax = rules.section_double(id, "PercentAtMax", 1.0);
+    w.wall_flags = warhead_wall_flags(rules, id);   // W6-04-04
     w.verses.fill(100);
     const std::vector<int> v = rules.verses(id);
     for (std::size_t i = 0; i < v.size() && i < w.verses.size(); ++i) w.verses[i] = v[i];

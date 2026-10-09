@@ -38,10 +38,16 @@ bool can_load(const std::vector<Unit>& units, int transport_idx, int passenger_i
     if (p.size > t.size_limit) return false;   // PER-PASSENGER cap: Size <=
                                                // SizeLimit [RE-GATE APPLIED:
                                                // transport-cargo.md §1]
-    // COUNT capacity gate [RE-GATE APPLIED: transport-cargo.md §1 --
-    // NumPassengers < Passengers (FUN_004190B0 case 0xF/0xE): each body is
-    // ONE slot regardless of Size; Size feeds only the pip display].
-    return static_cast<int>(t.cargo.size()) < t.passengers_max;
+    // W6-04-08 [RE: transport-cargo.md §1 -- UnitClass::ReceiveMessage
+    // FUN_00736500 case 0xE/0xF refuses when Passengers (+0x5E0) <
+    // GetTotalSize() (FUN_00473390, the sum of the passengers' Size) + the
+    // newcomer's Size (+0x380)]: a VEHICLE / ship transport is a Size pool
+    // (the Amphibious Transport, Passengers=12, takes 4 Grizzlies of Size 3).
+    // AircraftClass::ReceiveMessage FUN_004190B0 (the Night Hawk) keeps the
+    // body count NumPassengers < Passengers; garrisons (FUN_0043C250) are
+    // counted in world_depth, not here.
+    if (t.is_aircraft) return static_cast<int>(t.cargo.size()) < t.passengers_max;
+    return cargo_total_size(units, t) + p.size <= t.passengers_max;
 }
 
 int next_eject(const Unit& transport) {

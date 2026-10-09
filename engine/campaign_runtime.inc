@@ -255,6 +255,8 @@ public:
         if (slot.ok) building_art_extras(slot, art_, rules_, id, art_id);
         else std::cerr << "[campaign] building " << id << " image " << art_id << " has no art\n";
         ra2engine::fill_building_weapons(rules_, id, d);   // Gap fix C (G-40)
+        d.wall = rules_.section_flag(id, "Wall", false);                // W6-03-01 flag (campaign roster too)
+        d.w6.wall_levels = d.wall ? art_.damage_levels(art_id) : 0;   // W6-04-04
         ba.roster.push_back(d);
         ba.art.push_back(std::move(slot));
         ba.defense.push_back(rules_.is_buildcat_combat(id) ? 1 : 0);

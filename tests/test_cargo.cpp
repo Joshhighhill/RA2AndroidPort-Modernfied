@@ -46,7 +46,7 @@ TEST_CASE("cargo: total_size is the pip-only Size sum, DERIVED from the cargo li
     CHECK(cargo_total_size(us, us[0]) == 3);
 }
 
-TEST_CASE("cargo: COUNT fill to exact capacity; Size never feeds the gate; SizeLimit refusal") {
+TEST_CASE("cargo: exact fill; vehicle transports are a Size pool, aircraft a count; SizeLimit refusal") {
     // Exact fill is COUNT-based [RE-GATE APPLIED: transport-cargo.md §1 --
     // NumPassengers < Passengers]: 5 Size-1 GIs fill Passengers=5, the 6th
     // is refused.
@@ -60,27 +60,47 @@ TEST_CASE("cargo: COUNT fill to exact capacity; Size never feeds the gate; SizeL
     }
     CHECK(static_cast<int>(us[0].cargo.size()) == 5);   // the exact-fill boundary
     CHECK_FALSE(can_load(us, 0, 6));             // the 6th is REFUSED at capacity
-    // COUNT vs size-sum discriminator [RE-GATE APPLIED: transport-cargo.md
-    // §1 -- the DELETED pre-hunt size-sum would refuse here; the recovered
-    // COUNT admits]: four Size-2 DRON-shaped riders occupy FOUR count slots
-    // (their size-sum is already 8 > Passengers=5), and a FIFTH rider still
-    // boards; a SIXTH is refused by the count alone.
+    // W6-04-08 [RE: UnitClass::ReceiveMessage FUN_00736500 case 0xE/0xF --
+    // Passengers < GetTotalSize() + Size refuses]: a VEHICLE transport is a
+    // Size pool. Two Size-2 DRON-shaped riders fill 4 of Passengers=5; a third
+    // Size-2 rider is refused (4 + 2 > 5), a Size-1 GI still boards (4 + 1).
     std::vector<Unit> vs;
     vs.push_back(transport_unit(5, 2));                          // [0]
-    for (int i = 0; i < 4; ++i) vs.push_back(cargo_unit(0, 2));  // [1..4] DRON-shaped
-    vs.push_back(cargo_unit(0, 1));                              // [5] GI-shaped
-    vs.push_back(cargo_unit(0, 1));                              // [6] GI-shaped
-    for (int i = 1; i <= 4; ++i) {
+    for (int i = 0; i < 3; ++i) vs.push_back(cargo_unit(0, 2));  // [1..3] DRON-shaped
+    vs.push_back(cargo_unit(0, 1));                              // [4] GI-shaped
+    for (int i = 1; i <= 2; ++i) {
         CHECK(can_load(vs, 0, i));
         vs[0].cargo.push_back(i);
         vs[i].cargo_of = 0;
     }
-    CHECK(cargo_total_size(vs, vs[0]) == 8);     // pip metric exceeds Passengers --
-                                                 // display-only, NOT the gate
-    CHECK(can_load(vs, 0, 5));                   // count 4 < 5: the 5th boards
-    vs[0].cargo.push_back(5);
-    vs[5].cargo_of = 0;
-    CHECK_FALSE(can_load(vs, 0, 6));             // count 5 = Passengers: full
+    CHECK(cargo_total_size(vs, vs[0]) == 4);
+    CHECK_FALSE(can_load(vs, 0, 3));             // 4 + 2 > 5
+    CHECK(can_load(vs, 0, 4));                   // 4 + 1 <= 5
+    // AircraftClass::ReceiveMessage FUN_004190B0 (the Night Hawk) keeps the
+    // body COUNT: two Size-2 riders take 2 of Passengers=2 regardless of Size.
+    std::vector<Unit> as;
+    as.push_back(transport_unit(2, 2));
+    as[0].is_aircraft = true;
+    as.push_back(cargo_unit(0, 2));
+    as.push_back(cargo_unit(0, 2));
+    as.push_back(cargo_unit(0, 1));
+    CHECK(can_load(as, 0, 1));
+    as[0].cargo.push_back(1);
+    as[1].cargo_of = 0;
+    CHECK(can_load(as, 0, 2));                   // count 1 < 2 (size-sum would refuse)
+    as[0].cargo.push_back(2);
+    as[2].cargo_of = 0;
+    CHECK_FALSE(can_load(as, 0, 3));             // count 2 = Passengers
+    // The Amphibious Transport (Passengers=12 SizeLimit=6) takes 4 Grizzlies.
+    std::vector<Unit> ls;
+    ls.push_back(transport_unit(12, 6));
+    for (int i = 0; i < 5; ++i) ls.push_back(cargo_unit(0, 3));
+    for (int i = 1; i <= 4; ++i) {
+        CHECK(can_load(ls, 0, i));
+        ls[0].cargo.push_back(i);
+        ls[i].cargo_of = 0;
+    }
+    CHECK_FALSE(can_load(ls, 0, 5));
     // SizeLimit gates the LARGEST admissible passenger independently of room
     // [RE-GATE APPLIED: transport-cargo.md §1 -- PER-PASSENGER Size <=
     // SizeLimit]: a Size=3 vehicle is rejected by SizeLimit=2 (HTK-shaped),

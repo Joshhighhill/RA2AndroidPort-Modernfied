@@ -229,7 +229,7 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 | R-046 | No Boris airstrike (AirstrikeTeam), and Engineers cannot defuse Ivan bombs (W2-SK-22) | Units & abilities | MINOR | FIXED (w5-abil 53e50e4 defuse, a4ac30c Boris; plays abil-defuse, abil-boris; plane path RE-FALLBACK) | `git grep AirstrikeTeam engine` and `git grep BombDisarm engine` both return 0 | M | Y |
 | R-047 | A disguised Mirage is still drawn as the tank, not as a tree (W2-SK-22) | Units & abilities | MINOR | FIXED (w5-abil 53e50e4 sim tree pick + w5-pres 66dc750 tree draw for non-owners) | `engine/world.cpp:1983-2000` | M | N |
 | R-048 | The IFV passenger swap changes only damage, ROF, range and Verses; the projectile and AA/AG flags stay. The Engineer IFV RepairBullet still targets enemies (W2-SK-26 part) | Units & abilities | MINOR | FIXED (w5-abil 53e50e4: AA/AG/projectile follow the swap; RepairBullet heals allies; play abil-ifv-repair) | `engine/world_abilities.cpp:261-269` | S | N |
-| R-049 | The Giant Squid grab (ParasitePlus) is not modelled (W2-AN-15 part) | Units & abilities | MINOR | PARTIAL (w5-abil 9aefae3: ParasitePlus paralysis/culling on the P4 parasite; the squid never fires at a ship in play -- combat.cpp aim gate, agent B) | `docs/gap/wave2/02-air-naval-sw.md` §5 row 15 | M | Y |
+| R-049 | The Giant Squid grab (ParasitePlus) is not modelled (W2-AN-15 part) | Units & abilities | MINOR | FIXED (grab: squids grab ships in play, wave-6 audit 04 §3; eject by a Dolphin / healing hit: W6-04-09 `b03b13d`) | `docs/gap/wave2/02-air-naval-sw.md` §5 row 15 | M | Y |
 | R-050 | `Crush=1.8`, AutoCrush and PlayerAutoCrush steering are missing; vehicles crush only what they drive into (G-47 part, RE-W6) | Units & abilities | MINOR | FIXED (W5-B) | `engine/combat.cpp` crush steering (FUN_00742720/FUN_007402F0), friendly scatter; `scripts/play/w5-crush.play` | M | Y |
 | R-051 | Transport `DeployTime` delay not modelled (03 transports) | Units & abilities | MINOR | FIXED (w5-abil 53e50e4; RE FUN_004A5150 DeployTime*900) | `engine/world.cpp:1423` | S | N |
 | R-052 | Allies cannot board each other's transports | Units & abilities | MINOR | FIXED (w5-abil 06e4827; can_load takes IsAlliedWith; both control schemes) | `engine/cargo.cpp:31`, `engine/cargo.hpp:36` | S | N |
@@ -389,7 +389,7 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 | ID | Item (source IDs) | Category | Sev | Status | Evidence | Eff | RE |
 |---|---|---|---|---|---|---|---|
 | R-200 | No movies. MOVIES01/02.MIX on this install are 4-byte stubs, so there are no intro, briefing or win videos and no in-game movies (actions 10/100/116/117; ALL01 67/68/69). Play Movies and Sneak Peeks are greyed. Overlaps U-5 (W2-UI-26, A1-10, W4-SQ-13, 06#15, R8) | Data-limits | MINOR | DATA-LIMIT (w6fix-rel: Play Movies goes live and lists the campaign movies when the player supplies movie files, W6-06-13; the Android importer copies them, W6-06-06; Sneak Peeks stays greyed) | `engine/main.cpp:7278`; `docs/gap/wave4/03-all01-opening.md:274` | – | N |
-| R-201 | YR-only art is absent from the RA2 archives: NABNKR and NAINDP are unbuildable, SCHP has no voxel under the clone's naming, and the CASIN01E/S/W stop signs have no file (the original draws nothing either) | Data-limits | COSMETIC | DATA-LIMIT | `src/asset_fs.cpp:58`; `docs/gap/wave3/03-asset-anim-systems.md` census | – | N |
+| R-201 | YR-only art is absent from the RA2 archives: NABNKR and NAINDP are unbuildable, SCHP has no voxel under the clone's naming, and the CASIN01E/S/W stop signs have no file (the original draws nothing either) | Data-limits | COSMETIC | PARTIAL (W6-04-17/18/21 `afc11ee`: the census was stale -- NABNKR/NAINDP/GAROBO/SCHP/ROBO art is in the YR archives; all buildable now. The stop signs stay absent) | `src/asset_fs.cpp:58`; `docs/gap/wave3/03-asset-anim-systems.md` census | – | N |
 
 ### Mission-proof agent P3 (branch `p3-missions`)
 
@@ -424,6 +424,30 @@ Ordered by how soon a player is likely to hit each problem. **[IP]** means it is
 ## Wave-5 agent F status (branch `w5-android`)
 
 Rows R-151, R-152, R-160..R-163, R-170..R-172 and R-180..R-184 carry their `w5-android` status above. Evidence: `docs/gap/wave5/06-evidence/` (emulator). Perf: ALL03 opening ~11 -> ~100 logic frames/s (desktop, headless); emulator ALL01 14.0 -> ~17 fps (SwiftShader; 85 % of the remaining frame is the host GL pipe). Save format v17.
+
+## Wave-6 agent #4 (units and weapons) status (branch `w6fix-units`)
+
+Full per-item table: `docs/gap/wave6/04-units.md` "Fix status". Save format v28 after the master merges (wave-6 #4 weapon/unit/building state, map wall stages). Gate re-pins with causes in README: abilities, roster, roster2, campaign, triggers, ai-base, ai-trigger, saveload.
+
+| Item | Status |
+|---|---|
+| W6-04-01 Burst | FIXED (`afaccad`) |
+| W6-04-02 shrapnel keys from the projectile | FIXED (`8433c78`) |
+| W6-04-06 OmniFire | FIXED (`355a063`) |
+| W6-04-03 / 12 ability blasts through DamageArea; reactor death x0.5 + fallout | FIXED (`392cf1f`) |
+| W6-04-08 transport Size pool | FIXED (`4ccc77d`; transport-cargo.md §1 corrected) |
+| W6-04-07 amphibious attack approach | FIXED (`2fe84c9`) |
+| W6-04-10 Terror Drone buildable | FIXED (`a3ca80d`) |
+| W6-04-09 Sonic / healing hit frees a parasite host | FIXED (`b03b13d`; Naval Yard repair as a heal is RE-FALLBACK) |
+| W6-04-14/15/16/29/30 OmniCrusher, OpenTransportWeapon, AirRangeBonus, DeployedCrushable, CanApproachTarget | FIXED (`7348982`; AirRangeBonus does not widen the idle acquisition radius, agent #2's area) |
+| W6-04-04 / 05 wall damage stages, map wall overlays shootable | FIXED (`fba6ff5`) |
+| W6-04-22 defence range 3-D + MinimumRange + elevation | FIXED (`1aefcca`) |
+| W6-04-11 bomb icon / W6-04-24 rad beam + flare line | FIXED (`f795dc5`; icon art/anim pick RE-FALLBACK; the sounds are #5's `e24699f`) |
+| W6-04-25/26/28/35 DecloakToFire, docked spawns, IFV veterancy, harness aircraft click | FIXED (`b885a04`) |
+| W6-04-13 defences engage structures | FIXED (`ba1b4b3`; RE: FUN_00445E60 / FUN_007718B0 / FUN_006F8320) |
+| W6-04-17/18/21 Siege Chopper, Robot Control Center + Robot Tank, Battle Bunker, Industrial Plant | PARTIAL (`afc11ee`): all buildable (art present); PoweredUnit stop done; SCHP deploy-to-artillery and the Industrial Plant's UnitsCostBonus (R-066) still OPEN |
+| W6-04-19 / 20 Spy Plane, Force Shield | OPEN (user decision) |
+| W6-04-23, 31..34, 36, 37 | OPEN (not in this agent's list) |
 
 ## Wave-6 agent #5 (presentation) status (branch `w6fix-pres`)
 
@@ -478,7 +502,7 @@ Fixed on the way to the ALL09/ALL10/SOV04 proofs (details and RE citations: `doc
 | P4-2 | DestroyedAll/DestroyedBuildingsAll/DestroyedUnitsAll counted Insignificant= and DontScore= objects (lamps, barrels, civilian props, spent rockets) | FIXED (`fe23895`; P3 fixed it in parallel -- the merge keeps P3's `tracked()` implementation) |
 | P4-3 | A Sleep/Harmless object stayed dormant after the player (or its team) ordered it | FIXED (`81b6570`, RE-FALLBACK) |
 | P4-4 | Crushable= wall overlays (sandbags, prison fences) could not be crushed by Crusher vehicles | FIXED (`629b1e3`, RE-FALLBACK, save v23) |
-| P4-5 | Wall=yes warheads do not damage wall overlays (force-firing a wall does nothing); only crushing removes one | OPEN (not needed by the P4 proofs) |
+| P4-5 | Wall=yes warheads do not damage wall overlays (force-firing a wall does nothing); only crushing removes one | FIXED (W6-04-05 `fba6ff5`: Reduce_Wall damage stages per the warhead's Wall/Wood/WallAbsoluteDestroyer) |
 | P4-6 | ALL09 not won by real orders: `m-all09-opening` proves the opening to the airport + paradrop phase (pre-P3-merge runs reached the BadGuy1 ConYard capture), then BadGuy1's Attk Response teams overrun the force; needs a finer micro script | OPEN (tactical) |
 
 ## Wave-6 fix agent #6 status (branch `w6fix-rel`)

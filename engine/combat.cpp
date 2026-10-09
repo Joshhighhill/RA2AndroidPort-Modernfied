@@ -103,7 +103,7 @@ const VeterancyRules* vet_rules_of(const World& world) {
 void try_fire(const World& world, std::vector<Unit>& units, std::vector<Building>& buildings,
               Unit& u, Unit& v, int attacker_idx, int victim_idx, Occupancy& occ,
               std::vector<ProjectileLaunch>* launches, ProjRng* rng) {
-    u.rof_cool = rearm_secs(u.w_rof, rng);
+    u.rof_cool = unit_rearm_secs(u, rng);   // W6-04-01 Burst
     u.fire_flash = kFireFlashSecs;
     // W2-AN-12 [rules Spawner=yes: HornetLauncher/ASWLauncher/DredLauncher/
     // V3Launcher]: the "shot" launches a spawned aircraft/missile at the
@@ -185,6 +185,20 @@ double rearm_secs(int rof_frames, ProjRng* rng) {
     return (rof_frames + jitter) / kLogicFps;
 }
 
+double burst_rearm_secs(int& burst_index, int burst, int rof_frames, ProjRng* rng) {
+    burst = std::max(1, burst);
+    ++burst_index;
+    double secs;
+    if (burst_index < burst) secs = (rng ? rng->random(3, 5) : 3) / kLogicFps;
+    else secs = rearm_secs(rof_frames, rng);
+    burst_index %= burst;
+    return secs;
+}
+
+double unit_rearm_secs(Unit& u, ProjRng* rng) {
+    return burst_rearm_secs(u.w6.burst_index, u.w6.burst, u.w_rof, rng);
+}
+
 // P2: the single-target damage tail extracted VERBATIM from try_fire's old
 // else-branch (same statements, same order) so the instant path and the
 // projectile detonation path share one implementation.
@@ -200,6 +214,10 @@ void deliver_unit_hit(std::vector<Unit>& units, Occupancy& occ, int attacker_idx
 void deliver_hit_from(std::vector<Unit>& units, Occupancy& occ, const Unit& u, int attacker_idx,
                       int attacker_building, int victim_idx) {
     Unit& v = units[victim_idx];
+    // W6-04-09 [RE: FUN_004D7250 @0x4D7262: a Sonic warhead on a host with a
+    // parasite (+0x694) -> ParasiteClass::ExitUnit]: marked here, the exit
+    // runs in World::step_abilities (combat.cpp cannot move units).
+    if (u.w6.sonic && v.parasite_on_me >= 0) v.w6.sonic_hit = true;
     // P5 [RE: veterancy.md V6]: a vet-enabled World arms v.vet.recv; the
     // receive chain (ArmorMultiplier, STRONGER, max 1) runs BEFORE the Verses.
     // v.vet.recv is false in every legacy World -> raw == u.w_damage as before.
@@ -506,12 +524,105 @@ bool weapon_in_range_from(const World& world, const Unit& u, int ux, int uy, int
 }
 
 bool unit_in_weapon_range(const World& world, const Unit& u, const Unit& t) {
-    return weapon_in_range(world, u, unit_lept_x(t), unit_lept_y(t), unit_lept_z(t));
+    // W6-04-16 [RE-FALLBACK: TechnoType AirRangeBonus is added to the range
+    // against an airborne target]: the IFV ([FV] AirRangeBonus=4) reaches
+    // aircraft at 10 cells. 0 for every other type.
+    const int bonus = unit_airborne(t) ? ftol_i(u.w6.t.air_range_bonus * 256.0) : 0;
+    return weapon_in_range(world, u, unit_lept_x(t), unit_lept_y(t), unit_lept_z(t), bonus);
+}
+
+bool can_crush(const Unit& u, const Unit& v) {
+    if (v.is_aircraft || unit_airborne(v) || v.is_naval) return false;
+    // W6-04-14 [RE-FALLBACK, rules semantics]: an OmniCrusher crushes any
+    // ground unit that is not OmniCrushResistant (vehicles included).
+    if (u.w6.t.omni_crusher) return !v.w6.t.omni_crush_resistant;
+    // W6-04-29: a deployed DeployedCrushable=no infantry (the Guardian GI)
+    // cannot be run over.
+    if (v.deployed && !v.w6.t.deployed_crushable) return false;
+    return v.crushable && !v.is_vehicle;
+}
+
+WallStep reduce_wall(int stage, int levels, int strength, int dmg, bool connected, ProjRng* rng) {
+    WallStep r;
+    r.stage = stage;
+    levels = std::max(1, levels);
+    // FUN_00480BC0: a hit below Strength advances only if Random(0,Strength) < dmg.
+    if (dmg != -1 && dmg < strength && rng && dmg <= rng->random(0, strength)) return r;
+    r.advanced = true;
+    r.stage = std::min(stage + 1, 15);                 // OverlayData += 0x10
+    r.cascade = r.stage == levels - 1 && levels > 2;
+    if (dmg == -1 || r.stage >= levels || (r.stage == levels - 1 && !connected)) r.destroyed = true;
+    return r;
+}
+
+int wall_hit_damage(int wall_flags, bool wood_wall, int damage) {
+    if (wall_flags & kW6WallAbs) return -1;
+    if ((wall_flags & kW6Wall) || ((wall_flags & kW6Wood) && wood_wall)) return damage > 0 ? damage : 0;
+    return 0;
+}
+
+namespace {
+constexpr int kWoodArmor = 6;   // armor_names(): none, flak, plate, light, medium, heavy, WOOD
+int wall_neighbour(const std::vector<Building>& buildings, const Building& b, int dx, int dy) {
+    for (int j = 0; j < static_cast<int>(buildings.size()); ++j) {
+        const Building& o = buildings[static_cast<std::size_t>(j)];
+        if (&o == &b || !o.alive || o.state == Building::State::Dead || o.type != b.type) continue;
+        if (o.cx == b.cx + dx && o.cy == b.cy + dy) return j;
+    }
+    return -1;
+}
+void wall_building_reduce(const World& world, std::vector<Unit>& units, std::vector<Building>& buildings,
+                          int bi, int dmg) {
+    Building& b = buildings[static_cast<std::size_t>(bi)];
+    if (!b.alive || b.state == Building::State::Dead || dmg == 0) return;
+    const int levels = world.btypes()[static_cast<std::size_t>(b.type)].w6.wall_levels;
+    static const int kDx[4] = {0, 1, 0, -1}, kDy[4] = {-1, 0, 1, 0};   // N, E, S, W
+    int nb[4];
+    bool connected = false;
+    for (int k = 0; k < 4; ++k) {
+        nb[k] = wall_neighbour(buildings, b, kDx[k], kDy[k]);
+        connected = connected || nb[k] >= 0;
+    }
+    const WallStep r = reduce_wall(b.w6.wall_stage, levels, b.max_hp, dmg, connected, world.combat_rng_ptr());
+    if (!r.advanced) return;
+    b.w6.wall_stage = r.stage;
+    if (r.cascade)
+        for (int k = 0; k < 4; ++k)
+            if (nb[k] >= 0 && buildings[static_cast<std::size_t>(nb[k])].w6.wall_stage < 1)
+                wall_building_reduce(world, units, buildings, nb[k], 200);
+    Building& w = buildings[static_cast<std::size_t>(bi)];
+    if (r.destroyed) {
+        w.hp = 0;
+        kill_building(w);
+        for (Unit& o : units)
+            if (o.target_building == bi) {
+                o.target_building = -1;
+                o.attack_order = false;
+            }
+    } else {
+        // The health bar follows the stage (a wall has no HP of its own).
+        w.hp = std::max(1, w.max_hp - w.max_hp * r.stage / std::max(1, levels));
+    }
+}
+}  // namespace
+
+bool w6_wall_building_hit(const World& world, std::vector<Unit>& units, std::vector<Building>& buildings,
+                          int bi, int wall_flags, int damage) {
+    if (bi < 0 || bi >= static_cast<int>(buildings.size())) return false;
+    const Building& b = buildings[static_cast<std::size_t>(bi)];
+    if (b.type < 0 || b.type >= static_cast<int>(world.btypes().size()) ||
+        world.btypes()[static_cast<std::size_t>(b.type)].w6.wall_levels <= 0)
+        return false;
+    if (b.iron_left > 0.0) return true;
+    wall_building_reduce(world, units, buildings, bi,
+                         wall_hit_damage(wall_flags, b.armor_ix == kWoodArmor, damage));
+    return true;
 }
 
 AreaResult damage_area(const World& world, std::vector<Unit>& units,
                        std::vector<Building>& buildings, Occupancy& occ, const Unit& shooter,
-                       int src_unit, int src_building, int ix, int iy, int iz) {
+                       int src_unit, int src_building, int ix, int iy, int iz,
+                       const AreaBuildingHook* building_hook) {
     AreaResult res;
     if (shooter.w_damage == 0) return res;
     const int radius = ftol_i(static_cast<float>(shooter.w_cell_spread) * 256.0f);   // local_80
@@ -558,6 +669,7 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
         Unit& w = units[static_cast<std::size_t>(h.idx)];
         if (!w.alive || w.die_time >= 0.0) continue;
         if (spared(w.house)) continue;
+        if (shooter.w6.sonic && w.parasite_on_me >= 0) w.w6.sonic_hit = true;   // W6-04-09
         if (w.an.iron_left > 0.0) continue;                          // W2-AN-04 Iron Curtain
         // TechnoClass::ReceiveDamage: the house/veterancy armour multipliers on
         // the raw damage, floor 1 (P5 vet_receive; W3-B ProneDamage first).
@@ -591,12 +703,27 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
         if (w.hp <= 0) start_unit_death(units, occ, h.idx, shooter, src_unit);
     }
 
+    // W6-04-04/05 [RE: FUN_00489190 @0x489581..0x4895BD]: every ring cell
+    // holding a wall takes Reduce_Wall per the warhead's wall keys -- a map
+    // wall overlay through the World, a built wall (a 1x1 Wall=yes building)
+    // below instead of the HP hit.
+    if (world.has_wall_overlays())
+        for (int k = 0; k < rings; ++k)
+            world.w6_overlay_wall_hit(icx + kRingOffsets[k][0], icy + kRingOffsets[k][1],
+                                      shooter.w6.wall_flags, shooter.w_damage);
+
     // --- buildings: once per foundation cell inside the ring set (the
     // building sits in every foundation cell's object chain, AddContent
     // FUN_0047E7B0, and the victim list is not de-duplicated).
     for (int bi = 0; bi < static_cast<int>(buildings.size()); ++bi) {
         Building& b = buildings[static_cast<std::size_t>(bi)];
         if (bi == src_building) continue;
+        if (b.type >= 0 && b.type < static_cast<int>(world.btypes().size()) &&
+            world.btypes()[static_cast<std::size_t>(b.type)].w6.wall_levels > 0) {   // W6-04-04
+            if (b.alive && b.state != Building::State::Dead && ring_index(b.cx - icx, b.cy - icy) >= 0)
+                w6_wall_building_hit(world, units, buildings, bi, shooter.w6.wall_flags, shooter.w_damage);
+            continue;
+        }
         for (int cy = b.cy; cy < b.cy + b.fh; ++cy)
             for (int cx = b.cx; cx < b.cx + b.fw; ++cx) {
                 if (!b.alive || b.state == Building::State::Dead) continue;
@@ -619,6 +746,7 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
                 int dmg = modify_damage(raw, shooter.w_verses, b.armor_ix, shooter.w_cell_spread,
                                         shooter.w_percent_at_max, d);
                 if (dmg < 1) dmg = 1;                    // FUN_005F4BA0: buildings floor at 1
+                if (building_hook && *building_hook && (*building_hook)(bi, dmg, d)) continue;
                 b.hp -= dmg;
                 feed_damage(true, bi, shooter.house, dmg);   // W6-03-04 anger
                 res.damage += dmg;
@@ -807,12 +935,12 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                         // step_combat, using this same facing). Infantry are
                         // exempt -- zero behavior change. rof_cool untouched
                         // while unaimed.
-                        if (u.is_vehicle && !u.omni_fire &&
+                        if (u.is_vehicle && !u.omni_fire && !u.w6.omni_fire &&
                             !vehicle_aimed(u, facing_u16_from_delta(
                                                   static_cast<double>(nx) - u.fx,
                                                   static_cast<double>(ny) - u.fy)))
                             continue;  // hold fire this frame; rof_cool untouched
-                        u.rof_cool = rearm_secs(u.w_rof, rof_rng);   // G-50 jitter
+                        u.rof_cool = unit_rearm_secs(u, rof_rng);   // G-50 jitter, W6-04-01 Burst
                         u.fire_flash = kFireFlashSecs;
                         // P4 [RE: abilities.md §C2/§D/§E/§F]: an ability weapon
                         // (or a C4 infantry) hands the building shot to
@@ -918,12 +1046,12 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
             if (weapon_in_range(world, u, u.attack_cell_x * 256, u.attack_cell_y * 256,
                                 world.cell_level(u.attack_cell_x, u.attack_cell_y) * 104)) {
                 if (u.rof_cool <= 0.0) {
-                    if (u.is_vehicle && !u.omni_fire &&
+                    if (u.is_vehicle && !u.omni_fire && !u.w6.omni_fire &&
                         !vehicle_aimed(u, facing_u16_from_delta(
                                               static_cast<double>(u.attack_cell_x) - u.fx,
                                               static_cast<double>(u.attack_cell_y) - u.fy)))
                         continue;
-                    u.rof_cool = rearm_secs(u.w_rof, rof_rng);
+                    u.rof_cool = unit_rearm_secs(u, rof_rng);   // W6-04-01 Burst
                     u.fire_flash = kFireFlashSecs;
                     u.cell_shot = true;
                 }
@@ -1092,7 +1220,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         {
             const World::CrushRules& cr = world.crush_rules();
             const bool may = cr.armed && u.crusher && u.is_vehicle && !u.is_aircraft &&
-                             v.crushable && !v.is_vehicle && !v.is_aircraft && !unit_airborne(v) &&
+                             can_crush(u, v) &&   // W6-04-14/29
                              (world.house_is_computer(u.house) || cr.player_auto_crush || u.auto_crush);
             const int dx = unit_lept_x(v) - unit_lept_x(u), dy = unit_lept_y(v) - unit_lept_y(u),
                       dz = unit_lept_z(v) - unit_lept_z(u);
@@ -1114,8 +1242,11 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                 // the target (step_turrets ran this frame, before step_combat,
                 // computing `want` from these same fx/fy, so the exact
                 // comparison in vehicle_aimed is well-defined). Infantry are
-                // exempt -- zero behavior change.
-                if (u.is_vehicle && !u.omni_fire &&
+                // exempt -- zero behavior change. W6-04-06 [RE: WeaponType
+                // OmniFire +0x12B bypasses the facing gate, aircraft.md §4]: an
+                // OmniFire weapon (Aegis Medusa, Carrier/Dreadnought launchers)
+                // fires without the hull or turret facing the target.
+                if (u.is_vehicle && !u.omni_fire && !u.w6.omni_fire &&
                     !vehicle_aimed(u, facing_u16_from_delta(v.fx - u.fx, v.fy - u.fy)))
                     continue;  // hold fire this frame; rof_cool untouched
                 try_fire(world, units, buildings, u, v, i, u.target, occ, launches, rof_rng);
@@ -1157,7 +1288,8 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                         requests.push_back({i, u.guard_x, u.guard_y});
                 }
             } else if (!u.moving() && !u.is_aircraft && !(u.deploy_fire && u.deployed) &&
-                       !u.is_harvester && u.w_damage > 0) {
+                       !u.is_harvester && u.w_damage > 0 &&
+                       u.w6.t.can_approach_target) {   // W6-04-30: the Mirage holds
                 // W2-SK-25: close in on a sighted target inside the leash (the
                 // back ranks of a big fight used to stand idle out of range).
                 requests.push_back({i, v.cell_x, v.cell_y, /*approach=*/true});

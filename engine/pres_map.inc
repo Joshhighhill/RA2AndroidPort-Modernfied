@@ -250,6 +250,12 @@ public:
     }
     const std::vector<std::pair<int, int>>& blocked() const { return block_; }
     bool is_wall(int x, int y) const { return wall_ids_.count(y * 1000 + x) != 0; }   // W5-A
+    // W6-04-05: the wall OverlayType name at a cell ("" none).
+    std::string wall_name(int x, int y) const {
+        auto it = wall_ids_.find(y * 1000 + x);
+        return it != wall_ids_.end() && it->second >= 0 && it->second < static_cast<int>(names_.size())
+                   ? names_[static_cast<std::size_t>(it->second)] : std::string();
+    }
     bool is_crushable_wall(int x, int y) const { return crush_ids_.count(y * 1000 + x) != 0; }   // P4
     // W2-SK-01: the map's ore mines ([Terrain] types with SpawnsTiberium=yes)
     // with their animation data, for World::add_ore_mine.
@@ -280,6 +286,14 @@ public:
             // W4-SQ-10: a broken high bridge deck is gone.
             if (o.high_deck && w.high_bridge_destroyed(o.x, o.y)) continue;
             if (w.wall_crushed(o.x, o.y) && is_wall(o.x, o.y)) continue;   // P4: flattened by a tank
+            // W6-04-05: a damaged wall draws its stage (frame = stage*16 + mask).
+            const int stage = is_wall(o.x, o.y) ? w.wall_overlay_stage(o.x, o.y) : 0;
+            if (stage > 0) {
+                Obj d = o;
+                d.frame += 16 * stage;
+                draw(ren, tc, w, d, pals, cam, W, H);
+                continue;
+            }
             draw(ren, tc, w, o, pals, cam, W, H);
         }
         draw_tile_anims(ren, tc, w, pals, cam, W, H);   // W3-B
