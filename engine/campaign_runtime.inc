@@ -719,6 +719,22 @@ private:
             }
             if (i == 0) player_side_ = rec.side;
             w_.set_house((int)i, rec);
+            {   // W6-02-01/02 [RE: Start_Scenario FUN_00686560 0x6865B2..0x6865D5 --
+                // campaign Scen+0x60C = slider, Scen+0x610 = 2 - slider; FUN_005007D0
+                // 0x5008E7..: a house with IsHuman (+0x1EC) or IsInPlayerControl
+                // (+0x1ED) gets AssignHandicap(+0x60C), EVERY other house
+                // AssignHandicap(+0x610); FUN_004F6DD0 copies [Easy]/[Normal]/
+                // [Difficult] FirePower (+0x188) and ROF (+0x1A8)]. Set for every
+                // house at scenario start, armed by an AI or not.
+                const int d = std::clamp(launch_.difficulty, 0, 2);
+                const int cls = (i == 0 || rec.player_control) ? d : 2 - d;
+                static const char* kGroups[3] = {"Easy", "Normal", "Difficult"};
+                auto num = [&](const char* key) {
+                    const std::string v = camp::trim_comment(rules_ini_.get(kGroups[cls], key, ""));
+                    return v.empty() ? 1.0 : std::atof(v.c_str());
+                };
+                w_.set_house_handicap((int)i, num("FirePower"), num("ROF"));
+            }
             {   // W4-SQ-02: [<Country>] MultiplayPassive= (map, else RA2 rules.ini)
                 std::string mp = camp::up(camp::trim_comment(map_.get(country, "MultiplayPassive", "")));
                 if (mp.empty()) mp = camp::up(camp::trim_comment(ra2_rules_.get(country, "MultiplayPassive", "no")));
@@ -774,8 +790,9 @@ private:
     // house's production flag is set it runs the AI-1 base brain over its
     // OWN node list: builds missing nodes and rebuilds destroyed ones in
     // place, repairs (G-65) and fires superweapons it owns (G-66).
-    // RE-FALLBACK (RE-A5 open): the DifficultyClass of a campaign computer
-    // house is taken as 2 - campaign difficulty (the skirmish binding);
+    // [RE (W6-02-01): FUN_005007D0 gives every non-human, non-PlayerControl
+    // campaign house AssignHandicap(Scen+0x610 = 2 - slider)]: the
+    // DifficultyClass of a campaign computer house is 2 - campaign difficulty;
     // AI-2/AI-3 (action 74, aimd teams for map houses) are not armed yet.
     void resolve_base_nodes() {
         base_nodes_.assign(house_names_.size(), {});

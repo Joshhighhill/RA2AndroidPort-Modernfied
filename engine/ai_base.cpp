@@ -21,7 +21,11 @@ DifficultyMods difficulty_mods(AiDifficulty d, const DifficultyGroupRaw (&groups
     const int c = difficulty_class_index(d);
     DifficultyMods m;
     m.cost_mul = groups[c].cost;
-    m.build_time_mul = groups[c].build_time;
+    // W6-02-04 [RE: house+0x1B8 BuildTime is written only by AssignHandicap
+    // FUN_004F6DD0 @0x4F6FFA and read only by the house CRC (0x502C31);
+    // Time_To_Build FUN_006F3D00 uses only the country multiplier
+    // FUN_0050BEC0]: the BuildTime handicap is never applied.
+    m.build_time_mul = 1.0;
     m.build_delay_min = groups[c].build_delay;   // minutes
     m.build_slowdown = groups[c].build_slowdown;
     m.firepower_mul = groups[c].firepower;
