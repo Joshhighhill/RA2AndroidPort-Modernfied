@@ -274,6 +274,10 @@ bool touch_snap_sidebar(ra2engine::InputEvent& ev) const {
     for (const ra2engine::SbRect& t : lay_.tabs) consider(t);
     consider(lay_.scroll_up);
     consider(lay_.scroll_dn);
+    // W6-01-13: the 72x18 Options button (the visible way into the menu when
+    // gesture navigation hides Back) snaps like the other small buttons.
+    const ra2engine::SbRect ob{lay_.opt_btn.x, lay_.opt_btn.y, ba_.sb_optbtn.width(), ba_.sb_optbtn.height()};
+    if (ba_.has_optbtns) consider(ob);   // (`best` may point at ob: it lives to the end)
     if (ba_.has_repair_sell) {
         consider(lay_.repair_btn);
         consider(lay_.sell_btn);
