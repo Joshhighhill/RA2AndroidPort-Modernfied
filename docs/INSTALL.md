@@ -35,8 +35,15 @@ The engine currently reads the **Yuri's Revenge** data set (`rulesmd.ini`,
 
 ## 2. Desktop (Windows)
 
-1. Unzip or build `ra2engine.exe` together with `SDL2.dll`.
-2. Start `ra2engine.exe`. It looks for the game files in this order:
+1. Unzip the release zip (`ra2engine-<version>-win64.zip`) into any folder.
+   It holds `ra2game.exe`, `ra2engine.exe`, `SDL2.dll`, this file, `LICENSE`
+   and `THIRD_PARTY_NOTICES.md`; nothing else needs installing (the C++
+   runtime is built into the exes; Windows 10 or later, or Windows 7/8.1 with
+   the Universal C Runtime update). Keep `SDL2.dll` next to the exes.
+   To build the zip yourself from a checkout (MinGW-w64 g++, CMake, Ninja):
+   `pwsh scripts/package-win.ps1 -Configure` writes it to `dist/` and checks
+   that it starts from a clean folder.
+2. Start `ra2game.exe` (or `ra2engine.exe`). It looks for the game files in this order:
    1. `--data <folder>` on the command line;
    2. the `RA2_INSTALL_DIR` environment variable;
    3. `RA2.INI` `[Engine] DataDir=` in `%APPDATA%\ra2engine\RA2\`;
@@ -78,11 +85,27 @@ Alternative: copy the files over USB (MTP) straight into
 and on-phone file managers can no longer write to `Android/data`, so use the
 importer or a PC.
 
+**Adding or replacing files later.** Put them in `Download/RA2` and import
+again: long-press the app icon and choose **Import game files**, or in the
+game open **Options**, then **Game Files**. Saves and settings are kept; you
+never need to clear the app's data. Besides the files in the table, the
+importer copies patch archives (`expand##.mix`, `ecache##.mix`,
+`elocal##.mix`), `thememd.mix`, and movie files (`MOVIES##.MIX`,
+`MOVMD##.MIX`, and loose `*.bik`, also from a `Movies` sub-folder).
+
 Settings (`RA2.INI`) and saves are in the app's internal storage. They are
 included in Android backups; the game files are not.
 
-If the app is closed in the background (low memory), the game was saved to
-`AUTOSAVE`. The next launch asks **RESUME GAME?**.
+If Android closes the app in the background (low memory), or restarts it
+(for example after a switch to gesture navigation or a theme change), the
+game was saved to `AUTOSAVE`. The next launch shows **RESUME GAME?** with
+the mission name and play time; **MAIN MENU** asks before it discards that
+game. If you won a mission and the app was closed on the results page or
+on the next loading screen, the next launch offers **CONTINUE CAMPAIGN?**.
+
+**Updates.** Install the new APK over the old one: the game files and
+settings are kept. Saved games do not carry over between engine versions
+yet (they are listed as "Older version"), so finish a mission first.
 
 ## 4. Controls
 
@@ -112,13 +135,18 @@ If the app is closed in the background (low memory), the game was saved to
 | Gesture | Does |
 |---|---|
 | Tap | Select, or give an order with a selection (a left-click) |
-| Double tap a unit | Select every unit of that type on screen |
-| Drag with one finger | Scroll the map |
+| Tap a building's picture | Picks that building, also its upper part (a tower's head, a lab's dome), even with a soldier standing next to it |
+| Tap one of your selected units (two or more selected) | Moves the selection there (it does not re-select that one unit). Tap a unit that is NOT selected to select it. |
+| Double tap a unit | Select every unit of that type on screen. It never deploys. |
+| Tap the only selected unit (wait half a second) | Deploy / unload it (or use **DPLY**) |
+| Drag with one finger | Scroll the map (with **BOX** on: draw a selection box) |
 | Drag with two fingers | Scroll the map |
 | Hold (a ring fills at the finger), then drag | Draw a selection box |
-| Hold, then lift | Cancel the armed mode (sell, repair, placement, superweapon target). It never deselects. On a cameo: hold / cancel the build. On a team button: create the team. |
+| Hold, then lift | Cancel the armed mode (sell, repair, placement, superweapon target). It never deselects. On a team button: create the team. |
+| Hold on a cameo | Show its name and price above the finger. It does not pause the build. If the cameo is building, a small menu opens beside it: **PAUSE** / **RESUME**, **CANCEL** (one), **ALL** (every queued copy). Tap elsewhere to close it. |
 | Two-finger tap | Right-click: cancel a mode, else deselect everything |
-| Hold on a cameo or a sidebar button | Show its tooltip |
+| Hold on a sidebar button | Show its tooltip |
+| Tap the radar | Look there (it never moves the selection; arm **MOVE** first to send units there) |
 | Drag on the radar | Scroll the view with the finger |
 | Swipe up / down on the cameo strip | Scroll the build list |
 
@@ -128,22 +156,42 @@ If the app is closed in the background (low memory), the game was saved to
   or after 6 seconds. It holds:
   - **+SEL**: taps add to the selection;
   - **FIRE**: force-fire the next order;
-  - **MOVE**: force-move the next order;
+  - **MOVE**: force-move the next order (also a radar tap);
   - **STOP**, **GRD**, **SCAT**, **DPLY**;
+  - **BOX**: stays on until tapped again; while on, a one-finger drag draws a
+    selection box at once (two fingers still scroll);
   - **BRF**: the mission briefing (campaign; tap the map to close it);
-  - **1**..**5**: tap to select the team, hold to create it.
-  While +SEL, FIRE or MOVE is armed, the closed **CMD** button shows it.
+  - **1**..**5**: tap to select the team, hold to create it;
+  - **MORE**: the second page -- **TYPE** (every unit of the selected types),
+    **HOME** (centre on the base), **EVT** (jump to the latest radar event),
+    **NEXT** / **PREV** (step through your units), **FOLW** (follow the
+    selected unit), **6**..**0** (teams 6-10), **V1**..**V3** (view bookmarks:
+    hold to save the view, tap to jump back), **BACK**.
+  While +SEL, FIRE, MOVE or BOX is armed, the closed **CMD** button shows it.
 - Sell, repair, placement and superweapon targeting show a banner at the
   bottom of the battlefield. Tap **X** on the banner (or hold anywhere) to
   cancel the mode.
+- **Sell / repair**: tap a building to mark it (its foundation lights up and
+  the banner names it), then tap it again to sell / repair it. Tapping another
+  building moves the mark.
+- **Superweapons**: tap the target to see the area it hits, then tap the same
+  spot again to fire.
 - To place a building, tap once to see where it goes, then tap the same spot
   again to place it.
+- Messages, objectives and tooltips are drawn 1.5x larger on a phone.
+- With gesture navigation, a swipe in from the left edge next to the command
+  column, or from the right edge along the build list, stays in the game
+  (Android 10+); a swipe elsewhere on the edge is the system's.
 - During a mission's intro the game ignores input (as the original does) until
   the intro ends; Back still opens the options menu.
 - Back opens the options menu in a game, goes back on menu pages, and asks to
   exit on the main menu.
 - The engine build (for example `ENGINE 0.9.0+g1a2b3c4`) is shown in the
   bottom-left corner of the main menu and as the app's version name.
+  **Options > About** shows the version, the licence and the third-party
+  notices.
+- Back on the mission results page = Continue (Main Menu after a lost
+  mission); on a mission loading screen Back returns to the main menu.
 
 ### Movies
 
@@ -155,9 +203,16 @@ put the Bink files (`A01_f00e.bik`, ...) in any of:
 
 - a folder named by the environment variable `RA2_MOVIE_DIR`;
 - the game folder, or a `Movies` folder inside it;
-- `Movies` inside the settings folder (`%APPDATA%\ra2engine\RA2\Movies\`,
-  or the app's files folder on Android);
+- `Movies` inside the settings folder (`%APPDATA%\ra2engine\RA2\Movies\`);
 - or replace the placeholder `MOVIES0x.MIX` / `MOVMD03.MIX` with real ones.
+
+On Android, put the movie files next to the game files and import them
+(section 3): the importer copies them where the engine looks.
+
+With movie files present, **Movies & Credits > Play Movies** lists every
+campaign movie it finds (by mission) and plays the one you pick. Winning the
+last mission of a campaign plays the campaign's final movie (when present),
+then the credits, then returns to the main menu.
 
 A movie's sound plays with it when the file carries a Bink Audio track (RDFT or
 DCT, mono or stereo). The music pauses for the movie and resumes after it. The
@@ -208,7 +263,8 @@ Optional system-side numbers: `adb shell dumpsys gfxinfo org.ra2.engine`
 | **GAME FILES NEEDED** page | Copy or import the listed files. File names are case-sensitive on Android; the importer fixes the case for you. |
 | "COULD NOT START THE GAME: THE GAME FILE X IS MISSING" | An optional file needed by that mode (for example a campaign's maps) is missing. Add it and try again. |
 | A save shows "Damaged" | The file failed its checksum. It cannot be loaded. |
-| A save shows "Wrong version" | It was written by another engine version. |
+| The window is 1280x720 although `RA2.INI` asked for more | `ScreenWidth` / `ScreenHeight` did not fit the display (or the graphics driver's limit); the engine fell back and rewrote `[Video]`. Pick a size in Options. |
+| A save shows "Older version" / "Newer version" | It was written by another engine version and cannot be loaded (saves do not carry over between versions yet). |
 | Android: logs | `adb logcat -s SDL SDL/APP RA2Setup` shows the asset folder, `[load]` timings and `[lifecycle]` events. |
 | Windows: logs of `ra2game.exe` | `%APPDATA%\ra2engine\RA2\ra2engine.log` (rewritten on each start). |
 | "COULD NOT LOAD THAT SAVED GAME" / "Error loading game" | The save is from another engine version, or its contents point outside the game (the loader range-checks every unit and building reference). |

@@ -92,6 +92,13 @@ struct BuildingTypeDef {
     bool can_occupy_fire = false;   // CanOccupyFire=     (+0x157C)
     int max_occupants = 0;          // MaxNumberOccupants= (+0x1580)
     bool bridge_repair_hut = false; // BridgeRepairHut=   (+0x16B6)
+    // W6-03-01 [RE: rulesmd [OverlayTypes] 3=GAWALL / 27=NAWALL -- a placed
+    // Wall=yes type becomes an OVERLAY in the original, never a BuildingClass,
+    // so neither the ShortGame last-building count nor any TeamClass quarry
+    // scan sees it; Insignificant=yes (ObjectType +0x232: walls, tech and
+    // civilian structures, lamps) never keeps a house alive either].
+    bool wall = false;              // Wall=
+    bool insignificant = false;     // Insignificant=
     BldTypeW5 w5;                   // wave-5 abilities (abil_w5.hpp)
     BldTypeW6 w6;                   // wave-6 #4 (unit_w6.hpp): wall damage levels
 };

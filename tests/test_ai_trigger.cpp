@@ -99,7 +99,7 @@ TEST_CASE("ai_trigger: condition dispatch over the recovered -1..7 enum") {
     v.neutral_buildings = {0};
     CHECK_FALSE(trigger_condition_true(t, v));
     // Inert values evaluate FALSE [RE: ai-trigger.md §2]: ct=2/3 (unused
-    // inline house-metric), ct=5/6 (superweapons absent), >= 8 (rejected).
+    // inline house-metric), ct=5/6 without the superweapon, >= 8 (rejected).
     v.neutral_buildings = {5};
     for (int cond : {kCondHouseMetric2, kCondHouseMetric3,
                      kCondIronCurtainCharged, kCondChronoSphereCharged,
@@ -107,6 +107,20 @@ TEST_CASE("ai_trigger: condition dispatch over the recovered -1..7 enum") {
         t.condition_type = cond;
         CHECK_FALSE(trigger_condition_true(t, v));
     }
+    // W6-03-05 [RE: FUN_0041f0f0 / FUN_0041f1a0]: ct=5/6 are TRUE once the
+    // owner's Curtain / Sphere is at least AIMinorSuperReadyPercent charged.
+    v.minor_ready = 0.7;
+    t.condition_type = kCondIronCurtainCharged;
+    v.iron_charge = 0.5;
+    CHECK_FALSE(trigger_condition_true(t, v));
+    v.iron_charge = 0.7;
+    CHECK(trigger_condition_true(t, v));
+    v.iron_charge = 1.0;
+    CHECK(trigger_condition_true(t, v));
+    t.condition_type = kCondChronoSphereCharged;
+    CHECK_FALSE(trigger_condition_true(t, v));   // no Sphere
+    v.chrono_charge = 0.75;
+    CHECK(trigger_condition_true(t, v));
     // Untestable counting condition (object None / out-of-range) -> FALSE.
     t.condition_type = kCondEnemyOwns;
     t.comparator = TriggerComparator{2, kCompGreaterEq};

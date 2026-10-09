@@ -293,6 +293,36 @@ TEST_CASE("ai_team: load opcode emits Load and advances the pc (W2-SK-09)") {
     CHECK(t.script_pc == 4);
 }
 
+TEST_CASE("ai_team: W6-03-05 IronCurtainMe/ChronoPrep wait, fire or complete") {
+    // [RE: FUN_006ef1d0 / FUN_006ef690] sw_state 2 = charging past
+    // AIMinorSuperReadyPercent -> the line waits; 1 = charged -> fire and
+    // complete; 0 = absent / far from charged -> complete without firing.
+    for (int op : {55, 57}) {
+        AimdData d = make_aimd();
+        d.scripts[0].actions[3] = {op, 9};
+        TeamInstance t = make_team();
+        std::uint32_t rng = 1u;
+        claim_full(t);
+        t.state = TeamState::Executing;
+        t.script_pc = 3;
+        TeamView v = full_view(true);
+        v.sw_state = 2;
+        TeamCommand c = step_team(t, v, d, rng, kDt);
+        CHECK(c.kind == TeamCommand::Kind::Wait);
+        CHECK(t.script_pc == 3);
+        v.sw_state = 1;
+        c = step_team(t, v, d, rng, kDt);
+        CHECK(c.kind == (op == 55 ? TeamCommand::Kind::IronCurtain : TeamCommand::Kind::ChronoShift));
+        if (op == 57) CHECK(c.quarry == 9);
+        CHECK(t.script_pc == 4);
+        t.script_pc = 3;
+        v.sw_state = 0;
+        c = step_team(t, v, d, rng, kDt);
+        CHECK(c.kind == TeamCommand::Kind::None);
+        CHECK(t.script_pc == 4);
+    }
+}
+
 TEST_CASE("ai_team: jump consumes the tick; success flags and continues") {
     AimdData d = make_aimd();
     d.scripts[0].actions[3] = {kOpJumpToLine, 2};  // pc 3: jump to line 2 (1-based) -> pc 1
@@ -700,8 +730,12 @@ TEST_CASE("ai_team: classify_op follows the 0x6E94E4 executor table") {
     CHECK(classify_op(43) == OpClass::WaitLoaded);
     CHECK(classify_op(8) == OpClass::Unload);
     CHECK(classify_op(9) == OpClass::Deploy);
-    // Superweapon / berserk / removal / out-of-table -> Inert.
-    for (int op : {2, 12, 55, 57, 60, 63, 64, 65, 0x90})
+    // W6-03-05: 55 IronCurtainMe, 56/57 ChronoPrep are live.
+    CHECK(classify_op(55) == OpClass::IronCurtainMe);
+    CHECK(classify_op(56) == OpClass::ChronoPrep);
+    CHECK(classify_op(57) == OpClass::ChronoPrep);
+    // Berserk / removal / out-of-table -> Inert.
+    for (int op : {2, 12, 60, 63, 64, 65, 0x90})
         CHECK(classify_op(op) == OpClass::Inert);
     // Quarry enum is YRpp QuarryType (1-based "Anything").
     CHECK(kQuarryAnything == 1);

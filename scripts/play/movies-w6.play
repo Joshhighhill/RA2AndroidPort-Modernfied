@@ -1,0 +1,19 @@
+# movies-w6 -- W6-06-13: Movies & Credits > Play Movies is live when the
+# player supplied movie files, and lists the campaign's movies that exist.
+# Run with RA2_MOVIE_DIR set to a folder holding A01_f00e.bik (any file of
+# 44+ bytes will do for the list; an unplayable one is skipped back to the
+# list). Without movie files the row stays greyed and this script stops.
+set render_every 1
+set on_quit continue
+click button "Movies & Credits"
+until 30 scene == "shell:Movies & Credits"
+click button "Play Movies"
+until 30 scene == movies                                 @W6-06-13
+require scene == movies
+assert movie_count >= 1                                  @W6-06-13
+shot movies
+click movie0
+until 120 scene == movies                                @W6-06-13
+click back
+until 30 scene == "shell:Movies & Credits"               @W6-06-13
+end

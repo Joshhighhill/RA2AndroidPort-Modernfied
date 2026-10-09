@@ -31,6 +31,37 @@ void configure_skirmish_houses(World& world, const SkirmishConfig& cfg) {
             world.enable_ai_house(i, ai);
         }
     }
+    apply_computer_alliance(world, cfg);
+}
+
+// W6-a [RE: FUN_00501460, called when a computer house sets up its base
+// (FUN_0050a3e0 @0x50A5D4 on its ConYard, FUN_00504fa0 on its MCV deploy),
+// when a computer house is defeated with Paranoid=yes (FUN_004fbed0) and when
+// a human allies (FUN_004f9990)]: if Rules+0x14b5 [MultiplayerDialogSettings]
+// AlliesAllowed (rulesmd says no, but the Battle mode INI MPBattleMD.ini --
+// the only mode that allows AI players, mpmodesmd.ini -- overrides it to yes)
+// and no lobby team was chosen (Scenario+0x11e0, set by FUN_00687950 when any
+// slot's team != -1), every living computer house allies with every other
+// computer house and is the enemy of every human. So a plain skirmish is
+// the human against an alliance of all the AIs; with lobby teams the teams
+// stand as chosen. Applied once at launch (every AI unfolds its MCV on its
+// first frames). [Harness deviation: with no human combatant -- the
+// --ai-vs-ai soak, not a mode the original offers -- the AIs stay apart so
+// they still fight.]
+void apply_computer_alliance(World& world, const SkirmishConfig& cfg) {
+    bool teams = false, human = false;
+    for (const SkirmishSlot& s : cfg.slots) {
+        if (!s.combatant) continue;
+        if (s.alliance_team >= 0) teams = true;
+        if (!s.is_ai) human = true;
+    }
+    if (teams || !human) return;
+    const int n = (int)cfg.slots.size();
+    for (int i = 0; i < n; ++i)
+        for (int j = i + 1; j < n; ++j)
+            if (cfg.slots[i].combatant && cfg.slots[j].combatant && cfg.slots[i].is_ai &&
+                cfg.slots[j].is_ai)
+                world.set_pair_alliance(i, j, true);
 }
 
 }  // namespace ra2engine

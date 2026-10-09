@@ -114,7 +114,8 @@ int depth_register_building(BuildingAssets& ba, const ra2assets::MixFile& ra2, c
     slot.ok = asset_building_shp(art_id, slot.shp);   // W3-FIX-A: global search list
     if (slot.ok) building_art_extras(slot, art, rules, id, art_id);
     ra2engine::fill_building_weapons(rules, id, d);   // also the G16 garrison/hut keys
-    d.w6.wall_levels = rules.section_flag(id, "Wall", false) ? art.damage_levels(art_id) : 0;   // W6-04-04
+    d.wall = rules.section_flag(id, "Wall", false);                 // W6-03-01 flag
+    d.w6.wall_levels = d.wall ? art.damage_levels(art_id) : 0;   // W6-04-04
     ba.roster.push_back(d);
     ba.art.push_back(std::move(slot));
     ba.defense.push_back(0);

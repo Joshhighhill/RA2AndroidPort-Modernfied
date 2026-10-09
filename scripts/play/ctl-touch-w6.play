@@ -1,0 +1,228 @@
+# CTL-TOUCH-W6 -- wave-6 touch fixes (docs/gap/wave6/01-touch.md), driven
+# through the REAL gesture layer (TouchGestures) on the PHONE canvas
+# (`set canvas 974x548`, W6-01-15). Skirmish, default lobby (Allied).
+#   W6-01-01  a tap on a building's upper art picks it (beside a GI too)
+#   W6-01-02  sell / repair: first tap aims (highlight), second tap commits
+#   W6-01-03  a cameo hold shows the tooltip only (no On Hold); popup actions
+#   W6-01-05  double tap = all of type, never a deploy
+#   W6-01-06  a tap on the army in a crowd is an order, not a re-select
+#   W6-01-07  a superweapon: first tap aims, second tap on the cell fires
+#   W6-01-08  a radar tap centres the view (a move needs [MOVE])
+#   W6-01-09  command column page 2 (TYPE / HOME / teams 6-0 / views)
+#   W6-01-11  sticky [BOX]: a one-finger drag boxes with no hold
+set canvas 974x548
+set render_every 0
+set on_quit continue
+touch tap button "Single Player"
+touch tap button Skirmish
+require scene == lobby
+click start
+until 90 scene == game
+require scene == game
+assert playfield_w < 974                                  @W6-01-15
+cheat reveal
+cheat credits 50000
+touch tap unit 0:AMCV
+wait 2
+touch tap touch:CMD
+touch tap touch:DPLY
+until 450 built(0,GACNST) == 1
+wait 30
+
+# --- W6-01-01: the Prism Tower's head picks the tower, with a GI at its foot -------
+cheat w2 build ATESLA
+wait 5
+cheat spawn E1 0 building 0:ATESLA +1 +0
+cheat spawn E1 0 building 0:ATESLA +0 +1
+wait 20
+view building 0:ATESLA
+wait 3
+touch tap art:ATESLA                                      @W6-01-01
+wait 2
+assert selected_building_type == ATESLA                   @W6-01-01
+assert selected == 0                                      @W6-01-01
+shot prism_head_with_gi
+# the GI itself (its body) still selects the GI
+touch tap unit 0:E1
+wait 2
+assert selected == 1                                      @W6-01-01
+assert selected_building == -1                            @W6-01-01
+
+# --- W6-01-05: double tap a GI = all GIs on screen, no deploy ------------------------
+wait 20
+touch dtap unit 0:E1                                      @W6-01-05
+wait 10
+assert selected >= 2                                      @W6-01-05
+assert selected_type(E1) >= 2                             @W6-01-05
+shot dtap_gi
+
+# --- W6-01-06: with the army selected, a tap on one of it moves the army ---------
+# (a GI a few cells out joins the selection; a tap on it moves the army there)
+cheat spawn E1 0 building 0:ATESLA +4 +4
+wait 20
+touch dtap unit 0:E1
+wait 10
+let n6 = selected
+assert selected >= 3
+wait 20
+touch tap building 0:ATESLA +4 +4                         @W6-01-06
+wait 3
+assert selected == $n6                                    @W6-01-06
+assert sel_moving >= 1                                    @W6-01-06
+touch pan2 xy 400 300 400 300                             # two-finger tap = deselect
+wait 2
+assert selected == 0
+
+# --- W6-01-09: command column page 2: TYPE extends a selection to its type ---------
+touch tap unit 0:E1
+wait 20
+assert selected == 1
+touch tap touch:CMD
+touch tap touch:MORE                                      @W6-01-09
+wait 1
+assert touch_page2 == 1                                   @W6-01-09
+touch tap touch:TYPE                                      @W6-01-09
+wait 2
+assert selected >= 2                                      @W6-01-09
+assert touch_bar_open == 0
+# team 7: hold = create, tap = select
+touch tap touch:CMD
+touch tap touch:MORE
+touch hold touch:7                                        @W6-01-09
+wait 1
+touch tap touch:CMD
+touch tap touch:MORE
+touch tap touch:BACK
+assert touch_page2 == 0                                   @W6-01-09
+assert touch_bar_open == 1
+touch tap touch:MORE
+touch tap touch:HOME                                      @W6-01-09
+wait 2
+# view bookmark 1: hold = set, tap = jump back
+touch tap touch:CMD
+touch tap touch:MORE
+touch hold touch:V1                                       @W6-01-09
+wait 1
+let vx = cam_x
+touch drag xy 500 300 300 300
+wait 2
+assert cam_x != $vx
+touch tap touch:CMD
+touch tap touch:MORE
+touch tap touch:V1                                        @W6-01-09
+wait 1
+assert cam_x == $vx                                       @W6-01-09
+
+# --- W6-01-11: sticky BOX -----------------------------------------------------------
+view building 0:ATESLA
+wait 3
+touch pan2 xy 400 300 400 300
+wait 1
+touch tap touch:CMD
+touch tap touch:BOX                                       @W6-01-11
+wait 1
+assert touch_box == 1                                     @W6-01-11
+let cx11 = cam_x
+touch drag xy 150 60 800 520                              @W6-01-11
+wait 2
+assert selected >= 2                                      @W6-01-11
+assert cam_x == $cx11                                     @W6-01-11
+touch tap touch:BOX
+wait 1
+assert touch_box == 0                                     @W6-01-11
+touch drag xy 500 300 500 360
+wait 2
+assert cam_x == $cx11                                     # a vertical drag scrolls y only
+touch pan2 xy 400 300 400 300
+
+# --- W6-01-03: hold a building cameo: tooltip only, production keeps running --------
+touch tap cameotab:GAPOWR
+wait 2
+touch tap cameo:GAPOWR
+wait 15
+let s0 = queue_stage(structure)
+touch hold cameo:GAPOWR                                   @W6-01-03
+wait 20
+assert queue_stage(structure) > $s0                       @W6-01-03
+assert evareq(EVA_OnHold) == 0                            @W6-01-03
+assert queue(structure) == GAPOWR                         @W6-01-03
+assert cameo_menu == 1                                    @W6-01-03
+shot cameo_popup
+touch tap cmenu:PAUSE                                     @W6-01-03
+wait 5
+let s1 = queue_stage(structure)
+wait 20
+assert queue_stage(structure) == $s1                      @W6-01-03
+touch hold cameo:GAPOWR
+wait 2
+touch tap cmenu:RESUME                                    @W6-01-03
+wait 20
+assert queue_stage(structure) > $s1                       @W6-01-03
+touch hold cameo:GAPOWR
+wait 2
+touch tap cmenu:CANCEL                                    @W6-01-03
+wait 3
+assert queue(structure) == ""                             @W6-01-03
+# a tap elsewhere closes the popup
+touch hold cameo:GAPOWR
+wait 2
+assert cameo_menu == 0                                    # nothing in production: no popup
+
+# --- W6-01-02: sell needs a confirming tap; the ConYard behind survives -------------
+cheat w2 build GAWEAT
+wait 5
+view building 0:GAWEAT
+wait 3
+touch tap sell
+wait 2
+assert base_mode == sell
+let wd0 = built(0,GAWEAT)
+let cy0 = built(0,GACNST)
+touch tap art:GAWEAT                                      @W6-01-02
+wait 20
+assert touch_aim >= 0                                     @W6-01-02
+assert built(0,GAWEAT) == $wd0                            @W6-01-02
+assert built(0,GACNST) == $cy0                            @W6-01-02
+shot sell_aimed
+touch tap art:GAWEAT                                      @W6-01-02
+wait 30
+assert built(0,GAWEAT) < $wd0                             @W6-01-02
+assert built(0,GACNST) == $cy0                            @W6-01-02
+assert base_mode == sell                                  # the mode stays armed
+touch tap touch:cancel
+wait 2
+assert base_mode == none
+
+# --- W6-01-08: a radar tap centres the view, it does not order --------------------
+cheat w2 build GAPOWR
+cheat w2 build GAPOWR
+cheat w2 build AMRADR
+wait 200
+touch tap unit 0:E1
+wait 2
+assert selected == 1
+let c0 = cam_x
+touch tap button:radar                                    @W6-01-08
+wait 5
+assert sel_moving == 0                                    @W6-01-08
+assert cam_x != $c0                                       @W6-01-08
+
+# --- W6-01-07: superweapon: aim, then confirm on the same cell -------------------
+until 4000 sw_ready_t(0,AmerParaDrop) == 1                @W6-01-07
+view building 0:GACNST
+wait 2
+let gis = units(0,E1)
+touch tap sw:AmerParaDrop
+wait 2
+assert sw_targeting == 1
+touch tap building 0:GACNST +5 +5                         @W6-01-07
+wait 5
+assert touch_aim_sw == 1                                  @W6-01-07
+assert sw_targeting == 1                                  @W6-01-07
+shot sw_aimed
+touch tap building 0:GACNST +5 +5                         @W6-01-07
+wait 5
+assert sw_targeting == 0                                  @W6-01-07
+until 900 units(0,E1) >= $gis+8                           @W6-01-07
+shot end
+end

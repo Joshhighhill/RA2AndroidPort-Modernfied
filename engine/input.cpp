@@ -231,10 +231,71 @@ bool Input::cancel_one_mode() {
     return false;
 }
 
-int Input::building_under(int px, int py) const {
+int Input::building_art_at(int px, int py) const {
+    if (!art_hit_) return -1;
+    const std::vector<Building>& bs = world_.buildings();
+    int best = -1;
+    double best_key = 0.0;
+    for (int i = 0; i < static_cast<int>(bs.size()); ++i) {
+        const Building& b = bs[i];
+        if (!b.alive || b.state == Building::State::Dead) continue;
+        if (!art_hit_(i, px, py)) continue;
+        // render_world's building depth key: the front-most (largest key,
+        // later index on a tie -- drawn last) wins.
+        const double key = (b.cx + (b.fw - 1) / 2.0) + (b.cy + (b.fh - 1) / 2.0);
+        if (best < 0 || key >= best_key) {
+            best = i;
+            best_key = key;
+        }
+    }
+    return best;
+}
+
+int Input::pick_building(int px, int py, bool touch) const {
+    if (touch) {   // W6-01-01 [engine deviation]: a finger picks by the drawn art
+        const int b = building_art_at(px, py);
+        if (b >= 0) return b;
+    }
+    // [RE: FUN_006d98f0] the drawn-object list: each alive building is
+    // registered at the screen point of its Location (the origin cell's
+    // centre at its ground level, FUN_006d9250); the nearest one with
+    // dx^2 + 0.5*dy^2 < 200 wins.
+    const std::vector<Building>& bs = world_.buildings();
+    int best = -1;
+    double best_d = 200.0;
+    for (int i = 0; i < static_cast<int>(bs.size()); ++i) {
+        const Building& b = bs[i];
+        if (!b.alive || b.state == Building::State::Dead) continue;
+        const ra2assets::MapCell* mc = world_.map().at(b.cx, b.cy);
+        const int level = mc ? mc->level : 0;
+        const int hx = (b.cx - b.cy) * (kTileW / 2) + kTileW / 2 + cam_.x;
+        const int hy = (b.cx + b.cy) * (kTileH / 2) + kTileH / 2 - level * kLevelPx + cam_.y;
+        const double dx = px - hx, dy = py - hy;
+        const double d = dx * dx + 0.5 * dy * dy;   // [RE: 0x7e0738 = 0.5]
+        if (d < best_d) {
+            best_d = d;
+            best = i;
+        }
+    }
+    if (best >= 0) return best;
     int cx = 0, cy = 0;
     resolve_ground_cell(px, py, cx, cy);
     return world_.building_at_cell(cx, cy);   // already skips !alive / Dead
+}
+
+bool Input::unit_body_hit(int idx, int px, int py) const {
+    const std::vector<Unit>& us = world_.units();
+    if (idx < 0 || idx >= static_cast<int>(us.size())) return false;
+    const Unit& u = us[idx];
+    int gx, gy;
+    unit_ground_px(u, gx, gy);
+    if (u.is_aircraft && u.altitude > 0.0) gy -= ra2engine::altitude_to_screen_dy(u.altitude);
+    // The original's drawn-object hotspot (FUN_006d98f0: dx^2 + 0.5*dy^2 <
+    // 200). [RE-FALLBACK: the point FUN_006d9460 registers for a foot unit
+    // (vtbl+0x1C0) was not traced; the body centre is taken 10 px above the
+    // ground point, where the sprite's torso / hull is drawn.]
+    const double dx = px - gx, dy = py - (gy - 10);
+    return dx * dx + 0.5 * dy * dy < 200.0;
 }
 
 void Input::placement_cell(int& cx, int& cy) const {
@@ -265,9 +326,7 @@ bool Input::commit_factory_click(int px, int py) {
     // house-0 building whose type is a unit factory can ever be selected,
     // rallied, or primed -- an enemy factory click falls through to normal
     // selection (and clears any prior factory selection).
-    int cx = 0, cy = 0;
-    resolve_ground_cell(px, py, cx, cy);
-    const int b = world_.building_at_cell(cx, cy);
+    const int b = pick_building(px, py, ev_touch_);   // W6-01-01
     if (b >= 0 && world_.buildings()[b].house == 0 && world_.buildings()[b].alive &&
         is_unit_factory_type(world_.buildings()[b].type)) {
         if (selected_building_ == b) {
@@ -442,6 +501,9 @@ void Input::issue_order(int px, int py) {
         // task-6-report.md).
         int cx = 0, cy = 0;
         resolve_ground_cell(ev.x, ev.y, cx, cy);
+        // W6-01-01: every building target below is the click's building pick
+        // (the original's object pick; on touch the drawn art first).
+        const int pick_b = pick_building(ev.x, ev.y, ev_touch_);
         // Harvester orders [RE: economy.md §1], resolved BEFORE the
         // attack-building branch: with a house-0 harvester in the
         // selection, a right-click on an ore cell issues a harvest
@@ -458,7 +520,7 @@ void Input::issue_order(int px, int py) {
                 harv_selected = true;
                 break;
             }
-        const int here_b = world_.building_at_cell(cx, cy);
+        const int here_b = pick_b;
         if (harv_selected && world_.ore().has_ore(cx, cy)) {
             world_.order_harvest(cx, cy);
             // MIXED selection (fix round): co-selected NON-harvester
@@ -581,7 +643,7 @@ void Input::issue_order(int px, int py) {
         // clicking a building they may garrison walk in (InfantryClass
         // Mission_Enter -> Occupy on arrival).
         {
-            const int gb = world_.building_at_cell(cx, cy);
+            const int gb = pick_b;
             if (gb >= 0) {
                 const int actor = lowest_selected();
                 if (world_.order_occupy_selected(gb) > 0) {
@@ -594,7 +656,7 @@ void Input::issue_order(int px, int py) {
         }
         const int spy = sel_spy_idx(world_);
         if (spy >= 0) {
-            const int b_hit = world_.building_at_cell(cx, cy);
+            const int b_hit = pick_b;
             if (b_hit >= 0) {
                 const Building& tb = world_.buildings()[b_hit];
                 const int spy_house = world_.units()[spy].house;
@@ -636,7 +698,7 @@ void Input::issue_order(int px, int py) {
         // injection, mirroring set_refinery_types).
         const int eng = sel_engineer_idx(world_);
         if (eng >= 0) {
-            const int b_hit = world_.building_at_cell(cx, cy);
+            const int b_hit = pick_b;
             if (b_hit >= 0) {
                 const Building& tb = world_.buildings()[b_hit];
                 const int eng_house = world_.units()[eng].house;
@@ -680,7 +742,7 @@ void Input::issue_order(int px, int py) {
         // friendly-vs-hostile decision: a click on an own/friendly
         // building is NOT an attack and falls through to the move
         // below, exactly like a friendly-unit right-click.
-        const int b_idx = world_.building_at_cell(cx, cy);
+        const int b_idx = pick_b;
         if (b_idx >= 0 && world_.is_enemy(0, world_.buildings()[b_idx].house) && any_selected) {
             // Capture actor BEFORE the order mutates any state.
             const int actor = lowest_selected();

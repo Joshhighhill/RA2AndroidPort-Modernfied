@@ -19,4 +19,12 @@ bool os_log_to_file_if_no_console(const std::string& path);
 // W2-AR-04 (Android): open the in-app game-file importer (SetupActivity,
 // via RA2Activity.openImporter()); false off Android or on a JNI failure.
 bool os_android_open_importer();
+// W6-01-10: Android destroyed the game activity WITHOUT the player quitting
+// (a configuration change it cannot hand to the running activity, e.g. an
+// overlay / navigation-mode / theme change; RA2Activity.onDestroy with
+// !isFinishing()). The background autosave must then survive the scene
+// teardown so the next launch offers RESUME. Set from Java (JNI) or by the
+// --play harness's `lifecycle relaunch`.
+void os_set_keep_autosave(bool keep);
+bool os_keep_autosave();
 }  // namespace ra2engine

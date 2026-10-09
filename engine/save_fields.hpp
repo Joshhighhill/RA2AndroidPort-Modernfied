@@ -70,6 +70,8 @@ struct SaveAccess {
         save::io(ar, r.team_state);
         save::io(ar, r.trigger_state);
         save::io(ar, r.enemy_house);   // W2-SK-08 (v13)
+        save::io(ar, r.anger);         // W6-03-04 (v25)
+        save::io(ar, r.hate_frames);   // W6-03-04 (v25)
     }
     template <class Ar> static void house_sw(Ar& ar, World::HouseSuperweapon& s) {
         save::io(ar, s.has_sw);
@@ -903,6 +905,8 @@ template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.max_occupants);
     io(ar, v.bridge_repair_hut);
     io(ar, v.w5);   // wave-5 abilities (agent C)
+    io(ar, v.wall);            // W6-03-01 (v25)
+    io(ar, v.insignificant);   // W6-03-01 (v25)
     io(ar, v.w6);   // v25: W6-04-04 wall damage levels
 }
 
@@ -1155,6 +1159,10 @@ template <class Ar> void fields(Ar& ar, AiRules& v) {
     io(ar, v.sw_value_conyard); io(ar, v.sw_value_factory); io(ar, v.sw_value_power);
     io(ar, v.sw_value_tech); io(ar, v.sw_value_defense); io(ar, v.sw_value_harvester);
     io(ar, v.sw_value_building); io(ar, v.sw_value_unit);
+    io(ar, v.sw_value_engineer); io(ar, v.sw_value_thief);   // W6-02-09 (v25)
+    io(ar, v.sw_value_mcv); io(ar, v.sw_value_apc);
+    io(ar, v.extra_refineries); io(ar, v.pick_wall_pct);   // W6-03-06 (v25)
+    io(ar, v.minor_super_ready);   // W6-03-05 (v25)
 }
 template <class Ar> void fields(Ar& ar, PlannedNode& v) {
     io(ar, v.id); io(ar, v.type); io(ar, v.cx); io(ar, v.cy); io(ar, v.building); io(ar, v.dead);
@@ -1168,6 +1176,7 @@ template <class Ar> void fields(Ar& ar, AiBaseState& v) {
     io(ar, v.repair_clock);
     io(ar, v.pending);
     io(ar, v.next_node_id);
+    io(ar, v.raise_building); io(ar, v.raise_unit);   // W6-03-08 (v25)
 }
 template <class Ar> void fields(Ar& ar, AiCatalog& v) {
     io(ar, v.conyard); io(ar, v.power); io(ar, v.refinery); io(ar, v.barracks);
@@ -1297,6 +1306,8 @@ template <class Ar> void fields(Ar& ar, AiHouseConfig& v) {
     io(ar, v.team);
     io(ar, v.multiple_factory);   // W2-SK-06 (v13)
     io(ar, v.fire_superweapons);  // W5-A IQ gate (v22)
+    io(ar, v.virtual_purifiers);  // W6-03-03 (v25)
+    io(ar, v.hate_delay_frames);  // W6-03-04 (v25)
 }
 
 // --- skirmish config (the 'CONF' section: rebuilds the scene's assets) ---

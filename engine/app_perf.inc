@@ -131,7 +131,9 @@ void perf_frame(double in_ms, double up_ms, double ren_ms, double pre_ms) {
 }
 
 // Bottom-left, above the touch mode banner's zone (the bottom 60 px) so it
-// never covers the EVA / objective lines at the top of the battlefield.
+// never covers the EVA / objective lines at the top of the battlefield; W6-01-16:
+// right of the touch command column's two 52-px columns (x 4..108), which it
+// used to cover.
 void perf_draw(SDL_Renderer* ren, int W, int H) {
     if (!g_perf.overlay) return;
     char line[160];
@@ -139,7 +141,7 @@ void perf_draw(SDL_Renderer* ren, int W, int H) {
                   g_perf.fps, g_perf.lps, g_perf.a_update, g_perf.a_render, g_perf.a_present, g_perf.a_worst);
     const int tw = static_cast<int>(std::strlen(line)) * 6 * 2;
     (void)W;
-    const int x = 8, y = H - 86;
+    const int x = 118, y = H - 86;
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(ren, 0, 0, 0, 0xB0);
     const SDL_Rect bg{x - 6, y - 3, tw + 12, 20};
