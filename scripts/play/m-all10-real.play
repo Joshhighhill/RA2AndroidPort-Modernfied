@@ -5,6 +5,10 @@
 # type-selected army (Grizzlies, IFVs, Einstein's Mirage tanks) attacks every
 # BadGuy1/2/3 building and unit in turn -- the three ConYards the landed MCVs
 # deployed first; 'Win' (DestroyedAll BG1+BG2+BG3) -> VICTORY.
+# W6 re-tune (full-strength team start + Patrol attack-move left BadGuy2's
+# 14-unit team waiting at its Con Yard): two extra Chrono Miners fund the
+# army, and the lab guard joins the final sweeps. Normal (loading-screen
+# default).
 set render_every 3000
 set on_quit continue
 set campaign ALL10s.MAP GDI
@@ -106,6 +110,10 @@ if placing == 1 then place auto
 wait 1
 if placing == 1 then place auto
 until 600 placing == 0 and queue_ready(structure) == 0 or built(0,GAPOWR) > $n_GAPOWR
+until 900 cameo(CMIN) == 1
+click tab:3
+click cameo:CMIN
+click cameo:CMIN
 until 900 cameo(MTNK) == 1
 click tab:3
 click cameo:MTNK
@@ -1437,6 +1445,8 @@ if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:0 soft
@@ -1514,6 +1524,8 @@ if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then wait 300
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(2,NACNST) > 0 then click building 2:NACNST:0 soft
@@ -1591,6 +1603,8 @@ if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then wait 300
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(6,NACNST) > 0 then click building 6:NACNST:0 soft
@@ -1674,6 +1688,8 @@ if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:0 soft
@@ -1751,6 +1767,8 @@ if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then wait 300
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(2,NACNST) > 0 then click building 2:NACNST:0 soft
@@ -1828,6 +1846,8 @@ if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then wait 300
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(6,NACNST) > 0 then click building 6:NACNST:0 soft
@@ -1911,6 +1931,8 @@ if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:0 soft
@@ -1988,6 +2010,8 @@ if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then wait 300
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(2,NACNST) > 0 then click building 2:NACNST:0 soft
@@ -2065,6 +2089,8 @@ if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then wait 300
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(6,NACNST) > 0 then click building 6:NACNST:0 soft
@@ -2148,6 +2174,8 @@ if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:0 soft
@@ -2225,6 +2253,8 @@ if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then wait 300
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(2,NACNST) > 0 then click building 2:NACNST:0 soft
@@ -2302,6 +2332,8 @@ if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then wait 300
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(6,NACNST) > 0 then click building 6:NACNST:0 soft
@@ -2385,6 +2417,8 @@ if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:0 soft
@@ -2462,6 +2496,8 @@ if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then wait 300
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(2,NACNST) > 0 then click building 2:NACNST:0 soft
@@ -2539,6 +2575,8 @@ if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then wait 300
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(6,NACNST) > 0 then click building 6:NACNST:0 soft
@@ -2622,6 +2660,8 @@ if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:0 soft
@@ -2699,6 +2739,8 @@ if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then wait 300
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(2,NACNST) > 0 then click building 2:NACNST:0 soft
@@ -2776,6 +2818,8 @@ if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then wait 300
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(6,NACNST) > 0 then click building 6:NACNST:0 soft
@@ -2859,6 +2903,8 @@ if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:0 soft
@@ -2936,6 +2982,8 @@ if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then wait 300
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(2,NACNST) > 0 then click building 2:NACNST:0 soft
@@ -3013,6 +3061,8 @@ if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then wait 300
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(6,NACNST) > 0 then click building 6:NACNST:0 soft
@@ -3096,6 +3146,8 @@ if outcome == RUNNING and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(1,NACNST) > 0 then click building 1:NACNST:0 soft
@@ -3173,6 +3225,8 @@ if outcome == RUNNING and buildings(1) == 0 and units(1) > 0 then wait 300
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(2,NACNST) > 0 then click building 2:NACNST:0 soft
@@ -3250,6 +3304,8 @@ if outcome == RUNNING and buildings(2) == 0 and units(2) > 0 then wait 300
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if outcome == RUNNING and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 shift soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if outcome == RUNNING and buildings(6,NACNST) > 0 then click building 6:NACNST:0 soft
