@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -226,6 +227,14 @@ ra2assets::Palette pal_for_house(const ra2assets::Palette& unit_pal, int house);
 //   3 Magenta=221,102,255  4 Purple=201,201,189  5 DarkBlue=153,214,212
 //   6 DarkSky=131,200,230  7 DarkGreen=81,200,210
 ra2assets::Palette pal_for_color(const ra2assets::Palette& unit_pal, int color_ix);
+// W6-05-01: the rules [Colors] ColorSchemes (HSV per entry, in INI order). A
+// house colour index >= kColorSchemeBase names entry (ix - kColorSchemeBase):
+// the campaign houses' map Color= [RE: HouseClass::ReadINI Color= -> a
+// ColorScheme index; the remap is ColorScheme 0x68C110 = pal_for_hsv]. Set once
+// by the campaign runtime before the first draw; render-only, NOT hashed.
+constexpr int kColorSchemeBase = 8;
+void set_color_schemes(const std::vector<std::array<int, 3>>& hsv);
+int color_scheme_count();
 // W3-B: the pal_for_color remap for an explicit RA2 HSV triple (0..255 each).
 ra2assets::Palette pal_for_hsv(const ra2assets::Palette& unit_pal, int h, int s, int v);
 
