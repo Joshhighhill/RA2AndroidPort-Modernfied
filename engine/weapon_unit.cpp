@@ -75,6 +75,10 @@ void activate_weapon_slot(Unit& u, int slot, const VeterancyRules* vr) {
         u.w_damage = dmg(w.damage);
         u.w_rof = rof(w.rof);
         u.w6.burst = w.burst;                 // W6-04-01
+        u.shrapnel_count = w.shrapnel_count;   // W6-04-02
+        u.shrapnel_damage = w.shrapnel_damage;
+        u.shrapnel_range = w.shrapnel_range;
+        u.shrapnel_verses = w.shrapnel_verses;
         u.w_range = w.range;
         u.w_verses = w.verses;
         u.w_cell_spread = w.cell_spread;
@@ -90,6 +94,10 @@ void activate_weapon_slot(Unit& u, int slot, const VeterancyRules* vr) {
         u.w_damage = dmg(s.damage);
         u.w_rof = rof(s.rof);
         u.w6.burst = s.burst;                 // W6-04-01
+        u.shrapnel_count = s.shrapnel_count;   // W6-04-02
+        u.shrapnel_damage = s.shrapnel_damage;
+        u.shrapnel_range = s.shrapnel_range;
+        u.shrapnel_verses = s.shrapnel_verses;
         u.w_range = s.range;
         u.w_verses = s.verses;
         u.w_cell_spread = s.cell_spread;

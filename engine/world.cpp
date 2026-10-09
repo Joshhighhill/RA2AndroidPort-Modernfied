@@ -898,6 +898,10 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.vet.base.inf_death = c.inf_death;     // W3-B
     u.vet.base.prone_damage = c.prone_damage;
     u.vet.base.burst = c.w6.burst;          // W6-04-01
+    u.vet.base.shrapnel_count = c.shrapnel_count;   // W6-04-02
+    u.vet.base.shrapnel_damage = c.shrapnel_damage;
+    u.vet.base.shrapnel_range = c.shrapnel_range;
+    u.vet.base.shrapnel_verses = c.shrapnel_verses;
     u.vet.has_elite = c.has_elite;
     u.vet.elite = c.elite;
     u.vet.base_speed_cps = c.speed_cps;

@@ -852,14 +852,13 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     // [CometFragment] Damage=30 Range=3 Warhead=CometWH]: the Prism Tank beam
     // splits on impact.
     {
-        const std::string sw = rules.section_string(primary, "ShrapnelWeapon", "");
-        const int sc = (int)rules.section_double(primary, "ShrapnelCount", 0.0);
-        if (!sw.empty() && sc > 0) {
-            r.combat.shrapnel_count = sc;
-            r.combat.shrapnel_damage = rules.weapon_damage(sw);
-            r.combat.shrapnel_range = rules.weapon_range(sw);
-            r.combat.shrapnel_verses = rules.verses(rules.weapon_warhead(sw));
-        }
+        // W6-04-02: the keys live on the projectile ([LargeCometP]
+        // ShrapnelWeapon=CometFragment ShrapnelCount=5); resolve_weapon_slot
+        // reads them there (they were read from [Comet], which has none).
+        r.combat.shrapnel_count = tw.slot[0].shrapnel_count;
+        r.combat.shrapnel_damage = tw.slot[0].shrapnel_damage;
+        r.combat.shrapnel_range = tw.slot[0].shrapnel_range;
+        r.combat.shrapnel_verses = tw.slot[0].shrapnel_verses;
         r.combat.disguise_when_still = rules.section_flag(unit_id, "CanDisguise", false) &&
                                        rules.section_flag(unit_id, "DisguiseWhenStill", false);
     }
@@ -979,6 +978,10 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
         r.combat.elite.damage = rules.weapon_damage(elite);
         r.combat.elite.rof = rules.weapon_rof(elite);
         r.combat.elite.burst = tw.elite[0].valid ? tw.elite[0].burst : 1;   // W6-04-01
+        r.combat.elite.shrapnel_count = tw.elite[0].shrapnel_count;         // W6-04-02
+        r.combat.elite.shrapnel_damage = tw.elite[0].shrapnel_damage;
+        r.combat.elite.shrapnel_range = tw.elite[0].shrapnel_range;
+        r.combat.elite.shrapnel_verses = tw.elite[0].shrapnel_verses;
         r.combat.elite.range = rules.weapon_range(elite);
         const std::string ewh = rules.weapon_warhead(elite);
         r.combat.elite.verses = rules.verses(ewh);

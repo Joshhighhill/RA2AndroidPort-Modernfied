@@ -58,6 +58,12 @@ void World::refresh_vet_stats(int idx) {
                              house_fp);
     u.w_rof = rof_frames(w.rof, has(Ability::Rof), vet_rules_.rof, house_rof);
     u.w6.burst = w.burst;   // W6-04-01: the elite slot's Burst (105mmE 2, 120mmxE 4)
+    // W6-04-02: the elite projectile's shrapnel (SuperCometP SuperCometFragment
+    // x5, Electricbounce TeslaFragment x2 for the elite Tesla Trooper / Tank).
+    u.shrapnel_count = w.shrapnel_count;
+    u.shrapnel_damage = w.shrapnel_damage;
+    u.shrapnel_range = w.shrapnel_range;
+    u.shrapnel_verses = w.shrapnel_verses;
     u.w_range = w.range;
     u.w_verses = w.verses;
     u.w_cell_spread = w.cell_spread;

@@ -62,3 +62,22 @@ TEST_CASE("w6units W6-04-01: real rulesmd Burst resolves on every slot") {
     CHECK(apoc.slot[1].burst == 2);   // MammothTusk
     CHECK(apoc.elite[0].burst == 4);
 }
+
+TEST_CASE("w6units W6-04-02: shrapnel keys come from the projectile, elite slots included") {
+    if (ra2fixture::rulesmd_bytes().empty()) { MESSAGE("no install"); return; }
+    const ra2assets::Rules& r = ra2fixture::rulesmd();
+    const WeaponSlot comet = resolve_weapon_slot(r, "Comet");          // LargeCometP
+    CHECK(comet.shrapnel_count == 5);
+    CHECK(comet.shrapnel_damage == r.weapon_damage("CometFragment"));
+    CHECK(comet.shrapnel_range == r.weapon_range("CometFragment"));
+    const WeaponSlot super = resolve_weapon_slot(r, "SuperComet");     // SuperCometP
+    CHECK(super.shrapnel_count == 5);
+    CHECK(super.shrapnel_damage == r.weapon_damage("SuperCometFragment"));
+    CHECK(resolve_weapon_slot(r, "ElectricBoltE").shrapnel_count == 2);  // Electricbounce
+    CHECK(resolve_weapon_slot(r, "TankBoltE").shrapnel_count == 2);
+    CHECK(resolve_weapon_slot(r, "ElectricBolt").shrapnel_count == 0);
+    CHECK(resolve_weapon_slot(r, "TankBolt").shrapnel_count == 0);
+    const TypeWeapons sref = resolve_type_weapons(r, "SREF");
+    CHECK(sref.slot[0].shrapnel_count == 5);
+    CHECK(sref.elite[0].shrapnel_count == 5);
+}

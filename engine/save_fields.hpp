@@ -507,6 +507,7 @@ template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
     io(ar, v.wall);   // G16
     io(ar, v.inf_death); io(ar, v.prone_damage);   // W3-B
     io(ar, v.burst);   // v25: W6-04-01
+    io(ar, v.shrapnel_count); io(ar, v.shrapnel_damage); io(ar, v.shrapnel_range); io(ar, v.shrapnel_verses);   // v25: W6-04-02
 }
 // G16 world depth (agent G)
 template <class Ar> void fields(Ar& ar, World::DepthRules& v) {
@@ -551,6 +552,7 @@ template <class Ar> void fields(Ar& ar, WeaponStats& v) {
     io(ar, v.affects_allies);   // v20: W5-B
     io(ar, v.inf_death); io(ar, v.prone_damage);   // W3-B
     io(ar, v.burst);   // v25: W6-04-01
+    io(ar, v.shrapnel_count); io(ar, v.shrapnel_damage); io(ar, v.shrapnel_range); io(ar, v.shrapnel_verses);   // v25: W6-04-02
 }
 // W3-B: an art Sequence= entry / a per-image infantry table.
 template <class Ar> void fields(Ar& ar, InfSeqEntry& v) {

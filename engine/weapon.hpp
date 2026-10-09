@@ -32,6 +32,13 @@ struct WeaponSlot {
     int inf_death = 0;
     double prone_damage = 1.0;
     int burst = 1;                 // W6-04-01: weapon Burst= (+0x9C)
+    // W6-04-02 [RE: BulletTypeClass ShrapnelWeapon/ShrapnelCount -- keys of the
+    // weapon's PROJECTILE ([LargeCometP], [Electricbounce], [SuperCometP])]:
+    // the fragment weapon's Damage/Range/Verses and the fragment count.
+    int shrapnel_count = 0;
+    int shrapnel_damage = 0;
+    double shrapnel_range = 0.0;
+    std::vector<int> shrapnel_verses;
 };
 
 // GetFireError's warhead gate [RE: combat.md §2, FUN_006fb5d0]: a weapon whose
