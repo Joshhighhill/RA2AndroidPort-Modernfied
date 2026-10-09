@@ -1203,6 +1203,8 @@ public:
     // their drain, over btypes(). The query every low-power consumer shares
     // (SW charge here; radar, Powered=yes defences).
     bool house_low_power(int house) const;
+    // W6-05-06: read-only water test for the presentation (ImpactWaterSound).
+    bool is_water_cell(int x, int y) const { return cell_is_water(x, y); }
 
     // ===== Wave-2 W2-AN: superweapons v2 (world_sw.cpp) =====================
     // Grant `house` a SW of `type` (a fresh full charge) unless it already

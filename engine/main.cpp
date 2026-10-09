@@ -6220,24 +6220,12 @@ public:
         // Chrono Miner teleport sounds.
         {
             std::vector<ra2engine::HarvestEvent> hev = world_.take_harvest_events();
-            if (audio_.enabled)
-                for (const ra2engine::HarvestEvent& e : hev) {
-                    if (e.kind == ra2engine::HarvestEvent::Kind::ChronoOut)
-                        audio_.mixer->play(audio_.chrono_out);
-                    else if (e.kind == ra2engine::HarvestEvent::Kind::ChronoIn)
-                        audio_.mixer->play(audio_.chrono_in);
-                }
+            pres_.w6_harvest_events(world_, hev);   // W6-04-27: per type, positional
         }
         // CB-1 Enter/LeaveTransportSound (non-gating).
         {
             const std::vector<ra2engine::CargoEvent> cev = world_.take_cargo_events();
-            if (audio_.enabled)
-                for (const ra2engine::CargoEvent& e : cev) {
-                    if (e.kind == ra2engine::CargoEvent::Kind::Board)
-                        audio_.mixer->play(audio_.enter_transport);
-                    else if (e.kind == ra2engine::CargoEvent::Kind::Eject)
-                        audio_.mixer->play(audio_.leave_transport);
-                }
+            pres_.w6_cargo_events(world_, cev);   // W6-04-27: the transport type's sound, positional
         }
         }   // G-13 fixed logic tick
         // Rolling credits tally (display-only).

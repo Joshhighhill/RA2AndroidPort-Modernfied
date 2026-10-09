@@ -138,4 +138,56 @@ assert selected_building >= 0
 key d
 until 60 evareq(EVA_StructureAbandoned) >= 1             @R-131:E
 shot audio_events_end
+
+# --- W6-05-06: WorkingSound / NotWorkingSound, CreateSound, ImpactLandSound ------
+# The Grand Cannon (GTGCAN WorkingSound=PowerOn) went online when it was built.
+assert why(working) >= 1                                 @W6-05-06
+assert snd(PowerOn) >= 1                                 @W6-05-06
+# Powered down by the owner -> NotWorkingSound=PowerOff.
+cheat power_mode
+view building 0:GTGCAN
+click building 0:GTGCAN
+wait 3
+assert why(not_working) >= 1                             @W6-05-06
+assert snd(PowerOff) >= 1                                @W6-05-06
+click xy 600 300 right
+# A Kirov rolling out of the War Factory: CreateSound=KirovCreated.
+view building 0:GAWEAP
+cheat spawn ZEP 0 building 0:GAWEAP +1 +3
+wait 3
+assert why(create) >= 1                                  @W6-05-06
+assert snd(KirovCreated) >= 1                            @W6-05-06
+# Shot down in the air: the crash ends with ImpactLandSound=KirovCrash.
+click unit 0:ZEP
+click building 0:GAWEAP +8 -8
+until 120 airborne(0) >= 1
+wait 120
+# In the air: the type's MoveSound loop (KirovMoveLoop).
+assert why(flight_loop) >= 1                             @W6-04-27
+assert snd(KirovMoveLoop) >= 1                           @W6-04-27
+cheat w2 kill 0:ZEP
+wait 1
+assert crashing(0) >= 1                                  @W6-05-06
+assert why(impact_land) == 0                             @W6-05-06
+until 300 crashing(0) == 0
+wait 2
+assert why(impact_land) >= 1                             @W6-05-06
+assert snd(KirovCrash) >= 1                              @W6-05-06
+# W6-04-27: a Chrono Legionnaire jump -> ChronoOutSound + ChronoInSound.
+view building 0:GACNST
+cheat spawn CLEG 0 building 0:GACNST +3 +6
+wait 2
+click unit 0:CLEG
+click building 0:GACNST +8 +6
+until 120 why(chrono_in) >= 1                            @W6-04-27
+assert why(chrono_out) >= 1                              @W6-04-27
+assert snd(ChronoLegionTeleport) >= 2                    @W6-04-27
+# W6-04-27: a Sniper boarding an IFV -> the IFV's EnterTransportSound (IFVTransform).
+cheat spawn FV 0 building 0:GACNST +5 +8
+cheat spawn SNIPE 0 building 0:GACNST +7 +8
+wait 2
+click unit 0:SNIPE
+click unit 0:FV
+until 300 why(enter_transport) >= 1                      @W6-04-27
+assert snd(IFVTransform) >= 1                            @W6-04-27
 end

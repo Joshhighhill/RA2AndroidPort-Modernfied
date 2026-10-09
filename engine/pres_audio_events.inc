@@ -138,6 +138,22 @@ public:
             }
         }
         for (const auto& e : abil) {
+            // W6-04-27 [RE-FALLBACK: the teleport locomotor's sound calls were
+            // not traced]: a Chrono Legionnaire / Commando jump plays the
+            // type's ChronoOutSound where it left and ChronoInSound where it
+            // lands ([AudioVisual] ChronoOut/InSound when the type has none).
+            if (e.kind == ra2engine::World::AbilityEvent::Kind::Teleport && e.a >= 0 &&
+                e.a < static_cast<int>(w.units().size())) {
+                const ra2engine::Unit& u = w.units()[static_cast<std::size_t>(e.a)];
+                double ox = u.fx, oy = u.fy;
+                if (e.a < static_cast<int>(w5_u_.size()) && w5_u_[static_cast<std::size_t>(e.a)].seen) {
+                    ox = w5_u_[static_cast<std::size_t>(e.a)].fx;
+                    oy = w5_u_[static_cast<std::size_t>(e.a)].fy;
+                }
+                w6_play(w6_type_or_av(u.image, "ChronoOutSound"), ox, oy, "chrono out");
+                w6_play(w6_type_or_av(u.image, "ChronoInSound"), u.fx, u.fy, "chrono in");
+                continue;
+            }
             if (e.kind != ra2engine::World::AbilityEvent::Kind::Deploy) continue;
             if (e.a < 0 || e.a >= static_cast<int>(w.units().size())) continue;
             const ra2engine::Unit& u = w.units()[static_cast<std::size_t>(e.a)];
@@ -281,6 +297,12 @@ private:
             p.inf_purpose = u.infiltrate_purpose;
             if (!p.seen) {
                 p.seen = true;
+                if (w6_live_ && u.alive && u.die_time < 0.0) w6_created(w, ba, u);
+                p.bomb = u.bomb_frame >= 0;
+                p.air = w6_airborne(u);
+                p.wet = w6_wet(w, u);
+                p.fx = u.fx;
+                p.fy = u.fy;
                 p.hp = u.hp;
                 p.sinking = u.an.sinking;
                 p.crashing = u.an.crashing;
@@ -321,11 +343,38 @@ private:
                 const bool turning = u.alive && u.die_time < 0.0 && std::abs(u.turret_facing - p.turret) > 1e-6;
                 w5_turret(p.turret_loop, turning, v.turret_rotate, u.fx, u.fy);
             }
+            // W6-05-06 [RE: FlyLocomotion crash FUN_004bcd50 @4BCF83 -- the
+            // falling aircraft reaching the ground plays the type's
+            // ImpactWaterSound (+0x4C0, else [AudioVisual] ImpactWaterSound)
+            // over water, else its ImpactLandSound (+0x4C4, else [AudioVisual]
+            // ImpactLandSound) at its coords, then it is destroyed].
+            if (p.crashing && !p.impact && (!u.alive || !u.an.crashing)) {
+                p.impact = true;
+                const bool water = w.is_water_cell(u.cell_x, u.cell_y);
+                std::string k = w5_bld_key(u.image, water ? "ImpactWaterSound" : "ImpactLandSound");
+                if (k.empty()) k = w6_av(water ? "ImpactWaterSound" : "ImpactLandSound");
+                w6_play(k, u.fx, u.fy, water ? "impact water" : "impact land");
+            }
+            w6_bomb(p.bomb, p.bomb_loop, u.alive && u.die_time < 0.0 && u.bomb_frame >= 0, u.fx, u.fy);
+            w6_flight(p.air, p.move_loop, u);
+            // W6-04-27 [RE-FALLBACK: the locomotor water edge was not traced]:
+            // amphibious infantry (Tanya, SEAL, Boris) stepping into / out of
+            // water play the type's EnterWaterSound / LeaveWaterSound.
+            {
+                const bool wet = w6_wet(w, u);
+                if (wet != p.wet && u.alive && u.die_time < 0.0)
+                    w6_play(w5_bld_key(u.image, wet ? "EnterWaterSound" : "LeaveWaterSound"), u.fx, u.fy,
+                            wet ? "enter water" : "leave water");
+                p.wet = wet;
+            }
+            p.fx = u.fx;
+            p.fy = u.fy;
             p.hp = u.hp;
             p.sinking = u.an.sinking;
             p.crashing = u.an.crashing;
             p.turret = u.turret_facing;
         }
+        w6_live_ = true;   // units first seen after this tick are new arrivals
         // Buildings: turret rotation (Grand Cannon), engineer repair-to-full,
         // capture lines.
         const auto& bs = w.buildings();
@@ -340,7 +389,11 @@ private:
                                                                                        : nullptr;
             if (!p.seen) {
                 p = W5B{true, b.hp, b.house, b.def_turret_facing, b.being_repaired, 0, b.power_off};
-                continue;
+                p.bomb = b.bomb_frame >= 0;
+                // W6-05-06: a new building starts "not working" (+0x598 = 0)
+                // and falls through to the WorkingSound edge below.
+                if (!t || (w5_bld_key(t->id, "WorkingSound").empty() && w5_bld_key(t->id, "NotWorkingSound").empty()))
+                    continue;
             }
             // W5-E2 [RE: FUN_00452350 / FUN_00452250 -- IsPlayerControl(owner)]:
             // the player's building powered down / up (toggle mode or trigger).
@@ -369,6 +422,33 @@ private:
                     snd_.eva("EVA_BuildingCaptured");
                 }
             }
+            // W6-05-06 [RE: BuildingClass AI @43C940 -- "working" (powered,
+            // not mission 0x12/0x13) compared with +0x598; on a change the
+            // type's WorkingSound (+0xC18) / NotWorkingSound (+0xC1C) starts
+            // on the building's audio controller +0x584 (FUN_00713E60); the
+            // controller follows the building otherwise (FUN_007141B0)].
+            if (t) {
+                const std::string& ws = w5_bld_key(t->id, "WorkingSound");
+                const std::string& ns = w5_bld_key(t->id, "NotWorkingSound");
+                if (!ws.empty() || !ns.empty()) {
+                    const bool working = !dead && b.state == ra2engine::Building::State::Idle && !b.power_off &&
+                                         !b.def_offline;
+                    if (working != p.working) {
+                        if (p.work_loop) snd_.stop_loop(p.work_loop);
+                        p.work_loop = 0;
+                        const std::string& k = working ? ws : ns;
+                        if (!k.empty() && !dead) {
+                            pres_log(frame_, "sound " + k + (working ? " (working)" : " (not working)"));
+                            ++w5_counts_[working ? "working" : "not working"];
+                            p.work_loop = snd_.loop_at(k, cx, cy);
+                        }
+                        p.working = working;
+                    } else if (p.work_loop && !snd_.update_loop(p.work_loop, cx, cy)) {
+                        p.work_loop = 0;
+                    }
+                }
+            }
+            w6_bomb(p.bomb, p.bomb_loop, !dead && b.bomb_frame >= 0, cx, cy);
             p.hp = b.hp;
             p.house = b.house;
             p.turret = b.def_turret_facing;
@@ -387,7 +467,132 @@ private:
         }
     }
 
+public:
+    // W6-04-27: transport boarding / unloading -- the TRANSPORT type's
+    // EnterTransportSound / LeaveTransportSound (IFV IFVTransform, BFRT,
+    // LCRF ...), else the [AudioVisual] default, at the transport.
+    void w6_cargo_events(const ra2engine::World& w, const std::vector<ra2engine::CargoEvent>& ev) {
+        w5_init_once();
+        const auto& us = w.units();
+        for (const ra2engine::CargoEvent& e : ev) {
+            if (e.kind == ra2engine::CargoEvent::Kind::Refuse) continue;
+            if (e.transport < 0 || e.transport >= static_cast<int>(us.size())) continue;
+            const ra2engine::Unit& t = us[static_cast<std::size_t>(e.transport)];
+            const bool board = e.kind == ra2engine::CargoEvent::Kind::Board;
+            w6_play(w6_type_or_av(t.image, board ? "EnterTransportSound" : "LeaveTransportSound"), t.fx, t.fy,
+                    board ? "enter transport" : "leave transport");
+        }
+    }
+    // Chrono Miner teleports: the miner type's ChronoOut/InSound, positional.
+    void w6_harvest_events(const ra2engine::World& w, const std::vector<ra2engine::HarvestEvent>& ev) {
+        w5_init_once();
+        const auto& us = w.units();
+        for (const ra2engine::HarvestEvent& e : ev) {
+            const bool out = e.kind == ra2engine::HarvestEvent::Kind::ChronoOut;
+            if (!out && e.kind != ra2engine::HarvestEvent::Kind::ChronoIn) continue;
+            if (e.unit < 0 || e.unit >= static_cast<int>(us.size())) continue;
+            const ra2engine::Unit& u = us[static_cast<std::size_t>(e.unit)];
+            double x = u.fx, y = u.fy;
+            if (out && e.unit < static_cast<int>(w5_u_.size()) && w5_u_[static_cast<std::size_t>(e.unit)].seen) {
+                x = w5_u_[static_cast<std::size_t>(e.unit)].fx;
+                y = w5_u_[static_cast<std::size_t>(e.unit)].fy;
+            }
+            w6_play(w6_type_or_av(u.image, out ? "ChronoOutSound" : "ChronoInSound"), x, y,
+                    out ? "chrono out" : "chrono in");
+        }
+    }
+
+private:
     // Helpers ------------------------------------------------------------------
+    std::string w6_type_or_av(const std::string& id, const char* key) {
+        const std::string& k = w5_bld_key(id, key);
+        return k.empty() ? w6_av(key) : k;
+    }
+    static bool w6_airborne(const ra2engine::Unit& u) {
+        return u.is_aircraft && u.altitude > 0.0 && u.alive && u.die_time < 0.0 && !u.an.crashing;
+    }
+    bool w6_wet(const ra2engine::World& w, const ra2engine::Unit& u) const {
+        return u.alive && !u.is_aircraft && !u.is_vehicle && u.cargo_of < 0 && w.is_water_cell(u.cell_x, u.cell_y);
+    }
+    // W6-04-27 aircraft [RE-FALLBACK: the fly/jumpjet locomotor sound calls
+    // were not traced]: AuxSound1 on take-off, AuxSound2 on landing, and the
+    // type's MoveSound (soundmd Control=loop: KirovMoveLoop, RocketeerMoveLoop,
+    // IntruderMoveLoop ...) running while it is in the air.
+    void w6_flight(bool& p_air, std::uint32_t& p_loop, const ra2engine::Unit& u) {
+        if (!u.is_aircraft) return;
+        const bool air = w6_airborne(u);
+        if (air && !p_air) {
+            w6_play(w5_bld_key(u.image, "AuxSound1"), u.fx, u.fy, "take off");
+            const std::string& ms = w5_bld_key(u.image, "MoveSound");
+            if (!ms.empty() && !p_loop) {
+                pres_log(frame_, "sound " + ms + " (flight loop)");
+                ++w5_counts_["flight loop"];
+                p_loop = snd_.loop_at(ms, u.fx, u.fy);
+            }
+        } else if (!air && p_air) {
+            if (u.alive && u.die_time < 0.0 && !u.an.crashing)
+                w6_play(w5_bld_key(u.image, "AuxSound2"), u.fx, u.fy, "landing");
+            if (p_loop) snd_.stop_loop(p_loop);
+            p_loop = 0;
+        } else if (air && p_loop && !snd_.update_loop(p_loop, u.fx, u.fy)) {
+            p_loop = 0;
+        }
+        p_air = air;
+    }
+    // W6-05-06: [AudioVisual] keys (cached).
+    const std::string& w6_av(const char* key) { return w5_bld_key("AudioVisual", key); }
+    void w6_play(const std::string& key, double fx, double fy, const char* why) {
+        if (key.empty()) return;
+        ++w5_counts_[why];
+        snd_.play_at(key, fx, fy, why);
+    }
+    // [RE: HouseClass::JustBuilt FUN_004E6F10 -- a factory's finished techno
+    // plays the type's CreateSound (+0x4B8), else the Rules default by kind
+    // (Unit +0x170 CreateUnitSound, Infantry +0x174 CreateInfantrySound,
+    // Aircraft +0x178 CreateAircraftSound), at the object, for any house].
+    // The presentation has no JustBuilt hook, so a new unit on or next to a
+    // factory of its own house and kind counts as just built [RE-FALLBACK:
+    // map reinforcements and paradrops arrive at waypoints, not factories].
+    void w6_created(const ra2engine::World& w, const BuildingAssets& ba, const ra2engine::Unit& u) {
+        if (!ba.ok) return;
+        const int want = u.is_aircraft ? 4 : u.is_vehicle ? 0 : 1;
+        bool at_factory = false;
+        for (const ra2engine::Building& b : w.buildings()) {
+            if (!b.alive || b.house != u.house || b.type < 0 || b.type >= static_cast<int>(ba.roster.size())) continue;
+            const int fk = ba.roster[static_cast<std::size_t>(b.type)].factory_kind;
+            if (fk == 0 || (want == 1 && fk != 1) || (want == 4 && fk != 4 && fk != 2) ||
+                (want == 0 && fk != 2 && fk != 3))
+                continue;
+            const int dx = u.cell_x < b.cx ? b.cx - u.cell_x : (u.cell_x >= b.cx + b.fw ? u.cell_x - (b.cx + b.fw - 1) : 0);
+            const int dy = u.cell_y < b.cy ? b.cy - u.cell_y : (u.cell_y >= b.cy + b.fh ? u.cell_y - (b.cy + b.fh - 1) : 0);
+            if (std::max(dx, dy) <= 2) { at_factory = true; break; }
+        }
+        if (!at_factory) return;
+        std::string k = w5_bld_key(u.image, "CreateSound");
+        if (k.empty())
+            k = w6_av(u.is_aircraft ? "CreateAircraftSound" : u.is_vehicle ? "CreateUnitSound" : "CreateInfantrySound");
+        w6_play(k, u.fx, u.fy, "create");
+    }
+    // W6-04-11 [RE-FALLBACK: the bomb object's AI was not traced in game.exe;
+    // the rules keys are [AudioVisual] BombAttachSound (once, on planting)
+    // and BombTickingSound (soundmd Control=loop, while the bomb is on)].
+    void w6_bomb(bool& had, std::uint32_t& loop, bool has, double fx, double fy) {
+        if (has && !had) {
+            w6_play(w6_av("BombAttachSound"), fx, fy, "bomb attach");
+            const std::string& tick = w6_av("BombTickingSound");
+            if (!tick.empty()) {
+                pres_log(frame_, "sound " + tick + " (bomb ticking)");
+                ++w5_counts_["bomb ticking"];
+                loop = snd_.loop_at(tick, fx, fy);
+            }
+        } else if (!has && had) {
+            if (loop) snd_.stop_loop(loop);
+            loop = 0;
+        } else if (has && loop && !snd_.update_loop(loop, fx, fy)) {
+            loop = 0;
+        }
+        had = has;
+    }
     std::uint32_t w5_loop(const std::string& key, double fx, double fy, const char* why) {
         if (key.empty()) return 0;
         pres_log(frame_, std::string("sound ") + key + " (" + why + ")");
@@ -455,6 +660,13 @@ private:
         bool alive = true;
         int inf_target = -1, inf_purpose = 0;
         int seq = -1, stage = -1;
+        bool bomb = false;               // W6: an Ivan bomb is attached
+        std::uint32_t bomb_loop = 0;     // W6: its BombTickingSound loop
+        bool impact = false;             // W6: the crash impact was played
+        bool air = false;                // W6: airborne (aircraft / jumpjet)
+        std::uint32_t move_loop = 0;     // W6: the aircraft MoveSound loop
+        bool wet = false;                // W6: standing in water
+        double fx = 0.0, fy = 0.0;       // W6: last tick's position (teleport origin)
     };
     struct SeqSound { int frame; std::string sound; };
     const Ini* w5_art_ini_ = nullptr;
@@ -504,6 +716,10 @@ private:
         bool wrench = false;
         std::uint32_t turret_loop = 0;
         bool power_off = false;
+        bool working = false;            // W6: +0x598, the last "working" state
+        std::uint32_t work_loop = 0;     // W6: the +0x584 audio controller
+        bool bomb = false;
+        std::uint32_t bomb_loop = 0;
     };
     std::vector<W5U> w5_u_;
     std::vector<W5B> w5_b_;
@@ -511,6 +727,7 @@ private:
     std::map<int, long> w5_garrison_flip_;
     std::map<std::string, long> w5_counts_;
     bool w5_inited_ = false;
+    bool w6_live_ = false;   // W6: past the first tick (initial units are not "created")
     std::string w5_cheer_, w5_bld_repaired_, w5_garrisoned_, w5_crate_[7], w5_heal_crate_, w5_sinking_,
         w5_repair_bridge_, w5_credit_up_, w5_credit_down_;
     int w5_credit_ticks_ = 0;
