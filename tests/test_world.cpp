@@ -1329,6 +1329,45 @@ TEST_CASE("world: AI-house power OUTPUT is zeroed by blackout at the AI producti
     CHECK(blacked.output == 0);
 }
 
+TEST_CASE("world: R3 an attack on a building stops at weapon range (not at its foundation)") {
+    // [RE: infantry-anim.md §7 -- Mission_Attack stops the approach as soon as
+    // the target is in range; FUN_006F6750 measures a building to its centre
+    // with range + (w+h)*64.] Before R3 only unit targets held at range.
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World w(map);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    // A straight walkable run of 12 cells east of a start cell.
+    int sx = -1, sy = -1;
+    for (int dy = -20; dy <= 20 && sx < 0; ++dy)
+        for (int dx = -20; dx <= 20 && sx < 0; ++dx) {
+            bool ok = true;
+            for (int k = 0; k <= 12 && ok; ++k) ok = w.walkable(c->x + dx + k, c->y + dy);
+            if (ok) { sx = c->x + dx; sy = c->y + dy; }
+        }
+    REQUIRE(sx >= 0);
+    ra2engine::UnitCombat gi = gi_stats();
+    gi.rof = 2000;   // keep the building alive: the test is about where the unit stops
+    w.add_combat_unit(sx, sy, 0, gi);
+    const int bi = w.add_building(0, sx + 11, sy, 1, 1, /*house*/ 1, 1000, 0, 0.0, true);
+    REQUIRE(bi >= 0);
+    w.units()[0].selected = true;
+    w.order_attack_building(bi);
+    REQUIRE(w.units()[0].target_building == bi);
+    for (int f = 0; f < 600; ++f) w.step(1.0 / 15.0);
+    const ra2engine::Unit& u = w.units()[0];
+    CHECK(u.target_building == bi);
+    CHECK(u.path.empty());
+    // Range 4 + (1+1)*64/256 = 4.5 cells to the centre: it halts ~4 cells
+    // short, not on the adjacent cell (sx + 10).
+    CHECK(sx + 11 - u.cell_x >= 4);
+    CHECK(sx + 11 - u.cell_x <= 5);
+}
+
 TEST_CASE("world: order_attack_building sets exclusive target") {
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) {
