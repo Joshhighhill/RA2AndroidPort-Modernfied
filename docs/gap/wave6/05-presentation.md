@@ -3,6 +3,29 @@
 Baseline: master `e2b569e`, branch `w6-presentation`, my own Release build (`build-w6/`).
 Read-only audit. No engine code was changed.
 
+## Fix status (wave-6 fix agent #5, branch `w6fix-pres`)
+
+Base `409e807`. One commit per fix. Before | after crops (JPEG, the "before" half is the audit's own shot from
+`e2b569e`) are in `05-evidence/fix/`. Save format **v25** (was v24). Gate re-pin: `--demo-saveload` only (cause in
+README: the new saved `timer_text_`; proven by rebuilding with v24 and without the field, which prints the old pin).
+
+| Item | Status | Commit | Evidence / check |
+|---|---|---|---|
+| W6-05-01 house colours | **FIXED.** `[<House>] Color=` (else the country's `Color=`) names a rules `[Colors]` ColorScheme; the remap is `pal_for_hsv`. Player DarkBlue / DarkRed, civilians Grey. Render-only table, no save change. | `b000536` | `w6-05-01_sov05_civilians_grey.jpg`, `w6-05-01_sov01_allied_blue.jpg`; `pres-w6-campaign.play` (`house_color(0) == 18` on ALL04) |
+| W6-05-02 tile black holes | **FIXED.** The theater searches the theater art mix, then `generic.mix`, after the iso mix [RE: Init_Theater FUN_00519e70]. | `a8a6a46` | `w6-05-02_all04_rubble_lots.jpg`, `w6-05-02_sov01_overpass.jpg`; probe `tile_misses` = 0 on ALL01, ALL04, SOV01 |
+| W6-05-03 lamp light strips | **FIXED.** The light map is painted from every cell in terrain painter order, each cell a prism from its diamond down to its lowest front neighbour, so a cliff or ramp face takes its own tile's light. | `9a6ffb5` | `w6-05-03_all02_no_light_strips.jpg`, `w6-05-03_all05_night_light.jpg` |
+| W6-05-04 TimerText | **FIXED.** Action 103 stores the label (saved, v25); the mission timer draws `"%s  %02d:%02d"` bottom-right in the player's colour [RE: FUN_006a45a0 -> FUN_006a5280, disassembled: ECX = line, EDX = colour]. | `b2fa93f` | `w6-05-04_sov04_timer_label.jpg` ("Time until Allied invasion begins:  08:51"); probes `timer_text`, `timer_line(i)` |
+| W6-05-05 SW countdowns | **FIXED.** Every `ShowTimer=yes` SW of every house that has started charging, `"<UIName>  mm:ss"` in its owner's colour, stacked above the mission timer; blinks to ColorSchemes[0] at 0:00. | `b2fa93f` | `w6-05-05_skirmish_sw_countdowns.jpg`; `pres-w6-timers.play` |
+| W6-05-06 sounds | **FIXED.** CreateSound [RE: HouseClass::JustBuilt FUN_004E6F10, TechnoType +0x4B8], ImpactLand/WaterSound [RE: FUN_004BCD50 @4BCF83, +0x4C4/+0x4C0], Working/NotWorkingSound [RE: BuildingClass AI @43C940, +0xC18/+0xC1C, +0x598 edge]. | `e24699f` | `audio-events.play` (PowerOn, PowerOff, OilDerrickLoop, KirovCreated, KirovCrash) |
+| W6-04-27 sound batch | **FIXED except two keys.** ChronoIn/OutSound (CLEG/CCOMAND jumps), Enter/LeaveWaterSound, aircraft MoveSound loop + AuxSound1/2, per-transport Enter/LeaveTransportSound, per-type chrono-miner sounds, all positional [RE-FALLBACK: the locomotor call sites]. Robot Tank Activate/DeactivateSound stays open (the sim has no robot-control state); HasRadialIndicator is a draw (units agent). | `e24699f` | `audio-events.play` (KirovMoveLoop, ChronoLegionTeleport, IFVTransform) |
+| W6-04-11 bomb sounds | **FIXED (sound half).** BombAttachSound once, BombTickingSound looping while a bomb is on [RE-FALLBACK]. The bomb icon is the units agent's. | `e24699f` | `abil-defuse.play` |
+| W6-05-08 message cap | **FIXED.** TextTrigger / objective lines go through `post_message`: cap 6, `[General] MessageDelay`. | `32e3d8b` | `w6-05-08_all05_message_cap.jpg` (17 lines -> 6) |
+| W6-05-07 hover health bar | **FIXED.** The unit under a real mouse pointer shows its pip row without PIPBRD [RE: FUN_006c3f00 gates only the board on IsSelected]. | `dc905bc` | `w6-05-07_hover_pips.jpg`; `ui-hud.play` (`hover_unit`) |
+| W6-05-10 missing tiles | **FIXED (safety net).** A cell with no tile image draws template 0 as clear ground and is logged. After W6-05-02 no campaign map needs it: SOV01's `MWater07.tem` resolves from the fallback archives, and the engine finds no bad sub-tile on ALL01 (`tile_fallbacks` = 0). | `eb9f4c0` | probe `tile_fallbacks` |
+| W6-05-09 R-145 building pip line | **RE'd, default fixed.** Dimension2 @45D8B0 = (FoundationW*256, FoundationH*256, Height*CellHeight): the line sits Height levels up, which the clone already did. GAPOWR (Height=4) really sits that high. Only the default for a missing `Height=` changed, 4 -> 2 (ctor @457C2A). | `84b2cf7` | - |
+| W6-05-09 R-068 skirmish LocalSize | **NOT DONE.** A camera-only clamp from the skirmish map's `LocalSize` worked (the jagged right edge went off screen), but it breaks `--play` scripts that view or drag cells outside the local area (`drag cell 0 0 0 0` in the audit's `skfight.play`). Reverted; it needs a sweep of the skirmish scripts. | - | - |
+| W6-05-09 R-107 cliff extras, Kirov on the ground | **NOT DONE** (R-107 needs the BlendedFog RE; the Kirov item overlaps the units agent). | - | - |
+
 ## TL;DR
 
 The renderer is in good shape overall. Statue, gems, lamp pools, damage fires, chevrons, the radar boot and
