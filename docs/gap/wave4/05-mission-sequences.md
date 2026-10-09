@@ -8,6 +8,46 @@ The question here is not "can the trigger chain reach Win" (wave 2 proved that w
 out the way the map's own triggers, teams and scripts intend": intro sequences, enemy waves, AI-vs-AI set pieces,
 reinforcement arrivals, objectives and end sequences.
 
+## R3 status (mission-win agent R3, branch `w6r3`: SOV09 + SOV08)
+
+Real orders only (no `camp_*`/kill/reveal/spawn cheats), Easy (slider 0: the player reloads x0.8, every computer
+house x1.2).
+
+| Mission | Before | R3 | Evidence / what blocks |
+|---|---|---|---|
+| SOV09 | PROBABLE (`m-sov09-real` FAIL since W6) | **YES (proven)** | `m-sov09-real` **WON**: driver frame 8772 (campaign ~11600), run ends f9612, `play_hash=be172b860ffabe9a` (two identical runs), generator `gen/mk_sov09.py`. Easy drops **three** Yuris; input unlocks at ~65 s while they walk into the Prisms, so they are pulled back the moment `input_locked` clears. A Yuri takes the x=37 IFV patrol, Yuri 0 the British engineer, which captures the Alliance barracks (dogs then clear the door GIs and the American GI/dogs south of the compound). The **IFV force-fires the compound's south wall at (66,71)** from (66,75) (out of every Prism's 8 cells) until the section is gone, and from the gap shells the three plants it can reach -- (68,66), (70,66), (68,64): output 1000 -> 400 < 575, all Prisms offline. No Africans unit touches the 36-cell `Player in Base` ring (all of it lies inside the walls), so the Americans never Hunt. Yuri 1 takes the President's British guard SEAL from 7.3 cells (its acquisition is range 6 + 1); Yuri 2 stands at (67,68), 7.6 cells from the President's (64,61) stop and from the guard on it, and takes him when he steps there (the President shuttles (63,60) <-> (64,61) every ~400 frames on Easy; he never walks to (61,65)). `Pres is Captured` -> Win. The north plant / SEAL-C4 route of the W6 plan was not needed: the map's [MindControl] is Range=8. `m-sov09` (cheat scripted capture) PASS unchanged |
+| SOV08 | YES (not proven) | not won | Best attempt `gen/mk_sov08.py` (no .play). The White House (4x4) is in V3 range up to 20 cells from its centre (18 + (4+4)*64 leptons); the only sites inside `[Map] LocalSize` are the walled pocket west of it (x 83-92, y 13-29) and the road at Vlad2's war factory. 10 V3s destroy the pocket's two Conscript garrisons (Vlad2 Garrison1/2, script 46 -> CANEWY12 (88,26), CAWASH07 (88,20)) and the Tesla Coils (94,23), (97,28) from outside their reach. It stops when the 16 freed Conscripts, Vlad2's Shock Troopers, Rhinos and the Flak Track (98,24) counter-attack the pocket: the Apocalypse escort has no anti-infantry weapon and the V3s die before the White House is seen. The W6 "only one V3" was **not reproduced**: four or six cameo clicks (`train()` or single clicks) queue and build four or six V3s on this tree; that attempt most likely ran out of money (the Easy economy dies with its harvesters to Vlad2 raids) |
+
+Engine fixes (each a separate commit, with a unit test):
+
+- **PlayerControl houses take force-fire, Stop, Guard and Scatter** (`07f034e`, `engine/unit_orders.cpp`,
+  `engine/world_depth.cpp`) [RE: gamemd StopCommandClass::Execute `FUN_0072ff70` (event 6), Guard `FUN_0072fe30`
+  (mission 0xB), Scatter `FUN_007300b0` (event 7): each walks CurrentObjects and orders every selected object the
+  player commands -- no Owner == PlayerPtr test]. The helpers tested `house == 0`, so a mind-controlled IFV ignored
+  Ctrl+click (the SOV09 wall breach). Ghidra: private copy `D:\ra2-re\r3`, scripts `r3_cmd.py` / `r3_exec.py`.
+- **An attack on a building stops at weapon range** (`afb160d`, `engine/world.cpp`) [RE: infantry-anim.md §7 --
+  Mission_Attack re-checks range every frame while approaching any target and stops when in range; FUN_006F6750
+  measures a building to its centre with range + (w+h)*64]. The hold-at-range pass covered unit targets only: a
+  unit ordered onto a structure drove to its foundation (V3s into Vlad2's base; SOV09's IFV from the gap into the
+  Prism compound). Gate re-pins with A/B proof in README: `--demo-base`, `--demo-ai-team`, `--demo-ai-trigger`.
+- **A flyer cruising to a flight goal does not return fire** (`c41c8be`, `engine/combat.cpp`) [RE-GATE: aircraft.md
+  §6, the gate acquisition already used]. Retaliation tested `!moving()` only, which is always true for a flyer
+  (empty ground path): Kirovs ordered across the map stopped on the first IFV that hit them. Exposed by
+  `m-sov12-real` after the building hold changed the AI's timing; it WINS again (f8606).
+
+Harness (no sim change, `a5a140c`): `cheat map_levels PATH` (cell heights) and, with `RA2_CAMP_DEBUG`, the base
+defences aiming at a unit on its death line (` def=TYPE@x,y`).
+
+Other scripts (scoped re-run, final tree): `m-all01`, `m-sov01`, `m-sov09`, `m-sov01/04/07/11/12-real`,
+`m-sov02-real`, `m-sov02-mcv`, `m-all04/07/12-real`, `m-all09-opening`, `m-trn02-real`, `sk-a` PASS.
+`m-trn02-real` needed a script change (`gen/mk_trn02.py`: `building 1:TYPE:near`; with the hold the GI squad
+stands in front of its target and a centre click hit a selected GI). **`m-all03-real` now FAILS (LOST at f12689)**
+because of the faithful building hold: ALL03's map-placed Rhino raid now shells the base from 6-7 cells south
+instead of driving up to the buildings, beyond the reach (range + 1) of the Grizzlies idling north of it, and the
+base falls at f9090-10125 (area guard or parking the tanks south did not save it in three tries); it needs a
+re-tuned defence. `mc-range` and `sk-s` fail with and without the R3 building hold (pre-existing on this tree).
+R1/R2 scripts were not run here; any proof that relied on attackers walking up to buildings may move.
+
 ## W6 fix #2 status (wave-6 fix agent 2, branch `w6fix-missions`)
 
 Engine fixes from docs/gap/wave6/02-missions.md (W6-02-01..05, 07, 08, 11, 12, 14..18): per-house difficulty handicap (Easy really is easier now: player ROF x0.8, every computer house and its defences x1.2), the Evaluate_Object target rejects (ALL12's Moscow is no longer razed, so `Kremlin is Destroyed` no longer fires; SOV10's WCD is not a target outside the playfield), the original threat radius (weapon range + 1, area guard x2, never Sight), ImmuneToPsionics, team tags on recruits (ALL05 is lost when Tanya dies), build events by rules id (TRN02 objective 6), full-strength team start, recruit filters, Patrol = attack-move.
