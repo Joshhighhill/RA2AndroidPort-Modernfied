@@ -1,5 +1,7 @@
 #include "iso_renderer.hpp"
 
+#include <iostream>
+
 #include <SDL.h>
 
 #include <algorithm>
@@ -98,13 +100,18 @@ const ra2assets::TmpFile* Theater::tmp_for_tile(uint32_t global_index) {
     if (hit != cache_.end()) return &hit->second;
     if (misses_.count(name)) return nullptr;
 
+    const ra2assets::MixFile* src = &mix_;
     const ra2assets::MixEntry* e = mix_.find(name);
+    for (std::size_t i = 0; !e && i < fallbacks_.size(); ++i) {   // W6-05-02
+        e = fallbacks_[i].find(name);
+        if (e) src = &fallbacks_[i];
+    }
     if (!e) {
         misses_.emplace(name, true);
         return nullptr;
     }
     try {
-        ra2assets::TmpFile t = ra2assets::TmpFile::load(mix_.read(*e));
+        ra2assets::TmpFile t = ra2assets::TmpFile::load(src->read(*e));
         auto ins = cache_.emplace(name, std::move(t));
         return &ins.first->second;
     } catch (const std::exception&) {

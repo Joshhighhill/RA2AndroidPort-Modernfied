@@ -89,6 +89,7 @@
         }
         const int houses = world_.house_count();
         p.set("houses", houses);
+        p.set("tile_misses", a_.theater.miss_count());             // W6-05-02 tile files found nowhere
         for (int h = 0; h < houses; ++h) {
             const std::string hs = std::to_string(h);
             p.set("house_credits(" + hs + ")", world_.house_credits(h));

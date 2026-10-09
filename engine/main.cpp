@@ -276,6 +276,14 @@ Assets load_assets(const std::string& dir, const ra2assets::MixFile& ra2,
     MixFile iso = parent.open_nested(chain->iso_mix);
 
     ra2engine::Theater th(std::move(iso), ini_text, chain->ext);
+    // W6-05-02: the theater art mix and generic.mix are on the same search
+    // list as the iso mix in the original (Init_Theater FUN_00519e70), so
+    // tiles stored there (warub*.urb, Ovrpsb*.tem) resolve too.
+    for (const std::string& name : {std::string(chain->art_mix), std::string("generic.mix")}) {
+        try {
+            th.add_fallback(parent.open_nested(name));
+        } catch (const std::exception&) {}
+    }
 
     std::cerr << "[assets] theater=" << theater << " size=" << map.width() << "x"
               << map.height() << " cells=" << map.cells().size()

@@ -61,6 +61,14 @@ public:
     // recovered LandType source (the .tmp TerrainType byte was FALSIFIED).
     ra2assets::LandType land_type_of_cell(uint32_t global_index) const;
 
+    // W6-05-02 [RE: Init_Theater FUN_00519e70 registers the iso AND the theater
+    // art mix; a file opens from whichever registered MIX holds it]: archives
+    // searched after the iso mix, in order (warub*.urb lives in urban.mix,
+    // Ovrpsb*.tem in temperat.mix).
+    void add_fallback(ra2assets::MixFile mix) { fallbacks_.push_back(std::move(mix)); }
+    // Distinct tile file names that resolved nowhere (diagnostic).
+    int miss_count() const { return static_cast<int>(misses_.size()); }
+
     // W3-B [RE-Q6]: theater tile animations -- the set's SetName section of
     // the control INI lists Tile<NN>Anim / XOffset / YOffset / AttachesTo /
     // ZAdjust for template NN (temperat.ini [Waterfalls] WA01X..WD04X, the
@@ -82,6 +90,7 @@ private:
     std::string entry_name(const Slot& s) const;
 
     ra2assets::MixFile mix_;
+    std::vector<ra2assets::MixFile> fallbacks_;
     std::string ext_;
     std::vector<Slot> slots_;  // global index -> slot
     ra2assets::TileSetClass general_;  // [General] tile-set classification [RE: naval.md §2]
