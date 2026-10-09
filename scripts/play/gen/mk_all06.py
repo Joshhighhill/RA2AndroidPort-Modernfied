@@ -8,10 +8,16 @@ p = P("""# P3: ALL06 (Pentagon) WON with real orders only (no cheats). Generated
 # The landed AMCV deploys; power, 3 refineries, barracks, 3 war factories; Grizzlies massed to 55 at
 # (104,148) then sweep BadGuy2 (Tesla Coils first, then the nearest building); regroup to 70 at (99,75)
 # and sweep BadGuy1 the same way while the factories keep the army topped up; then hunt the last units.
+# W6 (R1): played on EASY (`set campaign ... GDI 0`). With the wave-6 engine (per-house difficulty
+# handicap, full-strength teams, AI anger/income) Normal no longer holds: the AI houses wear the start
+# force down (13 units left at f6000, was 22), BadGuy1 fields 35 units by f12000 (was 23), and BadGuy2
+# rebuilds its Tesla Coil and fields Shock Troopers/Rhinos that destroy the 58-tank sweep (58 -> 0).
+# Easy = player ROF x0.8, every computer house x1.2 [Easy]/[Difficult]. A sweep click is sent only
+# while a Grizzly is selected (the first Grizzly click can land on a building and select nothing).
 set render_every 3000
 set on_quit continue
 set max_frames 200000
-set campaign ALL06u.MAP GDI
+set campaign ALL06u.MAP GDI 0
 until 60 scene == campaign-load
 click start
 until 300 scene == game
@@ -36,6 +42,7 @@ p.train("MTNK", 3, 10, guard=True)
 for b in ["GAREFN", "GAPOWR", "GAWEAP", "GAPOWR", "GAREFN", "GAWEAP", "GAPOWR"]:
     p.build(b)
 SEL = lambda g: [f"if {g} and units(0,MTNK) > 0 then click unit 0:MTNK:0",
+                 f"if {g} and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1",
                  f"if {g} then key t", f"if {g} then key t"]
 def mass(n, stage):
     for r in range(12):
@@ -46,9 +53,10 @@ def mass(n, stage):
 def sweep(h, iters, first):
     for k in range(iters):
         g = f"outcome == RUNNING and buildings({h}) > 0"
+        gs = g + " and selected_type(MTNK) > 0"
         p.add(*SEL(g),
-              f"if {g} and buildings({h},{first}) > 0 then click building {h}:{first}:near",
-              f"if {g} and buildings({h},{first}) == 0 then click building {h}:*:near",
+              f"if {gs} and buildings({h},{first}) > 0 then click building {h}:{first}:near",
+              f"if {gs} and buildings({h},{first}) == 0 then click building {h}:*:near",
               f"if {g} then wait 250", f"if {g} then dump")
         if k % 2 == 1: p.train("MTNK", 3, 8, guard=True)
 mass(55, "104 148")
