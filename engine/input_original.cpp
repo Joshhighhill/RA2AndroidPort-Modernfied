@@ -169,6 +169,17 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
         }
         if (world_.controllable(u.house)) {
             if (shift) return Action::ToggleSelect;
+            // W6-01-06 [engine deviation, touch]: with two or more units
+            // selected, a tap on a unit OF THE SELECTION is an order to its
+            // cell (the army moves there), not a re-select that drops the
+            // army. A deliberate select is a tap on an own unit that is NOT
+            // selected; a deploy needs a lone selection (or DPLY).
+            if (ev_touch_ && u.selected) {
+                int nsel = 0;
+                for (const Unit& su : us)
+                    if (su.selected && world_.controllable(su.house) && su.alive && su.die_time < 0.0) ++nsel;
+                if (nsel >= 2) return cell_walkable(cx, cy) ? Action::Move : Action::NoMove;
+            }
             // ACTION_SELF: clicking the selected unit itself deploys / unloads it.
             if (u.selected) {
                 const bool can = (!u.cargo.empty()) || u.abil.deployer || u.deployed ||
