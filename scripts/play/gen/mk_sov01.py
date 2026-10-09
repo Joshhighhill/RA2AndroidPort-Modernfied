@@ -22,7 +22,10 @@ until 900 built(0,NACNST) >= 1
 p.build("NAPOWR").build("NAHAND")
 p.train("SENGINEER", 2, 1)
 p.add("until 1200 units(0,SENGINEER) >= 1")
-p.select_types(["E2"]).add("click cell 97 92", "wait 300")
+# W6-02-11: idle units now engage at weapon range + 1 (not Sight), so the engineer
+# walks INSIDE the Conscript group to (97,92) (it used to trail it while the escorts
+# covered it from their Sight range), then on alone as before.
+p.select_types(["E2", "SENGINEER"]).add("click cell 97 92", "until 900 sel_moving == 0", "wait 60")
 p.select_types(["SENGINEER"]).add("click cell 99 95", "until 1500 sel_moving == 0", "dump", "click unit 0:SENGINEER:0", "click building 4:CABHUT:1", "wait 20", "dump",
       "until 1800 bridge_destroyed < $broken", "assert units(0,SENGINEER) == 0", "assert outcome == RUNNING", "shot repaired")
 p.train("E2", 2, 25)

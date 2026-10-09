@@ -22,6 +22,14 @@ click cameo:NAPOWR
 until 2400 queue_ready(structure) == 1
 click cameo:NAPOWR
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,NAPOWR) > $n_NAPOWR
 let n_NAHAND = built(0,NAHAND)
 until 900 can_build(NAHAND) == 1
@@ -30,16 +38,26 @@ click cameo:NAHAND
 until 2400 queue_ready(structure) == 1
 click cameo:NAHAND
 place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
 until 600 built(0,NAHAND) > $n_NAHAND
-until 900 can_build(SENGINEER) == 1
+until 900 cameo(SENGINEER) == 1
 click tab:2
 click cameo:SENGINEER
 until 1200 units(0,SENGINEER) >= 1
 if units(0,E2) > 0 then click unit 0:E2:0
+if units(0,SENGINEER) > 0 then click unit 0:SENGINEER:0 shift
 key t
 key t
 click cell 97 92
-wait 300
+until 900 sel_moving == 0
+wait 60
 if units(0,SENGINEER) > 0 then click unit 0:SENGINEER:0
 key t
 key t
@@ -54,7 +72,7 @@ until 1800 bridge_destroyed < $broken
 assert units(0,SENGINEER) == 0
 assert outcome == RUNNING
 shot repaired
-until 900 can_build(E2) == 1
+until 900 cameo(E2) == 1
 click tab:2
 click cameo:E2
 click cameo:E2

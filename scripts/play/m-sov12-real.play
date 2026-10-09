@@ -9,7 +9,10 @@
 # their bombs (BlimpHE, 50% vs concrete) bring the 750-HP Chronosphere down.
 set render_every 3000
 set on_quit continue
-set campaign sov12s.MAP Nod
+# W6 fix #2: Easy. Since W6-02-11 idle units engage at weapon range + 1 (not Sight)
+# and W6-02-16 enemy teams set out at full strength; on Normal the defence no longer
+# holds. On Easy the player reloads x0.8 and every computer house x1.2 (W6-02-01..03).
+set campaign sov12s.MAP Nod 0
 until 60 scene == campaign-load
 click start
 until 300 scene == game

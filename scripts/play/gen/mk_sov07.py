@@ -47,7 +47,10 @@ HEADER = """# P2: SOV07 (Chronosphere) won with real orders only (no cheats).
 set render_every 6000
 set on_quit continue
 set max_frames 60000
-set campaign sov07s.MAP Nod
+# W6 fix #2: Easy. Since W6-02-11 idle units engage at weapon range + 1 (not Sight)
+# and W6-02-16 enemy teams set out at full strength; on Normal the defence no longer
+# holds. On Easy the player reloads x0.8 and every computer house x1.2 (W6-02-01..03).
+set campaign sov07s.MAP Nod 0
 until 60 scene == campaign-load
 click start
 until 300 scene == game
