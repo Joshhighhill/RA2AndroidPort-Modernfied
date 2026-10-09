@@ -181,6 +181,8 @@ house hostile to the first selected unit) nearest that unit, within 9 cells; `bu
 that house's building nearest the first selected unit (TYPE `*` skips Insignificant decorations), clicked at a
 footprint point no unit covers. P3 real-order wins: `m-all05-real`, `m-all06-real`, `m-all07-real` (gen/mk_all05.py, mk_all06.py).
 
+**R-210 keys** (engine/r210_play.inc): `cliff_steps` / `cliff_steps(h)` (unit steps whose standing height -- Level, + 4 on a high-bridge deck -- changed by more than one level), `deck_steps(h)`, `udeck(h,ID,n)` / `uheight(h,ID,n)`, `sel_n` / `sel_deck` / `sel_min_cy` / `sel_max_cy` (the selection); `RA2_R210_TRACE=1` logs the selected units' steps. Debug cheat `map_terrain PATH` (one line per cell: x y level ramp land walkable water amphib highbridge lowbridge). A `cell X Y` target on an intact high-bridge deck clicks the deck.
+
 **W2-AN keys** (engine/w2air_play.inc): `cursor_name` (Input action name),
 `sel_on_water`, `sel_hp`, `sel_max_hp`, `sel_cargo`, `sel_altitude`, `sel_flight_state`,
 `sel_flight_goal`, `sel_unload_pending`; per house h `submerged(h)`, `sub_detected_by0(h)`,
@@ -232,6 +234,7 @@ Keys reserved for later phases (scripts already assert them and report
 | `all01-v3-statue.play` | W4: the scripted V3 still one-shots the Statue (V3WH 50000%); DestroyAnim/rubble in liburb.pal |
 | `missiles.play` | W4: skirmish weapon flights to READ -- Rhino shell, IFV homing missile + trail, Kirov voxel bombs, V3 tilt/climb/arc, Grand Cannon, tusks |
 | `missiles-intercept.play` | W4: ALL01, an enemy Patriot site shoots a player V3 rocket down (homing RedEye2, DontScore) |
+| `move-bridge-cliff.play` | R-210: ALL01 -- Tanya on Liberty Island's cliff edge is ordered into the river below and walks down the island stairs instead of dropping (`cliff_steps(0) == 0`); after the Fort Bradley rendezvous an engineer repairs the broken east bridge at the hut and the box-selected GIs pass their own gate, walk on the deck (`sel_deck`, `deck_steps(0)`) and reach the far bank |
 | `probe-*.play` | Harness self-checks / diagnostics (no gameplay claims) |
 
 The expected results on each tree are kept in `docs/gap/PLAYTEST-STATUS.md`.
