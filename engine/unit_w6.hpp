@@ -4,6 +4,8 @@
 // World::add_combat_unit copies it onto Unit::w6.t, and the runtime half lives
 // next to it. Every default is inert (the pre-wave-6 behaviour).
 
+#include <string>
+
 namespace ra2engine {
 
 // Type data resolved once per unit type (docs/gap/wave6/04-units.md).
@@ -36,6 +38,11 @@ struct UnitTypeW6 {
     // FUN_006FB5D0 @0x6FBF4A]: the primary's DecloakToFire= (default yes);
     // SubTorpedo / SonicZap / SquidGrab say no -- they fire submerged.
     bool decloak_to_fire = true;
+    // W6-04-18 [rules [ROBO] PoweredUnit=yes "powered by presence of
+    // building", [GAROBO] PowersUnit=ROBO "one of these buildings must be
+    // present and powered, or else these guys turn off"]: deactivation is
+    // RE-FALLBACK (the unit stops: no move, no fire).
+    bool powered_unit = false;
 };
 
 // Per-unit state.
@@ -57,6 +64,7 @@ struct UnitW6 {
     bool sonic_hit = false;
     bool heal_hit = false;
     int wall_flags = 0;   // W6-04-04: the ACTIVE warhead's W6WallFlags
+    bool unpowered = false;   // W6-04-18: a PoweredUnit with no powered PowersUnit building
 };
 
 // Per-building state.
@@ -75,6 +83,8 @@ struct BldTypeW6 {
     // W6-04-04: a Wall=yes type's art DamageLevels= (GAWALL/NAWALL 3); 0 =
     // not a wall. A wall has no HP model: it takes damage stages.
     int wall_levels = 0;
+    // W6-04-18: PowersUnit= -- the unit IMAGE this building keeps active ("" none).
+    std::string powers_unit;
 };
 
 // W6-04-05: one wall OverlayType (rules Strength=, art DamageLevels=, Armor=wood).

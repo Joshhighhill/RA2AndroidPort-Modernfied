@@ -747,11 +747,13 @@ template <class Ar> void fields(Ar& ar, UnitTypeW6& v) {
     io(ar, v.omni_crusher); io(ar, v.omni_crush_resistant);   // W6-04-14
     io(ar, v.wall_flags);   // W6-04-04
     io(ar, v.decloak_to_fire);   // W6-04-25
+    io(ar, v.powered_unit);   // W6-04-18
 }
 template <class Ar> void fields(Ar& ar, UnitW6& v) {
     io(ar, v.t); io(ar, v.burst); io(ar, v.burst_index); io(ar, v.omni_fire);
     io(ar, v.sonic); io(ar, v.sonic_hit); io(ar, v.heal_hit);   // W6-04-09
     io(ar, v.wall_flags);   // W6-04-04
+    io(ar, v.unpowered);   // W6-04-18
 }
 template <class Ar> void fields(Ar& ar, BldW6& v) {
     io(ar, v.burst_index);
@@ -759,6 +761,7 @@ template <class Ar> void fields(Ar& ar, BldW6& v) {
 }
 template <class Ar> void fields(Ar& ar, BldTypeW6& v) {
     io(ar, v.wall_levels);
+    io(ar, v.powers_unit);   // W6-04-18
 }
 template <class Ar> void fields(Ar& ar, WallOvType& v) {
     io(ar, v.strength); io(ar, v.levels); io(ar, v.wood);

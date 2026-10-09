@@ -831,6 +831,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.w6.omni_fire = tw.slot[0].valid && tw.slot[0].omni_fire;   // W6-04-06
     r.combat.w6.sonic = tw.slot[0].valid && tw.slot[0].sonic;           // W6-04-09
     r.combat.w6.wall_flags = tw.slot[0].valid ? tw.slot[0].wall_flags : 0;   // W6-04-04
+    r.combat.w6.powered_unit = rules.section_flag(unit_id, "PoweredUnit", false);   // W6-04-18
     r.combat.w6.decloak_to_fire = !tw.slot[0].valid || rules.section_flag(tw.slot[0].id, "DecloakToFire", true);   // W6-04-25
     r.combat.w6.open_transport_weapon =   // W6-04-15
         static_cast<int>(rules.section_double(unit_id, "OpenTransportWeapon", -1.0));
@@ -1634,9 +1635,15 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
 
         va.has_turret = rules.has_turret(unit_id);
         if (va.has_turret) {
-            if (!load_part(base + "tur", tur_m, tur_h))
-                throw std::runtime_error("turret vxl/hva missing (" + base + "tur)");
-            va.has_barrel = load_part(base + "barl", barl_m, barl_h);  // barrel absence OK
+            // W6-04-17 [RE-FALLBACK: a Turret=yes type without a turret voxel
+            // draws its body only]: the YR Siege Chopper ([SCHP] Turret=yes, no
+            // schptur.vxl in any archive) was dropped from the roster here.
+            if (!load_part(base + "tur", tur_m, tur_h)) {
+                std::cerr << "[vehicle] " << base << ": no turret voxel, hull only\n";
+                va.has_turret = false;
+            } else {
+                va.has_barrel = load_part(base + "barl", barl_m, barl_h);  // barrel absence OK
+            }
         }
 
         const MixEntry* pe = local.find("voxels.vpl");
@@ -2360,7 +2367,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // it is excluded from every buildable/sidebar closure. Art [RE-FALLBACK]: if
     // the CAOILD SHP is absent it stays in ba.roster with art.ok=false +
     // placeholder (buildings are never dropped on art failure).
-    static const char* kRoster[40] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
+    static const char* kRoster[41] = {"GACNST", "GAPOWR", "GAPILE", "GAWEAP",
                                        "NACNST", "NAPOWR", "NAHAND", "NAWEAP",
                                        "GAREFN", "NAREFN", "GAPILL", "GATOW",
                                        "NALASR", "NABNKR", "TESLA",  "NAFLAK",
@@ -2393,7 +2400,13 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
                                        // SpySat=yes -> grants_map_reveal, the shroud.md
                                        // §7A latch that had no rostered owner). Only
                                        // the roster= WITNESS grows 39 -> 40.
-                                       "GASPYSAT"};
+                                       "GASPYSAT",
+                                       // Wave-6 #4 (W6-04-18) APPEND-ONLY at index 40:
+                                       // the YR Robot Control Center (art present in
+                                       // genermd.mix / snowmd.mix; [GAROBO]
+                                       // Prerequisite=GAWEAP,GACNST TechLevel=10
+                                       // PowersUnit=ROBO). Only the roster= WITNESS grows.
+                                       "GAROBO"};
     constexpr int kRoster2First = 24;   // first P6-appended index
     // rulesmd [General] BuildupTime=.06 (minutes) [RE: building-render.md §5].
     const double build_time_min = rules.general_double("BuildupTime", 0.06);
@@ -2458,6 +2471,11 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     auto resolve_shp = [&](const std::string& image) -> ShpFile {
         ShpFile shp;
         if (asset_building_shp(image, shp, /*ra2_only=*/true)) return shp;
+        // W6-04-17/18/21 (U-1: the engine runs the YR data set): a roster
+        // building the RA2 archives lack (NABNKR, NAINDP, GAROBO) takes its YR
+        // art (genermd.mix / snowmd.mix -- the R-201 "art absent" census was
+        // stale). Every RA2-resolved building is unchanged.
+        if (asset_building_shp(image, shp, /*ra2_only=*/false)) return shp;
         throw std::runtime_error("no theater candidate resolved for " + image);
     };
     (void)get_mix;
@@ -2585,6 +2603,8 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         ra2engine::fill_building_weapons(rules, id, d);   // Gap fix C (G-40): defenses
         // W6-04-04: a Wall=yes building takes damage stages (art DamageLevels=).
         d.w6.wall_levels = d.wall ? art.damage_levels(art_id) : 0;   // reuses W6-03-01 BuildingTypeDef::wall
+        d.w6.powers_unit = rules.image(rules.section_string(id, "PowersUnit", ""));   // W6-04-18
+        if (rules.section_string(id, "PowersUnit", "").empty()) d.w6.powers_unit.clear();
         ba.roster.push_back(std::move(d));
         ba.art.push_back(std::move(slot));
         // [RE-GATE APPLIED: production.md §1.1 — the tab/queue classifier is

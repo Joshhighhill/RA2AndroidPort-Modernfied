@@ -806,6 +806,35 @@ void World::w6_apply_wall_kills() {
     w6_wall_kills_.clear();
 }
 
+void World::w6_step_powered_units() {
+    bool any = false;
+    for (const Unit& u : units_) any = any || (u.w6.t.powered_unit && u.alive);
+    if (!any) return;
+    const std::vector<BuildingTypeDef>& bt = btypes();
+    for (Unit& u : units_) {
+        if (!u.w6.t.powered_unit || !u.alive || u.die_time >= 0.0) continue;
+        bool on = false;
+        for (const Building& b : buildings_) {
+            if (!b.alive || b.state != Building::State::Idle || b.house != u.house || b.power_off) continue;
+            if (b.type < 0 || b.type >= static_cast<int>(bt.size())) continue;
+            const std::string& pu = bt[static_cast<std::size_t>(b.type)].w6.powers_unit;
+            if (pu.empty() || pu != u.image) continue;
+            if (house_low_power(u.house)) continue;
+            on = true;
+            break;
+        }
+        if (!on && !u.w6.unpowered) {   // turned off: it stops where it is
+            u.path.clear();
+            u.path_idx = 0;
+            u.target = -1;
+            u.target_building = -1;
+            u.attack_order = false;
+        }
+        u.w6.unpowered = !on;
+        if (!u.abil_bound) u.frozen = !on;   // abilities recompute frozen for bound units (below)
+    }
+}
+
 void World::step_wall_crush() {
     if (crush_wall_.size() != passable_.size()) return;
     for (const Unit& u : units_) {
@@ -4848,6 +4877,7 @@ void World::step(double dt) {
             if (!land_speed_armed_) sc.armed = false;
         }
         w6_apply_wall_kills();   // W6-04-05: walls shot down last step open now
+        w6_step_powered_units();   // W6-04-18: robots without a powered control centre stop
         step_wall_crush();   // P4 (no-op without crushable walls)
         const bool crush = !crush_wall_.empty();
         step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_,

@@ -871,6 +871,7 @@ public:
     int wall_overlay_stage(int x, int y) const;
     void w6_overlay_wall_hit(int x, int y, int wall_flags, int damage) const;
     void w6_apply_wall_kills();
+    void w6_step_powered_units();   // W6-04-18
     // The sync RNG the combat paths draw from (Reduce_Wall's Random(0,Strength)).
     ProjRng* combat_rng_ptr() const { return const_cast<ProjRng*>(&combat_rng_); }
     bool wall_crushed(int x, int y) const {
