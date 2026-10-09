@@ -1260,13 +1260,18 @@ void World::order_unit_move(int idx, int gx, int gy) {
     // unreachable cell walks to the nearest reachable one (budgeted search);
     // ships keep the exact search (a land click is refused, naval.md).
     const bool crush = crush_paths(u);   // P4: a crusher routes over crushable walls
+    // R-210: the height gate, high-bridge decks and allied gates (null = 2-D).
+    sync_deck_layer(u);
+    PathTerrain terr;
+    std::vector<int> gates;
+    const PathTerrain* tp = terrain_for(u, terr, gates);
     std::vector<Cellxy> path =
         u.movement_domain == MovementDomain::Land
-            ? find_path_nearest(crush ? crush_grid() : grid_for(u.movement_domain), grid_w_, grid_h_,
-                                {u.cell_x, u.cell_y}, {gx, gy}, kNearestPathBudget,
-                                crush ? crush_leak() : wall_leak())
-            : find_path(grid_for(u.movement_domain), grid_w_, grid_h_, {u.cell_x, u.cell_y}, {gx, gy},
-                        u.movement_domain == MovementDomain::Water ? nullptr : wall_leak());
+            ? find_path_nearest_t(crush ? crush_grid() : grid_for(u.movement_domain), grid_w_, grid_h_,
+                                  {u.cell_x, u.cell_y}, {gx, gy}, kNearestPathBudget,
+                                  crush ? crush_leak() : wall_leak(), tp)
+            : find_path_t(grid_for(u.movement_domain), grid_w_, grid_h_, {u.cell_x, u.cell_y}, {gx, gy},
+                          u.movement_domain == MovementDomain::Water ? nullptr : wall_leak(), tp);
     if (path.size() <= 1) {
         // Assigned its own cell / unreachable: stay put, snap cleanly
         // (mirrors the single-unit Finding-1 cancel branch).
@@ -4912,9 +4917,38 @@ void World::step(double dt) {
         w6_step_powered_units();   // W6-04-18: robots without a powered control centre stop
         step_wall_crush();   // P4 (no-op without crushable walls)
         const bool crush = !crush_wall_.empty();
+        // R-210 bridges and cliffs: the height gate / deck layer / allied gates.
+        StepTerrain st;
+        std::vector<std::vector<int>> gates;
+        bool any_gate = false;
+        {
+            const std::vector<BuildingTypeDef>& bt = btypes();
+            for (const Building& b : buildings_)
+                if (b.alive && b.type >= 0 && b.type < static_cast<int>(bt.size()) &&
+                    bt[static_cast<std::size_t>(b.type)].w6.gate) { any_gate = true; break; }
+        }
+        if (any_gate) {
+            gates.resize(static_cast<std::size_t>(std::max(1, house_count())));
+            for (int h = 0; h < static_cast<int>(gates.size()); ++h) open_gates_for(h, gates[(std::size_t)h]);
+            st.gates = &gates;
+        }
+        if (terrain_armed()) {
+            for (Unit& u : units_)
+                if (u.alive) sync_deck_layer(u);
+            PathTerrain base;
+            base.level = &level_grid_;
+            base.slope = ramp_.size() == level_grid_.size() ? &ramp_ : nullptr;
+            base.version = bridge_version_;
+            st.water = base;
+            st.land = base;
+            st.land.deck = deck_grid(MovementDomain::Land);
+            st.amph = base;
+            st.amph.deck = deck_grid(MovementDomain::Amphibious);
+        }
         step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_,
                    amph ? &amphib_grid() : nullptr, (land_speed_armed_ || occ_.subcells()) ? &sc : nullptr, wall_leak(),
-                   crush ? &crush_grid() : nullptr, crush ? crush_leak() : nullptr);
+                   crush ? &crush_grid() : nullptr, crush ? crush_leak() : nullptr,
+                   (any_gate || terrain_armed()) ? &st : nullptr);
         std::sort(scatter.begin(), scatter.end());
         scatter.erase(std::unique(scatter.begin(), scatter.end()), scatter.end());
         for (int s : scatter) order_scatter(s);
@@ -5430,7 +5464,19 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 Occupancy& occ, double dt, double move_cps, const AnimTable& anims,
                 const std::vector<std::uint8_t>* amphib_passable, const MoveSpeedCtx* speed,
                 const std::vector<std::uint8_t>* wall_leak, const std::vector<std::uint8_t>* crush_passable,
-                const std::vector<std::uint8_t>* crush_leak) {
+                const std::vector<std::uint8_t>* crush_leak, const StepTerrain* terrain) {
+    // R-210: unit u's terrain (null without one -> the 2-D walk).
+    auto terrain_of_unit = [&](const Unit& u, PathTerrain& t) -> const PathTerrain* {
+        if (!terrain) return nullptr;
+        t = u.movement_domain == MovementDomain::Water ? terrain->water
+            : u.movement_domain == MovementDomain::Amphibious ? terrain->amph : terrain->land;
+        t.start_layer = t.deck ? u.on_deck : 0;
+        t.open_cells = nullptr;
+        if (terrain->gates && u.movement_domain != MovementDomain::Water && u.house >= 0 &&
+            u.house < static_cast<int>(terrain->gates->size()) && !(*terrain->gates)[(std::size_t)u.house].empty())
+            t.open_cells = &(*terrain->gates)[(std::size_t)u.house];
+        return (t.level || t.open_cells) ? &t : nullptr;
+    };
     for (std::size_t i = 0; i < units.size(); ++i) {
         Unit& u = units[i];
         const int self = static_cast<int>(i);
@@ -5530,6 +5576,23 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                     }
                 }
             }
+            // R-210 [RE: FUN_004D9B70]: the height gate on every step -- a cliff
+            // (or a deck that is gone) refuses it; the re-path below finds a
+            // legal way. `step_layer` is the deck layer the unit lands on.
+            int step_layer = u.on_deck;
+            if (terrain) {
+                PathTerrain t;
+                if (const PathTerrain* tp = terrain_of_unit(u, t); tp && tp->level) {
+                    const int dx = tgt.x - u.cell_x, dy = tgt.y - u.cell_y;
+                    step_layer = (dx < -1 || dx > 1 || dy < -1 || dy > 1)
+                                     ? -1
+                                     : path_step_layer(*tp, w, u.cell_x, u.cell_y, u.on_deck, tgt.x, tgt.y);
+                    if (step_layer < 0) {
+                        blocked = true;
+                        break;
+                    }
+                }
+            }
             // Reserve the next cell before stepping into it.
             if (occ.is_infantry(self)) {
                 // W5-B R-061 [RE: FindInfantrySubposition FUN_00481090]: an
@@ -5564,6 +5627,7 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 u.fy = tgt.y;
                 u.cell_x = tgt.x;
                 u.cell_y = tgt.y;  // occ already owns this cell (reserved above)
+                if (terrain) u.on_deck = static_cast<std::uint8_t>(step_layer > 0 ? 1 : 0);   // R-210
                 budget -= (dist <= 1e-9 ? 0.0 : dist);
                 ++u.path_idx;
                 u.wait_time = 0.0;
@@ -5658,10 +5722,12 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                     passable_minus_units(g, w, h, occ, self, u.cell_x, u.cell_y);
                 // W2-SK-16: a detour try is budgeted (a crowd-sealed goal used
                 // to flood the whole grid every 0.3 s per blocked unit).
+                PathTerrain rt;
                 std::vector<Cellxy> np =
-                    find_path_bounded(p2, w, h, {u.cell_x, u.cell_y}, goal, kRepathBudget,
-                                      u.movement_domain == MovementDomain::Water ? nullptr
-                                      : crush ? crush_leak : wall_leak);
+                    find_path_bounded_t(p2, w, h, {u.cell_x, u.cell_y}, goal, kRepathBudget,
+                                        u.movement_domain == MovementDomain::Water ? nullptr
+                                        : crush ? crush_leak : wall_leak,
+                                        terrain_of_unit(u, rt));
                 if (np.size() > 1) {
                     u.path = std::move(np);
                     u.path_idx = 1;
