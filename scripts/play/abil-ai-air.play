@@ -1,6 +1,6 @@
 # Wave-5 R-080 / R-081: a Medium American AI builds its Airforce Command,
 # trains Harriers for its "4 Harriers" / "2 Harriers" TaskForces and flies
-# them on sorties; idle AI infantry garrison a nearby civilian building.
+# them on sorties. (W6-03-09: the invented R-081 AI civilian garrison is off.)
 set render_every 3000
 set on_quit continue
 set max_frames 20000
@@ -33,6 +33,6 @@ cheat place ATESLA 0 building 0:GACNST +3 -7
 # Americans build their Airforce Command (AMRADR, Helipad=yes NumberOfDocks=4).
 until 6000 buildings(1,AMRADR) >= 1 or buildings(1,GAAIRC) >= 1 @R-080:C
 until 6000 ai_air_sorties >= 1 @R-080:C
-until 3000 ai_garrisons >= 1 @R-081:C
+assert ai_garrisons == 0
 shot ai_air
 end
