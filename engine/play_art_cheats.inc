@@ -90,6 +90,20 @@ if (args.size() == 2 && args[0] == "map_ascii") {
     for (int y = 0; y < gh; ++y) f << g[(std::size_t)y] << "\n";
     return true;
 }
+// R3: `cheat map_levels PATH` (debug only) -- each cell's terrain height level
+// as one hex digit (0-F); row y, column x. With map_ascii it shows where an
+// elevated defence gets the [ElevationModel] range bonus.
+if (args.size() == 2 && args[0] == "map_levels") {
+    const int gw = world_.grid_w(), gh = world_.grid_h();
+    const char* hx = "0123456789ABCDEF";
+    std::ofstream f(args[1]);
+    for (int y = 0; y < gh; ++y) {
+        std::string row(static_cast<std::size_t>(gw), '0');
+        for (int x = 0; x < gw; ++x) row[(std::size_t)x] = hx[std::clamp(world_.cell_level(x, y), 0, 15)];
+        f << row << "\n";
+    }
+    return true;
+}
 if ((args.size() == 2 || args.size() == 3) && args[0] == "view_key") {
     int want = args.size() == 3 ? std::atoi(args[2].c_str()) : 0;
     for (const std::vector<PresMap::Obj>* v : {&map_dressing_.objects(), &map_dressing_.overlays(), &map_dressing_.smudges()})
