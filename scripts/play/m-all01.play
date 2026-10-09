@@ -42,19 +42,26 @@ assert briefing_open == 0
 assert cameo(GAWEAT) == 0                     @G-15:F
 assert cameo(GATECH) == 0                     @G-15:F
 
-# --- 3. reinforcements (Tanya) arrive and the mission keeps running ------------------
+# --- 3. reinforcements (Tanya) arrive -----------------------------------------------
 until 2700 units(0,TANY) >= 1                 @G-73:F
-wait 1800
-# With no player input the mission may be lost; it must then SAY so (the map's
-# "Lose 13" chain / house defeat -> BorrowedTime -> result screen).
-if units(0) == 0 then assert outcome == LOST  @NEW-2:F
-if units(0) > 0 then assert outcome == RUNNING
-shot f2400
 
 # --- 4. Esc mid-mission opens the options menu, not quit ------------------------------
+# (R-210: checked while the mission certainly runs -- with no input Tanya now
+# follows the paratroopers toward the Dreadnoughts and the map may end LOST
+# before the 1800-frame wait below is over.)
 key esc                                       @G-01:B
 wait 2
 assert quits == 0                             @G-01:B
 assert menu_open == 1                         @G-01:B
 if menu_open == 1 then key esc
+wait 2
+
+# --- 5. the mission keeps running, or says it is lost --------------------------------
+wait 1800
+# With no player input the mission may be lost; it must then SAY so (the map's
+# "Lose 13" chain / house defeat -> BorrowedTime -> result screen).
+if scene == game and units(0) == 0 then assert outcome == LOST  @NEW-2:F
+if scene == game and units(0) > 0 then assert outcome == RUNNING
+if scene == result then assert outcome == LOST
+shot f2400
 end
