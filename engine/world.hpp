@@ -849,6 +849,19 @@ public:
         std::uint8_t& c = crush_wall_[static_cast<std::size_t>(y) * grid_w_ + x];
         if (c == 0) c = 1;
     }
+    // W6-04-05 [RE: Reduce_Wall FUN_00480BC0]: a map wall overlay is shootable.
+    // main.cpp registers each wall cell's OverlayType (rules Strength=, art
+    // DamageLevels=, Armor=wood); a hit advances its damage stage
+    // (w6_overlay_wall_hit, callable from the const combat paths -- the stage
+    // and the kill list are mutable), a destroyed wall is opened at the start
+    // of the next step (w6_apply_wall_kills) and stops drawing like a crushed one.
+    void mark_wall_overlay(int x, int y, int strength, int levels, bool wood);
+    bool has_wall_overlays() const { return !wall_ov_type_.empty(); }
+    int wall_overlay_stage(int x, int y) const;
+    void w6_overlay_wall_hit(int x, int y, int wall_flags, int damage) const;
+    void w6_apply_wall_kills();
+    // The sync RNG the combat paths draw from (Reduce_Wall's Random(0,Strength)).
+    ProjRng* combat_rng_ptr() const { return const_cast<ProjRng*>(&combat_rng_); }
     bool wall_crushed(int x, int y) const {
         if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_ || crush_wall_.size() != passable_.size()) return false;
         return crush_wall_[static_cast<std::size_t>(y) * grid_w_ + x] == 2;
@@ -2158,7 +2171,8 @@ private:
     void an_damage_building(int b, int dmg);
     void an_area_damage(int house, double cx, double cy, int damage, double spread, double pmax,
                         const std::array<int, 11>& verses, bool hit_air, bool spare_house,
-                        double z = 0.0);   // W4: explosion height (0 = the 2-D test)
+                        double z = 0.0,    // W4: explosion height (0 = the 2-D test)
+                        int wall_flags = 0);   // W6-04-04: the warhead's Wall/Wood/WallAbsoluteDestroyer
     // W4 RocketLocomotion (world_an.cpp): target point, explosion.
     bool rocket_target_point(int tu, int tb, double& x, double& y, double& z) const;
     void rocket_explode(int i, int end);
@@ -2295,6 +2309,11 @@ private:
     std::vector<int> sw_quarry_;            // W5-A set_sw_quarry (transient)
     std::vector<std::uint8_t> wall_leak_;   // W5-A: block_wall_cell cells (pathfind leak mask)
     std::vector<std::uint8_t> crush_wall_;  // P4: crushable wall cells 0/1 standing/2 crushed (save v23)
+    std::vector<std::uint8_t> wall_ov_type_;         // W6-04-05: 1-based WallOvType per cell (0 none)
+    std::vector<WallOvType> wall_ov_types_;          // W6-04-05: the registered wall OverlayTypes
+    mutable std::vector<std::uint8_t> wall_ov_stage_;   // W6-04-05: damage stage per cell (save v25)
+    mutable std::vector<int> w6_wall_kills_;         // W6-04-05: walls destroyed, opened next step
+    void w6_overlay_reduce(int x, int y, int dmg) const;
     mutable std::vector<std::uint8_t> crush_grid_, crush_leak_;   // P4: derived per call (never saved)
     void step_wall_crush();                 // P4: crushers flatten the crushable wall they drive into
     // CB-3 Naval [RE: naval.md §1]: the WATER passability grid, empty by default

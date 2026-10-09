@@ -31,6 +31,7 @@ struct UnitTypeW6 {
     // OmniCrushResistant= (BFRT, MCVs, SMIN) cannot be omni-crushed.
     bool omni_crusher = false;
     bool omni_crush_resistant = false;
+    int wall_flags = 0;   // W6-04-04: the PRIMARY warhead's W6WallFlags
 };
 
 // Per-unit state.
@@ -51,11 +52,46 @@ struct UnitW6 {
     bool sonic = false;
     bool sonic_hit = false;
     bool heal_hit = false;
+    int wall_flags = 0;   // W6-04-04: the ACTIVE warhead's W6WallFlags
 };
 
 // Per-building state.
 struct BldW6 {
     int burst_index = 0;   // W6-04-01: a defence's CurrentBurstIndex
+    int wall_stage = 0;    // W6-04-04: a built wall's damage stage (OverlayData >> 4)
+};
+
+// W6-04-04/05 [RE: DamageArea FUN_00489190 @0x489581..0x4895BD]: the warhead
+// keys that let a blast touch a wall -- Wall (+0x144), Wood (+0x147, only a
+// wall whose Armor is wood) and WallAbsoluteDestroyer (+0x145).
+enum W6WallFlags : int { kW6Wall = 1, kW6Wood = 2, kW6WallAbs = 4 };
+
+// Per-building-TYPE data (BuildingTypeDef::w6).
+struct BldTypeW6 {
+    // W6-04-04: a Wall=yes type's art DamageLevels= (GAWALL/NAWALL 3); 0 =
+    // not a wall. A wall has no HP model: it takes damage stages.
+    int wall_levels = 0;
+};
+
+// W6-04-05: one wall OverlayType (rules Strength=, art DamageLevels=, Armor=wood).
+struct WallOvType {
+    int strength = 1;
+    int levels = 1;
+    bool wood = false;
+};
+
+// W6-04-04 [RE: Reduce_Wall FUN_00480BC0]: one hit of `dmg` (-1 = destroy,
+// WallAbsoluteDestroyer) on a wall at damage `stage`. When dmg < Strength the
+// stage advances only if Random(0, Strength) < dmg (the sync RNG); then
+// stage+1. Reaching DamageLevels-1 (with DamageLevels > 2) cascades
+// Reduce_Wall(200) onto the N/E/S/W neighbours of the same type still at stage
+// 0. The wall is gone at stage >= DamageLevels, or at DamageLevels-1 when it
+// has no neighbour of its type (connection nibble 0).
+struct WallStep {
+    int stage = 0;
+    bool advanced = false;
+    bool destroyed = false;
+    bool cascade = false;
 };
 
 }  // namespace ra2engine

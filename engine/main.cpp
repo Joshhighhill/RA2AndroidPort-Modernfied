@@ -827,6 +827,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.w6.burst = tw.slot[0].valid ? tw.slot[0].burst : 1;   // W6-04-01
     r.combat.w6.omni_fire = tw.slot[0].valid && tw.slot[0].omni_fire;   // W6-04-06
     r.combat.w6.sonic = tw.slot[0].valid && tw.slot[0].sonic;           // W6-04-09
+    r.combat.w6.wall_flags = tw.slot[0].valid ? tw.slot[0].wall_flags : 0;   // W6-04-04
     r.combat.w6.open_transport_weapon =   // W6-04-15
         static_cast<int>(rules.section_double(unit_id, "OpenTransportWeapon", -1.0));
     r.combat.w6.air_range_bonus = rules.section_double(unit_id, "AirRangeBonus", 0.0);   // W6-04-16
@@ -989,6 +990,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
         r.combat.elite.burst = tw.elite[0].valid ? tw.elite[0].burst : 1;   // W6-04-01
         r.combat.elite.omni_fire = tw.elite[0].valid && tw.elite[0].omni_fire;   // W6-04-06
         r.combat.elite.sonic = tw.elite[0].valid && tw.elite[0].sonic;           // W6-04-09
+        r.combat.elite.wall_flags = tw.elite[0].valid ? tw.elite[0].wall_flags : 0;   // W6-04-04
         r.combat.elite.shrapnel_count = tw.elite[0].shrapnel_count;         // W6-04-02
         r.combat.elite.shrapnel_damage = tw.elite[0].shrapnel_damage;
         r.combat.elite.shrapnel_range = tw.elite[0].shrapnel_range;
@@ -1127,6 +1129,7 @@ ra2engine::WeaponSpec resolve_weapon_spec(const Rules& rules, const Ini& ini, co
     s.affects_allies = rules.section_flag(wh, "AffectsAllies", true);   // W6-04-03
     s.prone_damage = ra2engine::warhead_prone_damage(rules, wh);
     s.inf_death = static_cast<int>(rules.section_double(wh, "InfDeath", 0.0));
+    s.wall_flags = ra2engine::warhead_wall_flags(rules, wh);   // W6-04-04
     s.rad_level = static_cast<int>(rules.section_double(w, "RadLevel", 0.0));
     // P4 [RE: FUN_00700DA0 @0x701327]: warhead CausesDelayKill (+0x130),
     // DelayKillFrames (+0x134), DelayKillAtMax (+0x138).
@@ -1213,6 +1216,7 @@ ra2engine::AbilityRules resolve_ability_rules(const Rules& rules, const Ini& ini
         r.ivan_warhead.affects_allies = rules.section_flag(iwh, "AffectsAllies", true);   // W6-04-03
         r.ivan_warhead.prone_damage = ra2engine::warhead_prone_damage(rules, iwh);
         r.ivan_warhead.inf_death = static_cast<int>(rules.section_double(iwh, "InfDeath", 0.0));
+        r.ivan_warhead.wall_flags = ra2engine::warhead_wall_flags(rules, iwh);   // W6-04-04
     }
     r.ivan_warhead.damage = r.ivan_damage;
     return r;
@@ -2569,6 +2573,8 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
             std::cerr << (k ? "," : "") << d.prerequisite[k];
         std::cerr << "]\n";
         ra2engine::fill_building_weapons(rules, id, d);   // Gap fix C (G-40): defenses
+        // W6-04-04: a Wall=yes building takes damage stages (art DamageLevels=).
+        d.w6.wall_levels = rules.section_flag(id, "Wall", false) ? art.damage_levels(art_id) : 0;
         ba.roster.push_back(std::move(d));
         ba.art.push_back(std::move(slot));
         // [RE-GATE APPLIED: production.md §1.1 — the tab/queue classifier is
@@ -6402,7 +6408,18 @@ public:
                 });
                 world_.refresh_building_types(ba_.roster);   // G16: newly registered types
             }
+            // W6-04-05: a map wall overlay cell becomes shootable (rules Strength=,
+            // art DamageLevels=, Armor=wood -> the Wood warhead key applies).
+            auto w6_register_wall = [&](int x, int y) {
+                const std::string nm = map_dressing_.wall_name(x, y);
+                if (nm.empty()) return;
+                std::string arm = rules_.armor(nm);
+                for (char& ch : arm) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+                world_.mark_wall_overlay(x, y, static_cast<int>(rules_.section_double(nm, "Strength", 1.0)),
+                                         art_.damage_levels(nm), arm == "wood");
+            };
             for (const auto& [x, y] : map_dressing_.blocked()) {
+                if (map_dressing_.is_wall(x, y)) w6_register_wall(x, y);         // W6-04-05
                 if (map_dressing_.is_wall(x, y)) world_.block_wall_cell(x, y);   // W5-A diagonal gaps
                 else world_.block_cell(x, y);
                 if (map_dressing_.is_crushable_wall(x, y)) world_.mark_crushable_wall(x, y);   // P4
@@ -6723,7 +6740,18 @@ private:
         if (ok) {
             // G-87: the saved World carries the neutral structures; re-block the
             // dressing's cells (passability is rebuilt from the map on load).
+            // W6-04-05: a map wall overlay cell becomes shootable (rules Strength=,
+            // art DamageLevels=, Armor=wood -> the Wood warhead key applies).
+            auto w6_register_wall = [&](int x, int y) {
+                const std::string nm = map_dressing_.wall_name(x, y);
+                if (nm.empty()) return;
+                std::string arm = rules_.armor(nm);
+                for (char& ch : arm) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+                world_.mark_wall_overlay(x, y, static_cast<int>(rules_.section_double(nm, "Strength", 1.0)),
+                                         art_.damage_levels(nm), arm == "wood");
+            };
             for (const auto& [bx, by] : map_dressing_.blocked()) {
+                if (map_dressing_.is_wall(bx, by)) w6_register_wall(bx, by);   // W6-04-05
                 if (map_dressing_.is_wall(bx, by)) world_.block_wall_cell(bx, by);
                 else world_.block_cell(bx, by);
                 if (map_dressing_.is_crushable_wall(bx, by)) world_.mark_crushable_wall(bx, by);   // P4

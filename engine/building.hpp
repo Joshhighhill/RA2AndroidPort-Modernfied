@@ -93,6 +93,7 @@ struct BuildingTypeDef {
     int max_occupants = 0;          // MaxNumberOccupants= (+0x1580)
     bool bridge_repair_hut = false; // BridgeRepairHut=   (+0x16B6)
     BldTypeW5 w5;                   // wave-5 abilities (abil_w5.hpp)
+    BldTypeW6 w6;                   // wave-6 #4 (unit_w6.hpp): wall damage levels
 };
 
 // A placed building instance.

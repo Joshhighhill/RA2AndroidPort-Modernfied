@@ -32,6 +32,8 @@ TypeWeapons resolve_type_weapons(const ra2assets::Rules& rules, const std::strin
 // The weapon id in slot `i` (0/1) per the loader rule above ("" if none).
 // W3-B: a warhead's ProneDamage= as a multiplier (absent -> 1.0).
 double warhead_prone_damage(const ra2assets::Rules& rules, const std::string& wh);
+// W6-04-04: the warhead's Wall / Wood / WallAbsoluteDestroyer as W6WallFlags.
+int warhead_wall_flags(const ra2assets::Rules& rules, const std::string& wh);
 std::string type_weapon_id(const ra2assets::Rules& rules, const std::string& type_id, int i,
                            bool elite);
 

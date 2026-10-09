@@ -139,6 +139,11 @@ std::string Art::cameo(const std::string& image) const {
     return ini_->get(image, "Cameo", "");
 }
 
+int Art::damage_levels(const std::string& image) const {
+    const int v = std::atoi(ini_->get(image, "DamageLevels", "1").c_str());
+    return v > 0 ? v : 1;
+}
+
 bool Art::new_theater(const std::string& image) const {
     return is_truthy(ini_->get(image, "NewTheater", ""));
 }

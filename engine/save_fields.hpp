@@ -254,6 +254,10 @@ struct SaveAccess {
         save::io(ar, w.elev_rules_);    // W5-B R-063 (v20)
         save::io(ar, w.wall_leak_);   // W5-A diagonal wall gaps (save v21)
         save::io(ar, w.crush_wall_);  // P4 crushable / crushed walls (save v23)
+        save::io(ar, w.wall_ov_type_);    // W6-04-05 map wall overlays (v25; re-registered on load)
+        save::io(ar, w.wall_ov_types_);
+        save::io(ar, w.wall_ov_stage_);   // W6-04-05 their damage stages
+        save::io(ar, w.w6_wall_kills_);   // W6-04-05 walls destroyed this frame (opened next step)
         save::io(ar, w.crush_grid_);  // P4 derived scratch (the amphib_passable_ precedent)
         save::io(ar, w.crush_leak_);
         save::io(ar, w.sw_quarry_);   // W5-A AI SW PreferredTarget (save v21)
@@ -347,6 +351,7 @@ template <class Ar> void fields(Ar& ar, SwParams& v) {   // W2-AN (save v9)
     io(ar, v.repair_step);
     io(ar, v.repair_rate_frames); io(ar, v.repair_percent);
     io(ar, v.parachute_fall);   // W4-SQ-06 (save v16)
+    io(ar, v.storm_wall_flags); io(ar, v.nuke_wall_flags);   // v25: W6-04-04
 }
 template <class Ar> void fields(Ar& ar, SwStrike& v) {   // W2-AN (save v9)
     io(ar, v.kind); io(ar, v.house); io(ar, v.x); io(ar, v.y); io(ar, v.ox); io(ar, v.oy);
@@ -382,6 +387,7 @@ template <class Ar> void fields(Ar& ar, AnUnit& v) {   // W2-AN (save v9)
 }
 template <class Ar> void fields(Ar& ar, RocketWarhead& v) {   // W4 (v15)
     io(ar, v.id); io(ar, v.spread); io(ar, v.pmax); io(ar, v.verses);
+    io(ar, v.wall_flags);   // v25: W6-04-04
 }
 template <class Ar> void fields(Ar& ar, RocketBlock& v) {   // W4 (v15)
     io(ar, v.pause_frames); io(ar, v.tilt_frames); io(ar, v.pitch_initial); io(ar, v.pitch_final);
@@ -508,6 +514,7 @@ template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
     io(ar, v.inf_death); io(ar, v.prone_damage);   // W3-B
     io(ar, v.burst);   // v25: W6-04-01
     io(ar, v.sonic);   // v25: W6-04-09
+    io(ar, v.wall_flags);   // v25: W6-04-04
     io(ar, v.shrapnel_count); io(ar, v.shrapnel_damage); io(ar, v.shrapnel_range); io(ar, v.shrapnel_verses);   // v25: W6-04-02
 }
 // G16 world depth (agent G)
@@ -555,6 +562,7 @@ template <class Ar> void fields(Ar& ar, WeaponStats& v) {
     io(ar, v.inf_death); io(ar, v.prone_damage);   // W3-B
     io(ar, v.burst);   // v25: W6-04-01
     io(ar, v.sonic);   // v25: W6-04-09
+    io(ar, v.wall_flags);   // v25: W6-04-04
     io(ar, v.shrapnel_count); io(ar, v.shrapnel_damage); io(ar, v.shrapnel_range); io(ar, v.shrapnel_verses);   // v25: W6-04-02
 }
 // W3-B: an art Sequence= entry / a per-image infantry table.
@@ -640,6 +648,7 @@ template <class Ar> void fields(Ar& ar, WeaponSpec& v) {
     io(ar, v.burst);   // v25: W6-04-01
     io(ar, v.omni_fire);   // v25: W6-04-06
     io(ar, v.affects_allies); io(ar, v.prone_damage); io(ar, v.inf_death);   // v25: W6-04-03
+    io(ar, v.wall_flags);   // v25: W6-04-04
 }
 template <class Ar> void fields(Ar& ar, AbilityProfile& v) {
     io(ar, v.fire_kind);
@@ -732,13 +741,22 @@ template <class Ar> void fields(Ar& ar, UnitTypeW6& v) {
     io(ar, v.open_transport_weapon); io(ar, v.air_range_bonus); io(ar, v.deployed_crushable);   // W6-04-15/16/29
     io(ar, v.can_approach_target);   // W6-04-30
     io(ar, v.omni_crusher); io(ar, v.omni_crush_resistant);   // W6-04-14
+    io(ar, v.wall_flags);   // W6-04-04
 }
 template <class Ar> void fields(Ar& ar, UnitW6& v) {
     io(ar, v.t); io(ar, v.burst); io(ar, v.burst_index); io(ar, v.omni_fire);
     io(ar, v.sonic); io(ar, v.sonic_hit); io(ar, v.heal_hit);   // W6-04-09
+    io(ar, v.wall_flags);   // W6-04-04
 }
 template <class Ar> void fields(Ar& ar, BldW6& v) {
     io(ar, v.burst_index);
+    io(ar, v.wall_stage);   // W6-04-04
+}
+template <class Ar> void fields(Ar& ar, BldTypeW6& v) {
+    io(ar, v.wall_levels);
+}
+template <class Ar> void fields(Ar& ar, WallOvType& v) {
+    io(ar, v.strength); io(ar, v.levels); io(ar, v.wood);
 }
 template <class Ar> void fields(Ar& ar, RulesW5& v) {
     io(ar, v.prism_support_modifier); io(ar, v.prism_support_max); io(ar, v.prism_support_delay);
@@ -882,6 +900,7 @@ template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.max_occupants);
     io(ar, v.bridge_repair_hut);
     io(ar, v.w5);   // wave-5 abilities (agent C)
+    io(ar, v.w6);   // v25: W6-04-04 wall damage levels
 }
 
 // --- the live objects ---

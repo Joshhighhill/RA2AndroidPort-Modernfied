@@ -240,6 +240,7 @@ void World::ability_area_damage(int src_unit, double cx, double cy, const Weapon
     shooter.w_affects_allies = w.affects_allies;
     shooter.w_prone_damage = w.prone_damage;
     shooter.w_inf_death = w.inf_death;
+    shooter.w6.wall_flags = w.wall_flags;   // W6-04-04
     const int ix = ability_ftol(cx * kAbilityLeptonsPerCell);
     const int iy = ability_ftol(cy * kAbilityLeptonsPerCell);
     const int iz = cell_level(static_cast<int>(std::lround(cx)), static_cast<int>(std::lround(cy))) * 104;
@@ -291,6 +292,7 @@ void World::ability_apply_weapon_fields(Unit& u, const WeaponSpec& w) {
     u.w_rof = w.rof;
     u.w6.burst = w.burst;   // W6-04-01 (IFV HoverMissile 2, CRMP5 ...)
     u.w6.omni_fire = w.omni_fire;   // W6-04-06
+    u.w6.wall_flags = w.wall_flags; // W6-04-04
     u.w_range = w.range;
     u.w_verses = w.verses;
     u.w_cell_spread = w.cell_spread;

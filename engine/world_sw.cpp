@@ -294,7 +294,7 @@ void World::an_damage_building(int b, int dmg) {
 // callers that want it.]
 void World::an_area_damage(int house, double cx, double cy, int damage, double spread, double pmax,
                            const std::array<int, 11>& verses, bool hit_air, bool spare_house,
-                           double z) {
+                           double z, int wall_flags) {
     const double radius = std::max(0.5, std::round(spread)) * kLept;
     const std::vector<int> vv(verses.begin(), verses.end());
     for (int j = 0; j < static_cast<int>(units_.size()); ++j) {
@@ -312,10 +312,27 @@ void World::an_area_damage(int house, double cx, double cy, int damage, double s
         const int dmg = damage_vs(static_cast<int>(damage * scale), vv, w.armor_ix);
         an_damage_unit(j, dmg, -1);
     }
+    // W6-04-04/05 [RE: FUN_00489190 @0x489581]: wall cells inside the blast
+    // take Reduce_Wall per the warhead's wall keys (a Nuke's
+    // WallAbsoluteDestroyer erases them), never an HP hit.
+    const int wr = static_cast<int>(std::max(0.5, std::round(spread)));
+    if (has_wall_overlays() && z <= 0.0)
+        for (int dy = -wr; dy <= wr; ++dy)
+            for (int dx = -wr; dx <= wr; ++dx) {
+                const int x = static_cast<int>(std::lround(cx)) + dx, y = static_cast<int>(std::lround(cy)) + dy;
+                if (std::hypot((x - cx) * kLept, (y - cy) * kLept) <= radius)
+                    w6_overlay_wall_hit(x, y, wall_flags, damage);
+            }
     for (int bi = 0; bi < static_cast<int>(buildings_.size()); ++bi) {
         const Building& b = buildings_[bi];
         if (!b.alive || b.state == Building::State::Dead) continue;
         if (spare_house && b.house == house) continue;
+        if (b.type >= 0 && b.type < static_cast<int>(btypes().size()) &&
+            btypes()[static_cast<std::size_t>(b.type)].w6.wall_levels > 0) {   // W6-04-04
+            if (z <= 0.0 && std::hypot((b.cx - cx) * kLept, (b.cy - cy) * kLept) <= radius)
+                w6_wall_building_hit(*this, units_, buildings_, bi, wall_flags, damage);
+            continue;
+        }
         double d = -1.0;
         for (const Cellxy& c : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
             const double dc = std::hypot((c.x - cx) * kLept, (c.y - cy) * kLept);
@@ -352,7 +369,7 @@ void World::an_nuke_detonate(const SwStrike& s) {
     // W2-AN-06: everything in the blast, the firer's own units and airborne
     // units included (FUN_00489190 has no house or layer filter).
     an_area_damage(s.house, s.x, s.y, dmg, spread, pmax, verses, /*hit_air=*/true,
-                   /*spare_house=*/false);
+                   /*spare_house=*/false, 0.0, an_.sw.nuke_wall_flags);   // W6-04-04: walls erased
     // [NukePayload] RadLevel=500: a radiation site over the blast (P4 RadField;
     // spread = the warhead CellSpread, as BulletClass::Detonate's RadSite block).
     if (an_.sw.nuke_rad_level > 0 && grid_w_ > 0 && grid_h_ > 0) {
@@ -488,7 +505,7 @@ void World::an_storm_bolt(SwStrike& s, int x, int y) {
     for (int v : verses) any |= v != 0;
     if (!any) verses.fill(100);
     an_area_damage(s.house, x, y, an_.sw.storm_damage, an_.sw.storm_wh_spread, an_.sw.storm_wh_pmax,
-                   verses, /*hit_air=*/false, /*spare_house=*/false);
+                   verses, /*hit_air=*/false, /*spare_house=*/false, 0.0, an_.sw.storm_wall_flags);   // W6-04-04
     an_event(SwEvent::Bolt, s.house, SuperweaponType::LightningStorm, x, y);
     s.recent.push_back(x);
     s.recent.push_back(y);

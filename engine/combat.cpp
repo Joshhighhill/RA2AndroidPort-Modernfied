@@ -539,6 +539,83 @@ bool can_crush(const Unit& u, const Unit& v) {
     return v.crushable && !v.is_vehicle;
 }
 
+WallStep reduce_wall(int stage, int levels, int strength, int dmg, bool connected, ProjRng* rng) {
+    WallStep r;
+    r.stage = stage;
+    levels = std::max(1, levels);
+    // FUN_00480BC0: a hit below Strength advances only if Random(0,Strength) < dmg.
+    if (dmg != -1 && dmg < strength && rng && dmg <= rng->random(0, strength)) return r;
+    r.advanced = true;
+    r.stage = std::min(stage + 1, 15);                 // OverlayData += 0x10
+    r.cascade = r.stage == levels - 1 && levels > 2;
+    if (dmg == -1 || r.stage >= levels || (r.stage == levels - 1 && !connected)) r.destroyed = true;
+    return r;
+}
+
+int wall_hit_damage(int wall_flags, bool wood_wall, int damage) {
+    if (wall_flags & kW6WallAbs) return -1;
+    if ((wall_flags & kW6Wall) || ((wall_flags & kW6Wood) && wood_wall)) return damage > 0 ? damage : 0;
+    return 0;
+}
+
+namespace {
+constexpr int kWoodArmor = 6;   // armor_names(): none, flak, plate, light, medium, heavy, WOOD
+int wall_neighbour(const std::vector<Building>& buildings, const Building& b, int dx, int dy) {
+    for (int j = 0; j < static_cast<int>(buildings.size()); ++j) {
+        const Building& o = buildings[static_cast<std::size_t>(j)];
+        if (&o == &b || !o.alive || o.state == Building::State::Dead || o.type != b.type) continue;
+        if (o.cx == b.cx + dx && o.cy == b.cy + dy) return j;
+    }
+    return -1;
+}
+void wall_building_reduce(const World& world, std::vector<Unit>& units, std::vector<Building>& buildings,
+                          int bi, int dmg) {
+    Building& b = buildings[static_cast<std::size_t>(bi)];
+    if (!b.alive || b.state == Building::State::Dead || dmg == 0) return;
+    const int levels = world.btypes()[static_cast<std::size_t>(b.type)].w6.wall_levels;
+    static const int kDx[4] = {0, 1, 0, -1}, kDy[4] = {-1, 0, 1, 0};   // N, E, S, W
+    int nb[4];
+    bool connected = false;
+    for (int k = 0; k < 4; ++k) {
+        nb[k] = wall_neighbour(buildings, b, kDx[k], kDy[k]);
+        connected = connected || nb[k] >= 0;
+    }
+    const WallStep r = reduce_wall(b.w6.wall_stage, levels, b.max_hp, dmg, connected, world.combat_rng_ptr());
+    if (!r.advanced) return;
+    b.w6.wall_stage = r.stage;
+    if (r.cascade)
+        for (int k = 0; k < 4; ++k)
+            if (nb[k] >= 0 && buildings[static_cast<std::size_t>(nb[k])].w6.wall_stage < 1)
+                wall_building_reduce(world, units, buildings, nb[k], 200);
+    Building& w = buildings[static_cast<std::size_t>(bi)];
+    if (r.destroyed) {
+        w.hp = 0;
+        kill_building(w);
+        for (Unit& o : units)
+            if (o.target_building == bi) {
+                o.target_building = -1;
+                o.attack_order = false;
+            }
+    } else {
+        // The health bar follows the stage (a wall has no HP of its own).
+        w.hp = std::max(1, w.max_hp - w.max_hp * r.stage / std::max(1, levels));
+    }
+}
+}  // namespace
+
+bool w6_wall_building_hit(const World& world, std::vector<Unit>& units, std::vector<Building>& buildings,
+                          int bi, int wall_flags, int damage) {
+    if (bi < 0 || bi >= static_cast<int>(buildings.size())) return false;
+    const Building& b = buildings[static_cast<std::size_t>(bi)];
+    if (b.type < 0 || b.type >= static_cast<int>(world.btypes().size()) ||
+        world.btypes()[static_cast<std::size_t>(b.type)].w6.wall_levels <= 0)
+        return false;
+    if (b.iron_left > 0.0) return true;
+    wall_building_reduce(world, units, buildings, bi,
+                         wall_hit_damage(wall_flags, b.armor_ix == kWoodArmor, damage));
+    return true;
+}
+
 AreaResult damage_area(const World& world, std::vector<Unit>& units,
                        std::vector<Building>& buildings, Occupancy& occ, const Unit& shooter,
                        int src_unit, int src_building, int ix, int iy, int iz,
@@ -622,12 +699,27 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
         if (w.hp <= 0) start_unit_death(units, occ, h.idx, shooter, src_unit);
     }
 
+    // W6-04-04/05 [RE: FUN_00489190 @0x489581..0x4895BD]: every ring cell
+    // holding a wall takes Reduce_Wall per the warhead's wall keys -- a map
+    // wall overlay through the World, a built wall (a 1x1 Wall=yes building)
+    // below instead of the HP hit.
+    if (world.has_wall_overlays())
+        for (int k = 0; k < rings; ++k)
+            world.w6_overlay_wall_hit(icx + kRingOffsets[k][0], icy + kRingOffsets[k][1],
+                                      shooter.w6.wall_flags, shooter.w_damage);
+
     // --- buildings: once per foundation cell inside the ring set (the
     // building sits in every foundation cell's object chain, AddContent
     // FUN_0047E7B0, and the victim list is not de-duplicated).
     for (int bi = 0; bi < static_cast<int>(buildings.size()); ++bi) {
         Building& b = buildings[static_cast<std::size_t>(bi)];
         if (bi == src_building) continue;
+        if (b.type >= 0 && b.type < static_cast<int>(world.btypes().size()) &&
+            world.btypes()[static_cast<std::size_t>(b.type)].w6.wall_levels > 0) {   // W6-04-04
+            if (b.alive && b.state != Building::State::Dead && ring_index(b.cx - icx, b.cy - icy) >= 0)
+                w6_wall_building_hit(world, units, buildings, bi, shooter.w6.wall_flags, shooter.w_damage);
+            continue;
+        }
         for (int cy = b.cy; cy < b.cy + b.fh; ++cy)
             for (int cx = b.cx; cx < b.cx + b.fw; ++cx) {
                 if (!b.alive || b.state == Building::State::Dead) continue;

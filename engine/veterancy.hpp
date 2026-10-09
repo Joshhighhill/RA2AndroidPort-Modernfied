@@ -67,6 +67,7 @@ struct WeaponStats {
     int burst = 1;                // W6-04-01: weapon Burst= (+0x9C)
     bool omni_fire = false;       // W6-04-06: weapon OmniFire= (+0x12B)
     bool sonic = false;           // W6-04-09: warhead Sonic= (+0x14B)
+    int wall_flags = 0;           // W6-04-04: warhead Wall/Wood/WallAbsoluteDestroyer
     // W6-04-02 [RE: BulletTypeClass ShrapnelWeapon/ShrapnelCount -- keys of the
     // weapon's PROJECTILE ([LargeCometP], [Electricbounce], [SuperCometP])]:
     // the fragment weapon's Damage/Range/Verses and the fragment count.

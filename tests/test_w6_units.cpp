@@ -212,3 +212,32 @@ TEST_CASE("w6units W6-04-14/15/16/29/30: small rules keys resolve and gate crush
     ggi.deployed = false;
     CHECK(can_crush(rhino, ggi));
 }
+
+TEST_CASE("w6units W6-04-04: Reduce_Wall stage model (FUN_00480BC0) and the warhead gate") {
+    // WallAbsoluteDestroyer erases at once.
+    CHECK(reduce_wall(0, 3, 300, -1, true, nullptr).destroyed);
+    // A hit >= Strength always advances; GAWALL (3 levels) connected: 1, 2, gone at 3.
+    WallStep a = reduce_wall(0, 3, 300, 600, true, nullptr);
+    CHECK(a.advanced);
+    CHECK(a.stage == 1);
+    CHECK_FALSE(a.destroyed);
+    WallStep b = reduce_wall(1, 3, 300, 600, true, nullptr);
+    CHECK(b.stage == 2);
+    CHECK(b.cascade);            // DamageLevels-1 with DamageLevels > 2
+    CHECK_FALSE(b.destroyed);    // still has a neighbour
+    CHECK(reduce_wall(2, 3, 300, 600, true, nullptr).destroyed);
+    // An isolated wall is gone at DamageLevels-1.
+    CHECK(reduce_wall(1, 3, 300, 600, false, nullptr).destroyed);
+    // Below Strength: advances only when Random(0,Strength) < dmg.
+    ProjRng rng;
+    int adv = 0;
+    for (int k = 0; k < 2000; ++k) adv += reduce_wall(0, 3, 300, 30, true, &rng).advanced ? 1 : 0;
+    CHECK(adv > 100);
+    CHECK(adv < 300);            // ~30/301 of 2000 = ~199
+    // The warhead gate: no Wall key = untouched, Wood only on wood walls.
+    CHECK(wall_hit_damage(0, false, 15) == 0);
+    CHECK(wall_hit_damage(kW6Wall, false, 90) == 90);
+    CHECK(wall_hit_damage(kW6Wood, false, 90) == 0);
+    CHECK(wall_hit_damage(kW6Wood, true, 90) == 90);
+    CHECK(wall_hit_damage(kW6WallAbs | kW6Wood, false, 600) == -1);
+}

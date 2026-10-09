@@ -73,6 +73,10 @@ public:
     // [image] Cameo=, or "" if absent.
     std::string cameo(const std::string& image) const;
 
+    // W6-04-04: [image] DamageLevels= (a wall OverlayType's damage stages,
+    // GAWALL/NAWALL 3, sandbags/fences 2); 1 if absent.
+    int damage_levels(const std::string& image) const;
+
     // [image] NewTheater=, true iff the value is "yes"/"true" (case-
     // insensitive); false if absent.
     bool new_theater(const std::string& image) const;

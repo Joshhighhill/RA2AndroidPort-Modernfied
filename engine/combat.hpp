@@ -203,6 +203,19 @@ bool unit_in_weapon_range(const World& world, const Unit& u, const Unit& t);
 // W6-04-14/29: may crusher `u` squash `v` (OmniCrusher / OmniCrushResistant,
 // DeployedCrushable, else Crushable infantry)?
 bool can_crush(const Unit& u, const Unit& v);
+
+// W6-04-04 [RE: Reduce_Wall FUN_00480BC0] one hit on a wall (see WallStep in
+// unit_w6.hpp). `rng` null (pure tests) = the random gate always passes.
+WallStep reduce_wall(int stage, int levels, int strength, int dmg, bool connected, ProjRng* rng);
+// The damage Reduce_Wall gets from a warhead (DamageArea @0x48958B): -1 for
+// WallAbsoluteDestroyer, `damage` for Wall (or Wood on a wood wall), else 0 =
+// the wall is untouched.
+int wall_hit_damage(int wall_flags, bool wood_wall, int damage);
+// A built wall (BuildingTypeDef::w6.wall_levels > 0) hit by a warhead with
+// `wall_flags`: the stage model instead of HP. Returns true when `bi` is a
+// wall (handled, hit or not).
+bool w6_wall_building_hit(const World& world, std::vector<Unit>& units, std::vector<Building>& buildings,
+                          int bi, int wall_flags, int damage);
 // The same test from an explicit shooter point.
 bool weapon_in_range_from(const World& world, const Unit& u, int ux, int uy, int uz, int tx, int ty,
                           int tz, int extra = 0);

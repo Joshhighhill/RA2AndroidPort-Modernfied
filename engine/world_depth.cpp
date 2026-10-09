@@ -573,7 +573,11 @@ void World::step_depth(double dt) {
         if (victim >= 0 && victim != i && victim < static_cast<int>(units_.size()))
             deliver_unit_hit(units_, occ_, i, victim);
         const int bb = building_at_cell(x, y);
-        if (bb >= 0) deliver_building_hit(units_, buildings_, i, bb);
+        // W6-04-04/05: a wall (built or a map overlay) takes Reduce_Wall per
+        // the warhead's wall keys, not an HP hit.
+        if (bb >= 0 && !w6_wall_building_hit(*this, units_, buildings_, bb, u.w6.wall_flags, u.w_damage))
+            deliver_building_hit(units_, buildings_, i, bb);
+        w6_overlay_wall_hit(x, y, u.w6.wall_flags, u.w_damage);
     }
     if (!garrison_any_) return;
     // Occupy arrivals (the step_capture analogue).

@@ -54,6 +54,7 @@ Unit World::defense_shooter(int b_idx, int slot) const {
     s.w_prone_damage = w.prone_damage;
     s.w_proj = w.proj;
     s.w_aa = w.aa;
+    s.w6.wall_flags = w.wall_flags;   // W6-04-04
     s.w_ag = w.ag;
     s.alive = false;   // never a real unit
     return s;

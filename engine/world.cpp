@@ -711,6 +711,76 @@ const std::vector<std::uint8_t>* World::crush_leak() const {
 // P4: a Crusher land vehicle about to drive into a standing crushable wall
 // cell (its next path cell, adjacent) flattens it: the cell opens for every
 // unit and leaves the leak mask; the renderer stops drawing the overlay.
+void World::mark_wall_overlay(int x, int y, int strength, int levels, bool wood) {
+    if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_ || passable_.empty()) return;
+    const std::size_t n = passable_.size();
+    if (wall_ov_type_.size() != n) wall_ov_type_.assign(n, 0);
+    if (wall_ov_stage_.size() != n) wall_ov_stage_.assign(n, 0);
+    std::size_t t = 0;
+    for (; t < wall_ov_types_.size(); ++t)
+        if (wall_ov_types_[t].strength == strength && wall_ov_types_[t].levels == levels &&
+            wall_ov_types_[t].wood == wood)
+            break;
+    if (t == wall_ov_types_.size()) {
+        if (t >= 255) return;
+        wall_ov_types_.push_back({std::max(1, strength), std::max(1, levels), wood});
+    }
+    wall_ov_type_[static_cast<std::size_t>(y) * grid_w_ + x] = static_cast<std::uint8_t>(t + 1);
+}
+
+int World::wall_overlay_stage(int x, int y) const {
+    if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_ || wall_ov_stage_.size() != passable_.size()) return 0;
+    return wall_ov_stage_[static_cast<std::size_t>(y) * grid_w_ + x];
+}
+
+void World::w6_overlay_wall_hit(int x, int y, int wall_flags, int damage) const {
+    if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_ || wall_ov_type_.size() != passable_.size()) return;
+    const std::uint8_t t = wall_ov_type_[static_cast<std::size_t>(y) * grid_w_ + x];
+    if (t == 0 || wall_crushed(x, y)) return;
+    w6_overlay_reduce(x, y, wall_hit_damage(wall_flags, wall_ov_types_[t - 1u].wood, damage));
+}
+
+void World::w6_overlay_reduce(int x, int y, int dmg) const {
+    if (dmg == 0) return;
+    const std::size_t i = static_cast<std::size_t>(y) * grid_w_ + x;
+    const std::uint8_t t = wall_ov_type_[i];
+    if (t == 0 || wall_crushed(x, y)) return;
+    if (std::find(w6_wall_kills_.begin(), w6_wall_kills_.end(), static_cast<int>(i)) != w6_wall_kills_.end()) return;
+    const WallOvType& ty = wall_ov_types_[t - 1u];
+    static const int kDx[4] = {0, 1, 0, -1}, kDy[4] = {-1, 0, 1, 0};   // N, E, S, W
+    auto same = [&](int nx, int ny) {
+        if (nx < 0 || ny < 0 || nx >= grid_w_ || ny >= grid_h_) return false;
+        const std::size_t j = static_cast<std::size_t>(ny) * grid_w_ + nx;
+        return wall_ov_type_[j] == t && !wall_crushed(nx, ny) &&
+               std::find(w6_wall_kills_.begin(), w6_wall_kills_.end(), static_cast<int>(j)) == w6_wall_kills_.end();
+    };
+    bool connected = false;
+    for (int k = 0; k < 4; ++k) connected = connected || same(x + kDx[k], y + kDy[k]);
+    const WallStep r = reduce_wall(wall_ov_stage_[i], ty.levels, ty.strength, dmg, connected, combat_rng_ptr());
+    if (!r.advanced) return;
+    wall_ov_stage_[i] = static_cast<std::uint8_t>(r.stage);
+    if (r.cascade)
+        for (int k = 0; k < 4; ++k) {
+            const int nx = x + kDx[k], ny = y + kDy[k];
+            if (same(nx, ny) && wall_ov_stage_[static_cast<std::size_t>(ny) * grid_w_ + nx] < 1)
+                w6_overlay_reduce(nx, ny, 200);
+        }
+    if (r.destroyed) w6_wall_kills_.push_back(static_cast<int>(i));
+}
+
+void World::w6_apply_wall_kills() {
+    if (w6_wall_kills_.empty()) return;
+    if (crush_wall_.size() != passable_.size()) crush_wall_.assign(passable_.size(), 0);
+    for (int i : w6_wall_kills_) {
+        if (i < 0 || static_cast<std::size_t>(i) >= passable_.size()) continue;
+        crush_wall_[static_cast<std::size_t>(i)] = 2;   // gone: drawn and blocked no more
+        passable_[static_cast<std::size_t>(i)] = 1;
+        if (static_cast<std::size_t>(i) < wall_leak_.size()) wall_leak_[static_cast<std::size_t>(i)] = 0;
+        if (static_cast<std::size_t>(i) < wall_ov_stage_.size()) wall_ov_stage_[static_cast<std::size_t>(i)] = 0;
+    }
+    w6_wall_kills_.clear();
+}
+
 void World::step_wall_crush() {
     if (crush_wall_.size() != passable_.size()) return;
     for (const Unit& u : units_) {
@@ -802,6 +872,7 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.w6.burst = c.w6.burst;                // W6-04-01: the active weapon's Burst=
     u.w6.omni_fire = c.w6.omni_fire;        // W6-04-06: ... and OmniFire=
     u.w6.sonic = c.w6.sonic;                // W6-04-09: ... and Sonic=
+    u.w6.wall_flags = c.w6.wall_flags;      // W6-04-04: ... and its wall keys
     u.w_range = c.range;
     u.w_verses = c.verses;
     u.w_inf_death = c.inf_death;            // W3-B
@@ -902,6 +973,7 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.vet.base.burst = c.w6.burst;          // W6-04-01
     u.vet.base.omni_fire = c.w6.omni_fire;  // W6-04-06
     u.vet.base.sonic = c.w6.sonic;          // W6-04-09
+    u.vet.base.wall_flags = c.w6.wall_flags;   // W6-04-04
     u.vet.base.shrapnel_count = c.shrapnel_count;   // W6-04-02
     u.vet.base.shrapnel_damage = c.shrapnel_damage;
     u.vet.base.shrapnel_range = c.shrapnel_range;
@@ -4454,6 +4526,7 @@ void World::step(double dt) {
             sc.scatter_out = &scatter;
             if (!land_speed_armed_) sc.armed = false;
         }
+        w6_apply_wall_kills();   // W6-04-05: walls shot down last step open now
         step_wall_crush();   // P4 (no-op without crushable walls)
         const bool crush = !crush_wall_.empty();
         step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_,

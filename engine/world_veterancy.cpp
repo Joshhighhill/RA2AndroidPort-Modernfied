@@ -60,6 +60,7 @@ void World::refresh_vet_stats(int idx) {
     u.w6.burst = w.burst;   // W6-04-01: the elite slot's Burst (105mmE 2, 120mmxE 4)
     u.w6.omni_fire = w.omni_fire;   // W6-04-06
     u.w6.sonic = w.sonic;           // W6-04-09
+    u.w6.wall_flags = w.wall_flags; // W6-04-04
     // W6-04-02: the elite projectile's shrapnel (SuperCometP SuperCometFragment
     // x5, Electricbounce TeslaFragment x2 for the elite Tesla Trooper / Tank).
     u.shrapnel_count = w.shrapnel_count;

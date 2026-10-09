@@ -47,6 +47,7 @@ struct WeaponSpec {
     bool affects_allies = true;
     double prone_damage = 1.0;
     int inf_death = 0;
+    int wall_flags = 0;   // W6-04-04: warhead Wall/Wood/WallAbsoluteDestroyer
 };
 
 // Per-type ability profile, resolved once from rules by the caller (World is

@@ -234,7 +234,8 @@ void World::rocket_explode(int i, int end) {
     const int house = u.house;
     if (end == 1)
         an_area_damage(house, nx / kLept, ny / kLept, rocket_damage(blk, u.an.rocket_elite), wh.spread,
-                       wh.pmax, wh.verses, /*hit_air=*/false, /*spare_house=*/false, std::max(0.0, nz));
+                       wh.pmax, wh.verses, /*hit_air=*/false, /*spare_house=*/false, std::max(0.0, nz),
+                       wh.wall_flags);   // W6-04-04 (V3WH / DMISLWH: Wall + Wood)
     Unit& r = units_[i];   // (an_area_damage never reallocates units_; re-fetch anyway)
     if (end == 1) {
         fire_events_.push_back({i, -1, -1, -1, 0, ""});
@@ -476,7 +477,9 @@ void World::an_step_fixed_wing(double dt) {
                             for (int k = 0; k < std::max(1, u.w6.burst); ++k) {
                                 if (k > 0 && (!buildings_[tb].alive || buildings_[tb].hp <= 0)) break;
                                 if (projectiles_enabled_ && u.w_proj.flies()) launch_projectile(i, -1, tb);
-                                else if (buildings_[tb].iron_left <= 0.0) deliver_building_hit(units_, buildings_, i, tb);
+                                else if (buildings_[tb].iron_left <= 0.0 &&
+                                         !w6_wall_building_hit(*this, units_, buildings_, tb, u.w6.wall_flags, u.w_damage))   // W6-04-04
+                                    deliver_building_hit(units_, buildings_, i, tb);
                             }
                         }
                     }
@@ -643,7 +646,9 @@ void World::an_step_deaths(double dt) {
                 const int dmg = std::max(10, u.max_hp / 4);
                 const double fx = u.fx, fy = u.fy;
                 const int house = u.house;
-                an_area_damage(house, fx, fy, dmg, 1.0, 0.5, verses, false, false);
+                // W6-04-04 [RE-FALLBACK: the crash blast's warhead is not
+                // traced; taken as the Kirov's BlimpHE, Wall + Wood].
+                an_area_damage(house, fx, fy, dmg, 1.0, 0.5, verses, false, false, 0.0, kW6Wall | kW6Wood);
             }
             continue;
         }

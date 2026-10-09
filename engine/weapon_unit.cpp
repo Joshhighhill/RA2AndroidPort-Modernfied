@@ -77,6 +77,7 @@ void activate_weapon_slot(Unit& u, int slot, const VeterancyRules* vr) {
         u.w6.burst = w.burst;                 // W6-04-01
         u.w6.omni_fire = w.omni_fire;         // W6-04-06
         u.w6.sonic = w.sonic;                 // W6-04-09
+        u.w6.wall_flags = w.wall_flags;       // W6-04-04
         u.shrapnel_count = w.shrapnel_count;   // W6-04-02
         u.shrapnel_damage = w.shrapnel_damage;
         u.shrapnel_range = w.shrapnel_range;
@@ -98,6 +99,7 @@ void activate_weapon_slot(Unit& u, int slot, const VeterancyRules* vr) {
         u.w6.burst = s.burst;                 // W6-04-01
         u.w6.omni_fire = s.omni_fire;         // W6-04-06
         u.w6.sonic = s.sonic;                 // W6-04-09
+        u.w6.wall_flags = s.wall_flags;       // W6-04-04
         u.shrapnel_count = s.shrapnel_count;   // W6-04-02
         u.shrapnel_damage = s.shrapnel_damage;
         u.shrapnel_range = s.shrapnel_range;
