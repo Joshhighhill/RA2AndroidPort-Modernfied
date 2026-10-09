@@ -214,6 +214,10 @@ void deliver_unit_hit(std::vector<Unit>& units, Occupancy& occ, int attacker_idx
 void deliver_hit_from(std::vector<Unit>& units, Occupancy& occ, const Unit& u, int attacker_idx,
                       int attacker_building, int victim_idx) {
     Unit& v = units[victim_idx];
+    // W6-04-09 [RE: FUN_004D7250 @0x4D7262: a Sonic warhead on a host with a
+    // parasite (+0x694) -> ParasiteClass::ExitUnit]: marked here, the exit
+    // runs in World::step_abilities (combat.cpp cannot move units).
+    if (u.w6.sonic && v.parasite_on_me >= 0) v.w6.sonic_hit = true;
     // P5 [RE: veterancy.md V6]: a vet-enabled World arms v.vet.recv; the
     // receive chain (ArmorMultiplier, STRONGER, max 1) runs BEFORE the Verses.
     // v.vet.recv is false in every legacy World -> raw == u.w_damage as before.
@@ -570,6 +574,7 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
         Unit& w = units[static_cast<std::size_t>(h.idx)];
         if (!w.alive || w.die_time >= 0.0) continue;
         if (spared(w.house)) continue;
+        if (shooter.w6.sonic && w.parasite_on_me >= 0) w.w6.sonic_hit = true;   // W6-04-09
         if (w.an.iron_left > 0.0) continue;                          // W2-AN-04 Iron Curtain
         // TechnoClass::ReceiveDamage: the house/veterancy armour multipliers on
         // the raw damage, floor 1 (P5 vet_receive; W3-B ProneDamage first).

@@ -38,6 +38,7 @@ WeaponSlot resolve_weapon_slot(const ra2assets::Rules& rules, const std::string&
     s.prone_damage = warhead_prone_damage(rules, wh);
     // W6-04-01 [RE: WeaponTypeClass::LoadFromINI Burst -> +0x9C, default 1]
     s.burst = std::max(1, static_cast<int>(rules.section_double(weapon, "Burst", 1.0)));
+    s.sonic = rules.section_flag(wh, "Sonic", false);   // W6-04-09 (WarheadType +0x14B)
     // W6-04-02: ShrapnelWeapon/ShrapnelCount are BulletType keys (the
     // projectile section), not WeaponType keys.
     const std::string sw = rules.section_string(proj, "ShrapnelWeapon", "");

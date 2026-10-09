@@ -436,6 +436,7 @@ void World::w5_step_repair_ifv(double dt) {
             if (u.rof_cool > 0.0) continue;
             const int heal = damage_vs(-u.w_damage, u.w_verses, v.armor_ix);
             v.hp += std::min(heal, v.max_hp - v.hp);
+            if (v.parasite_on_me >= 0) v.w6.heal_hit = true;   // W6-04-09: a healing hit ejects
             u.rof_cool = unit_rearm_secs(u, &combat_rng_);   // W6-04-01 Burst
             u.fire_flash = 0.4;
             fire_events_.push_back({i, -1, t, -1, 0, "RepairBullet"});

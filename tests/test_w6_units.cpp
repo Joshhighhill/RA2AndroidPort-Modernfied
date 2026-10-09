@@ -153,3 +153,38 @@ TEST_CASE("w6units W6-04-03: an Ivan bomb on a 2x2 building hits once per founda
     // impact cell takes 450, the other three cells (181 lept) 290 each.
     CHECK(world.buildings()[b].hp == 2000 - 450 - 3 * 290);
 }
+
+TEST_CASE("w6units W6-04-09: a Sonic hit on the host frees it from its parasite (FUN_004D7250)") {
+    if (ra2fixture::rulesmd_bytes().empty() || !ra2fixture::mapsmd03_available()) { MESSAGE("no install"); return; }
+    CHECK(resolve_weapon_slot(ra2fixture::rulesmd(), "SonicZap").sonic);
+    CHECK_FALSE(resolve_weapon_slot(ra2fixture::rulesmd(), "120mm").sonic);
+    World world(ra2fixture::mapsmd03_map());
+    int x0 = 0, y0 = 0;
+    REQUIRE(w6_open_rect(world, 12, 4, x0, y0));
+    AbilityProfile dp;
+    dp.fire_kind = AbilityKind::Parasite;
+    dp.parasiteable = false;
+    dp.suppression_threshold = 5;
+    world.register_ability_profile("DRON", dp);
+    const std::vector<int> para = {100, 100, 100, 100, 100, 100, 0, 0, 0, 0, 0};
+    const std::vector<int> all100 = {100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100};
+    world.add_combat_unit(x0, y0, 1, w6mk("DRON", 100, "special_1", 50, 60, 1.83, para));
+    world.add_combat_unit(x0 + 1, y0, 0, w6mk("HTNK", 4000, "heavy", 0, 60, 0.0, {}, true));
+    world.units()[0].target = 1;
+    world.units()[0].attack_order = true;
+    for (int k = 0; k < 30; ++k) world.step(1.0 / 15.0);
+    REQUIRE(world.units()[1].parasite_on_me == 0);
+    // A Sonic shooter of the drone's side hits the infected tank.
+    world.add_combat_unit(x0 + 4, y0, 1, w6mk("SHK", 125, "none", 4, 15, 6.0, all100));
+    world.units()[2].w6.sonic = true;
+    world.units()[2].target = 1;
+    world.units()[2].attack_order = true;
+    bool freed = false;
+    for (int k = 0; k < 60 && !freed; ++k) {
+        world.step(1.0 / 15.0);
+        freed = world.units()[1].parasite_on_me < 0;
+    }
+    CHECK(freed);
+    CHECK(world.units()[0].cargo_of < 0);
+    CHECK(world.units()[0].alive);
+}

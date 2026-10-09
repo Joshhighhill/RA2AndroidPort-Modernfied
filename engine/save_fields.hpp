@@ -507,6 +507,7 @@ template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
     io(ar, v.wall);   // G16
     io(ar, v.inf_death); io(ar, v.prone_damage);   // W3-B
     io(ar, v.burst);   // v25: W6-04-01
+    io(ar, v.sonic);   // v25: W6-04-09
     io(ar, v.shrapnel_count); io(ar, v.shrapnel_damage); io(ar, v.shrapnel_range); io(ar, v.shrapnel_verses);   // v25: W6-04-02
 }
 // G16 world depth (agent G)
@@ -553,6 +554,7 @@ template <class Ar> void fields(Ar& ar, WeaponStats& v) {
     io(ar, v.affects_allies);   // v20: W5-B
     io(ar, v.inf_death); io(ar, v.prone_damage);   // W3-B
     io(ar, v.burst);   // v25: W6-04-01
+    io(ar, v.sonic);   // v25: W6-04-09
     io(ar, v.shrapnel_count); io(ar, v.shrapnel_damage); io(ar, v.shrapnel_range); io(ar, v.shrapnel_verses);   // v25: W6-04-02
 }
 // W3-B: an art Sequence= entry / a per-image infantry table.
@@ -726,10 +728,11 @@ template <class Ar> void fields(Ar& ar, UnitW5& v) {
 }
 // --- wave-6 #4 units/weapons (unit_w6.hpp), save v25 ---
 template <class Ar> void fields(Ar& ar, UnitTypeW6& v) {
-    io(ar, v.burst); io(ar, v.omni_fire);
+    io(ar, v.burst); io(ar, v.omni_fire); io(ar, v.sonic);   // W6-04-09
 }
 template <class Ar> void fields(Ar& ar, UnitW6& v) {
     io(ar, v.t); io(ar, v.burst); io(ar, v.burst_index); io(ar, v.omni_fire);
+    io(ar, v.sonic); io(ar, v.sonic_hit); io(ar, v.heal_hit);   // W6-04-09
 }
 template <class Ar> void fields(Ar& ar, BldW6& v) {
     io(ar, v.burst_index);

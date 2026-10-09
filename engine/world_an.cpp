@@ -176,6 +176,9 @@ void World::an_step_naval(double dt) {
                     const int dy = u.cell_y < b.cy ? b.cy - u.cell_y : (u.cell_y >= b.cy + b.fh ? u.cell_y - (b.cy + b.fh - 1) : 0);
                     if (std::max(dx, dy) > 1) continue;
                     u.hp = std::min(u.max_hp, u.hp + P.repair_step);
+                    // W6-04-09 [RE-FALLBACK: the yard repair taken as a healing
+                    // (negative) hit, which ejects a parasite in FUN_004D7250]
+                    if (u.parasite_on_me >= 0) u.w6.heal_hit = true;
                 }
             }
     }

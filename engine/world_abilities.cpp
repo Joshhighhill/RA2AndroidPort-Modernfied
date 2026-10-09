@@ -395,6 +395,7 @@ void World::ability_fire_event(int i) {
         u.parasite_next_tick = F;             // DamageDeliveryTimer = {Frame, 0}: expired
         u.suppress_until = -1;
         v.parasite_on_me = i;
+        v.w6.sonic_hit = v.w6.heal_hit = false;   // W6-04-09: marks from before the grab
         v.last_hp = v.hp;
         ability_events_.push_back({Ev::Kind::Infect, i, vt, 0, 0, false});
         break;
@@ -617,6 +618,30 @@ void World::step_abilities(double dt) {
         }
         Unit& host = units_[h];
         if (host.die_time >= 0.0) continue;       // the death pass ejects
+        // W6-04-09 [RE: FootClass::ReceiveDamage FUN_004D7250]: a Sonic hit
+        // (the Dolphin) or a healing hit (negative damage: SuppressionTimer =
+        // 50, then ExitUnit) on the host frees it -- the parasite is put back
+        // on a free cell of its own domain beside the host (a Giant Squid in
+        // the water), else it stays.
+        if (host.w6.sonic_hit || host.w6.heal_hit) {
+            const bool heal = host.w6.heal_hit;
+            host.w6.sonic_hit = host.w6.heal_hit = false;
+            const std::vector<Cellxy> g = nearest_free_cells({host.cell_x, host.cell_y}, 1,
+                                                             grid_for(d.movement_domain), grid_w_, grid_h_, occ_);
+            if (!g.empty()) {
+                if (heal) d.suppress_until = F + 50;
+                host.parasite_on_me = -1;
+                host.last_hp = -1;
+                d.cargo_of = -1;
+                d.cell_x = g[0].x; d.cell_y = g[0].y; d.fx = g[0].x; d.fy = g[0].y;
+                d.guard_x = g[0].x; d.guard_y = g[0].y;
+                d.target = -1;
+                d.attack_order = false;
+                occ_.set(g[0].x, g[0].y, i);
+                ability_events_.push_back({Ev::Kind::DroneExit, i, h, g[0].x, g[0].y, false});
+                continue;
+            }
+        }
         // Suppression: the host's external HP loss since the last pass.
         if (host.last_hp >= 0) {
             const int ext = host.last_hp - host.hp;

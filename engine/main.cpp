@@ -826,6 +826,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.rof = rules.weapon_rof(primary);
     r.combat.w6.burst = tw.slot[0].valid ? tw.slot[0].burst : 1;   // W6-04-01
     r.combat.w6.omni_fire = tw.slot[0].valid && tw.slot[0].omni_fire;   // W6-04-06
+    r.combat.w6.sonic = tw.slot[0].valid && tw.slot[0].sonic;           // W6-04-09
     r.combat.range = rules.weapon_range(primary);
     const std::string warhead = rules.weapon_warhead(primary);
     r.combat.verses = rules.verses(warhead);
@@ -980,6 +981,7 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
         r.combat.elite.rof = rules.weapon_rof(elite);
         r.combat.elite.burst = tw.elite[0].valid ? tw.elite[0].burst : 1;   // W6-04-01
         r.combat.elite.omni_fire = tw.elite[0].valid && tw.elite[0].omni_fire;   // W6-04-06
+        r.combat.elite.sonic = tw.elite[0].valid && tw.elite[0].sonic;           // W6-04-09
         r.combat.elite.shrapnel_count = tw.elite[0].shrapnel_count;         // W6-04-02
         r.combat.elite.shrapnel_damage = tw.elite[0].shrapnel_damage;
         r.combat.elite.shrapnel_range = tw.elite[0].shrapnel_range;

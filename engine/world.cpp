@@ -801,6 +801,7 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.w6.t = c.w6;                          // wave-6 #4 type data
     u.w6.burst = c.w6.burst;                // W6-04-01: the active weapon's Burst=
     u.w6.omni_fire = c.w6.omni_fire;        // W6-04-06: ... and OmniFire=
+    u.w6.sonic = c.w6.sonic;                // W6-04-09: ... and Sonic=
     u.w_range = c.range;
     u.w_verses = c.verses;
     u.w_inf_death = c.inf_death;            // W3-B
@@ -900,6 +901,7 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.vet.base.prone_damage = c.prone_damage;
     u.vet.base.burst = c.w6.burst;          // W6-04-01
     u.vet.base.omni_fire = c.w6.omni_fire;  // W6-04-06
+    u.vet.base.sonic = c.w6.sonic;          // W6-04-09
     u.vet.base.shrapnel_count = c.shrapnel_count;   // W6-04-02
     u.vet.base.shrapnel_damage = c.shrapnel_damage;
     u.vet.base.shrapnel_range = c.shrapnel_range;

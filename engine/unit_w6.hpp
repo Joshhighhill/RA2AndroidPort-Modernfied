@@ -14,6 +14,7 @@ struct UnitTypeW6 {
     // W6-04-06 [RE: WeaponType OmniFire +0x12B, aircraft.md §4]: the PRIMARY
     // weapon's OmniFire= (fires without turning to face).
     bool omni_fire = false;
+    bool sonic = false;   // W6-04-09: the PRIMARY warhead's Sonic=
 };
 
 // Per-unit state.
@@ -27,6 +28,13 @@ struct UnitW6 {
     // W6-04-06: the ACTIVE weapon's OmniFire= (swapped with w_rof; the
     // type-level Unit::omni_fire of fliers stays as it was).
     bool omni_fire = false;
+    // W6-04-09 [RE: FootClass::ReceiveDamage FUN_004D7250]: the ACTIVE
+    // weapon's warhead Sonic= (+0x14B, the Dolphin), and the per-frame marks
+    // a hit leaves on a parasite host -- a Sonic hit or a healing hit makes
+    // the parasite exit (ParasiteClass::ExitUnit FUN_00629F40).
+    bool sonic = false;
+    bool sonic_hit = false;
+    bool heal_hit = false;
 };
 
 // Per-building state.
