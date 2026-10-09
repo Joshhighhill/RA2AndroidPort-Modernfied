@@ -5239,6 +5239,16 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
             if (rec) rec->event(ev);
             if (ev.kind == ra2engine::InputEvent::Quit) {
                 if (hooks && hooks->swallow_quit(frame)) continue;   // --play on_quit continue
+                // W6-01-10: Android is restarting the activity (not the
+                // player quitting). SDL queues this Quit (nativeQuit) ahead
+                // of the pause's WILLENTERBACKGROUND, so the scene would never
+                // see the background event: hand it one now, which writes
+                // the autosave the next start offers to resume.
+                if (ra2engine::os_keep_autosave() && scene) {
+                    ra2engine::InputEvent bg;
+                    bg.kind = ra2engine::InputEvent::AppBackground;
+                    scene->handle(bg);
+                }
                 if (hooks) hooks->quit(frame, scene.get(), "Quit event");
                 if (rec) rec->frame(frame, 0.0);
                 finish("quit");
