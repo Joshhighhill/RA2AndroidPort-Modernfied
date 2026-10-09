@@ -252,7 +252,10 @@ void deliver_hit_from(std::vector<Unit>& units, Occupancy& occ, const Unit& u, i
     // than stopping to retaliate). Engineer/Spy Capture [RE: capture.md
     // §Design 6]: a still-DISGUISED attacker is treated as friendly, so the
     // victim does NOT retaliate-acquire it.
-    if (v.target == -1 && !v.moving() && !u.disguised && !v.abil.no_retaliate) {
+    // R3: a flyer cruising to a flight goal (Kirov, Rocketeer) is under a
+    // move order too -- the same gate as auto-acquire [aircraft.md §6: a Move
+    // order overrides auto-attack]; it used to stop on the first IFV that hit it.
+    if (v.target == -1 && !v.moving() && !v.has_flight_goal && !u.disguised && !v.abil.no_retaliate) {
         // Idle victim retaliates (docs/re/combat.md §7) and records ITS OWN
         // guard anchor at its current position (retaliation is a form of
         // auto-acquire: attack_order stays false).
@@ -704,7 +707,8 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
                    w.max_hp > 0 ? static_cast<double>(w.hp) / w.max_hp : 0.0);
         // Idle retaliation (combat.md §7) -- only against an enemy firer: a
         // unit caught in friendly splash does not turn on its own side.
-        if (w.target == -1 && !w.moving() && !shooter.disguised && !w.abil.no_retaliate &&
+        if (w.target == -1 && !w.moving() && !w.has_flight_goal && !shooter.disguised &&
+            !w.abil.no_retaliate &&
             world.is_enemy(w.house, shooter.house)) {
             if (src_unit >= 0) {
                 w.target = src_unit;
