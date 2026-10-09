@@ -387,6 +387,29 @@ if (RA2_BUILD_ENGINE)
     # R-182: the player's double-click binary (no console window).
     add_executable(ra2game WIN32 $<TARGET_OBJECTS:ra2engine_obj>)
     target_link_libraries(ra2game PRIVATE ra2assets SDL2::SDL2main SDL2::SDL2 advapi32 shell32 ole32 winmm)
+    # W6-06-02: a VERSIONINFO resource (version from VERSION + git).
+    if (NOT RA2_VERSION_BASE)
+      file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" RA2_VERSION_BASE)
+      string(STRIP "${RA2_VERSION_BASE}" RA2_VERSION_BASE)
+    endif()
+    string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" _ra2v "${RA2_VERSION_BASE}")
+    set(RA2_VER_MAJOR ${CMAKE_MATCH_1})
+    set(RA2_VER_MINOR ${CMAKE_MATCH_2})
+    set(RA2_VER_PATCH ${CMAKE_MATCH_3})
+    enable_language(RC)
+    configure_file(cmake/ra2engine.rc.in ${CMAKE_CURRENT_BINARY_DIR}/ra2engine.rc @ONLY)
+    target_sources(ra2engine PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/ra2engine.rc)
+    target_sources(ra2game PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/ra2engine.rc)
+    # W6-06-02: a MinGW build needs libstdc++-6 / libgcc_s_seh-1 /
+    # libwinpthread-1 at run time; link them statically so ra2engine.exe /
+    # ra2game.exe run from a clean folder with only SDL2.dll beside them.
+    # (-static only changes how -l libraries are searched; SDL2's import
+    # library is passed by full path, so SDL2.dll stays a DLL.)
+    if (MINGW)
+      foreach (_t ra2engine ra2game)
+        target_link_options(${_t} PRIVATE -static -static-libgcc -static-libstdc++)
+      endforeach()
+    endif()
   endif()
   # SDL_SHARED=ON builds SDL2.dll; copy it next to ra2engine.exe post-build
   # so the exe can find it at runtime (Windows has no rpath).

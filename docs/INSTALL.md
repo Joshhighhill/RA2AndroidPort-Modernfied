@@ -35,8 +35,15 @@ The engine currently reads the **Yuri's Revenge** data set (`rulesmd.ini`,
 
 ## 2. Desktop (Windows)
 
-1. Unzip or build `ra2engine.exe` together with `SDL2.dll`.
-2. Start `ra2engine.exe`. It looks for the game files in this order:
+1. Unzip the release zip (`ra2engine-<version>-win64.zip`) into any folder.
+   It holds `ra2game.exe`, `ra2engine.exe`, `SDL2.dll`, this file, `LICENSE`
+   and `THIRD_PARTY_NOTICES.md`; nothing else needs installing (the C++
+   runtime is built into the exes; Windows 10 or later, or Windows 7/8.1 with
+   the Universal C Runtime update). Keep `SDL2.dll` next to the exes.
+   To build the zip yourself from a checkout (MinGW-w64 g++, CMake, Ninja):
+   `pwsh scripts/package-win.ps1 -Configure` writes it to `dist/` and checks
+   that it starts from a clean folder.
+2. Start `ra2game.exe` (or `ra2engine.exe`). It looks for the game files in this order:
    1. `--data <folder>` on the command line;
    2. the `RA2_INSTALL_DIR` environment variable;
    3. `RA2.INI` `[Engine] DataDir=` in `%APPDATA%\ra2engine\RA2\`;
