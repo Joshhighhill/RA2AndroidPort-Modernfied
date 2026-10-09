@@ -25,6 +25,81 @@ click unit 0:AMCV
 key d
 until 450 built(0,GACNST) == 1
 until 600 units(0,FV) >= 8
+# W6-02-11: BadGuy1's Area Guard tanks near the landing now scan at twice their
+# weapon range (Mission Area_Guard, threat 2) and come at the Con Yard; the IFVs
+# are sent at the nearest attacker instead of waiting for it to reach their range.
+if units(0,FV) > 0 then click unit 0:FV:0
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 and nenemy(0,FV,0) <= 8.5 then click unit e:*:near
+click xy 500 400 right
+wait 60
+if units(0,FV) > 0 then click unit 0:FV:0
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 and nenemy(0,FV,0) <= 8.5 then click unit e:*:near
+click xy 500 400 right
+wait 60
+if units(0,FV) > 0 then click unit 0:FV:0
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 and nenemy(0,FV,0) <= 8.5 then click unit e:*:near
+click xy 500 400 right
+wait 60
+if units(0,FV) > 0 then click unit 0:FV:0
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 and nenemy(0,FV,0) <= 8.5 then click unit e:*:near
+click xy 500 400 right
+wait 60
+if units(0,FV) > 0 then click unit 0:FV:0
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 and nenemy(0,FV,0) <= 8.5 then click unit e:*:near
+click xy 500 400 right
+wait 60
+if units(0,FV) > 0 then click unit 0:FV:0
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 and nenemy(0,FV,0) <= 8.5 then click unit e:*:near
+click xy 500 400 right
+wait 60
+if units(0,FV) > 0 then click unit 0:FV:0
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 and nenemy(0,FV,0) <= 8.5 then click unit e:*:near
+click xy 500 400 right
+wait 60
+if units(0,FV) > 0 then click unit 0:FV:0
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 and nenemy(0,FV,0) <= 8.5 then click unit e:*:near
+click xy 500 400 right
+wait 60
+if units(0,FV) > 0 then click unit 0:FV:0
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 and nenemy(0,FV,0) <= 8.5 then click unit e:*:near
+click xy 500 400 right
+wait 60
+if units(0,FV) > 0 then click unit 0:FV:0
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 and nenemy(0,FV,0) <= 8.5 then click unit e:*:near
+click xy 500 400 right
+wait 60
+if units(0,FV) > 0 then click unit 0:FV:0
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 and nenemy(0,FV,0) <= 8.5 then click unit e:*:near
+click xy 500 400 right
+wait 60
+if units(0,FV) > 0 then click unit 0:FV:0
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 then key t
+if units(0,FV) > 0 and nenemy(0,FV,0) <= 8.5 then click unit e:*:near
+click xy 500 400 right
+wait 60
 assert outcome == RUNNING
 until 4500 units(0,MTNK) >= 8
 assert units(0,GHOST) >= 2

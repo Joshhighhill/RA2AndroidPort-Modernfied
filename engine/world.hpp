@@ -394,6 +394,7 @@ struct Unit {
     AnUnit an;                       // W2-AN: naval/air/SW runtime state (air_naval.hpp)
     UnitW5 w5;                       // wave-5 abilities (abil_w5.hpp)
     UnitW6 w6;                       // wave-6 #4 units/weapons (unit_w6.hpp)
+    UnitTgt tg;                      // W6 fix #2: rules id, targeting data, IsInPlayfield, area guard (save v29)
 };
 // G16: the cargo_of sentinel of a garrisoned infantry (never a unit index).
 constexpr int kGarrisonCargo = 0x3FFFFFFF;
@@ -1976,6 +1977,57 @@ public:
         return h >= 0 && h < (int)passive_houses_.size() && passive_houses_[(std::size_t)h] != 0;
     }
     bool campaign_occupy_now(int unit_idx, int b_idx);
+
+    // --- W6 fix #2: target legality + IsInPlayfield (world_w6.cpp) ----------
+    // legal_threat_* [RE: Evaluate_Object FUN_006F71D0, the rejects BEFORE any
+    // scoring]: may a THREAT SCAN of `scanner_house` pick this object? It is the
+    // shared predicate for every automatic target picker (idle auto-acquire,
+    // campaign team targeting, AI team quarries, the AI superweapon picker,
+    // defence acquisition). It is NOT for explicit player orders. Rejects:
+    //   - a dead / dying / carried object (no target at all);
+    //   - a type with LegalTarget=no (+0x231);
+    //   - an object outside the playfield (+0x3D5 IsInPlayfield off);
+    //   - in a campaign (GameMode 0): an Insignificant (+0x232) unit, or an
+    //     Insignificant building whose owner's country is MultiplayPassive.
+    // It does NOT test enemy-ness, visibility or range: callers keep those.
+    // Inert outside a campaign host (every object in the playfield, legal and
+    // significant) -> every skirmish gate is unchanged.
+    bool legal_threat_unit(int scanner_house, int unit_idx) const;
+    bool legal_threat_building(int scanner_house, int b_idx) const;
+    // The same tests on an object the caller holds (step_combat scans the
+    // vectors it is handed, which pure tests build outside the World).
+    bool legal_threat_unit(int scanner_house, const Unit& v) const;
+    bool legal_threat_building(int scanner_house, const Building& b) const;
+    // The usable area (Map LocalSize, then every ResizeView) and the campaign
+    // switch. set_playfield recomputes IsInPlayfield for EVERY object (the
+    // ResizeView FUN_00566E60 rule; also the scenario-start Unlimbo pass).
+    // After that a new object takes it from its cell at placement and a unit
+    // gains it (false -> true only) when it moves inside.
+    void set_playfield(bool campaign, bool valid, int size_w, int x, int y, int w, int h);
+    const PlayfieldW6& playfield() const { return playfield_; }
+    bool cell_in_playfield(int cx, int cy) const;
+    void set_building_target_flags(int b_idx, bool insignificant, bool legal_target);
+    // W6-02-01..03 [RE: Start_Scenario FUN_00686560 + FUN_005007D0 ->
+    // AssignHandicap FUN_004F6DD0; GetROF FUN_006FC460 @0x6FC585]: the house
+    // FirePower (+0x188) / ROF (+0x1A8) handicap. Once set for a house it wins
+    // over the AI config's DifficultyMods; unset houses keep the old rule
+    // (AI houses their cfg.mods, every other house 1.0). Setting it refreshes
+    // the house's existing units. Read by units (refresh_vet_stats) AND
+    // defence buildings (building_combat rearm).
+    void set_house_handicap(int h, double firepower, double rof);
+    // W6-02-05: start an armed AI house's TeamDelays check clock at `secs`
+    // (it fires when the clock reaches TeamDelays / 15).
+    void set_ai_team_check_clock(int h, double secs) {
+        if (ai_enabled(h)) ai_houses_[static_cast<std::size_t>(h)].team_state.check_clock = secs;
+    }
+    double house_rof_mul(int h) const;
+    double house_firepower_mul(int h) const;
+    // ftol(rof * house ROF): the rearm frames of a defence weapon (exactly
+    // `rof` when the multiplier is 1.0).
+    int house_rof_frames(int h, int rof) const;
+    // W6-02-12: may a mind-control shot of `house` take unit j (not
+    // ImmuneToPsionics, map overrides merged into the type data)?
+    bool psionic_target_ok(int unit_idx) const;
     bool garrison_firing(int b_idx) const;                   // CanOccupyFire && occupants
     double garrison_range(int b_idx) const;                  // cells
     struct GarrisonEvent { enum Kind { Entered, Garrisoned, Abandoned, Unloaded } kind; int building; int house; };
@@ -2337,6 +2389,13 @@ private:
     bool cargo_any_ = false;
     std::vector<int> player_orders_;   // W4-SQ: transient, see mark_player_order
     std::vector<std::uint8_t> passive_houses_;   // W4-SQ-02 (save v16)
+    // W6 fix #2 (save v25): the usable area + campaign switch, and the per-house
+    // handicap (set flag, FirePower, ROF).
+    PlayfieldW6 playfield_;
+    std::vector<std::uint8_t> handicap_set_;
+    std::vector<double> handicap_fp_;
+    std::vector<double> handicap_rof_;
+    void step_playfield();   // a unit moving inside gains IsInPlayfield
     std::vector<std::vector<std::string>> ai_demand_ids_;   // W4-SQ-12 (save v16)
     std::vector<std::vector<int>> ai_demand_counts_;
     std::vector<CargoEvent> cargo_events_;

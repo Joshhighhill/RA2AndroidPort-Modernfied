@@ -201,6 +201,10 @@ public:
                 auto va = std::make_unique<VehicleAssets>(load_vehicle_assets(dir_, ra2_, ua_.pal, id));
                 if (va->ok) {
                     t.combat = va->combat;
+                    // W6 fix #2: the voxel loader resolves with the stock rulesmd;
+                    // the targeting data takes the MAP overrides (SOV09 [CAR]
+                    // ImmuneToPsionics=yes).
+                    t.combat.tg = resolve_unit_w6(rules_, id);
                     t.vehicle = true;
                     t.ok = true;
                     vas_.push_back(std::move(va));
@@ -337,6 +341,8 @@ public:
         w_.refresh_building_types(ba_.roster);   // G16: btypes() must see mission types
         w_.set_repair_sell_rules(ba_.repair_sell);
         place_objects(objs);
+        sync_tracks();       // W6 fix #2: the placed buildings' Insignificant/LegalTarget flags
+        apply_playfield();   // W6-02-08: IsInPlayfield of every placed object (Unlimbo)
 
         sys_ = std::make_unique<ra2engine::MapTriggerSystem>(data_, launch.difficulty, 0x5EEDu);
         sys_->set_campaign_mode(true);
@@ -404,6 +410,13 @@ public:
         return local_overridden_ ? local_override_ : ra2engine::parse_map_local_size(map_);
     }
     int local_version() const { return local_version_; }   // W5-A: bumped by 40 ResizeView
+    // W6-02-08 [RE: Unlimbo FUN_006F61D0 / ResizeView FUN_00566E60]: hand the
+    // usable area to the World, which recomputes every object's IsInPlayfield
+    // and switches on the campaign Evaluate_Object rules (legal_threat_*).
+    void apply_playfield() {
+        const ra2engine::MapLocalSize m = local_size();
+        w_.set_playfield(/*campaign=*/true, m.valid, m.size_w, m.x, m.y, m.w, m.h);
+    }
     const std::vector<Objective>& objectives() const { return objectives_; }
     const std::vector<std::string>& witness() const { return witness_; }
     std::vector<const VehicleAssets*> vehicle_assets() const { return types_.vehicle_assets(); }
@@ -736,6 +749,22 @@ private:
             }
             if (i == 0) player_side_ = rec.side;
             w_.set_house((int)i, rec);
+            {   // W6-02-01/02 [RE: Start_Scenario FUN_00686560 0x6865B2..0x6865D5 --
+                // campaign Scen+0x60C = slider, Scen+0x610 = 2 - slider; FUN_005007D0
+                // 0x5008E7..: a house with IsHuman (+0x1EC) or IsInPlayerControl
+                // (+0x1ED) gets AssignHandicap(+0x60C), EVERY other house
+                // AssignHandicap(+0x610); FUN_004F6DD0 copies [Easy]/[Normal]/
+                // [Difficult] FirePower (+0x188) and ROF (+0x1A8)]. Set for every
+                // house at scenario start, armed by an AI or not.
+                const int d = std::clamp(launch_.difficulty, 0, 2);
+                const int cls = (i == 0 || rec.player_control) ? d : 2 - d;
+                static const char* kGroups[3] = {"Easy", "Normal", "Difficult"};
+                auto num = [&](const char* key) {
+                    const std::string v = camp::trim_comment(rules_ini_.get(kGroups[cls], key, ""));
+                    return v.empty() ? 1.0 : std::atof(v.c_str());
+                };
+                w_.set_house_handicap((int)i, num("FirePower"), num("ROF"));
+            }
             {   // W4-SQ-02: [<Country>] MultiplayPassive= (map, else RA2 rules.ini)
                 std::string mp = camp::up(camp::trim_comment(map_.get(country, "MultiplayPassive", "")));
                 if (mp.empty()) mp = camp::up(camp::trim_comment(ra2_rules_.get(country, "MultiplayPassive", "no")));
@@ -752,6 +781,26 @@ private:
                     const char* key = launch_.difficulty == 0 ? "CampaignMoneyDeltaEasy" : "CampaignMoneyDeltaHard";
                     credits += std::atof(camp::trim_comment(rules_ini_.get("General", key, "0")).c_str());
                     if (credits < 0.0) credits = 0.0;
+                }
+            }
+            {   // [RE: FUN_006862D0 @0x686421..0x6864B3 (Start_Scenario tail, no
+                // GameMode gate): every house that is not IsHuman (+0x1EC) and not
+                // MultiplayPassive gets GiveMoney FUN_004F9770(ftol(
+                // MultiplayerAICM[+0x184] (Rules+0x1308) x 0.01 x Available_Money))].
+                // +0x184 is the handicap class (computer 2 - slider, PlayerControl
+                // the slider); YR rulesmd 400,0,0 -> only class 0 gets +400 %:
+                // computer houses on Hard, PlayerControl houses on Easy.
+                std::string mp = camp::up(camp::trim_comment(map_.get(country, "MultiplayPassive", "")));
+                if (mp.empty()) mp = camp::up(camp::trim_comment(ra2_rules_.get(country, "MultiplayPassive", "no")));
+                const bool passive = !mp.empty() && (mp[0] == 'Y' || mp[0] == 'T' || mp[0] == '1');
+                if (i != 0 && !passive) {
+                    const int d = std::clamp(launch_.difficulty, 0, 2);
+                    const int cls = rec.player_control ? d : 2 - d;
+                    std::vector<std::string> cm(1);
+                    for (char ch : camp::trim_comment(rules_ini_.get("General", "MultiplayerAICM", "")))
+                        if (ch == ',') cm.emplace_back(); else cm.back() += ch;
+                    const int pct = cls < (int)cm.size() ? std::atoi(camp::trim_comment(cm[(std::size_t)cls]).c_str()) : 0;
+                    credits += (double)(int)((double)pct * 0.01 * (double)(int)credits);
                 }
             }
             if (i == 0) player_credits_ = credits;
@@ -791,8 +840,9 @@ private:
     // house's production flag is set it runs the AI-1 base brain over its
     // OWN node list: builds missing nodes and rebuilds destroyed ones in
     // place, repairs (G-65) and fires superweapons it owns (G-66).
-    // RE-FALLBACK (RE-A5 open): the DifficultyClass of a campaign computer
-    // house is taken as 2 - campaign difficulty (the skirmish binding);
+    // [RE (W6-02-01): FUN_005007D0 gives every non-human, non-PlayerControl
+    // campaign house AssignHandicap(Scen+0x610 = 2 - slider)]: the
+    // DifficultyClass of a campaign computer house is 2 - campaign difficulty;
     // AI-2/AI-3 (action 74, aimd teams for map houses) are not armed yet.
     void resolve_base_nodes() {
         base_nodes_.assign(house_names_.size(), {});
@@ -858,6 +908,20 @@ private:
             armed_[i] = (std::uint8_t)((base ? 1 : 0) | ((want_teams || has_teams) ? 2 : 0) | 4);
             w_.enable_ai_house((int)i, std::move(cfg));
             if (base) w_.set_ai_base_nodes((int)i, base_nodes_[i]);
+            {   // W6-02-05 [RE: AssignHandicap FUN_004F6DD0 seeds the team-check
+                // timer at scenario start: +0x5798 = now, +0x57A0 = TeamDelays[d]
+                // + HouseArray index (+0x30) x 175; HouseClass::AI FUN_004F8350
+                // checks and resets it]: the timer has been running since frame 0,
+                // so the first pass is due at TeamDelays + index x 175, not a
+                // whole period after arming.
+                int arr = (int)i;
+                int k = 0;
+                for (const auto& kv : map_.section("Houses")) {
+                    if (camp::up(camp::trim_comment(kv.second)) == camp::up(house_names_[i])) { arr = k; break; }
+                    ++k;
+                }
+                w_.set_ai_team_check_clock((int)i, (double)(frame_ - 175L * arr) / 15.0);
+            }
             char b[200];
             std::snprintf(b, sizeof b, "[camp] f%ld %s%s: %s nodes=%d", frame_,
                           base ? "production begins" : "", (want_teams || has_teams) ? " +map AI triggers" : "",
@@ -992,7 +1056,8 @@ private:
         return live(b) && !(b.type >= 0 && b.type < (int)ba_.roster.size() && untracked_type(ba_.roster[(std::size_t)b.type].id));
     }
     bool tracked(const ra2engine::Unit& u) const {
-        return live(u) && !u.vet.dont_score && !untracked_type(u.image);
+        return live(u) && !u.vet.dont_score &&
+               !untracked_type(u.tg.t.rules_id.empty() ? u.image : u.tg.t.rules_id);   // W6-02-15
     }
     bool free_cell_near(int x, int y, int& ox, int& oy, int maxr = 6) const {
         for (int r = 0; r <= maxr; ++r)
@@ -1037,7 +1102,11 @@ private:
             Track t;
             t.initial = false;
             const ra2engine::Unit& u = w_.units()[utrack_.size()];
-            t.type = camp::up(u.image);
+            // W6-02-15 [RE: the build events 19-22 compare the produced
+            // TechnoType index, map-triggers.md]: a factory-built unit is
+            // tracked under its RULES id (E1), not its art Image= (GI);
+            // the image is the fallback for a hand-built UnitCombat.
+            t.type = camp::up(u.tg.t.rules_id.empty() ? u.image : u.tg.t.rules_id);
             t.cx = u.cell_x;
             t.cy = u.cell_y;
             t.hp = u.hp;
@@ -1060,6 +1129,11 @@ private:
             if (b.type >= 0 && b.type < (int)ba_.roster.size())
                 t.type = camp::up(ba_.roster[(std::size_t)b.type].id);
             t.hp = b.hp;
+            // W6-02-07: the type's Insignificant= / LegalTarget= (map overrides
+            // merged) for World::legal_threat_building.
+            if (!t.type.empty())
+                w_.set_building_target_flags((int)btrack_.size(), rules_flag_default(t.type, "Insignificant", false),
+                                             rules_flag_default(t.type, "LegalTarget", true));
             if (!placing_ && b.house >= 0 && b.house < (int)last_built_.size())
                 last_built_[(std::size_t)b.house][0] = data_.find_building_type(t.type);
             btrack_.push_back(t);
@@ -1210,6 +1284,8 @@ private:
         // clone's acquire/retaliate switches stand in for the mission].
         {
             const int mi = ra2engine::mission_from_name(mission);
+            // W6-02-11: Mission=Area Guard scans at the doubled guard radius.
+            if (mi == ra2engine::kMissionAreaGuard) w_.units()[(std::size_t)idx].tg.area_guard = true;
             if (mi == ra2engine::kMissionSleep || mi == 23 /* Harmless */) {
                 t.mission = mi == ra2engine::kMissionSleep ? 1 : 2;
                 set_dormant(idx, true);
@@ -1546,6 +1622,15 @@ private:
                 continue;
             }
             ra2engine::Unit& v = w_.units()[(std::size_t)u.target];
+            // W6-02-12 [RE-FALLBACK: standard YR behaviour (YRpp/ModEnc) -- a
+            // MindControl warhead cannot target or capture an ImmuneToPsionics
+            // object; SOV09 sets [CAR]/[DOG] ImmuneToPsionics=yes for exactly
+            // this]: the shot is refused and the target dropped.
+            if (!w_.psionic_target_ok(u.target)) {
+                u.target = -1;
+                u.attack_order = false;
+                continue;
+            }
             if (!live(v) || !w_.is_enemy(u.house, v.house) || v.is_aircraft) continue;
             // R-205 [RE: the capture rides the controller's shot -- CaptureManager
             // FUN_00471C80 is called only from the bullet detonation @0x4692C0, and
@@ -1708,6 +1793,16 @@ private:
             }
         return need;
     }
+    // W6-02-16: the TaskForce total the team must reach before its script
+    // starts (types the clone cannot resolve are left out).
+    int team_total(const Team& tm) {
+        std::vector<std::string> types;
+        const std::vector<int> need = taskforce_counts(tm, types);
+        int total = 0;
+        for (std::size_t k = 0; k < types.size(); ++k)
+            if (types_.unit(types[k])) total += std::max(0, need[k]);
+        return total;
+    }
     bool recruit(Team& tm) {
         std::vector<std::string> types;
         std::vector<int> need = taskforce_counts(tm, types);
@@ -1715,6 +1810,20 @@ private:
             for (std::size_t k = 0; k < types.size(); ++k)
                 if (utrack_[(std::size_t)m].type == types[k] && need[k] > 0) { --need[k]; break; }
         bool any = false;
+        // W6-02-17 [RE: Recruit FUN_006E9FF0 -- per TaskForce entry, ONE unit
+        // per call, the candidate nearest the team's anchor]: the anchor is the
+        // first live member, else the TeamType Waypoint=, else none (index
+        // order). [RE-FALLBACK: the +0x3200 foreign-group penalty and the
+        // RecruitableA/B (+0x421/+0x422) autocreate split are not modelled.]
+        int ax = -1, ay = -1;
+        for (int m : tm.members)
+            if (live(w_.units()[(std::size_t)m])) { ax = w_.units()[(std::size_t)m].cell_x; ay = w_.units()[(std::size_t)m].cell_y; break; }
+        if (ax < 0 && tm.type >= 0) {
+            const int wp = teams_data_.teams[(std::size_t)tm.type].waypoint;
+            if (wp >= 0 && !waypoint_cell(wp, ax, ay)) ax = ay = -1;
+        }
+        std::vector<int> best(types.size(), -1);
+        std::vector<long> best_d(types.size(), 0);
         for (std::size_t i = 0; i < utrack_.size(); ++i) {
             Track& t = utrack_[i];
             if (t.dead) continue;
@@ -1727,18 +1836,30 @@ private:
             // the carried-passenger count -- PROBABLE]: a loaded transport is
             // never recruited (SOV02's MCV boat keeps its MCV).
             if (!u.cargo.empty()) continue;
+            // W6-02-17 [RE: Can_Add FUN_006E9B80 / the mission test FUN_005B3110]:
+            // a Sleeping / Harmless / Hunting / Harvesting / Capturing unit is
+            // not recruitable, nor a mind-controlled one.
+            if (t.mission != 0 || t.hunt || t.mc_orig >= 0) continue;
+            if (u.is_harvester || u.capture_target >= 0 || u.infiltrate_target >= 0) continue;
             for (std::size_t k = 0; k < types.size(); ++k)
                 if (need[k] > 0 && t.type == types[k]) {
-                    --need[k];
-                    if (t.team >= 0) {   // leave the old team
-                        std::vector<int>& om = teams_[(std::size_t)t.team].members;
-                        om.erase(std::remove(om.begin(), om.end(), (int)i), om.end());
-                        t.team = -1;
-                    }
-                    tm.members.push_back((int)i);
-                    any = true;
+                    const long d = ax < 0 ? (long)i
+                                          : (long)(u.cell_x - ax) * (u.cell_x - ax) + (long)(u.cell_y - ay) * (u.cell_y - ay);
+                    if (best[k] < 0 || d < best_d[k]) { best[k] = (int)i; best_d[k] = d; }
                     break;
                 }
+        }
+        for (std::size_t k = 0; k < types.size(); ++k) {
+            const int i = best[k];
+            if (i < 0) continue;
+            Track& t = utrack_[(std::size_t)i];
+            if (t.team >= 0) {   // leave the old team
+                std::vector<int>& om = teams_[(std::size_t)t.team].members;
+                om.erase(std::remove(om.begin(), om.end(), i), om.end());
+                t.team = -1;
+            }
+            tm.members.push_back(i);
+            any = true;
         }
         return any;
     }
@@ -1782,7 +1903,29 @@ private:
         w_.order_leave_map(m);
     }
     void adopt(Team& tm, int team_idx) {
-        for (int m : tm.members) utrack_[(std::size_t)m].team = team_idx;
+        // W6-02-14 [RE: the team ctor FUN_006E8000 builds the TagClass
+        // (FUN_006E4350) from TeamType+0xD0; AddMember FUN_006E9A70 calls
+        // ObjectClass::AttachTrigger FUN_005F5360 on EVERY member -- it
+        // replaces the member's own tag (old count -1, new +1); a change of
+        // owner keeps obj+0x34]. Recruited members carried no tag before: ALL05
+        // Tanya (CreateTeam 'Tanya (2)', Tag=088361A0) died without 'Tanya
+        // Dies'. [RE-FALLBACK: the original skips OnTransOnly non-transports;
+        // OnTransOnly is not parsed. The clone's tags are shared by index, as
+        // for reinforcements, not one instance per team.]
+        int tg = -1;
+        if (tm.type >= 0 && tm.type < (int)teams_data_.teams.size()) {
+            const std::string& tag = teams_data_.teams[(std::size_t)tm.type].tag;
+            if (!tag.empty() && camp::up(tag) != "<NONE>") tg = data_.find_tag(tag);
+        }
+        for (int m : tm.members) {
+            Track& t = utrack_[(std::size_t)m];
+            t.team = team_idx;
+            if (tg >= 0 && sys_ && t.tag != tg) {
+                if (t.tag >= 0) sys_->detach_tag(t.tag);
+                t.tag = tg;
+                sys_->attach_tag(tg);
+            }
+        }
     }
     // --- W4-SQ-01/06 reinforcement delivery [RE: FUN_0065d770] -------------
     struct Member { std::string type; bool transport = false; };
@@ -2003,7 +2146,8 @@ private:
             if (placed == 0) { note_ = b; return false; }
         } else {
             recruit(tm);
-            tm.recruiting = tm.members.empty() || tt.full;
+            // W6-02-16: the team waits (recruits, regroups) until full strength.
+            tm.recruiting = (int)tm.members.size() < team_total(tm);
             std::snprintf(b, sizeof b, "[house=%d recruited=%d]", tm.house, (int)tm.members.size());
         }
         note_ = b;
@@ -2022,6 +2166,13 @@ private:
             for (std::size_t i = 0; i < w_.units().size(); ++i) {
                 const ra2engine::Unit& u = w_.units()[i];
                 if (!live(u) || !w_.is_enemy(house, u.house)) continue;
+                // W6-02-07/08 [RE: Evaluate_Object FUN_006F71D0]: LegalTarget,
+                // IsInPlayfield, campaign Insignificant (World::legal_threat_*).
+                if (!w_.legal_threat_unit(house, (int)i)) continue;
+                // A still-disguised spy passes for a friend (the auto-acquire
+                // precedent, capture.md §Design 6) -- the W6-02-18 patrol scan
+                // must not see through it.
+                if (u.disguised) continue;
                 if (want_inf && u.is_vehicle) continue;
                 if (want_veh && !u.is_vehicle) continue;
                 const long d = (long)(u.cell_x - x) * (u.cell_x - x) + (long)(u.cell_y - y) * (u.cell_y - y);
@@ -2031,6 +2182,7 @@ private:
             for (std::size_t i = 0; i < w_.buildings().size(); ++i) {
                 const ra2engine::Building& b = w_.buildings()[i];
                 if (!live(b) || !w_.is_enemy(house, b.house)) continue;
+                if (!w_.legal_threat_building(house, (int)i)) continue;   // W6-02-07/08
                 const long d = (long)(b.cx - x) * (b.cx - x) + (long)(b.cy - y) * (b.cy - y);
                 if (best < 0 || d < bd || (!is_building && quarry != 1 && want_b)) {
                     best = (int)i;
@@ -2116,18 +2268,28 @@ private:
                 if (live(w_.units()[(std::size_t)m]) && w_.units()[(std::size_t)m].house == tm.house)
                     live_m.push_back(m);
             tm.members = live_m;
-            if (tm.recruiting) {
-                // W4-SQ-12: the wait for members restarts on every recruit (the
-                // house may be training them).
-                if (recruit(tm)) { adopt(tm, (int)ti); tm.created = frame_; }
-                const bool full = teams_data_.teams[(std::size_t)tm.type].full;
-                std::vector<std::string> types;
-                std::vector<int> need = taskforce_counts(tm, types);
-                int total = 0;
-                for (int n : need) total += n;
-                if ((!full && !tm.members.empty()) || (int)tm.members.size() >= total)
-                    tm.recruiting = false;
-                else if (frame_ - tm.created > 900) tm.st.done = true;
+            // W6-02-16 [RE: TeamClass::AI FUN_006E86B0 -- a team that has not
+            // begun (+0x7F) starts its script only once IsFullStrength (+0x79,
+            // FUN_006E9950: TotalObjects == the TaskForce total) or
+            // IsForcedActive (+0x77, never set: Force_Active FUN_006E95F0 has no
+            // callers); until then it recruits per TaskForce entry
+            // (FUN_006E9FF0) and regroups (FUN_006EB030). In a campaign a team
+            // that never filled is never dropped. A begun Reinforce=yes (+0xAB)
+            // team keeps recruiting while under strength, and at count <=
+            // total/3 goes back to regroup and refill (FUN_006E9640). Full= is
+            // not read by team code.] Before, a team ran as soon as it had one
+            // member and was dropped after 900 member-less frames.
+            // [RE-FALLBACK: the regroup movement itself is not modelled -- a
+            // waiting team's members hold their posts.]
+            {
+                const int total = team_total(tm);
+                const int count = (int)tm.members.size();
+                const bool reinforce = teams_data_.teams[(std::size_t)tm.type].reinforce;
+                if (!tm.recruiting && reinforce && total > 0 && count <= total / 3) tm.recruiting = true;
+                if (tm.recruiting || (reinforce && count < total)) {
+                    if (recruit(tm)) { adopt(tm, (int)ti); tm.created = frame_; }
+                    if ((int)tm.members.size() >= total) tm.recruiting = false;
+                }
                 if (tm.recruiting) continue;
             }
             // W4-SQ-06: the script starts once the paratroopers are down.
@@ -2250,11 +2412,56 @@ private:
         const int b = ra2engine::facing_from_delta(std::sin(th), -std::cos(th));   // inverse of facing_u16_from_delta
         if (b >= 0) u.facing = b;
     }
+    // W6-02-18 [RE: TMission_Patrol FUN_006EC240 -- every few frames the team
+    // scans for a threat from its strongest member, retargets (FUN_006E85C0)
+    // and attacks (FUN_006EA9F0); otherwise it regroups and moves on]: script
+    // 16 Patrol is an attack-move, not a plain move (supersedes the R-027
+    // "patrol = move" fallback). [RE-FALLBACK: the lead member stands in for
+    // the strongest one; the scan radius is its weapon range + 1 cell and runs
+    // every 15 frames.] While a member fights, the team is kept from
+    // "arriving"; once the fight is over the members resume the move.
+    void patrol_tick(Team& tm, int lead) {
+        bool fighting = false, moving = false, all_close = true;
+        for (int m : tm.members) {
+            if (!on_map(m)) continue;
+            const ra2engine::Unit& u = w_.units()[(std::size_t)m];
+            if (u.target >= 0 || u.target_building >= 0) fighting = true;
+            if (busy(u)) moving = true;
+            if (tm.goal_x >= 0) {
+                const double dx = u.cell_x - tm.goal_x, dy = u.cell_y - tm.goal_y;
+                if (dx * dx + dy * dy > 2.25 * 2.25) all_close = false;
+            }
+        }
+        if (fighting) { tm.issued_frame = frame_; return; }
+        if (frame_ % 15 == 0) {
+            const ra2engine::Unit& lu = w_.units()[(std::size_t)lead];
+            const long r = (long)std::floor(lu.w_range) + 1;
+            bool isb = false;
+            const int t = nearest_enemy(tm.house, lu.cell_x, lu.cell_y, 1, isb);
+            if (t >= 0) {
+                const int tx = isb ? w_.buildings()[(std::size_t)t].cx : w_.units()[(std::size_t)t].cell_x;
+                const int ty = isb ? w_.buildings()[(std::size_t)t].cy : w_.units()[(std::size_t)t].cell_y;
+                if ((long)(tx - lu.cell_x) * (tx - lu.cell_x) + (long)(ty - lu.cell_y) * (ty - lu.cell_y) <= r * r) {
+                    for (int m : tm.members)
+                        if (on_map(m)) order_attack(m, t, isb);
+                    tm.issued_frame = frame_;
+                    return;
+                }
+            }
+        }
+        if (!moving && !all_close && tm.goal_x >= 0) {   // the fight is over: move on
+            for (int m : tm.members)
+                if (on_map(m) && !w_.order_fixed_wing(m, -1, -1, tm.goal_x, tm.goal_y))
+                    w_.order_unit_move(m, tm.goal_x, tm.goal_y);
+            tm.issued_frame = frame_;
+        }
+    }
     void execute_team(Team& tm, int team_idx, const ra2engine::MapTeamCommand& c, bool all_idle, int lead) {
         using K = ra2engine::MapTeamCommand::Kind;
         switch (c.kind) {
         case K::MoveWaypoint:
         case K::MoveCell: {
+            if (c.action == ra2engine::kSaPatrol && !c.fresh && lead >= 0) { patrol_tick(tm, lead); return; }
             if (!c.fresh || lead < 0) return;
             int x = -1, y = -1;
             const ra2engine::Unit& lu = w_.units()[(std::size_t)lead];
@@ -2900,6 +3107,7 @@ private:
             local_override_ = m;
             local_overridden_ = true;
             ++local_version_;
+            apply_playfield();   // W6-02-08: every object's IsInPlayfield recomputed
             char b[64];
             std::snprintf(b, sizeof b, "[local %d,%d,%d,%d]", m.x, m.y, m.w, m.h);
             note_ = b;

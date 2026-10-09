@@ -215,10 +215,10 @@ TEST_CASE("step_combat: auto-acquired target dropped beyond guard stray; anchor 
     CHECK(units[0].guard_x == 0);
     CHECK(units[0].guard_y == 0);
 
-    // Teleport the Conscript to (7,0): 7 cells from the GI's anchor (0,0),
-    // beyond weapon range (4) + kGuardStray (2) = 6.
-    units[1].cell_x = 7;
-    units[1].fx = 7.0;
+    // Teleport the Conscript to (8,0): 8 cells from the GI's anchor (0,0),
+    // beyond the threat radius (W6-02-11: range 4 + 1 = 5) + kGuardStray (2) = 7.
+    units[1].cell_x = 8;
+    units[1].fx = 8.0;
     reqs = ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 60.0);
     CHECK(units[0].target == -1);
     CHECK(reqs.empty());  // the GI never left its own anchor, so no return move is needed.

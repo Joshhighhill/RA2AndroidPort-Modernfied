@@ -959,13 +959,16 @@ TEST_CASE("World: moving units do not auto-acquire or return fire (idle-only eng
 
     const double dt = 1.0 / 60.0;
     double t = 0.0;
-    while (world.units()[0].moving() && t < 30.0) {
+    // W6-02-11: an idle unit now scans its whole threat radius (range + 1),
+    // so on ARRIVAL the GI may acquire the chasing Conscript and close in --
+    // the property under test is the walk itself, which ends at the goal.
+    while (world.units()[0].moving() && t < 30.0 &&
+           !(world.units()[0].cell_x == gx && world.units()[0].cell_y == gy)) {
         CHECK(world.units()[0].target == -1);
         world.step(dt);
         t += dt;
     }
 
-    REQUIRE_FALSE(world.units()[0].moving());  // arrived, not stuck/timed out
     REQUIRE(world.units()[0].cell_x == gx);
     REQUIRE(world.units()[0].cell_y == gy);
     CHECK(world.units()[0].hp < 125);  // it was shot en route

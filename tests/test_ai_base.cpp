@@ -34,13 +34,14 @@ TEST_CASE("ai_base: difficulty_mods resolves the three recovered groups") {
         const int c = 2 - i;
         const DifficultyMods m = difficulty_mods(static_cast<AiDifficulty>(i), g);
         CHECK(m.cost_mul == doctest::Approx(kDifficultyCost[c]));
-        CHECK(m.build_time_mul == doctest::Approx(kDifficultyBuildTime[c]));
+        CHECK(m.build_time_mul == doctest::Approx(1.0));   // W6-02-04: never applied
         CHECK(m.build_delay_min == doctest::Approx(kDifficultyBuildDelayMin[c]));
         CHECK(m.build_slowdown == kDifficultyBuildSlowdown[c]);
         CHECK(m.defense_target == kAiDefenseTarget[i]);
     }
-    // Brutal gets the [Easy] bonuses: faster builds, no BuildSlowdown.
-    CHECK(difficulty_mods(AiDifficulty::Difficult, g).build_time_mul == doctest::Approx(0.8));
+    // Brutal gets the [Easy] bonuses: no BuildSlowdown (W6-02-04: the BuildTime
+    // handicap is CRC-only in the original, never applied).
+    CHECK(difficulty_mods(AiDifficulty::Difficult, g).build_time_mul == doctest::Approx(1.0));
     CHECK_FALSE(difficulty_mods(AiDifficulty::Difficult, g).build_slowdown);
     CHECK(difficulty_mods(AiDifficulty::Easy, g).build_delay_min == doctest::Approx(0.1));
     // The REAL recovered per-difficulty values [RE: ai-base.md §4 — Easy/

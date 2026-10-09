@@ -163,6 +163,10 @@ struct SaveAccess {
         save::io(ar, w.cargo_events_);
         save::io(ar, w.player_orders_);   // W4-SQ (save v16)
         save::io(ar, w.passive_houses_);  // W4-SQ-02 (save v16)
+        save::io(ar, w.playfield_);       // W6 fix #2 (save v25)
+        save::io(ar, w.handicap_set_);
+        save::io(ar, w.handicap_fp_);
+        save::io(ar, w.handicap_rof_);
         save::io(ar, w.ai_demand_ids_);   // W4-SQ-12 (save v16)
         save::io(ar, w.ai_demand_counts_);
         save::io(ar, w.aircraft_any_);
@@ -723,6 +727,18 @@ template <class Ar> void fields(Ar& ar, BldTypeW5& v) {
 template <class Ar> void fields(Ar& ar, UnitTypeW5& v) {
     io(ar, v.requires_stolen); io(ar, v.base_tech_level);
 }
+// W6 fix #2 (save v25)
+template <class Ar> void fields(Ar& ar, UnitTypeTgt& v) {
+    io(ar, v.rules_id); io(ar, v.insignificant); io(ar, v.legal_target); io(ar, v.immune_psionics);
+    io(ar, v.guard_range);
+}
+template <class Ar> void fields(Ar& ar, UnitTgt& v) { io(ar, v.t); io(ar, v.in_playfield); io(ar, v.area_guard); }
+template <class Ar> void fields(Ar& ar, BldTgt& v) {
+    io(ar, v.in_playfield); io(ar, v.insignificant); io(ar, v.legal_target);
+}
+template <class Ar> void fields(Ar& ar, PlayfieldW6& v) {
+    io(ar, v.campaign); io(ar, v.valid); io(ar, v.size_w); io(ar, v.x); io(ar, v.y); io(ar, v.w); io(ar, v.h);
+}
 template <class Ar> void fields(Ar& ar, BldW5& v) {
     io(ar, v.prism_stage); io(ar, v.delay); io(ar, v.supporting); io(ar, v.master);
     io(ar, v.overpowerers); io(ar, v.overpowered); io(ar, v.gap_on);
@@ -851,6 +867,7 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.disguise_when_still);
     io(ar, v.an);   // W2-AN (save v9)
     io(ar, v.w6);   // v25: wave-6 #4
+    io(ar, v.tg);   // W6 fix #2 (save v29)
 }
 template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
     io(ar, v.id);
@@ -1073,6 +1090,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.an);   // W2-AN (save v9)
     io(ar, v.w5);   // wave-5 abilities (agent C)
     io(ar, v.w6);   // v25: wave-6 #4
+    io(ar, v.tg);   // W6 fix #2 (save v29)
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.type);
@@ -1127,6 +1145,7 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.w5);          // wave-5 abilities (agent C)
     io(ar, v.power_off);   // W5-E2 power-down (save v21)
     io(ar, v.w6);          // v25: wave-6 #4
+    io(ar, v.tg);          // W6 fix #2 (save v29)
 }
 
 // --- production ---

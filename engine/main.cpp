@@ -819,6 +819,18 @@ inline int w5_speed_type_index(std::string s) {
     return -1;
 }
 
+// W6 fix #2: a unit type's rules id + targeting data (target_w6.hpp).
+ra2engine::UnitTypeTgt resolve_unit_w6(const Rules& rules, const std::string& unit_id) {
+    ra2engine::UnitTypeTgt w;
+    w.rules_id = unit_id;
+    for (char& ch : w.rules_id) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    w.insignificant = rules.section_flag(unit_id, "Insignificant", false);
+    w.legal_target = rules.section_flag(unit_id, "LegalTarget", true);
+    w.immune_psionics = rules.section_flag(unit_id, "ImmuneToPsionics", false);
+    w.guard_range = rules.section_double(unit_id, "GuardRange", 0.0);
+    return w;
+}
+
 ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id) {
     ResolvedUnit r;
     r.combat.image = rules.image(unit_id);
@@ -831,6 +843,9 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.strength = rules.strength(unit_id);
     r.combat.sight = rules.sight(unit_id);  // [RE: shroud.md §2] reveal radius
     r.combat.armor = rules.armor(unit_id);
+    // W6 fix #2: rules id + the targeting type data (map overrides merged in a
+    // campaign: its Rules is rulesmd with the scenario overlaid).
+    r.combat.tg = resolve_unit_w6(rules, unit_id);
     // Gap fix C (G-41) [RE: docs/re/weapons.md §1]: the TechnoType slot rule
     // (Primary/Secondary, or Weapon1..N for TurretCount>=1 types -- SREF's
     // Primary is commented out and Weapon1=Comet) via engine/weapon_resolve.
@@ -12660,10 +12675,16 @@ DemoNavalResult simulate_naval(Assets& a, UnitAssets& ua, const NavalAssets& na,
     const int before_x = world.units()[s_idx].cell_x, before_y = world.units()[s_idx].cell_y;
     world.order_unit_move(s_idx, land.x, land.y);
     const bool empty_path = world.units()[s_idx].path.empty();
-    for (int f = 0; f < 60; ++f) step_one();
-    if (empty_path && world.units()[s_idx].cell_x == before_x &&
-        world.units()[s_idx].cell_y == before_y)
-        land_blocked = true;
+    // W6-02-11: an idle ship now auto-acquires at weapon range + 1 and may close
+    // in on the shore enemy during these frames -- that is not the land order.
+    // The order is refused when it yields no path and the ship never stands on land.
+    bool on_land = false;
+    for (int f = 0; f < 60; ++f) {
+        step_one();
+        if (!is_water(world.units()[s_idx].cell_x, world.units()[s_idx].cell_y)) on_land = true;
+    }
+    (void)before_x; (void)before_y;
+    if (empty_path && !on_land) land_blocked = true;
     h = naval_fold(h, world, water_cells);       // checkpoint 2: post-land-block
     {
         char b[144];

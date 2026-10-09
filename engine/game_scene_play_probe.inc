@@ -142,6 +142,7 @@
                 p.set("uhp(" + hs + "," + id + ")", u.hp);
                 p.set("urank(" + hs + "," + id + ")", u.veteran_rank);
                 p.set("udisguised(" + hs + "," + id + ")", u.disguised ? 1 : 0);
+                p.set("urof(" + hs + "," + id + ")", u.w_rof);   // W6-02-01: house handicap ROF
             }
             if (!p.n.count("weapon_damage(" + id + ")")) {   // first live unit of the type
                 p.set("weapon_damage(" + id + ")", u.w_damage);
