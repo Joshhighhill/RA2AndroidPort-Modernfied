@@ -58,6 +58,21 @@ void World::order_stop(int idx) {
     u.tg.area_guard = false;   // W6-02-11: Stop leaves Area_Guard
 }
 
+// [RE: TechnoClass::SetOwningHouse FUN_00700940 (FootClass FUN_004DBDE0 /
+// UnitClass FUN_007451D0 wrap it): on a real owner change it calls
+// SetTarget(0) (vtbl+0x3C8), SetDestination(0) (+0x480), QueueMission(Guard)
+// (+0x1E8, 5) and Enter_Idle_Mode (+0x484) -- the unit drops its target and
+// its move and guards the spot it is on. Nothing of the old owner's orders
+// survives.] The clone's form: the new house, then Stop (which also re-plants
+// the guard anchor here, so the leash never pulls the unit back to a post or
+// an approach the previous owner set).
+void World::set_unit_owner(int idx, int house) {
+    if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
+    if (units_[idx].house == house) return;   // FUN_00700940: same owner -> no-op
+    units_[idx].house = house;
+    order_stop(idx);
+}
+
 void World::order_guard(int idx) {
     // Guard = stop and hold this post (the guard anchor step_combat leashes
     // auto-acquired engagements to).

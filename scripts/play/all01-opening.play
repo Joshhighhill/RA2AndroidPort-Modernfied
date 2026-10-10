@@ -1,5 +1,6 @@
 # W4 fix (docs/gap/wave4/03-all01-opening.md): Allied mission 1's opening,
-# from the main menu with NO input for 4 minutes. The four BadGuy2
+# from the main menu with no input for 4 minutes except one move for Tanya
+# (last-fix, below). The four BadGuy2
 # Dreadnoughts shell the Statue of Liberty from t=0 ("Mission Start" ->
 # team "BG1 - Dreadnought 1" -> AttackWaypoint 0), the two Liberty Island
 # Patriots (Other2) shoot missiles down, and each missile that gets through
@@ -13,9 +14,8 @@
 # weapon fixes (bisected, HP at 4 min of 5117: 4297 on 7b77d57, 4722 after
 # W6-04-01 Burst, 3972 after W6-04-06 OmniFire, 3852 after W6-04-22 3-D
 # defence range; 3527 on fv-a), so > 4000 (DMISL hits alone) no longer
-# holds. Tanya, idle
-# at wp36, must still be alive: she used to follow a vanished target's stale
-# approach path to the Dreadnought pier and die (LOST at f~1800).
+# holds. Tanya must still be alive at 4 minutes (the game stays RUNNING, so
+# every probe is there).
 set render_every 300
 set on_quit continue
 click button "Single Player"
@@ -34,7 +34,17 @@ shot o000
 # DMislPauseFrames 20 + TiltFrames 60 on deck, then the climb to the map's 1550.
 until 600 rockets_launched(2) > 0
 shot o_first
-wait 900
+# last-fix: one real order -- Tanya walks inland, away from the shore. Left idle
+# at wp36 she picks the Soviet amphibious transport that lands at (59,92), and
+# when it is gone she finishes her approach onto the Dreadnought pier (the
+# original keeps a cell Destination when the TarCom expires: FootClass::
+# PointerExpired FUN_004D9870), picks a Dreadnought and dies there (LOST).
+# The opening clock is kept: o060 still falls at f~911.
+until 60 input_locked == 1
+until 2700 input_locked == 0
+click unit 0:TANY:0
+click cell 61 105
+wait 280
 shot o060
 assert rockets_launched(2) > 0
 wait 900

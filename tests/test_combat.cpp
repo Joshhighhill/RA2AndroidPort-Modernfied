@@ -304,11 +304,12 @@ TEST_CASE("step_combat: leash drop off-anchor emits a return-to-anchor move requ
     CHECK(reqs[0].approach == false);  // guard-return: move exactly there, no firing-position resolution
 }
 
-TEST_CASE("step_combat: an auto-acquired target that vanishes mid-approach sends the unit home (fv-a, ALL01 Tanya)") {
+TEST_CASE("step_combat: an auto-acquired target that vanishes mid-approach -> the unit finishes the walk and guards there") {
     // The GI auto-acquires the Conscript (anchor (0,0)) and is walking an
-    // approach path when the target dies: the stale approach ends and the GI
-    // returns to its guard anchor instead of finishing the path and
-    // re-anchoring wherever it stops.
+    // approach path when the target dies. As in gamemd (Approach_Target's
+    // Destination is a cell, which FootClass::PointerExpired does not clear),
+    // it walks on to the end of the path -- no walk back to the anchor -- and
+    // that end becomes its guard post.
     Occupancy occ(20, 1);
     std::vector<Unit> units;
     units.push_back(make_soldier(0, 0, 0, 0, occ));
@@ -329,14 +330,13 @@ TEST_CASE("step_combat: an auto-acquired target that vanishes mid-approach sends
     units[1].alive = false;
     const auto reqs = ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 60.0);
     CHECK(units[0].target == -1);
-    REQUIRE(reqs.size() == 1);
-    CHECK(reqs[0].unit == 0);
-    CHECK(reqs[0].goal_x == 0);
-    CHECK(reqs[0].goal_y == 0);
-    CHECK(reqs[0].approach == false);
+    CHECK(reqs.empty());                       // no return-to-anchor request
+    CHECK(units[0].path.size() == 4);          // the walk goes on
+    CHECK(units[0].path_idx == 1);
+    CHECK(units[0].guard_x == 4);              // guards the path's end
+    CHECK(units[0].guard_y == 0);
 }
-
-TEST_CASE("step_combat: a vanished target does not recall a unit that is not walking an approach") {
+TEST_CASE("step_combat: a vanished target leaves a unit standing at its post where it is") {
     Occupancy occ(20, 1);
     std::vector<Unit> units;
     units.push_back(make_soldier(0, 0, 0, 0, occ));

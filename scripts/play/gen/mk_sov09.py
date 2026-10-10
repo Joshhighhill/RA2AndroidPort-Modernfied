@@ -97,15 +97,24 @@ def main(out):
     order(p, "6:YURI:0", "cell 25 66")
     p.add("until 900 buildings(0,GAPILE) >= 1",
           "until 900 can_build(DOG) == 1", "click tab:2", "click cameo:DOG", "click cameo:DOG",
-          "until 900 units(0,DOG) >= 2", "until 900 units(2,E1) <= 5",
+          "wait 400")
+    # last-fix: the barracks now falls sooner (an idle engineer no longer chases
+    # targets with its DefuseKit, fv-b) and a dog can die at the door GIs --
+    # train another until two are out
+    for _ in range(3):
+        c = "units(0,DOG) < 2 and queue_stage(infantry) == 0"
+        p.add(f"if {c} then click tab:2", f"if {c} then click cameo:DOG", "wait 300")
+    p.add("until 900 units(0,DOG) >= 2", "until 900 units(2,E1) <= 5",
           "assert buildings(0,GAPILE) >= 1", "dump", "shot barracks")
     # 3. three more dogs clear the American GI and dogs south of the compound
     p.add("click tab:2", "click cameo:DOG", "click cameo:DOG", "click cameo:DOG",
           "until 1500 units(0,DOG) >= 4")
     p.add("click xy 500 400 right", "click unit 0:DOG:0", "key t", "key t")
-    for (x, y) in [(36, 64), (40, 76), (55, 76)]:
+    # last-fix: the American GI patrols y=73 between x=59 and 73; the dogs wait for
+    # it at (58,76) (outside every Prism's reach) and keep picking for longer
+    for (x, y) in [(36, 64), (40, 76), (55, 76), (58, 76)]:
         p.add(f"click cell {x} {y}", "wait 30", "until 1500 sel_moving == 0")
-    for _ in range(6):
+    for _ in range(12):
         p.add("click xy 500 400 right", "click unit 0:DOG:0", "key t", "key t",
               "if units(1,E1) > 0 then click unit e:E1:near soft", "wait 60",
               "click xy 500 400 right", "click unit 0:DOG:0", "key t", "key t",
@@ -117,10 +126,16 @@ def main(out):
     for _ in range(4):   # a car or civilian on the way can stop it short
         c = "ucell(6,FV,0) != 66075"
         p.add(f"if {c} then click xy 500 400 right", f"if {c} then click unit 6:FV:0",
-              f"if {c} then click cell 66 75", "wait 20", "until 600 umov(6,FV,0) == 0")
+              f"if {c} then click cell 66 75", f"if {c} then wait 20",
+              "until 600 umov(6,FV,0) == 0")
+    # last-fix: no idle time at (66,75) -- left idle, the IFV picks the American
+    # GI by (67,73) and its approach takes it into the Prisms; the force-fire
+    # order below starts on arrival and is kept up until the section is gone
     p.add("assert ucell(6,FV,0) == 66075")
-    for _ in range(10):
-        order(p, "6:FV:0", "cell 66 71 ctrl")   # Ctrl = force-fire on the wall cell
+    for k in range(20):
+        g = "" if k < 10 else "if cursor_name != move then "
+        p.add(f"{g}click xy 500 400 right", f"{g}click unit 6:FV:0",
+              f"{g}click cell 66 71 ctrl")   # Ctrl = force-fire on the wall cell
         p.add("wait 100", "move cell 66 71", "wait 1")
     p.add("until 1500 cursor_name == move", "assert cursor_name == move", "dump", "shot breach")
     # 5. from the gap the IFV shells the plants in its range, nearest first:
