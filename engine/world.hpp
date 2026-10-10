@@ -92,8 +92,9 @@ struct Unit {
     int frame = 0;
     std::string image;
 
-    // --- Task 12: selection + movement/animation state ---
-    bool selected = false;
+    // --- Task 12: movement/animation state ---
+    // (NET L1: the selection left the Unit -- it is the local player's UI
+    // state now, engine/selection.hpp; orders carry explicit unit ids.)
     std::vector<Cellxy> path;  // full A* path (start..goal); empty when idle
     std::size_t path_idx = 0;  // index of the next path cell to advance toward
     double fx = 0.0, fy = 0.0;  // continuous iso-cell position (interp render)
@@ -402,6 +403,11 @@ struct Unit {
 };
 // G16: the cargo_of sentinel of a garrisoned infantry (never a unit index).
 constexpr int kGarrisonCargo = 0x3FFFFFFF;
+// NET L1: an issuer that may order any house's units (the non-interactive
+// demos' pre-L1 order_move_selected had no ownership check). Never in a
+// player command.
+constexpr int kAnyHouse = -1;
+
 // W4-SQ-06: the cargo_of sentinel of a paratrooper still under its parachute
 // (off the map for every system; AnUnit::para_alt holds its height).
 constexpr int kParachuteCargo = 0x3FFFFFFE;
@@ -913,8 +919,6 @@ public:
             if (u.alive && u.die_time < 0.0 && u.house == house && !u.is_vehicle) u.ia.cheer = true;
     }
 
-    // Deselect every unit.
-    void clear_selection();
     // Index of the unit whose CURRENT cell is (x, y), or -1 if none -- skips
     // dying and dead units (a corpse is unpickable; its cell was already
     // released by the time it started dying, so it never occupies anyway).
@@ -993,9 +997,9 @@ public:
     // W2-AN-09: can unit `idx` stand on cell (x, y) by its movement domain
     // (aircraft: any in-bounds cell)?
     bool unit_can_enter_cell(const Unit& u, int x, int y) const;
-    // W2-AN-09: is (x, y) enterable by ANY selected live house-`house` unit?
-    // No selection -> the Land grid (the pre-fix answer).
-    bool selection_can_enter(int house, int x, int y) const;
+    // W2-AN-09: is (x, y) enterable by ANY live house-`house` unit of `ids`
+    // (the local selection)? No such unit -> the Land grid (the pre-fix answer).
+    bool group_can_enter(const std::vector<int>& ids, int house, int x, int y) const;
     // CB-3 Naval [RE-GATE APPLIED: naval.md §1/§2]: build the WATER grid from a
     // per-cell LandType array (main.cpp's resolve_land_types, indexed y*grid_w+x),
     // intersected with the Land grid passable_ (a ship never paths on a non-
@@ -1102,14 +1106,14 @@ public:
         u.harv = HarvState::SeekOre;
     }
 
-    // Player orders (selected house-0 harvesters only). Simplified per
+    // Player orders (the issuer's own harvesters among `ids` only). Simplified per
     // economy.md §1: no separate "pinned" flag -- just pin harv_cell_* to
     // (x, y), set the mission to MoveToOre, and emit the path immediately
     // via order_unit_move (mirrors step()'s own HarvestMove handling).
-    void order_harvest(int x, int y);
+    void group_harvest(int issuer, const std::vector<int>& ids, int x, int y);
     // ReturnToRef now (resets harv_timer -- every transition into
     // ReturnToRef resets it; see harvest.cpp's ChronoOut-fires-once comment).
-    void order_return();
+    void group_return(int issuer, const std::vector<int>& ids);
 
     // Drained by main.cpp each frame for audio (chrono/unload sounds); empty
     // if set_economy was never called (step() never populates it then).
@@ -1129,7 +1133,7 @@ public:
     // its mission FSM for the duration of this player-directed move and
     // resumes (at SeekOre) the instant it arrives -- a ground right-click on
     // a harvester keeps this existing move path rather than a dedicated one.
-    void order_move_selected(int goal_x, int goal_y);
+    void group_move(int issuer, const std::vector<int>& ids, int goal_x, int goal_y);
 
     // Order every SELECTED house-0, alive, non-dying unit to attack
     // `target_idx`: sets target=target_idx and attack_order=true (pursues
@@ -1139,7 +1143,7 @@ public:
     // computed later by step_combat's request, not here). No-op (touches no
     // unit) if target_idx is out of range, dead, dying, or itself house 0 --
     // a house-0 (player) unit can't be ordered to attack a friendly.
-    void order_attack(int target_idx);
+    void group_attack(int issuer, const std::vector<int>& ids, int target_idx);
 
     // Placed buildings (Buildings & Construction Task 4).
     std::vector<Building>& buildings() { return buildings_; }
@@ -1171,7 +1175,7 @@ public:
     // (touches no unit) if b_idx is out of range, dead, in State::Dead, or
     // owned by house 0 (a house-0 unit can't be ordered to attack a
     // friendly building).
-    void order_attack_building(int b_idx);
+    void group_attack_building(int issuer, const std::vector<int>& ids, int b_idx);
 
     // --- Production phase [RE: production.md §1.3/§1.4] ---
     // Set factory `b_idx`'s rally cell (finished units path here after exiting).
@@ -1209,13 +1213,13 @@ public:
     // (a raw move to the transport's own occupied cell would cancel as
     // unreachable) [spec §3]. No-op if t_idx is not an own, alive, non-dying
     // transport. Sets the cargo_any_ firewall.
-    void order_enter_transport(int t_idx);
+    void group_enter_transport(int issuer, const std::vector<int>& ids, int t_idx);
     // Unload order: sets unload_pending on every SELECTED house-0, alive,
     // non-dying transport with non-empty cargo [spec §5]. Any new move/
     // attack order on the transport clears unload_pending (an order
     // supersedes -- our order-model convention, not overturned by the hunt).
     // Sets the cargo_any_ firewall.
-    void order_unload_selected();
+    void group_unload(int issuer, const std::vector<int>& ids);
     // W2-CA-17: the same unload order for one transport of any house (team
     // script action 8). No-op unless it is alive with cargo.
     void order_unload(int idx);
@@ -1360,8 +1364,9 @@ public:
     // --- L2 issuing house --------------------------------------------------
     // Who may order units of house h on behalf of `issuer`: its own units,
     // and a PlayerControl=yes house's for a human issuer (W2-CA-02).
+    // NET L1: kAnyHouse is the non-interactive demos' omnipotent issuer.
     bool can_command(int issuer, int h) const {
-        if (h == issuer) return true;
+        if (h == issuer || issuer == kAnyHouse) return true;
         return h > 0 && h < (int)houses_.size() && houses_[h].player_control && is_human(issuer);
     }
     // The house issuing the orders that follow (the scene's local house; the
@@ -1594,9 +1599,9 @@ public:
         ai_demand_ids_[(std::size_t)house] = std::move(ids);
         ai_demand_counts_[(std::size_t)house] = std::move(counts);
     }
-    void mark_player_order() {
-        for (int i = 0; i < static_cast<int>(units_.size()); ++i)
-            if (units_[i].selected && units_[i].alive) player_orders_.push_back(i);
+    void mark_player_orders(const std::vector<int>& ids) {
+        for (int i : ids)
+            if (i >= 0 && i < static_cast<int>(units_.size()) && units_[i].alive) player_orders_.push_back(i);
     }
     std::vector<int> take_player_orders() { std::vector<int> o; o.swap(player_orders_); return o; }
 
@@ -2047,9 +2052,9 @@ public:
     void set_unit_owner(int idx, int house);
     void order_guard(int idx);
     void order_scatter(int idx);
-    void order_stop_selected();
-    void order_guard_selected();
-    void order_scatter_selected();
+    void group_stop(int issuer, const std::vector<int>& ids);
+    void group_guard(int issuer, const std::vector<int>& ids);
+    void group_scatter(int issuer, const std::vector<int>& ids);
     // Powered=yes defenses work only while the house's power output covers its
     // drain (BuildingClass power check FUN_004555c0, ratio < 1.0 -> offline).
     bool defense_power_ok(int house) const;
@@ -2163,7 +2168,8 @@ public:
     // Garrisons.
     bool can_occupy(int unit_idx, int b_idx) const;          // BuildingClass::CanBeOccupiedBy
     void order_occupy(int unit_idx, int b_idx);              // walk adjacent, then enter
-    int order_occupy_selected(int b_idx);                    // house-0 selection; returns #ordered
+    int group_occupy(int issuer, const std::vector<int>& ids, int b_idx);   // returns #ordered
+    int group_occupy_count(int issuer, const std::vector<int>& ids, int b_idx) const;   // the same, dry run
     void unload_occupants(int b_idx);                        // BuildingClass::UnloadOccupants
     // W4-SQ-02: a campaign reinforcement / garrison team member enters a
     // building at once (FUN_0065d320 all-infantry branch; the script 46
@@ -2290,7 +2296,7 @@ public:
     int bridge_cells_destroyed() const;
     // Force-fire at a ground cell (Ctrl+click, G-49 bridge demolition).
     void order_attack_cell(int unit_idx, int cx, int cy);
-    int order_attack_cell_selected(int cx, int cy);
+    int group_attack_cell(int issuer, const std::vector<int>& ids, int cx, int cy);
     // The per-frame G16 pass (called from step()).
     void step_depth(double dt);
 
@@ -2783,7 +2789,7 @@ private:
     std::vector<UnitCombat> undeploy_units_;   // parallel: the unit to spawn
     bool mcv_redeploys_ = false;
     bool skirmish_session_ = false;
-    std::uint32_t session_seed_ = 0;           // Net L0: the one session seed (saved, v33)
+    std::uint32_t session_seed_ = 0;           // Net L0: the one session seed (saved, v34)
     bool try_undeploy(int b_idx);              // called by complete_sell
     void finish_deploy(int idx);
 

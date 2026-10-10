@@ -144,7 +144,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_combat.cpp engine/combat.cpp)
 # Gap fix C: weapon slots / per-target pick / slot resolution.
 target_sources(ra2assets_tests PRIVATE engine/weapon.cpp engine/weapon_unit.cpp
                                        engine/weapon_resolve.cpp engine/building_combat.cpp
-                                       engine/unit_orders.cpp
+                                       engine/unit_orders.cpp engine/command.cpp tests/test_command.cpp
                                        tests/test_gap_combat.cpp)
 # W5-B: combat and movement core (DamageArea, sub-cells, land speed, crush).
 target_sources(ra2assets_tests PRIVATE tests/test_w5_combat.cpp)
@@ -332,7 +332,11 @@ if (WIN32)
   target_link_libraries(ra2assets_tests PRIVATE ws2_32)
 endif()
 # Two-process LAN test driver: two peers + a tiny deterministic model.
-add_executable(ra2netpeer tools/ra2netpeer.cpp ${RA2_NET_SOURCES})
+# command_bridge.cpp needs the engine's Command/World headers; the stub-model
+# driver uses only the SDL-free transport, codec and lockstep layers.
+set(RA2_NETPEER_SOURCES ${RA2_NET_SOURCES})
+list(FILTER RA2_NETPEER_SOURCES EXCLUDE REGEX "command_bridge\\.cpp$")
+add_executable(ra2netpeer tools/ra2netpeer.cpp ${RA2_NETPEER_SOURCES})
 target_include_directories(ra2netpeer PRIVATE engine)
 if (WIN32)
   target_link_libraries(ra2netpeer PRIVATE ws2_32 winmm)

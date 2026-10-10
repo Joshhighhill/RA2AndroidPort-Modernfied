@@ -376,11 +376,12 @@ int run_probe_realplay() {
                                 w.unit_can_enter_cell(w.units()[s], sx + dx, sy + dy)) {
                                 gx = sx + dx; gy = sy + dy;
                             }
-                for (ra2engine::Unit& u : w.units()) u.selected = false;
-                w.units()[s].selected = true;
-                p.check(gx >= 0 && w.selection_can_enter(0, gx, gy) && !w.walkable(gx, gy),
+                g.ui_selection_mut().clear();
+                g.ui_selection_mut().set(s);
+                p.check(gx >= 0 && w.group_can_enter({s}, 0, gx, gy) && !w.walkable(gx, gy),
                         "W2-AN-09 a water cell is a Move target for the selected Destroyer");
-                if (gx >= 0) w.order_move_selected(gx, gy);
+                if (gx >= 0) w.group_move(0, {s}, gx, gy);
+
                 P::run(g, 15 * 20);
                 p.check(w.units()[s].cell_x != sx || w.units()[s].cell_y != sy,
                         "W2-AN-09 the Destroyer sailed (" + std::to_string(sx) + "," + std::to_string(sy) +

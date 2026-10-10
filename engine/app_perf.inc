@@ -255,3 +255,84 @@ template <class S> void replay_report(const char* what, int frame, S* scene) {
     SDL_Log("%s", hb);
     std::cerr << hb << "\n";
 }
+
+// ---------------------------------------------------------------------------
+// NET L1 (R-184 reworked): COMMAND-LOG record / replay. `--record <file>`
+// writes the game scene's config, crate seed and canvas, then every command
+// the scene applied with its logic tick, then "END <tick> <state hash>".
+// `--replay <file>` (an RA2CMD file) rebuilds the scene from that config and
+// re-applies the log tick by tick (no input, no menus): the same format a
+// lockstep peer applies, so it is portable across devices. The raw input
+// recorder above stays reachable as `--record-input` (RA2REC files replay
+// with `--replay` as before).
+std::string g_cmd_record_path;   // --record <file> / RA2_RECORD
+std::int64_t g_crate_seed_override = -1;   // replay: the recorded skirmish crate seed
+std::uint32_t g_crate_seed_used = 0;       // the seed enable_p5_features drew
+
+struct CmdRecorder {
+    std::ofstream out;
+    bool open(const std::string& path, const ra2engine::SkirmishConfig& cfg, std::uint32_t seed, int cw, int ch) {
+        out.open(path, std::ios::binary | std::ios::trunc);
+        if (!out) return false;
+        out << "RA2CMD 1 " << RA2_VERSION << "\n";
+        out << "# CFG <hex SkirmishConfig>, SEED <crate seed>, CANVAS <w> <h>, then C lines (command_to_line), END <tick> <hash>\n";
+        ra2engine::SkirmishConfig c = cfg;
+        const std::vector<std::uint8_t> b = ra2engine::save::to_bytes(c);
+        out << "CFG ";
+        char hx[3];
+        for (std::uint8_t v : b) { std::snprintf(hx, sizeof hx, "%02x", v); out << hx; }
+        out << "\nSEED " << seed << "\nCANVAS " << cw << ' ' << ch << "\n";
+        return true;
+    }
+    void command(const ra2engine::Command& c) { out << ra2engine::command_to_line(c) << "\n"; }
+    void end(std::uint32_t tick, std::uint64_t hash) {
+        char b[64];
+        std::snprintf(b, sizeof b, "END %u %016llx\n", tick, static_cast<unsigned long long>(hash));
+        out << b;
+        out.flush();
+    }
+};
+
+struct CmdLog {
+    ra2engine::SkirmishConfig cfg;
+    std::uint32_t seed = 0;
+    int canvas_w = 1280, canvas_h = 720;
+    std::vector<ra2engine::Command> cmds;
+    std::uint32_t end_tick = 0;
+    std::string end_hash;
+    bool load(const std::string& path) {
+        std::ifstream in(path, std::ios::binary);
+        if (!in) return false;
+        std::string line;
+        if (!std::getline(in, line) || line.rfind("RA2CMD 1", 0) != 0) return false;
+        bool have_cfg = false;
+        while (std::getline(in, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (line.empty() || line[0] == '#') continue;
+            if (line.rfind("CFG ", 0) == 0) {
+                std::vector<std::uint8_t> b;
+                for (std::size_t i = 4; i + 1 < line.size(); i += 2)
+                    b.push_back(static_cast<std::uint8_t>(std::stoi(line.substr(i, 2), nullptr, 16)));
+                have_cfg = ra2engine::save::from_bytes(b, cfg);
+            } else if (line.rfind("SEED ", 0) == 0) {
+                seed = static_cast<std::uint32_t>(std::stoul(line.substr(5)));
+            } else if (line.rfind("CANVAS ", 0) == 0) {
+                std::istringstream ls(line.substr(7));
+                ls >> canvas_w >> canvas_h;
+            } else if (line.rfind("END ", 0) == 0) {
+                std::istringstream ls(line.substr(4));
+                ls >> end_tick >> end_hash;
+            } else if (line[0] == 'C') {
+                ra2engine::Command c;
+                if (!ra2engine::command_from_line(line, c)) return false;
+                cmds.push_back(std::move(c));
+            }
+        }
+        return have_cfg;
+    }
+};
+inline bool is_cmd_log(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    std::string line;
+    return in && std::getline(in, line) && line.rfind("RA2CMD", 0) == 0;
+}

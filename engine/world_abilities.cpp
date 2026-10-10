@@ -201,7 +201,6 @@ void World::ability_erase_unit(int idx) {
     occ_.release_all_of(idx, -1, -1);
     v.path.clear();
     v.path_idx = 0;
-    v.selected = false;
 }
 
 void World::ability_damage_unit(int victim, int dmg) {
@@ -414,7 +413,6 @@ void World::ability_fire_event(int i) {
         occ_.release_all_of(i, -1, -1);       // LimboLaunch: the drone became the bullet
         u.path.clear();
         u.path_idx = 0;
-        u.selected = false;
         u.target = -1;
         u.target_building = -1;
         u.attack_order = false;

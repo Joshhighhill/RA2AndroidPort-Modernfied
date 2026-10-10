@@ -207,13 +207,13 @@ TEST_CASE("Input: left-click a unit selects only it; empty click clears") {
     int px, py;
     ground_px_for_unit(world.units()[1], px, py);
     left_click(input, px, py, /*shift=*/false, /*t=*/1000);
-    CHECK(world.units()[1].selected);
-    CHECK_FALSE(world.units()[0].selected);
-    CHECK_FALSE(world.units()[2].selected);
+    CHECK(input.selection().has(1));
+    CHECK_FALSE(input.selection().has(0));
+    CHECK_FALSE(input.selection().has(2));
 
     // Click far-away empty ground clears selection.
     left_click(input, px + 900, py + 400, false, 2000);
-    for (const auto& u : world.units()) CHECK_FALSE(u.selected);
+    CHECK(input.selection().empty());
 }
 
 TEST_CASE("Input: Shift+left-click toggles units in and out of the selection") {
@@ -231,11 +231,11 @@ TEST_CASE("Input: Shift+left-click toggles units in and out of the selection") {
     ground_px_for_unit(world.units()[2], px2, py2);
     left_click(input, px0, py0, false, 1000);   // select unit 0
     left_click(input, px2, py2, true, 2000);    // shift-add unit 2
-    CHECK(world.units()[0].selected);
-    CHECK(world.units()[2].selected);
+    CHECK(input.selection().has(0));
+    CHECK(input.selection().has(2));
     left_click(input, px0, py0, true, 3000);    // shift-remove unit 0
-    CHECK_FALSE(world.units()[0].selected);
-    CHECK(world.units()[2].selected);
+    CHECK_FALSE(input.selection().has(0));
+    CHECK(input.selection().has(2));
 }
 
 TEST_CASE("Input: right-click issues a group move to the selected units") {
@@ -248,7 +248,7 @@ TEST_CASE("Input: right-click issues a group move to the selected units") {
     input.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
     Fixture fx = spawn(world, 2);
     if (!fx.ok) { MESSAGE("skipped"); return; }
-    for (auto& u : world.units()) u.selected = true;
+    for (std::size_t k_ = 0; k_ < world.units().size(); ++k_) input.selection().set(static_cast<int>(k_));
 
     // Right-click a cell 10 south of the first unit.
     int px, py;
@@ -298,7 +298,7 @@ TEST_CASE("Input: left-drag exposes a selection box and box-selects covered unit
     u.x = maxx + 20; u.y = maxy + 20; u.t_ms = 1100;
     input.handle(u);
     CHECK_FALSE(input.selection_box(x0, y0, x1, y1));  // box gone after release
-    for (const auto& un : world.units()) CHECK(un.selected);
+    CHECK(input.selection().count() == static_cast<int>(world.units().size()));
 }
 
 TEST_CASE("Input: double-click selects all on-screen units of the same type") {
@@ -322,10 +322,10 @@ TEST_CASE("Input: double-click selects all on-screen units of the same type") {
     // Two quick clicks on unit 0's cell (window px = ground px + camera).
     const int px = gx0 + cam.x, py = gy0 + cam.y;
     left_click(input, px, py, false, 1000);
-    CHECK(world.units()[0].selected);           // first click: single select
-    CHECK_FALSE(world.units()[1].selected);
+    CHECK(input.selection().has(0));           // first click: single select
+    CHECK_FALSE(input.selection().has(1));
     left_click(input, px, py, false, 1200);     // 200ms later, same spot: double
-    for (const auto& u : world.units()) CHECK(u.selected);  // all GI on screen
+    CHECK(input.selection().count() == static_cast<int>(world.units().size()));  // all GI on screen
 }
 
 TEST_CASE("Input: pan moves the camera (clamped) and never fires a select") {
@@ -359,7 +359,7 @@ TEST_CASE("Input: Shift+left-drag ADDS boxed units to the selection") {
     int p0x, p0y;
     ground_px_for_unit(world.units()[0], p0x, p0y);
     left_click(input, p0x, p0y, false, 1000);
-    REQUIRE(world.units()[0].selected);
+    REQUIRE(input.selection().has(0));
 
     // Shift+drag a box over units 1 and 2 ONLY (unit 0 sits 30px west of the
     // box's left edge). Shift box must ADD them, keeping unit 0 selected.
@@ -380,9 +380,9 @@ TEST_CASE("Input: Shift+left-drag ADDS boxed units to the selection") {
     u.x = bx1; u.y = by1; u.shift = true; u.t_ms = 3100;
     input.handle(u);
 
-    CHECK(world.units()[0].selected);   // retained: shift box adds, not replaces
-    CHECK(world.units()[1].selected);
-    CHECK(world.units()[2].selected);
+    CHECK(input.selection().has(0));   // retained: shift box adds, not replaces
+    CHECK(input.selection().has(1));
+    CHECK(input.selection().has(2));
 }
 
 TEST_CASE("Input: pan clamps the camera to the map's screen bounds") {
@@ -423,8 +423,8 @@ TEST_CASE("Input: right-click a hostile issues an attack order to the selection"
 
     // Select both GIs (direct set -- equivalent to box/click selection, which
     // Input's own selection tests already cover).
-    world.units()[fx.gi0].selected = true;
-    world.units()[fx.gi1].selected = true;
+    input.selection().set(fx.gi0);
+    input.selection().set(fx.gi1);
 
     int px, py;
     ground_px_for_unit(world.units()[fx.cons], px, py);
@@ -434,7 +434,7 @@ TEST_CASE("Input: right-click a hostile issues an attack order to the selection"
     CHECK(world.units()[fx.gi0].attack_order);
     CHECK(world.units()[fx.gi1].target == fx.cons);
     CHECK(world.units()[fx.gi1].attack_order);
-    CHECK_FALSE(world.units()[fx.cons].selected);  // the hostile itself was never selected
+    CHECK_FALSE(input.selection().has(fx.cons));  // the hostile itself was never selected
 }
 
 TEST_CASE("Input: right-click ground still group-moves the selection") {
@@ -448,8 +448,8 @@ TEST_CASE("Input: right-click ground still group-moves the selection") {
     CombatFixture fx = spawn_combat_fixture(world);
     if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
 
-    world.units()[fx.gi0].selected = true;
-    world.units()[fx.gi1].selected = true;
+    input.selection().set(fx.gi0);
+    input.selection().set(fx.gi1);
 
     // Engagement seam guard: one step lets the idle GIs auto-acquire the
     // in-range Conscript (mirrors test_world.cpp's freeze-seam regression) --
@@ -498,8 +498,8 @@ TEST_CASE("Input: left-click a hostile selects nothing") {
     ground_px_for_unit(world.units()[fx.cons], px, py);
     left_click(input, px, py, /*shift=*/false, /*t=*/1000);
 
-    for (const auto& u : world.units()) CHECK_FALSE(u.selected);
-    CHECK_FALSE(world.units()[fx.cons].selected);
+    CHECK(input.selection().empty());
+    CHECK_FALSE(input.selection().has(fx.cons));
 }
 
 TEST_CASE("Input: W2-CA-02 a PlayerControl house's unit is selectable like house 0") {
@@ -523,7 +523,7 @@ TEST_CASE("Input: W2-CA-02 a PlayerControl house's unit is selectable like house
     int px, py;
     ground_px_for_unit(world.units()[fx.cons], px, py);
     left_click(input, px, py, /*shift=*/false, /*t=*/1000);
-    CHECK(world.units()[fx.cons].selected);
+    CHECK(input.selection().has(fx.cons));
 }
 
 TEST_CASE("Input: R3 a PlayerControl house's unit takes force-fire and Stop like house 0") {
@@ -536,9 +536,9 @@ TEST_CASE("Input: R3 a PlayerControl house's unit takes force-fire and Stop like
     if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
     const int h = world.units()[fx.cons].house;
     REQUIRE(h != 0);
-    world.units()[fx.cons].selected = true;
+    const std::vector<int> ids{fx.cons};
     // Not controllable yet: the order is refused.
-    CHECK(world.order_attack_cell_selected(10, 10) == 0);
+    CHECK(world.group_attack_cell(0, ids, 10, 10) == 0);
     World::HouseRec rec;
     rec.side = World::Side::Allied;
     rec.alliance_team = 0;
@@ -546,10 +546,11 @@ TEST_CASE("Input: R3 a PlayerControl house's unit takes force-fire and Stop like
     world.set_house(h, rec);
     REQUIRE(world.controllable(h));
     const int cx = world.units()[fx.cons].cell_x + 2, cy = world.units()[fx.cons].cell_y;
-    CHECK(world.order_attack_cell_selected(cx, cy) >= 1);
+    CHECK(world.group_attack_cell(0, ids, cx, cy) >= 1);
     CHECK(world.units()[fx.cons].attack_cell_x == cx);
     CHECK(world.units()[fx.cons].attack_cell_y == cy);
-    world.order_stop_selected();
+    world.group_stop(0, ids);
+
     CHECK(world.units()[fx.cons].attack_cell_x == -1);
 }
 
@@ -579,9 +580,9 @@ TEST_CASE("Input: box over both squads selects only house-0") {
     u.x = maxx + 20; u.y = maxy + 20; u.t_ms = 1100;
     input.handle(u);
 
-    CHECK(world.units()[fx.gi0].selected);
-    CHECK(world.units()[fx.gi1].selected);
-    CHECK_FALSE(world.units()[fx.cons].selected);
+    CHECK(input.selection().has(fx.gi0));
+    CHECK(input.selection().has(fx.gi1));
+    CHECK_FALSE(input.selection().has(fx.cons));
 }
 
 TEST_CASE("Input: dead units are unpickable") {
@@ -605,10 +606,10 @@ TEST_CASE("Input: dead units are unpickable") {
     world.units()[fx.cons].alive = false;
 
     left_click(input, px, py, /*shift=*/false, /*t=*/1000);
-    for (const auto& u : world.units()) CHECK_FALSE(u.selected);  // no selection change
+    CHECK(input.selection().empty());  // no selection change
 
-    world.units()[fx.gi0].selected = true;
-    world.units()[fx.gi1].selected = true;
+    input.selection().set(fx.gi0);
+    input.selection().set(fx.gi1);
 
     right_click(input, px, py, 2000);
     CHECK(world.units()[fx.gi0].target == -1);  // no attack order issued on a corpse
@@ -639,10 +640,10 @@ TEST_CASE("Input: dying units (die anim playing) are equally unpickable") {
     // alive stays true -- the mid-animation window
 
     left_click(input, px, py, /*shift=*/false, /*t=*/1000);
-    for (const auto& u : world.units()) CHECK_FALSE(u.selected);  // no selection change
+    CHECK(input.selection().empty());  // no selection change
 
-    world.units()[fx.gi0].selected = true;
-    world.units()[fx.gi1].selected = true;
+    input.selection().set(fx.gi0);
+    input.selection().set(fx.gi1);
 
     right_click(input, px, py, 2000);
     CHECK(world.units()[fx.gi0].target == -1);  // no attack order issued on a dying unit
@@ -668,7 +669,7 @@ TEST_CASE("Input: right-click on RAISED ground targets the clicked tile (level-a
         find_reachable_raised_cell(world, fx.cells[0].first, fx.cells[0].second);
     if (!raised) { MESSAGE("skipped: no reachable level>=1 cell found near the spawn"); return; }
 
-    world.units()[0].selected = true;
+    input.selection().set(0);
 
     int px, py;
     level_ground_px(raised->x, raised->y, raised->level, px, py);
@@ -706,7 +707,7 @@ TEST_CASE("Input: right-click a hostile with nothing selected is a ground move, 
         CHECK_FALSE(u.attack_order);
     }
     // The Conscript itself should never be selected (hostile never selectable).
-    CHECK_FALSE(world.units()[fx.cons].selected);
+    CHECK_FALSE(input.selection().has(fx.cons));
 }
 
 // ---- Task 5: InputActions feedback (voice-ack hooks, audio phase) ----
@@ -781,7 +782,7 @@ TEST_CASE("Input: a mouse-move-only frame after the consume reads back all-false
     CHECK_FALSE(a.attack_ordered);
     CHECK(a.actor == -1);
     // Selection itself is untouched by the move (pure observation, no behavior change).
-    CHECK(world.units()[0].selected);
+    CHECK(input.selection().has(0));
 }
 
 TEST_CASE("Input: take_actions reports selected + lowest boxed index on a box-select") {
@@ -811,9 +812,9 @@ TEST_CASE("Input: take_actions reports selected + lowest boxed index on a box-se
     u.x = bx1; u.y = by1; u.t_ms = 1100;
     input.handle(u);
 
-    REQUIRE(world.units()[1].selected);
-    REQUIRE(world.units()[2].selected);
-    CHECK_FALSE(world.units()[0].selected);
+    REQUIRE(input.selection().has(1));
+    REQUIRE(input.selection().has(2));
+    CHECK_FALSE(input.selection().has(0));
     const ra2engine::InputActions a = input.take_actions();
     CHECK(a.selected);
     CHECK(a.actor == 1);
@@ -830,8 +831,8 @@ TEST_CASE("Input: take_actions reports move_ordered + lowest actor on a right-cl
     CombatFixture fx = spawn_combat_fixture(world);
     if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
 
-    world.units()[fx.gi0].selected = true;
-    world.units()[fx.gi1].selected = true;
+    input.selection().set(fx.gi0);
+    input.selection().set(fx.gi1);
 
     // Empty ground well beyond weapon range (same scan as "Input: right-click
     // ground still group-moves the selection" above).
@@ -891,7 +892,7 @@ TEST_CASE("input: placement mode confirms at hovered origin and suppresses order
     CHECK(acts.place_cx == tx - 1);   // -fw/2
     CHECK(acts.place_cy == ty - 1);   // -fh/2
     CHECK_FALSE(acts.selected);       // the confirming click did NOT select
-    CHECK_FALSE(world.units()[0].selected);
+    CHECK_FALSE(input.selection().has(0));
 
     // Right-click cancels back to READY and reports place_cancelled.
     input.begin_placement(1, 2, 2);
@@ -911,8 +912,8 @@ TEST_CASE("Input: take_actions reports attack_ordered + lowest actor on a right-
     CombatFixture fx = spawn_combat_fixture(world);
     if (!fx.ok) { MESSAGE("skipped: could not place combat fixture"); return; }
 
-    world.units()[fx.gi0].selected = true;
-    world.units()[fx.gi1].selected = true;
+    input.selection().set(fx.gi0);
+    input.selection().set(fx.gi1);
 
     int px, py;
     ground_px_for_unit(world.units()[fx.cons], px, py);
@@ -969,8 +970,8 @@ TEST_CASE("Input: right-click a hostile building attacks; own building is a move
     REQUIRE(hostile_bi >= 0);
     REQUIRE(friendly_bi >= 0);
 
-    world.units()[fx.gi0].selected = true;
-    world.units()[fx.gi1].selected = true;
+    input.selection().set(fx.gi0);
+    input.selection().set(fx.gi1);
 
     // Right-click the HOSTILE building's foundation origin -> attack order.
     int px, py;
@@ -1051,8 +1052,8 @@ TEST_CASE("Input: mixed selection right-click on ore -> harvester harvests, othe
     world.ore().set(oc.first, oc.second, ra2engine::OreKind::Ore, 5, 0);
     REQUIRE(world.ore().has_ore(oc.first, oc.second));
 
-    world.units()[gi].selected = true;
-    world.units()[harv].selected = true;
+    input.selection().set(gi);
+    input.selection().set(harv);
 
     int px, py;
     px_for_cell(oc.first, oc.second, px, py);
@@ -1071,8 +1072,8 @@ TEST_CASE("Input: mixed selection right-click on ore -> harvester harvests, othe
     CHECK(near_cell(world.units()[gi].path.back(), oc.first, oc.second));
 
     // Selection restored: both still selected; the move ack was reported.
-    CHECK(world.units()[gi].selected);
-    CHECK(world.units()[harv].selected);
+    CHECK(input.selection().has(gi));
+    CHECK(input.selection().has(harv));
     const ra2engine::InputActions a = input.take_actions();
     CHECK(a.move_ordered);
 }
@@ -1118,7 +1119,7 @@ TEST_CASE("Input: harvester right-click own building returns only on a refinery"
     world.add_building(/*type=*/5, o2.first, o2.second, 2, 2, /*house=*/0, 1000, 0, 0.0,
                        /*instant=*/true);
 
-    world.units()[harv].selected = true;
+    input.selection().set(harv);
 
     // Right-click the own NON-refinery building: falls through to the ground
     // move -- no return order (harv stays off ReturnToRef, manual_hold set by
@@ -1278,7 +1279,7 @@ TEST_CASE("Input: right-click on an own transport issues the enter order; carrie
     Camera cam;                                      // identity camera
     Input in(world, cam, 4000, 4000);
     in.set_scheme(Input::Scheme::Legacy);   // pre-G-05 model under test
-    world.units()[1].selected = true;
+    in.selection().set(1);
     int px = 0, py = 0;
     ground_px_for_unit(world.units()[0], px, py);
     right_click(in, px, py, 10);
@@ -1287,11 +1288,11 @@ TEST_CASE("Input: right-click on an own transport issues the enter order; carrie
     CHECK(world.units()[1].target == -1);            // no attack leaked through
     // A CARRIED unit is unpickable (sweep site 12): stuff the GI aboard by
     // hand and click its (stale) ground point -- nothing selects.
-    world.clear_selection();
+    in.selection().clear();
     world.units()[1].cargo_of = 0;
     ground_px_for_unit(world.units()[1], px, py);
     left_click(in, px, py, false, 500);
-    CHECK_FALSE(world.units()[1].selected);
+    CHECK_FALSE(in.selection().has(1));
 }
 
 // ---- Repair & Sell phase, Task 6: the two cursor modes [RE: repair-sell.md §C1] ----
@@ -1337,9 +1338,9 @@ TEST_CASE("input: repair/sell modes are mutually exclusive and TOGGLE [RE: repai
         CHECK(in.base_mode() == Input::BaseMode::None);
     }
     SUBCASE("arming DESELECTS everything (Reset_Cursor)") {
-        world.units()[0].selected = true;
+        in.selection().set(0);
         in.set_repair_mode(1);
-        CHECK_FALSE(world.units()[0].selected);
+        CHECK_FALSE(in.selection().has(0));
     }
 }
 
@@ -1435,7 +1436,7 @@ TEST_CASE("input: a mode click reports OWN buildings only, and stays armed [RE: 
         int gx, gy;
         ground_px_for_unit(u, gx, gy);
         left_click(in, gx, gy, false, 2000);
-        CHECK_FALSE(world.units()[0].selected);
+        CHECK_FALSE(in.selection().has(0));
         CHECK_FALSE(in.take_actions().selected);
     }
 }

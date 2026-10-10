@@ -149,7 +149,7 @@
                 p.set("weapon_range(" + id + ")", u.w_range);
                 p.set("weapon_rof(" + id + ")", u.w_rof);
             }
-            if (u.selected) { ++selected; p.add("selected_type(" + id + ")", 1); }
+            if (usel(u)) { ++selected; p.add("selected_type(" + id + ")", 1); }
             if (u.is_harvester) {
                 static const char* kHs[] = {"None", "SeekOre", "MoveToOre", "Harvesting",
                                             "ReturnToRef", "WaitDock", "Unloading"};
@@ -176,7 +176,7 @@
         {   // the lowest-index selected unit's cell (for "did it move" checks)
             const ra2engine::Unit* s0 = nullptr;
             for (const ra2engine::Unit& u : world_.units())
-                if (u.selected && u.alive && u.die_time < 0.0) { s0 = &u; break; }
+                if (usel(u) && u.alive && u.die_time < 0.0) { s0 = &u; break; }
             p.set("sel_cx", s0 ? std::floor(s0->fx + 0.5) : -1);
             p.set("sel_cy", s0 ? std::floor(s0->fy + 0.5) : -1);
             p.set("sel_moving", s0 && s0->moving() ? 1 : 0);
@@ -479,7 +479,7 @@
                 const std::string ty = head.substr(c + 1);
                 const ra2engine::Unit* me = nullptr;
                 for (const ra2engine::Unit& u : world_.units())
-                    if (u.alive && u.die_time < 0.0 && u.selected) { me = &u; break; }
+                    if (u.alive && u.die_time < 0.0 && usel(u)) { me = &u; break; }
                 if (!me) return false;
                 double best = 9.0 * 9.0 + 1e-9;
                 bool found = false;
@@ -652,7 +652,7 @@
                         p.set(std::string("pt_") + nm + "_y", py);
                         // Chebyshev distance from the first selected unit to the point.
                         for (const ra2engine::Unit& u : world_.units())
-                            if (u.selected && u.alive && u.die_time < 0.0) {
+                            if (usel(u) && u.alive && u.die_time < 0.0) {
                                 p.set(std::string("sel_dist_") + nm,
                                       std::max(std::abs(u.cell_x - px), std::abs(u.cell_y - py)));
                                 break;

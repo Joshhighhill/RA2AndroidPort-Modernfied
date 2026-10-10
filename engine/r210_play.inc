@@ -39,7 +39,7 @@
                 }
                 if (u.on_deck) ++r210_deck_h_[hh];
                 static const bool trace = std::getenv("RA2_R210_TRACE") != nullptr;   // diagnostics
-                if (trace && u.selected)
+                if (trace && usel(u))
                     std::cerr << "[r210] step " << play_unit_id(u) << " (" << u.cell_x << "," << u.cell_y
                               << ") h" << h << (u.on_deck ? " deck" : "") << '\n';
             }
@@ -59,7 +59,7 @@
         int sel_n = 0, sel_deck = 0, sel_min_cy = 1 << 20, sel_max_cy = -1;
         for (const ra2engine::Unit& u : world_.units()) {
             if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
-            if (u.selected) {   // sel_n / sel_deck / sel_min_cy / sel_max_cy: the selection
+            if (usel(u)) {   // sel_n / sel_deck / sel_min_cy / sel_max_cy: the selection
                 ++sel_n;
                 sel_deck += u.on_deck ? 1 : 0;
                 sel_min_cy = std::min(sel_min_cy, u.cell_y);

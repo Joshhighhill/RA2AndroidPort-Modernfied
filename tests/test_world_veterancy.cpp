@@ -6,6 +6,7 @@
 #include "asset_fixture.hpp"  // shared load-once real map (mapsmd03.mix)
 #include "crate.hpp"
 #include "veterancy.hpp"
+#include "selection.hpp"
 #include "world.hpp"
 
 // P5 Veterancy + Crates World integration [RE: docs/re/veterancy.md]. Cases run
@@ -262,6 +263,7 @@ TEST_CASE("P5 world: injected NON-default rules reach the kill credit (wiring pr
 }
 
 TEST_CASE("P5 world: a destroyed building credits its roster Cost [V3]") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     ra2assets::MapFile map;
     if (!vmap(map)) { MESSAGE("skipped: no install"); return; }
     World world(map);
@@ -272,8 +274,8 @@ TEST_CASE("P5 world: a destroyed building credits its roster Cost [V3]") {
     CHECK(world.buildings()[b].vet_recv);
     world.add_combat_unit(x, y, 0, killer_stats(50));
     const int k = static_cast<int>(world.units().size()) - 1;
-    world.units()[k].selected = true;
-    world.order_attack_building(b);
+    tsel_.set(k);
+    world.group_attack_building(0, tsel_.ids(), b);
     for (int f = 0; f < 60 && world.buildings()[b].state != ra2engine::Building::State::Dead; ++f)
         world.step(1.0 / 15.0);
     world.step(1.0 / 15.0);
@@ -282,6 +284,7 @@ TEST_CASE("P5 world: a destroyed building credits its roster Cost [V3]") {
 }
 
 TEST_CASE("P5 world: crates need veterancy; typed crates + conversion + expiry [C2-C6]") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     ra2assets::MapFile map;
     if (!vmap(map)) { MESSAGE("skipped: no install"); return; }
     World off(map);
@@ -313,9 +316,9 @@ TEST_CASE("P5 world: crates need veterancy; typed crates + conversion + expiry [
         int px = -1, py = -1;
         for (const auto& c : world.crates()) if (c.x >= 0 && c.powerup == powerup) { px = c.x; py = c.y; }
         REQUIRE(px >= 0);
-        world.units()[u].selected = true;
-        world.order_move_selected(px, py);
-        world.units()[u].selected = false;
+        tsel_.set(u);
+        world.group_move(ra2engine::kAnyHouse, tsel_.ids(), px, py);
+        tsel_.set(u, false);
         for (int f = 0; f < 150; ++f) {
             world.step(1.0 / 15.0);
             auto ev = world.take_crate_events();

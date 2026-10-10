@@ -25,6 +25,7 @@
 #include "ra2assets/mix.hpp"
 #include "ra2assets/pal.hpp"  // Palette/Rgba (pal_for_house tests)
 #include "unit_type.hpp"      // Production phase: UnitTypeDef (refund test)
+#include "selection.hpp"
 #include "world.hpp"
 #include "asset_fixture.hpp"  // shared load-once real map (mapsmd03.mix)
 
@@ -273,6 +274,7 @@ TEST_CASE("World: add_unit places units, occupancy and unit_at_cell agree") {
 }
 
 TEST_CASE("World: group move sends selected units to distinct cells, never overlapping") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) {
         MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
@@ -292,10 +294,10 @@ TEST_CASE("World: group move sends selected units to distinct cells, never overl
                 ++placed;
             }
     REQUIRE(placed >= 2);
-    for (auto& u : world.units()) u.selected = true;
+    for (std::size_t i = 0; i < world.units().size(); ++i) tsel_.set(static_cast<int>(i));
 
     // Order them to a reachable cell ~12 south-east and run the sim.
-    world.order_move_selected(c->x + 12, c->y + 12);
+    world.group_move(ra2engine::kAnyHouse, tsel_.ids(), c->x + 12, c->y + 12);
     const double dt = 1.0 / 60.0;
     for (double t = 0; t < 20.0; t += dt) {
         world.step(dt);
@@ -325,6 +327,7 @@ TEST_CASE("unit_draw_order: sorts back-to-front by fx+fy") {
 }
 
 TEST_CASE("World: order_move_selected mid-walk retarget keeps fx/fy (no backward snap)") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
     ra2engine::World world(map);
@@ -332,11 +335,11 @@ TEST_CASE("World: order_move_selected mid-walk retarget keeps fx/fy (no backward
     const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
     REQUIRE(c != nullptr);
     world.add_unit(c->x, c->y, "GI", 0);
-    world.units()[0].selected = true;
+    tsel_.set(0);
 
     int t1x = 0, t1y = 0;
     REQUIRE(find_reachable(world, c->x, c->y, 999999, 999999, t1x, t1y));
-    world.order_move_selected(t1x, t1y);
+    world.group_move(ra2engine::kAnyHouse, tsel_.ids(), t1x, t1y);
     REQUIRE(world.units()[0].moving());
 
     // Step partway: 0.05s at 3 cells/sec = 0.15 cells -- genuinely mid-segment.
@@ -349,7 +352,7 @@ TEST_CASE("World: order_move_selected mid-walk retarget keeps fx/fy (no backward
     REQUIRE(find_reachable(world, world.units()[0].cell_x, world.units()[0].cell_y,
                            t1x - world.units()[0].cell_x, t1y - world.units()[0].cell_y,
                            t2x, t2y));
-    world.order_move_selected(t2x, t2y);
+    world.group_move(ra2engine::kAnyHouse, tsel_.ids(), t2x, t2y);
 
     // The retarget must NOT snap fx/fy backward to the committed cell.
     CHECK(world.units()[0].fx == fx0);
@@ -361,6 +364,7 @@ TEST_CASE("World: order_move_selected mid-walk retarget keeps fx/fy (no backward
 }
 
 TEST_CASE("World: unreachable order mid-walk cancels and snaps fx/fy cleanly") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
     ra2engine::World world(map);
@@ -368,11 +372,11 @@ TEST_CASE("World: unreachable order mid-walk cancels and snaps fx/fy cleanly") {
     const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
     REQUIRE(c != nullptr);
     world.add_unit(c->x, c->y, "GI", 0);
-    world.units()[0].selected = true;
+    tsel_.set(0);
 
     int t1x = 0, t1y = 0;
     REQUIRE(find_reachable(world, c->x, c->y, 999999, 999999, t1x, t1y));
-    world.order_move_selected(t1x, t1y);
+    world.group_move(ra2engine::kAnyHouse, tsel_.ids(), t1x, t1y);
     world.step(0.05);
     REQUIRE(world.units()[0].moving());
     REQUIRE((world.units()[0].fx != (double)world.units()[0].cell_x ||
@@ -381,7 +385,7 @@ TEST_CASE("World: unreachable order mid-walk cancels and snaps fx/fy cleanly") {
     // A goal FAR off-grid: the formation ring search finds no free walkable
     // cell, the unit keeps its own cell as target, pathing to self cancels ->
     // fx/fy must snap onto the committed cell, not strand mid-segment.
-    world.order_move_selected(world.grid_w() + 1000, world.grid_h() + 1000);
+    world.group_move(ra2engine::kAnyHouse, tsel_.ids(), world.grid_w() + 1000, world.grid_h() + 1000);
     CHECK_FALSE(world.units()[0].moving());
     CHECK(world.units()[0].path.empty());
     CHECK(world.units()[0].fx == (double)world.units()[0].cell_x);
@@ -391,6 +395,7 @@ TEST_CASE("World: unreachable order mid-walk cancels and snaps fx/fy cleanly") {
 // ---- Combat integration (Task 5: add_combat_unit / order_attack / step chaining / tombstones) ----
 
 TEST_CASE("World: two squads fight to elimination deterministically (real map)") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) {
         MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
@@ -424,8 +429,8 @@ TEST_CASE("World: two squads fight to elimination deterministically (real map)")
         // Each GI attacks its OWN nearest hostile: select just that unit so
         // order_attack's "every selected unit" only ever touches it.
         for (int gi_i : gi_idx) {
-            world.clear_selection();
-            world.units()[gi_i].selected = true;
+            tsel_.clear();
+            tsel_.set(gi_i);
             int nearest = -1;
             double best_d2 = 0.0;
             for (int cons_i : cons_idx) {
@@ -438,9 +443,9 @@ TEST_CASE("World: two squads fight to elimination deterministically (real map)")
                 }
             }
             REQUIRE(nearest != -1);
-            world.order_attack(nearest);
+            world.group_attack(0, tsel_.ids(), nearest);
         }
-        world.clear_selection();
+        tsel_.clear();
 
         // Conscripts (hostile) have no selection path -- set target/
         // attack_order directly on each, aimed at its own nearest GI.
@@ -538,6 +543,7 @@ TEST_CASE("World: two squads fight to elimination deterministically (real map)")
 }
 
 TEST_CASE("World: order_attack sets target+attack_order on selected units only") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) {
         MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
@@ -554,11 +560,11 @@ TEST_CASE("World: order_attack sets target+attack_order on selected units only")
     const int hostile = cons_idx[0];
 
     // Select only the first two GIs.
-    world.units()[gi_idx[0]].selected = true;
-    world.units()[gi_idx[1]].selected = true;
-    world.units()[gi_idx[2]].selected = false;
+    tsel_.set(gi_idx[0]);
+    tsel_.set(gi_idx[1]);
+    tsel_.set(gi_idx[2], false);
 
-    world.order_attack(hostile);
+    world.group_attack(0, tsel_.ids(), hostile);
 
     CHECK(world.units()[gi_idx[0]].target == hostile);
     CHECK(world.units()[gi_idx[0]].attack_order == true);
@@ -568,37 +574,38 @@ TEST_CASE("World: order_attack sets target+attack_order on selected units only")
     CHECK(world.units()[gi_idx[2]].target == -1);
     CHECK(world.units()[gi_idx[2]].attack_order == false);
 
-    world.clear_selection();
-    world.units()[gi_idx[2]].selected = true;
+    tsel_.clear();
+    tsel_.set(gi_idx[2]);
 
     // No-op: out-of-range target index.
-    world.order_attack(static_cast<int>(world.units().size()) + 5);
+    world.group_attack(0, tsel_.ids(), static_cast<int>(world.units().size()) + 5);
     CHECK(world.units()[gi_idx[2]].target == -1);
     CHECK(world.units()[gi_idx[2]].attack_order == false);
 
     // No-op: target is house 0 (friendly) -- can't order an attack on it.
-    world.order_attack(gi_idx[0]);
+    world.group_attack(0, tsel_.ids(), gi_idx[0]);
     CHECK(world.units()[gi_idx[2]].target == -1);
 
     // No-op: dead target.
     world.units()[hostile].alive = false;
-    world.order_attack(hostile);
+    world.group_attack(0, tsel_.ids(), hostile);
     CHECK(world.units()[gi_idx[2]].target == -1);
     world.units()[hostile].alive = true;  // restore
 
     // No-op: dying target.
     world.units()[hostile].die_time = 0.2;
-    world.order_attack(hostile);
+    world.group_attack(0, tsel_.ids(), hostile);
     CHECK(world.units()[gi_idx[2]].target == -1);
     world.units()[hostile].die_time = -1.0;  // restore
 
     // A selected but dying unit does not get a target set either.
     world.units()[gi_idx[2]].die_time = 0.1;
-    world.order_attack(hostile);
+    world.group_attack(0, tsel_.ids(), hostile);
     CHECK(world.units()[gi_idx[2]].target == -1);
 }
 
 TEST_CASE("World: dead units are unpickable and non-occupying") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) {
         MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
@@ -616,8 +623,8 @@ TEST_CASE("World: dead units are unpickable and non-occupying") {
     const int victim = cons_idx[0];
     world.units()[victim].w_damage = 0;  // disarm: isolate the GI's attack (no retaliation kill-race)
 
-    world.units()[gi_idx[0]].selected = true;
-    world.order_attack(victim);
+    tsel_.set(gi_idx[0]);
+    world.group_attack(0, tsel_.ids(), victim);
 
     const int vx = world.units()[victim].cell_x;
     const int vy = world.units()[victim].cell_y;
@@ -662,6 +669,7 @@ TEST_CASE("World: dead units are unpickable and non-occupying") {
 }
 
 TEST_CASE("World: attack order halts the pursuer at weapon range (no melee overshoot)") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) { MESSAGE("skipped: no install"); return; }
     ra2engine::World world(map);
@@ -700,8 +708,8 @@ TEST_CASE("World: attack order halts the pursuer at weapon range (no melee overs
 
     // Select the GI and order the attack; the Conscript does NOT move or fire
     // (leave it idle: it will auto-acquire/return-fire, which is fine).
-    world.units()[0].selected = true;
-    world.order_attack(1);
+    tsel_.set(0);
+    world.group_attack(0, tsel_.ids(), 1);
     REQUIRE(world.units()[0].attack_order);
 
     const int hp0 = world.units()[1].hp;
@@ -720,6 +728,7 @@ TEST_CASE("World: attack order halts the pursuer at weapon range (no melee overs
 }
 
 TEST_CASE("combat: five attackers fan out and ALL fire (no single-file queue)") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     // Regression for the reported bug: a group attack order used to send
     // EVERY attacker to the target's own occupied cell (combat.cpp's old §f
     // attack_order branch emitted {i, v.cell_x, v.cell_y} for every unit), so
@@ -767,9 +776,9 @@ TEST_CASE("combat: five attackers fan out and ALL fire (no single-file queue)") 
     std::vector<int> attackers = spawn_combat_squad(world, c->x, c->y, 0, gi_stats(), 5);
     REQUIRE(attackers.size() == 5);
 
-    world.clear_selection();
-    for (int a : attackers) world.units()[a].selected = true;
-    world.order_attack(victim_idx);
+    tsel_.clear();
+    for (int a : attackers) tsel_.set(a);
+    world.group_attack(0, tsel_.ids(), victim_idx);
     for (int a : attackers) REQUIRE(world.units()[a].attack_order);
 
     bool has_fired[5] = {false, false, false, false, false};
@@ -818,6 +827,7 @@ bool find_close_free_cell(const ra2engine::World& w, int bx, int by, int& ox, in
 }  // namespace
 
 TEST_CASE("World: a group-move order cancels engagement and is never frozen by the hold-pass") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     // Regression for the freeze seam this task fixes: a GI holding an
     // AUTO-ACQUIRED target (idle, in weapon range) that is then given a group
     // move order used to have its path repeatedly cleared by the hold-at-range
@@ -880,9 +890,9 @@ TEST_CASE("World: a group-move order cancels engagement and is never frozen by t
     REQUIRE(found_far);
     REQUIRE(dgoal >= 5.0);
 
-    world.clear_selection();
-    world.units()[0].selected = true;
-    world.order_move_selected(gx, gy);
+    tsel_.clear();
+    tsel_.set(0);
+    world.group_move(ra2engine::kAnyHouse, tsel_.ids(), gx, gy);
 
     // The move order must cancel engagement immediately -- load-bearing fix.
     CHECK(world.units()[0].target == -1);
@@ -901,6 +911,7 @@ TEST_CASE("World: a group-move order cancels engagement and is never frozen by t
 }
 
 TEST_CASE("World: moving units do not auto-acquire or return fire (idle-only engagement)") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     // Spec wording: "IDLE/guarding units auto-acquire hostiles in range and
     // return fire when hit" -- a unit executing a player move order is
     // neither idle nor guarding. GI ordered to walk away from an in-range
@@ -952,8 +963,8 @@ TEST_CASE("World: moving units do not auto-acquire or return fire (idle-only eng
     }
     REQUIRE(found_far);
 
-    world.units()[0].selected = true;
-    world.order_move_selected(gx, gy);
+    tsel_.set(0);
+    world.group_move(ra2engine::kAnyHouse, tsel_.ids(), gx, gy);
     REQUIRE(world.units()[0].moving());
     REQUIRE(world.units()[0].target == -1);
 
@@ -1162,6 +1173,7 @@ TEST_CASE("Unit: spawns facing S (facing == 4, docs/re/infantry-anim.md §6)") {
 }
 
 TEST_CASE("World::step: walking unit faces its segment (docs/re/infantry-anim.md §5)") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) {
         MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
@@ -1189,8 +1201,8 @@ TEST_CASE("World::step: walking unit faces its segment (docs/re/infantry-anim.md
 
     world.add_unit(sx, sy, "GI", 0);
     REQUIRE(world.units()[0].facing == 4);  // spawn facing S
-    world.units()[0].selected = true;
-    world.order_move_selected(sx + 1, sy);  // one cell east
+    tsel_.set(0);
+    world.group_move(ra2engine::kAnyHouse, tsel_.ids(), sx + 1, sy);  // one cell east
     REQUIRE(world.units()[0].moving());
 
     world.step(1.0 / 60.0);  // small dt at 3 cells/sec -> still mid-segment
@@ -1330,6 +1342,7 @@ TEST_CASE("world: AI-house power OUTPUT is zeroed by blackout at the AI producti
 }
 
 TEST_CASE("world: R3 an attack on a building stops at weapon range (not at its foundation)") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     // [RE: infantry-anim.md §7 -- Mission_Attack stops the approach as soon as
     // the target is in range; FUN_006F6750 measures a building to its centre
     // with range + (w+h)*64.] Before R3 only unit targets held at range.
@@ -1355,8 +1368,8 @@ TEST_CASE("world: R3 an attack on a building stops at weapon range (not at its f
     w.add_combat_unit(sx, sy, 0, gi);
     const int bi = w.add_building(0, sx + 11, sy, 1, 1, /*house*/ 1, 1000, 0, 0.0, true);
     REQUIRE(bi >= 0);
-    w.units()[0].selected = true;
-    w.order_attack_building(bi);
+    tsel_.set(0);
+    w.group_attack_building(0, tsel_.ids(), bi);
     REQUIRE(w.units()[0].target_building == bi);
     for (int f = 0; f < 600; ++f) w.step(1.0 / 15.0);
     const ra2engine::Unit& u = w.units()[0];
@@ -1369,6 +1382,7 @@ TEST_CASE("world: R3 an attack on a building stops at weapon range (not at its f
 }
 
 TEST_CASE("world: order_attack_building sets exclusive target") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) {
         MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
@@ -1379,20 +1393,20 @@ TEST_CASE("world: order_attack_building sets exclusive target") {
     REQUIRE(c != nullptr);
 
     w.add_combat_unit(c->x, c->y, 0, gi_stats());  // house-0 combat unit, index 0
-    w.units()[0].selected = true;
+    tsel_.set(0);
 
     // Friendly (house 0) building: ordering an attack on it must be a no-op.
     int fx = -1, fy = -1;
     REQUIRE(find_close_free_cell(w, c->x, c->y, fx, fy));
     const int bi_friendly = w.add_building(0, fx, fy, 1, 1, /*house*/ 0, 100, 0, 0.0, true);
-    w.order_attack_building(bi_friendly);
+    w.group_attack_building(0, tsel_.ids(), bi_friendly);
     CHECK(w.units()[0].target_building == -1);
 
     // Hostile (house 1) building elsewhere.
     int ex = -1, ey = -1;
     REQUIRE(find_close_free_cell(w, c->x + 3, c->y + 3, ex, ey));
     const int bi_enemy = w.add_building(0, ex, ey, 1, 1, /*house*/ 1, 100, 0, 0.0, true);
-    w.order_attack_building(bi_enemy);
+    w.group_attack_building(0, tsel_.ids(), bi_enemy);
     CHECK(w.units()[0].target_building == bi_enemy);
     CHECK(w.units()[0].target == -1);
     CHECK(w.units()[0].attack_order);
@@ -1402,7 +1416,7 @@ TEST_CASE("world: order_attack_building sets exclusive target") {
     int hx = -1, hy = -1;
     REQUIRE(find_close_free_cell(w, c->x - 3, c->y - 3, hx, hy));
     w.add_combat_unit(hx, hy, 1, cons_stats());  // hostile unit, index 1
-    w.order_attack(1);
+    w.group_attack(0, tsel_.ids(), 1);
     CHECK(w.units()[0].target_building == -1);
     CHECK(w.units()[0].target == 1);
     CHECK(w.units()[0].attack_order);
@@ -1444,6 +1458,7 @@ TEST_CASE("World: add_harvester sets harvester fields + occupancy") {
 }
 
 TEST_CASE("World: order_harvest paths a selected harvester to ore and it gulps on arrival") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) {
         MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
@@ -1459,8 +1474,8 @@ TEST_CASE("World: order_harvest paths a selected harvester to ore and it gulps o
 
     ra2engine::Unit& u =
         world.add_harvester(c->x, c->y, 0, gi_stats(), /*chrono*/ false, /*storage*/ 40);
-    u.selected = true;
-    world.order_harvest(ox, oy);
+    tsel_.set(static_cast<int>(world.units().size()) - 1);
+    world.group_harvest(0, tsel_.ids(), ox, oy);
     CHECK(u.harv == ra2engine::HarvState::MoveToOre);
     CHECK(u.harv_cell_x == ox);
     CHECK(u.harv_cell_y == oy);
@@ -2738,6 +2753,7 @@ bool owns_no_cell(const ra2engine::World& w, int idx) {
 }  // namespace
 
 TEST_CASE("World: cargo boarding takes the passenger off-map and releases ALL occupancy") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) {
         MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
@@ -2753,8 +2769,8 @@ TEST_CASE("World: cargo boarding takes the passenger off-map and releases ALL oc
     int gx = -1;
     REQUIRE(free_cell_east(world, tx + 3, c->y, gx));
     world.add_combat_unit(gx, c->y, 0, gi_stats());              // unit 1: passenger
-    world.units()[1].selected = true;
-    world.order_enter_transport(0);
+    tsel_.set(1);
+    world.group_enter_transport(0, tsel_.ids(), 0);
     CHECK(world.units()[1].enter_target == 0);
     const double dt = 1.0 / 15.0;
     for (int f = 0; f < 300 && world.units()[1].cargo_of < 0; ++f) world.step(dt);
@@ -2762,7 +2778,9 @@ TEST_CASE("World: cargo boarding takes the passenger off-map and releases ALL oc
     REQUIRE(world.units()[0].cargo.size() == 1);
     CHECK(world.units()[0].cargo[0] == 1);
     CHECK(world.units()[1].enter_target == -1);
-    CHECK_FALSE(world.units()[1].selected);                      // force-cleared
+    tsel_.prune(world);                                          // NET L1: the UI drops it
+    CHECK_FALSE(tsel_.has(1));                                   // force-cleared
+
     CHECK(owns_no_cell(world, 1));      // ALL occupancy released (incl. any
                                         // mid-hop reservation) -- spec §9
     // Off-map: unpickable, undrawn, untargetable.
@@ -2784,6 +2802,7 @@ TEST_CASE("World: cargo boarding takes the passenger off-map and releases ALL oc
 }
 
 TEST_CASE("World: cargo eject uses the facing-scatter eject_cell, stamps coords/facing, LIFO one per frame") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) {
         MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
@@ -2802,18 +2821,18 @@ TEST_CASE("World: cargo eject uses the facing-scatter eject_cell, stamps coords/
         REQUIRE(free_cell_east(world, tx + 2 + k, c->y + 1, gx));
         world.add_combat_unit(gx, c->y + 1, 0, gi_stats());
     }
-    world.units()[1].selected = true;
-    world.units()[2].selected = true;
-    world.order_enter_transport(0);
+    tsel_.set(1);
+    tsel_.set(2);
+    world.group_enter_transport(0, tsel_.ids(), 0);
     for (int f = 0; f < 300 && world.units()[0].cargo.size() < 2; ++f) world.step(dt);
     REQUIRE(world.units()[0].cargo.size() == 2);
     const std::vector<int> board_order = world.units()[0].cargo;   // boarding order;
                                                                    // LIFO ejects the
                                                                    // BACK first
     (void)world.take_cargo_events();                               // drain the boards
-    world.clear_selection();
-    world.units()[0].selected = true;
-    world.order_unload_selected();
+    tsel_.clear();
+    tsel_.set(0);
+    world.group_unload(0, tsel_.ids());
     CHECK(world.units()[0].unload_pending);
     // The eject cell must be EXACTLY the pure picker's answer [RE-GATE
     // APPLIED: transport-cargo.md §4 -- facing-scatter, NOT a ring walk].
@@ -2857,6 +2876,7 @@ TEST_CASE("World: cargo eject uses the facing-scatter eject_cell, stamps coords/
 }
 
 TEST_CASE("World: cargo boxed-in unload HOLDs, then resumes when a neighbouring cell frees") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) {
         MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
@@ -2873,8 +2893,8 @@ TEST_CASE("World: cargo boxed-in unload HOLDs, then resumes when a neighbouring 
     int gx = -1;
     REQUIRE(free_cell_east(world, tx + 2, ty, gx));
     world.add_combat_unit(gx, ty, 0, gi_stats());                // unit 1
-    world.units()[1].selected = true;
-    world.order_enter_transport(0);
+    tsel_.set(1);
+    world.group_enter_transport(0, tsel_.ids(), 0);
     const double dt = 1.0 / 15.0;
     for (int f = 0; f < 300 && world.units()[1].cargo_of < 0; ++f) world.step(dt);
     REQUIRE(world.units()[1].cargo_of == 0);
@@ -2895,17 +2915,17 @@ TEST_CASE("World: cargo boxed-in unload HOLDs, then resumes when a neighbouring 
             if (mover < 0 && std::max(std::abs(dx), std::abs(dy)) == 2) mover = bi;
         }
     REQUIRE(mover >= 0);
-    world.clear_selection();
-    world.units()[0].selected = true;
-    world.order_unload_selected();
+    tsel_.clear();
+    tsel_.set(0);
+    world.group_unload(0, tsel_.ids());
     for (int f = 0; f < 5; ++f) world.step(dt);
     CHECK(world.units()[0].cargo.size() == 1);                   // HOLD: still aboard
     CHECK(world.units()[0].unload_pending);                      // order persists
     CHECK(world.take_cargo_events().empty());                    // no eject happened
     // Free one outer (r=2 fallback) cell: walk the tracked blocker away.
-    world.clear_selection();
-    world.units()[mover].selected = true;
-    world.order_move_selected(tx + 8, ty + 8);
+    tsel_.clear();
+    tsel_.set(mover);
+    world.group_move(ra2engine::kAnyHouse, tsel_.ids(), tx + 8, ty + 8);
     for (int f = 0; f < 400 && world.units()[0].cargo.size() == 1; ++f) world.step(dt);
     CHECK(world.units()[0].cargo.empty());                       // resumed + ejected
     CHECK(world.units()[1].cargo_of == -1);
@@ -2913,6 +2933,7 @@ TEST_CASE("World: cargo boxed-in unload HOLDs, then resumes when a neighbouring 
 }
 
 TEST_CASE("World: cargo transport death tombstones its cargo; enter orders cancel cleanly") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) {
         MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
@@ -2931,14 +2952,14 @@ TEST_CASE("World: cargo transport death tombstones its cargo; enter orders cance
     int hx = -1;
     REQUIRE(free_cell_east(world, tx + 2, c->y + 3, hx));
     world.add_combat_unit(hx, c->y + 3, 0, gi_stats());          // unit 2: en route
-    world.units()[1].selected = true;
-    world.order_enter_transport(0);
+    tsel_.set(1);
+    world.group_enter_transport(0, tsel_.ids(), 0);
     const double dt = 1.0 / 15.0;
     for (int f = 0; f < 300 && world.units()[1].cargo_of < 0; ++f) world.step(dt);
     REQUIRE(world.units()[1].cargo_of == 0);
-    world.clear_selection();
-    world.units()[2].selected = true;
-    world.order_enter_transport(0);
+    tsel_.clear();
+    tsel_.set(2);
+    world.group_enter_transport(0, tsel_.ids(), 0);
     REQUIRE(world.units()[2].enter_target == 0);
     // Kill the transport the way combat does (die_time flips >= 0).
     world.units()[0].die_time = 0.0;
@@ -2953,6 +2974,7 @@ TEST_CASE("World: cargo transport death tombstones its cargo; enter orders cance
 }
 
 TEST_CASE("World: cargo capacity refusal at boarding; a new order supersedes enter/unload") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) {
         MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
@@ -2970,9 +2992,9 @@ TEST_CASE("World: cargo capacity refusal at boarding; a new order supersedes ent
         REQUIRE(free_cell_east(world, tx + 2 + k, c->y + 1, gx));
         world.add_combat_unit(gx, c->y + 1, 0, gi_stats());
     }
-    world.units()[1].selected = true;
-    world.units()[2].selected = true;
-    world.order_enter_transport(0);                              // oversubscribed
+    tsel_.set(1);
+    tsel_.set(2);
+    world.group_enter_transport(0, tsel_.ids(), 0);                              // oversubscribed
     const double dt = 1.0 / 15.0;
     int boards = 0, refusals = 0;
     for (int f = 0; f < 400 && boards + refusals < 2; ++f) {
@@ -2986,11 +3008,11 @@ TEST_CASE("World: cargo capacity refusal at boarding; a new order supersedes ent
     CHECK(refusals == 1);                                        // one REFUSED at full
     CHECK(world.units()[0].cargo.size() == 1);
     // A new move order on the transport supersedes a pending unload.
-    world.clear_selection();
-    world.units()[0].selected = true;
-    world.order_unload_selected();
+    tsel_.clear();
+    tsel_.set(0);
+    world.group_unload(0, tsel_.ids());
     CHECK(world.units()[0].unload_pending);
-    world.order_move_selected(tx + 6, c->y + 6);
+    world.group_move(ra2engine::kAnyHouse, tsel_.ids(), tx + 6, c->y + 6);
     CHECK_FALSE(world.units()[0].unload_pending);                // superseded
     // A new move order on an en-route passenger supersedes its enter order.
     int wx = -1;
@@ -2999,11 +3021,11 @@ TEST_CASE("World: cargo capacity refusal at boarding; a new order supersedes ent
     int vx = -1;
     REQUIRE(free_cell_east(world, wx + 1, c->y + 4, vx));
     world.add_combat_unit(vx, c->y + 4, 0, transport_stats(2, 2));  // unit 4
-    world.clear_selection();
-    world.units()[3].selected = true;
-    world.order_enter_transport(4);
+    tsel_.clear();
+    tsel_.set(3);
+    world.group_enter_transport(0, tsel_.ids(), 4);
     REQUIRE(world.units()[3].enter_target == 4);
-    world.order_move_selected(tx, c->y + 6);                     // unit 3 still selected
+    world.group_move(ra2engine::kAnyHouse, tsel_.ids(), tx, c->y + 6);                     // unit 3 still selected
     CHECK(world.units()[3].enter_target == -1);                  // superseded
 }
 
@@ -3133,6 +3155,7 @@ TEST_CASE("World: a ground unit may occupy the cell beneath an airborne aircraft
 }
 
 TEST_CASE("World: ordering an airborne aircraft to attack claims no ground cell") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     // CB-2 [airborne-no-cell invariant]: commit_attack_target must NOT re-assert
     // ground occupancy for an airborne aircraft. Before the guard was added, the
     // attack-commit re-claimed the aircraft's ground-projection cell, which
@@ -3156,8 +3179,8 @@ TEST_CASE("World: ordering an airborne aircraft to attack claims no ground cell"
     const int cx = world.units()[0].cell_x;
     const int cy = world.units()[0].cell_y;
     // Order the airborne aircraft to attack the ground enemy.
-    world.units()[0].selected = true;
-    world.order_attack(1);
+    tsel_.set(0);
+    world.group_attack(0, tsel_.ids(), 1);
     CHECK(world.units()[0].attack_order);            // order took effect
     // Airborne-occupancy audit: the aircraft holds NO cell anywhere.
     int held = 0;
@@ -3207,6 +3230,7 @@ TEST_CASE("World: ground units do NOT auto-acquire an aircraft") {
 }
 
 TEST_CASE("World: an aircraft flies to a ground target and kills it (air-to-ground)") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     ra2assets::MapFile map;
     if (!load_real_map_w(map)) {
         MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
@@ -3228,8 +3252,8 @@ TEST_CASE("World: an aircraft flies to a ground target and kills it (air-to-grou
     const double dt = 1.0 / 15.0;
     for (int f = 0; f < 200 && world.units()[0].flight_state != ra2engine::FlightState::Cruising; ++f)
         world.step(dt);
-    world.units()[0].selected = true;
-    world.order_attack(1);                       // commit_attack_target for the aircraft
+    tsel_.set(0);
+    world.group_attack(0, tsel_.ids(), 1);                       // commit_attack_target for the aircraft
     bool died = false;
     for (int f = 0; f < 3000 && !died; ++f) {
         world.step(dt);
@@ -3240,6 +3264,7 @@ TEST_CASE("World: an aircraft flies to a ground target and kills it (air-to-grou
 }
 
 TEST_CASE("World: one BlimpHE bomb 2-cell splash kills BOTH adjacent ground targets") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     // D5 [RE-GATE APPLIED: aircraft.md §4 -> combat.md §7]: CellSpread=2 is a
     // REAL ~512-lepton splash. One bomb on target A must also kill target B one
     // cell away (linear 100%->PercentAtMax falloff over round(CellSpread)=2).
@@ -3266,8 +3291,8 @@ TEST_CASE("World: one BlimpHE bomb 2-cell splash kills BOTH adjacent ground targ
     const double dt = 1.0 / 15.0;
     for (int f = 0; f < 200 && world.units()[0].flight_state != ra2engine::FlightState::Cruising; ++f)
         world.step(dt);
-    world.units()[0].selected = true;
-    world.order_attack(1);                       // attack target A only
+    tsel_.set(0);
+    world.group_attack(0, tsel_.ids(), 1);                       // attack target A only
     auto dead = [&](int i) {
         return !world.units()[i].alive || world.units()[i].die_time >= 0.0;
     };
@@ -3451,6 +3476,7 @@ TEST_CASE("World: a ground unit's A* is byte-identical with and without a naval 
 }
 
 TEST_CASE("World: a naval unit approaches over water and kills a naval target (FlakTrackGun)") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     if (!ra2fixture::mapsmd03_available()) {
         MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
         return;
@@ -3478,9 +3504,9 @@ TEST_CASE("World: a naval unit approaches over water and kills a naval target (F
     ra2engine::Unit& victim = world.add_combat_unit(92, 50, /*house=*/1, tgt);  // idx 1 (naval)
     victim.hp = victim.max_hp = 100;
 
-    world.clear_selection();
-    world.units()[0].selected = true;
-    world.order_attack(1);                       // attack the hostile ship
+    tsel_.clear();
+    tsel_.set(0);
+    world.group_attack(0, tsel_.ids(), 1);                       // attack the hostile ship
     const double dt = 1.0 / 15.0;
     bool died = false;
     for (int f = 0; f < 6000 && !died; ++f) {
@@ -3723,7 +3749,6 @@ TEST_CASE("World engineer capture: a DISTANT order defers -- capture happens on 
     const int bi = world.add_building(0, bx, by, 1, 1, /*house=*/1, /*strength=*/100,
                                       /*armor_ix=*/0, 0.0, /*instant=*/true);   // enemy building
     REQUIRE(bi >= 0);
-    world.units()[0].selected = true;
     world.set_track_entered(true);   // W2-CA-01 campaign opt-in
     world.order_engineer_capture(0, bi);
     // Order recorded; NOTHING happens on the same frame the order is issued.
@@ -3781,7 +3806,6 @@ TEST_CASE("World spy infiltrate: a DISTANT order defers -- the effect (cash stea
     REQUIRE(refn >= 0);
     world.grant_credits_for_test(0, 0.0);                      // spy house 0
     world.grant_credits_for_test(1, 1000.0);                   // victim house 1
-    world.units()[0].selected = true;
     using P = ra2engine::World::InfiltratePurpose;
     world.order_spy_infiltrate(0, refn, P::Refinery, 0.5, 1000);
     // Order recorded; NOTHING happens on the same frame the order is issued.
@@ -3995,9 +4019,9 @@ TEST_CASE("World disguise: spy STAYS disguised on attack; only a DetectDisguise 
     ra2engine::UnitCombat foe = gi_stats();
     foe.image = "E1"; foe.strength = 100; foe.armor = "none";
     world.add_combat_unit(12, 10, /*house=*/1, foe);
-    world.clear_selection();
-    world.units()[spy_i].selected = true;
-    world.order_attack((int)world.units().size() - 1);    // spy attacks the foe
+    ra2engine::Selection tsel_;
+    tsel_.set(spy_i);
+    world.group_attack(0, tsel_.ids(), (int)world.units().size() - 1);    // spy attacks the foe
     world.step(1.0 / 15.0);
     CHECK(world.units()[spy_i].disguised);                // PermaDisguise: attacking does NOT reveal
     // A DetectDisguise dog within range reveals it (the ONLY defeat).

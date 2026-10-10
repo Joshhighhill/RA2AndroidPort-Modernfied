@@ -120,7 +120,8 @@ struct PresHarness {
                 gs.cam_.y = static_cast<int>(GameScene::kWinH / 2.0 - (view_x + view_y) * 15.0);
             }
             if (select_all)
-                for (auto& u : gs.world_.units()) u.selected = (u.house == 0 && u.alive);
+                for (std::size_t k = 0; k < gs.world_.units().size(); ++k)
+                    gs.input_.selection().set(static_cast<int>(k), gs.world_.units()[k].house == 0 && gs.world_.units()[k].alive);
             if (t + 1e-9 >= secs[next_shot]) {
                 // Look at the most interesting spot: for "fight" the centroid
                 // of the engaged units, else the scripted camera.

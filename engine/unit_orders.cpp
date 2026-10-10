@@ -114,17 +114,20 @@ void World::order_scatter(int idx) {
 // admits the PlayerControl houses (W2-CA-02, house+0x1ED), so a mind-
 // controlled or map-PlayerControl unit (SOV09's Africans) obeys S / G / X
 // like house 0's. The clone tested house == 0 only.
-void World::order_stop_selected() {
-    for (int i = 0; i < static_cast<int>(units_.size()); ++i)
-        if (units_[i].selected && controllable(units_[i].house)) order_stop(i);
+// NET L1: `ids` are the command's Whom list (the issuer's selection,
+// ascending); can_command is the apply-time ownership check.
+void World::group_stop(int issuer, const std::vector<int>& ids) {
+    for (int i : ids)
+        if (i >= 0 && i < static_cast<int>(units_.size()) && can_command(issuer, units_[i].house)) order_stop(i);
 }
-void World::order_guard_selected() {
-    for (int i = 0; i < static_cast<int>(units_.size()); ++i)
-        if (units_[i].selected && controllable(units_[i].house)) order_guard(i);
+void World::group_guard(int issuer, const std::vector<int>& ids) {
+    for (int i : ids)
+        if (i >= 0 && i < static_cast<int>(units_.size()) && can_command(issuer, units_[i].house)) order_guard(i);
 }
-void World::order_scatter_selected() {
-    for (int i = 0; i < static_cast<int>(units_.size()); ++i)
-        if (units_[i].selected && controllable(units_[i].house)) order_scatter(i);
+void World::group_scatter(int issuer, const std::vector<int>& ids) {
+    for (int i : ids)
+        if (i >= 0 && i < static_cast<int>(units_.size()) && can_command(issuer, units_[i].house)) order_scatter(i);
 }
+
 
 }  // namespace ra2engine
