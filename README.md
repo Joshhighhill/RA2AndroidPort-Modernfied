@@ -4711,3 +4711,94 @@ pwsh scripts/play/net-match.ps1 -DesyncAt 600        # joiner diverges at 600: b
 pwsh scripts/play/mp-lan-loopback.ps1                # lobby agreement (now ends in the running match)
 pwsh scripts/play/mp-online-loopback.ps1
 ```
+
+## Networking L0: a deterministic, cross-platform simulation (branch `net-l0`)
+
+Lockstep needs every peer to compute the same World from the same commands, on
+Windows (MinGW gcc, UCRT) and Android (NDK clang, bionic; x86_64 and arm64).
+L0 removes the platform-dependent parts of the simulation and adds a gate that
+proves it (`docs/gap/net/03-sim-bitexact.md`, `docs/gap/net/04-engine-lockstep.md` N4-01/07/08/11/12/18).
+
+* **No libm in the simulation.** `engine/orig_math.{hpp,cpp}` ports gamemd's
+  FastMath routines and `_ftol` instruction by instruction (sqrt `0x4CAB60`,
+  sin/cos/tan, asin/acos, atan/atan2, `_ftol 0x7C4D00`) with their tables dumped
+  once into `engine/gen/orig_math_tables.inc`. `tests/test_orig_math.cpp` checks
+  each routine bit for bit against the original machine code run in an emulator
+  and fails the build's test run if a sim source calls a banned libm function.
+* **Every sim double->int conversion is `om::ftol`.** A C++ cast is undefined out
+  of range and differs between x86 and arm64; `_ftol` wraps mod 2^32. A deleted
+  integral overload made the compiler find every floating cast (696 candidates,
+  113 real ones in 45 sim files).
+* **Timers count whole frames.** Rearm, Iron Curtain, Chronosphere and surfacing
+  timers, the AI TeamDelays / AutocreateTime / repair clocks and the ore growth /
+  spread clocks were running sums of 1/15 s compared with k/15, which expire a
+  frame late (247 of 300 rearm lengths). They now count frames (save v34). The
+  AI base build-pass clock stays a seconds sum on purpose: it is IEEE-exact on
+  every platform, and counting frames re-timed the AI build order and wedged
+  `--demo-ai-team`; matching the original's period is left to the AI calibration
+  work (simdiff build-order rung).
+* **One session seed.** `SkirmishConfig::session_seed` (saved) is the network
+  lobby's session seed (`defer_net_game_scene` sets it for both peers); `World::set_session_seed` derives every sim stream from it
+  (projectiles, combat, ore, bridges, each AI house's base / team RNG, the
+  campaign trigger RNG) and seeds the crate `GameRandom` (`Scenario->Random`,
+  [RE: InitRandom `0x52F960`]) with the seed itself. Seed 0, used by every
+  single-player game, keeps the historical seeds, so the `--play` scripts are
+  unaffected. The skirmish crate seed is no longer the wall clock.
+  Checked with the net-h harness: `--ai-soak --seed 0x01234567 --diff-dump`
+  frame 0 shows the generator state of a freshly seeded `RandomClass`
+  (`rng 0 103 3D76A7D2`; the original is at 83/186 by frame 0 because of its
+  load-time draws, not modelled yet).
+* **Path memo keyed by content.** The `thread_local` A* memo keyed the leak /
+  level / deck grids by address; after a resync `load_world` or a reused address
+  it could serve a path built on other terrain. It now keeps byte copies of
+  every input grid.
+* **No dropped ticks.** The logic loop carries a backlog over kMaxLogicSteps to
+  the next frames instead of zeroing it (a single frame counts at most 1 s).
+* **A real bug the gate found.** `CampaignRuntime`'s poll loops held `Unit&` /
+  `Track&` across trigger raises whose actions create objects, so the vectors
+  reallocated under live references. Android read `hp=0` from the freed block
+  at ALL01 frame 410 and raised an extra AttackedByAnybody; Windows read stale
+  bytes. `CampaignRuntime::frame` now reserves headroom
+  (`World::reserve_object_headroom`), capacity only.
+
+### Cross-platform gate
+
+`-DRA2_ANDROID_CLI=ON` with the NDK toolchain builds `ra2engine` as a plain
+Android executable (static SDL, no activity) that runs the desktop command line
+under SDL's dummy drivers. `tools/xplat_gate.ps1` runs every `--demo-*` gate on
+both and compares all hashes and witness counts, and with `-SoakMinutes N` a
+seeded `--ai-soak --ai-vs-ai --hash-every 15`: fnv1a(`save_world`) every 15
+frames -- the basis of the match sync hash (`GameScene::net_state_hash`) -- plus
+the final `state_hash`.
+
+```
+cmake -S . -B build-android-cli -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_TOOLCHAIN_FILE=%NDK%/build/cmake/android.toolchain.cmake ^
+      -DANDROID_ABI=x86_64 -DANDROID_PLATFORM=android-24 -DRA2_ANDROID_CLI=ON
+cmake --build build-android-cli --target ra2engine
+adb shell mkdir -p /data/local/tmp/l0/ra2          # then adb push the game files there once
+pwsh tools/xplat_gate.ps1 -Exe build\ra2engine.exe -AndroidExe build-android-cli\ra2engine -Out <dir> -SoakMinutes 30
+```
+
+Result (Windows MinGW vs Android 11 x86_64 emulator): **27 of 27 gates match**,
+and a 30-minute seeded AI-vs-AI soak matches at all 1800 sync points and in the
+final state (`state_hash=8660aff5a906e564`, 2.8 MB of World). Command logs are
+portable too: `--record` on Windows, `--replay` on the emulator gives the same
+state hash (`sk-1v3` 9004 ticks `048443cfc7b9168d`, `m-sov01-real` 26990
+ticks / 174 commands `b67d6b754d0a2e97`). An arm64 phone run is still to do
+(N4-18): the same executable built with `-DANDROID_ABI=arm64-v8a`.
+
+**Gates.** Re-pinned with causes in the table: combat, tank, roster,
+projectile, veterancy, campaign (FastMath and the frame timers, A/B against a
+libm-only build), ai-team and ai-trigger (the frame TeamDelays clock),
+saveload (v34). The other 18 print their pins.
+
+**Mission scripts.** The original math and frame timers change combat
+outcomes, and three recorded real-order mission wins no longer win:
+`m-sov01-real` (already with the FastMath commit alone), `m-all04-real` (the
+timers) and `m-sov09-real`. They need re-recording against the new combat.
+`m-all06-real`, failing on master, wins again. Failing on master too:
+`m-all08`, `m-all11-real`, `m-sov07-real`, `m-sov12-real`. The two-process
+pairs pass through their drivers: `net-match.ps1` (LAN and `-Online`; with
+`-DesyncAt 600` both peers stop out of sync with dumps), `mp-lan-loopback.ps1`,
+`mp-online-loopback.ps1`.
