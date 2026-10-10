@@ -80,6 +80,9 @@
 #include "texture_cache.hpp"
 #include "skirmish.hpp"
 #include "skirmish_lobby.hpp"
+#include "mp/lan_discovery.hpp"   // multiplayer shell (mp_pages.inc)
+#include "mp/mp_lobby.hpp"
+#include "mp/server_link.hpp"
 #include "maplist.hpp"
 #include "map_trigger.hpp" // MapTriggerSystem (P9 Map triggers; --demo-triggers only)
 #include "campaign.hpp"    // P10 campaign core [RE: campaign.md]
@@ -541,7 +544,15 @@ struct BuildingAssets {
 // test). The returned Ini must outlive any Rules/Art built from it (both wrap
 // their Ini by reference -- see rules.hpp/art.hpp) -- callers keep both as
 // locals in the same function scope.
+std::vector<uint8_t> read_ra2md_file(const std::string& dir, const std::string& name);
 Ini load_ini_from_ra2md(const std::string& dir, const std::string& name) {
+    const std::vector<uint8_t> ini_bytes = read_ra2md_file(dir, name);
+    return Ini::parse(std::string(ini_bytes.begin(), ini_bytes.end()));
+}
+
+// The raw bytes behind load_ini_from_ra2md (multiplayer: the rules CRC the
+// lobby/server version gate compares, docs/gap/net/05 §2.5).
+std::vector<uint8_t> read_ra2md_file(const std::string& dir, const std::string& name) {
     MixFile top = MixFile::open_path(dir + "ra2md.mix");
 
     std::vector<uint8_t> ini_bytes;
@@ -567,7 +578,7 @@ Ini load_ini_from_ra2md(const std::string& dir, const std::string& name) {
     }
     if (ini_bytes.empty())
         throw std::runtime_error(name + " not found in ra2md.mix (top level or nested)");
-    return Ini::parse(std::string(ini_bytes.begin(), ini_bytes.end()));
+    return ini_bytes;
 }
 
 // --- Audio Playback phase, Task 6: SDL sink + game audio wiring ---------
@@ -5680,7 +5691,9 @@ enum ShellAction { ACT_NONE = 0, ACT_GOTO, ACT_SKIRMISH, ACT_QUIT, ACT_LOADGAME 
                    ACT_KEYBOARD /* W5-E: Options 0x5CE -> dialog 0xA3 */,
                    ACT_IMPORT /* W6-06-05: Android -- re-open the game-file importer */,
                    ACT_MOVIES /* W6-06-13: Play Movies (movies_page.inc) */,
-                   ACT_ABOUT /* W6-06-16: Options > About (about_page.inc) */ };
+                   ACT_ABOUT /* W6-06-16: Options > About (about_page.inc) */,
+                   ACT_MP_LAN /* multiplayer: Network -> LAN browser (mp_pages.inc) */,
+                   ACT_MP_ONLINE /* multiplayer: Internet -> own ra2lobbyd server (mp_pages.inc) */ };
 bool movies_supplied();   // W6-06-13 (movies_page.inc)
 
 // One owner-draw menu button in LOGICAL 640x480 space. layout() builds these;
@@ -8287,8 +8300,10 @@ private:
             default:            // PAGE_MAIN, dialog 0xE2
                 return {
                     btn(0, "Single Player",    true,  ACT_GOTO, PAGE_SINGLE),
-                    btn(1, "Internet",         false, ACT_GOTO, PAGE_MAIN),
-                    btn(2, "Network",          false, ACT_GOTO, PAGE_MAIN),
+                    // Multiplayer (agent S, mp_pages.inc): Internet = rooms on the
+                    // player's own ra2lobbyd server, Network = LAN browser.
+                    btn(1, "Internet",         true,  ACT_MP_ONLINE, PAGE_MAIN),
+                    btn(2, "Network",          true,  ACT_MP_LAN, PAGE_MAIN),
                     btn(3, "Movies & Credits", true,  ACT_GOTO, PAGE_MOVIES),
                     btn(4, "Options",          true,  ACT_GOTO, PAGE_OPTIONS),
                     btn(5, "Exit Game",        true,  ACT_QUIT, PAGE_MAIN),
@@ -8730,6 +8745,8 @@ Scene* defer_load_scene(bool no_audio, ra2engine::save::SaveFile f) {
 // [SK-01..SK-42] The Skirmish setup page (dialog 0x102) + Customize Battle
 // (dialog 0x6B). docs/gap/07-skirmish-page.md.
 #include "skirmish_page.inc"
+// Multiplayer shell (agent S): Network / Internet pages, lobby, hand-off.
+#include "mp_pages.inc"
 
 // P10 campaign shell scenes (loading screen / result) [RE: campaign.md].
 #include "campaign_scenes.inc"
@@ -8849,6 +8866,8 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
                 return;
             // The ONLY live game path: Skirmish -> setup -> GameScene (unchanged).
             case ACT_SKIRMISH: next_ = new SkirmishSetupScene(rules_, no_audio_, art_); return;
+            case ACT_MP_LAN: next_ = new MpLanScene(rules_, no_audio_, art_); return;
+            case ACT_MP_ONLINE: next_ = new MpOnlineScene(rules_, no_audio_, art_); return;
             // P7 [RE: saveload.md §3]: STT:SingleButtonLoadSavedGame -> the Load dialog.
             case ACT_LOADGAME: sld_.open(SaveLoadDialog::Load, ""); return;
             // P10: battle.ini ALL1 / SOV1 -> the first mission's loading screen.

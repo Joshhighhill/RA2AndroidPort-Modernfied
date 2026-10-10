@@ -90,6 +90,7 @@ bool os_log_to_file_if_no_console(const std::string& path) {
     return true;
 }
 bool os_android_open_importer() { return false; }
+void os_android_multicast_lock(bool) {}
 #else
 bool os_log_to_file_if_no_console(const std::string&) { return false; }
 std::string win_registry_install_dir() { return {}; }
@@ -112,8 +113,21 @@ bool os_android_open_importer() {
     env->DeleteLocalRef(act);
     return ok;
 }
+// Multiplayer LAN discovery: RA2Activity.netMulticastLock(boolean).
+void os_android_multicast_lock(bool on) {
+    JNIEnv* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
+    jobject act = static_cast<jobject>(SDL_AndroidGetActivity());
+    if (!env || !act) return;
+    jclass cls = env->GetObjectClass(act);
+    jmethodID m = cls ? env->GetMethodID(cls, "netMulticastLock", "(Z)V") : nullptr;
+    if (m) env->CallVoidMethod(act, m, static_cast<jboolean>(on ? JNI_TRUE : JNI_FALSE));
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    if (cls) env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(act);
+}
 #else
 bool os_android_open_importer() { return false; }
+void os_android_multicast_lock(bool) {}
 #endif
 #endif
 
