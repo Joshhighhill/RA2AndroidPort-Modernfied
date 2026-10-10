@@ -348,7 +348,7 @@ bool Input::commit_factory_click(int px, int py) {
     // rallied, or primed -- an enemy factory click falls through to normal
     // selection (and clears any prior factory selection).
     const int b = pick_building(px, py, ev_touch_);   // W6-01-01
-    if (b >= 0 && world_.buildings()[b].house == 0 && world_.buildings()[b].alive &&
+    if (b >= 0 && world_.buildings()[b].house == world_.order_issuer() && world_.buildings()[b].alive &&
         is_unit_factory_type(world_.buildings()[b].type)) {
         if (selected_building_ == b) {
             // Re-click the selected factory -> set primary [RE: production.md
@@ -499,7 +499,7 @@ void Input::issue_order(int px, int py) {
     bool any_selected = false;
     for (const Unit& su : world_.units())
         if (su.selected && su.alive && su.die_time < 0.0) { any_selected = true; break; }
-    if (idx >= 0 && world_.is_enemy(0, world_.units()[idx].house) && any_selected) {
+    if (idx >= 0 && world_.is_enemy(world_.order_issuer(), world_.units()[idx].house) && any_selected) {
         // Capture actor BEFORE the order mutates any state.
         const int actor = lowest_selected();
         world_.order_attack(idx);
@@ -585,7 +585,7 @@ void Input::issue_order(int px, int py) {
             }
             return;  // handled: no attack for this right-click
         }
-        if (harv_selected && here_b >= 0 && world_.buildings()[here_b].house == 0 &&
+        if (harv_selected && here_b >= 0 && world_.buildings()[here_b].house == world_.order_issuer() &&
             world_.buildings()[here_b].alive &&
             is_refinery_type(world_.buildings()[here_b].type)) {
             const int actor = lowest_selected();
@@ -621,7 +621,7 @@ void Input::issue_order(int px, int py) {
             }
         }
         if (idx >= 0 && (world_.controllable(world_.units()[idx].house) ||
-                         world_.are_allied(0, world_.units()[idx].house)) &&
+                         world_.are_allied(world_.order_issuer(), world_.units()[idx].house)) &&
             world_.units()[idx].passengers_max > 0) {
             bool eligible = false;
             for (std::size_t si = 0; si < world_.units().size(); ++si) {
@@ -764,7 +764,7 @@ void Input::issue_order(int px, int py) {
         // building is NOT an attack and falls through to the move
         // below, exactly like a friendly-unit right-click.
         const int b_idx = pick_b;
-        if (b_idx >= 0 && world_.is_enemy(0, world_.buildings()[b_idx].house) && any_selected) {
+        if (b_idx >= 0 && world_.is_enemy(world_.order_issuer(), world_.buildings()[b_idx].house) && any_selected) {
             // Capture actor BEFORE the order mutates any state.
             const int actor = lowest_selected();
             world_.order_attack_building(b_idx);
@@ -920,7 +920,7 @@ void Input::handle(const InputEvent& ev) {
                     // OWN house only [RE: §C1 -- the SELL/REPAIR event verifies
                     // ownership]. A click on nothing, or on an enemy building,
                     // is swallowed with NO report.
-                    if (bi >= 0 && world_.buildings()[bi].house == 0) {
+                    if (bi >= 0 && world_.buildings()[bi].house == world_.order_issuer()) {
                         if (mode_ == BaseMode::Repair) {
                             actions_.repair_clicked = true;
                             actions_.repair_building = bi;

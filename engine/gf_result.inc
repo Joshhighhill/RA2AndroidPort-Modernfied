@@ -82,7 +82,7 @@ public:
         p.set("result_frames", static_cast<double>(frames_));
         p.set("score_rows", static_cast<int>(st_.rows.size()));
         for (const GfSkirmishStats::Row& r : st_.rows)
-            if (r.house == 0) {   // the player's row (the rows are score-sorted)
+            if (r.house == st_.local_house) {   // the player's row (the rows are score-sorted)
                 p.set("score_kills0", r.kills);
                 p.set("score_losses0", r.losses);
             }

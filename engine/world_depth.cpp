@@ -104,7 +104,7 @@ int World::order_occupy_selected(int bi) {
     int n = 0;
     for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
         const Unit& u = units_[i];
-        if (!u.selected || u.house != 0 || u.cargo_of >= 0) continue;
+        if (!u.selected || u.house != order_issuer_ || u.cargo_of >= 0) continue;   // L2: issuer (was house 0)
         if (!can_occupy(i, bi)) continue;
         // Room check against the orders already given this click.
         const Building& b = buildings_[bi];

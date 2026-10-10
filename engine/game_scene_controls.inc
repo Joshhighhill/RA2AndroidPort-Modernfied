@@ -88,7 +88,7 @@
         int pick = -1;
         for (int i = 0; i < static_cast<int>(world_.buildings().size()); ++i) {
             const ra2engine::Building& b = world_.buildings()[i];
-            if (!b.alive || b.house != 0 || b.state == ra2engine::Building::State::Dead) continue;
+            if (!b.alive || b.house != local_house_ || b.state == ra2engine::Building::State::Dead) continue;
             const bool cy = b.type >= 0 && b.type < static_cast<int>(ba_.roster.size()) &&
                             ba_.roster[b.type].conyard;
             if (cy && (pick < 0 || b.primary || !ba_.roster[world_.buildings()[pick].type].conyard)) {
@@ -117,7 +117,7 @@
         // garrison = Mission_Unload -> UnloadOccupants (FUN_0044D880).
         const int sb = input_.selected_building();
         if (sb >= 0 && sb < static_cast<int>(world_.buildings().size()) &&
-            world_.buildings()[sb].house == 0 && !world_.buildings()[sb].occupants.empty())
+            world_.buildings()[sb].house == local_house_ && !world_.buildings()[sb].occupants.empty())
             world_.unload_occupants(sb);
         world_.order_unload_selected();
         int first = -1;
@@ -292,7 +292,7 @@
         const long now = static_cast<long>(g_pres_tick);
         if (now < cheer_next_) return;
         cheer_next_ = now + 30;
-        world_.make_house_cheer(0);
+        world_.make_house_cheer(local_house_);   // ALLCHEER 0x2D: the issuing house
         pres_.note_cheer();
     }
     // CenterOnRadarEvent [RE: FUN_007331F0]: a press within 1600 ms of the
@@ -371,87 +371,54 @@
     //  RIGHT (flag 0x10): the current product running -> SUSPEND (hold); held
     //        or done -> ABANDON one (Shift: ABANDON_ALL); a type that is only
     //        queued -> ABANDON one queued copy.
-    // The queue model (ProductionQueues, agent A's) holds ONE slot per category;
-    // the copies waiting behind it live here (backlog_) and start as the slot
-    // frees, so the factory semantics stay in production.cpp untouched.
-    // [RE-FALLBACK: backlog / hold are not written to save games yet.]
-    std::map<int, std::vector<int>> backlog_;   // QueueCat -> waiting unit types (FIFO)
-    std::set<int> held_;                        // QueueCat values on hold
+    // L2: the strip decides WHICH event a click means (StripClass, client
+    // side) from the local house's queue state in the World; the event itself
+    // runs in the sim (World::econ_produce / econ_suspend / econ_abandon --
+    // HouseClass::BeginProduction FUN_004FA170, FUN_004FA730, FUN_004FA830),
+    // which re-validates it like EventClass::Execute FUN_004C6BD0 does. The
+    // backlog and the hold flags are sim state now (HouseEcon, saved).
     int max_queued() const {
         return static_cast<int>(rules_.general_double("MaximumQueuedObjects", 29.0));
     }
-    void refund_cancel(ra2engine::QueueCat c) {
-        queues_.set_credits(player_credits_);
-        queues_.cancel(c);
-        queues_.reconcile_refund();
-        player_credits_ = queues_.structure().credits;
-        held_.erase(static_cast<int>(c));
-    }
     int queued_count(int type, ra2engine::QueueCat c) const {
-        int n = queues_.producing(c) == type ? 1 : 0;
-        const auto it = backlog_.find(static_cast<int>(c));
-        if (it != backlog_.end())
-            for (int t : it->second) n += (t == type);
-        return n;
+        return world_.econ_queued_count(local_house_, c, type);
     }
     void cameo_click(int type, bool right, bool shift) {
+        const int lh = local_house_;
         if (active_tab_ >= 2) {   // ---- units ----
             const ra2engine::QueueCat cat = rp_cat_of_unit(type);   // agent A: own factory queue
-            const int ci = static_cast<int>(cat);
-            const bool current = queues_.producing(cat) == type;
-            const bool held = held_.count(ci) != 0;
-            std::vector<int>& bl = backlog_[ci];
+            const bool current = lq().producing(cat) == type;
+            const bool held = world_.econ_held(lh, cat);
             if (right) {
                 if (shift) {   // ABANDON_ALL of this type
-                    bl.erase(std::remove(bl.begin(), bl.end(), type), bl.end());
-                    if (current) refund_cancel(cat);
+                    world_.econ_abandon(lh, cat, type, /*all=*/true);
                     return;
                 }
-                if (current && !held && !queues_.ready(cat)) {   // SUSPEND
-                    held_.insert(ci);
-                    pres_.note_eva("EVA_OnHold");   // W5-E [RE: FUN_006AA390 @6AA692]
+                if (current && !held && !lq().ready(cat)) {   // SUSPEND
+                    if (world_.econ_suspend(lh, cat) == ra2engine::ProdResult::Suspended)
+                        pres_.note_eva("EVA_OnHold");   // W5-E [RE: FUN_006AA390 @6AA692]
                     return;
                 }
-                const auto last = std::find(bl.rbegin(), bl.rend(), type);
-                if (last != bl.rend()) { bl.erase(std::next(last).base()); return; }   // ABANDON a queued copy
-                if (current) refund_cancel(cat);                                         // ABANDON current
+                world_.econ_abandon(lh, cat, type, /*all=*/false);   // a queued copy, else the current
                 return;
             }
-            if (current && held) { held_.erase(ci); return; }   // PRODUCE = resume
-            const std::vector<int>& ft = rp_ft_of(cat);
-            if (queues_.producing(cat) == -1) {
-                if (ra2engine::can_start_unit(queues_.state(cat), type, ur_.defs, world_.buildings(),
-                                              ba_.roster, 0, ba_.groups,
-                                              !world_.factory_category_lost(ft, 0))) {
-                    queues_.set_credits(player_credits_);
-                    queues_.start_unit(cat, type, ur_.defs, build_speed_);
-                }
-                return;
-            }
-            // Busy: queue one more of this type (same buildability test as a start,
-            // evaluated against an idle slot), capped by MaximumQueuedObjects.
-            ra2engine::ProductionState probe_ps;
-            if (static_cast<int>(bl.size()) + 1 < max_queued() &&
-                ra2engine::can_start_unit(probe_ps, type, ur_.defs, world_.buildings(), ba_.roster, 0,
-                                          ba_.groups, !world_.factory_category_lost(ft, 0)))
-                bl.push_back(type);
+            world_.econ_produce(lh, cat, type);   // resume / start / queue one more
             return;
         }
         // ---- buildings (one at a time) ----
         const ra2engine::QueueCat bcat =
             (active_tab_ == 1) ? ra2engine::QueueCat::Defense : ra2engine::QueueCat::Structure;
-        const int bi = static_cast<int>(bcat);
-        ra2engine::ProductionState& bq = queues_.state(bcat);
+        const ra2engine::ProductionState& bq = lq().state(bcat);
         const bool current = bq.slot.type == type;
-        const bool held = held_.count(bi) != 0;
+        const bool held = world_.econ_held(lh, bcat);
         if (right) {
             if (!current) return;
             if (!held && !bq.slot.ready) {   // SUSPEND
-                held_.insert(bi);
-                pres_.note_eva("EVA_OnHold");   // W5-E [RE: FUN_006AA390 @6AA793]
+                if (world_.econ_suspend(lh, bcat) == ra2engine::ProdResult::Suspended)
+                    pres_.note_eva("EVA_OnHold");   // W5-E [RE: FUN_006AA390 @6AA793]
                 return;
             }
-            refund_cancel(bcat);                                         // ABANDON
+            world_.econ_abandon(lh, bcat, type, /*all=*/false);   // ABANDON
             return;
         }
         if (current && bq.slot.ready) {
@@ -459,55 +426,12 @@
             input_.begin_placement(type, ba_.roster[type].fw, ba_.roster[type].fh);
             return;
         }
-        if (current && held) { held_.erase(bi); return; }   // resume
+        if (current && held) { world_.econ_produce(lh, bcat, type); return; }   // resume
         if (current) return;                                // running: no effect
         // W5-E [RE: FUN_006AA390 @6AAA3C]: the building factory is busy with
         // another type -> EVA_UnableToComply.
         if (bq.slot.type >= 0) { pres_.note_eva("EVA_UnableToComply"); return; }
-        if (ra2engine::can_start(bq, type, ba_.roster, world_.buildings(), 0, ba_.groups,
-                                 conyard_alive(world_, ba_, 0))) {
-            queues_.set_credits(player_credits_);
-            ra2engine::start(bq, type, ba_.roster, build_speed_);
-            rp_after_building_start(bq, type);   // agent A: wall build-time rule
-        }
-    }
-    // A held queue skips its production tick: tick() early-outs on a READY
-    // slot, so mark held slots ready for the duration of prod_tick only.
-    std::vector<int> hold_marked_;
-    void hold_begin() {
-        hold_marked_.clear();
-        for (int c : held_) {
-            ra2engine::ProductionState& ps = queues_.state(static_cast<ra2engine::QueueCat>(c));
-            if (ps.slot.type >= 0 && !ps.slot.ready) {
-                ps.slot.ready = true;
-                hold_marked_.push_back(c);
-            }
-        }
-    }
-    void hold_end() {
-        for (int c : hold_marked_) {
-            ra2engine::ProductionState& ps = queues_.state(static_cast<ra2engine::QueueCat>(c));
-            if (ps.slot.type >= 0) ps.slot.ready = false;
-        }
-        hold_marked_.clear();
-        // A slot that emptied (ConYard death cancel) drops its hold.
-        for (auto it = held_.begin(); it != held_.end();)
-            it = (queues_.state(static_cast<ra2engine::QueueCat>(*it)).slot.type < 0) ? held_.erase(it) : std::next(it);
-    }
-    void refill_unit_queues() {
-        for (auto& [c, bl] : backlog_) {
-            const ra2engine::QueueCat cat = static_cast<ra2engine::QueueCat>(c);
-            if (bl.empty() || queues_.producing(cat) != -1) continue;
-            const std::vector<int>& ft = rp_ft_of(cat);
-            const int type = bl.front();
-            bl.erase(bl.begin());
-            if (ra2engine::can_start_unit(queues_.state(cat), type, ur_.defs, world_.buildings(),
-                                          ba_.roster, 0, ba_.groups,
-                                          !world_.factory_category_lost(ft, 0))) {
-                queues_.set_credits(player_credits_);
-                queues_.start_unit(cat, type, ur_.defs, build_speed_);
-            }
-        }
+        world_.econ_produce(lh, bcat, type);   // start (wall build-time rule in the sim)
     }
     // W2-UI-03/04 [RE: wave2/04 #2, FUN_0067F800 + FUN_0069D770]: the queue
     // count "%d" right-aligned at (x+60, y+1) -- shown when > 1, or when 1 and
@@ -522,11 +446,11 @@
             if (active_tab_ >= 2) cat = rp_cat_of_unit(cell.type);
             else cat = active_tab_ == 1 ? ra2engine::QueueCat::Defense : ra2engine::QueueCat::Structure;
             const int n = queued_count(cell.type, cat);
-            const bool current = queues_.producing(cat) == cell.type;
+            const bool current = lq().producing(cat) == cell.type;
             const int shown = (n > 1 || (n == 1 && !current)) ? n : 0;
             std::string status;
-            if (current && queues_.state(cat).slot.ready) status = g_txt_ready;
-            else if (current && held_.count(static_cast<int>(cat))) status = g_txt_hold;
+            if (current && lq().state(cat).slot.ready) status = g_txt_ready;
+            else if (current && world_.econ_held(local_house_, cat)) status = g_txt_hold;
             if (shown || !status.empty()) draw_cameo_text(ren, tc, cell.rect.x, cell.rect.y, status, shown);
         }
     }
@@ -539,7 +463,7 @@
     // (grid scaled to the radar rect); if agent E moves the minimap to the
     // original 140x108 iso viewport, radar_cell_at must follow it.]
     bool radar_active() const {
-        if (!world_.shroud_enabled() || !house_owns_operational_radar(world_, ba_, 0)) return false;
+        if (!world_.shroud_enabled() || !house_owns_operational_radar(world_, ba_, local_house_)) return false;
         // The radar takes clicks only once its power-up animation has finished
         // and the map picture is up (agent E's boot frames) [RE: RadarClass
         // activation -- TS lineage IsRadarActive is set at the end of the

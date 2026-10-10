@@ -1,0 +1,91 @@
+# L2 MULTI-HUMAN -- two human houses in ONE World (no AI), this client plays
+# HOUSE 1 (debug switch: `set humans 0,1` makes lobby slot 1 human, `set
+# local_house 1` makes the scene play it). House 1 deploys, builds and
+# trains through the real sidebar; house 0 builds through the World's
+# production commands (the way a remote peer's PRODUCE / PLACE arrives);
+# then the two houses fight.
+set render_every 300
+set on_quit continue
+set humans 0,1
+set local_house 1
+
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:country1
+click list:down
+click list:down
+click list:down
+click pick:Russia
+click slider:speed=3
+click start
+until 90 scene == game
+require scene == game
+shot start
+
+# --- both houses are human player economies ---------------------------------
+assert local_house == 1
+assert credits == 10000
+assert credits.0 == 10000
+assert credits.1 == 10000
+assert units(1,SMCV) == 1
+assert units(0,AMCV) == 1
+
+# --- house 1 (local): deploy, power plant, barracks, a conscript ------------
+click unit 1:SMCV
+key d
+until 450 built(1,NACNST) == 1
+click tab:0
+assert can_build(NAPOWR) == 1
+click cameo:NAPOWR
+until 900 queue_ready(structure) == 1
+click cameo:NAPOWR
+place auto
+until 120 built(1,NAPOWR) == 1
+click tab:0
+click cameo:NAHAND
+until 1200 queue_ready(structure) == 1
+click cameo:NAHAND
+place auto
+until 300 built(1,NAHAND) == 1
+click tab:2
+let e2 = units(1,E2)
+click cameo:E2
+until 900 units(1,E2) > $e2
+assert credits < 10000
+assert credits.0 == 10000
+
+# --- house 0 (the other human): deploy + build through World commands -------
+cheat deploy_house 0
+until 450 built(0,GACNST) == 1
+cheat econ_produce 0 GAPOWR
+until 1500 qready.0 == 1
+cheat econ_place 0
+until 120 built(0,GAPOWR) == 1
+cheat econ_produce 0 GAPILE
+until 1500 qready.0 == 1
+cheat econ_place 0
+until 300 built(0,GAPILE) == 1
+let e1 = units(0,E1)
+cheat econ_produce 0 E1
+until 900 units(0,E1) > $e1
+assert credits.0 < 10000
+shot built
+
+# --- fight: house 0 soldiers walk into house 1's base; house 1 orders an attack
+cheat spawn E1 0 building 1:NAHAND +4 +0
+cheat spawn E1 0 building 1:NAHAND +4 +1
+let hl0 = hp_lost(0)
+let hl1 = hp_lost(1)
+let ul0 = units_lost(0)
+click unit 1:E2
+click unit 0:E1
+until 900 units_lost(0) > $ul0 or hp_lost(0) > $hl0
+until 900 hp_lost(1) > $hl1 or units_lost(1) >= 1
+shot fight
+
+# --- house 1 wins when house 0 is gone (per-house outcome) -------------------
+cheat kill_house 0
+until 60 world_outcome == WON
+until 900 outcome == WON
+end expect WON

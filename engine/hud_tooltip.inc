@@ -72,7 +72,7 @@
             if (db.contains(x, y)) return tt_csf("TIP:DIPLOMACYBUTTON", "Diplomacy Button");
         }
         if (lay_.power.contains(x, y)) {
-            const ra2engine::PowerTotals pt = ra2engine::power_totals(world_.buildings(), ba_.roster, 0);
+            const ra2engine::PowerTotals pt = ra2engine::power_totals(world_.buildings(), ba_.roster, local_house_);
             std::string f = tt_csf("TXT_POWER_DRAIN", "Power = %d \n Drain = %d");
             char buf[160];
             std::snprintf(buf, sizeof buf, f.c_str(), pt.output, pt.drain);
