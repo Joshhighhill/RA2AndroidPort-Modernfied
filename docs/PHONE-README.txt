@@ -62,6 +62,29 @@ name. MAIN MENU asks before it throws that game away. If you won a mission
 and the game was closed on the results page or the next loading screen,
 the next start offers CONTINUE CAMPAIGN?.
 
+Playing with friends (network)
+------------------------------
+- Same Wi-Fi: one player taps Network -> Host Game; the others tap
+  Network, then the game in the list (or Join by IP and type the address
+  the host's lobby shows, e.g. 192.168.1.20:50020). Choose country and
+  colour, tap Ready; the host taps Start Game.
+- Over the internet: someone runs the small server (docs/SERVER.md). Tap
+  Internet, type the server address, Connect. Host a room or join one from
+  the list or with its room code.
+- In the game: the Chat button (top right) opens the chat line and the
+  keyboard; Send sends it to everyone. The options menu does not pause a
+  network game, and network games cannot be saved.
+- If you switch to another app, the others see "paused the game" and wait
+  90 seconds. Come back within that time and the game continues. If the
+  game is closed or the network changes, you cannot rejoin that match yet.
+- Phones and Windows PCs cannot play together yet (the game would go out
+  of sync): the host refuses a player on the other platform unless it
+  ticks "Cross-platform (exp.)". Phone with phone and PC with PC work.
+- Everyone needs the same game files (the same RA2 / Yuri's Revenge
+  files). If they differ the game stops at once with "Scenarios do not
+  match". "Out of sync" means the games stopped agreeing; a report
+  (DESYNC_*.SAV/.TXT) is saved in Saved Games -- please send it.
+
 About
 -----
 Options -> About shows the version, the licence and the third-party
