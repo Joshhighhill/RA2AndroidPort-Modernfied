@@ -311,8 +311,14 @@ target_sources(ra2assets_tests PRIVATE tests/test_saveload.cpp engine/savegame.c
 # The saveload source-scan tripwire reads engine/*.hpp to prove every World /
 # MapTriggerSystem data member is visited by the serializer.
 target_compile_definitions(ra2assets_tests PRIVATE RA2_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+# engine/net (original-format networking) [RE: docs/re/net-protocol.md].
+target_sources(ra2assets_tests PRIVATE ${RA2_NET_SOURCES}
+    tests/test_net_wire.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
+if (WIN32)
+  target_link_libraries(ra2assets_tests PRIVATE ws2_32)
+endif()
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
 
 add_executable(ra2extract tools/ra2extract.cpp)
@@ -388,10 +394,10 @@ if (RA2_BUILD_ENGINE)
   if (WIN32)
     # W2-AR-22: registry install-path lookup + the BROWSE folder picker
     # (engine/platform_os.cpp).
-    target_link_libraries(ra2engine PRIVATE advapi32 shell32 ole32 winmm)
+    target_link_libraries(ra2engine PRIVATE advapi32 shell32 ole32 winmm ws2_32)
     # R-182: the player's double-click binary (no console window).
     add_executable(ra2game WIN32 $<TARGET_OBJECTS:ra2engine_obj>)
-    target_link_libraries(ra2game PRIVATE ra2assets SDL2::SDL2main SDL2::SDL2 advapi32 shell32 ole32 winmm)
+    target_link_libraries(ra2game PRIVATE ra2assets SDL2::SDL2main SDL2::SDL2 advapi32 shell32 ole32 winmm ws2_32)
     # W6-06-02: a VERSIONINFO resource (version from VERSION + git).
     if (NOT RA2_VERSION_BASE)
       file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" RA2_VERSION_BASE)
