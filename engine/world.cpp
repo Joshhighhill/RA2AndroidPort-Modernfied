@@ -1977,6 +1977,11 @@ void World::set_session_seed(std::uint32_t seed) {
     combat_rng_.s = session_stream_seed(0x2545F491u);
     ore_rng_.s = session_stream_seed(OreRng{}.s);
     bridge_rng_.s = session_stream_seed(0x42524447u);
+    // [RE: InitRandom FUN_0052F960] Scenario->Random (+0x218) is seeded with
+    // the session Seed itself whether or not crates are on -- the clone's
+    // crate GameRandom is that generator (simdiff L0: bit-exact). Seed 0
+    // (gates) leaves it alone; enable_crates re-seeds it with the same value.
+    if (seed) crate_rng_ = GameRandom(seed);
     // Houses already enabled (a launcher that enables AI first) re-derive too.
     for (std::size_t h = 0; h < ai_houses_.size(); ++h) {
         ai_houses_[h].state.rng = session_stream_seed(AiBaseState{}.rng, 1u + static_cast<std::uint32_t>(h));

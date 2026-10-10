@@ -7,6 +7,7 @@
 
 #include "asset_fixture.hpp"
 #include "savegame.hpp"
+#include "crate.hpp"
 #include "world.hpp"
 
 using namespace ra2engine;
@@ -29,6 +30,12 @@ TEST_CASE("netL0 session seed: 0 keeps the fixed seeds, a seed derives every str
     CHECK(a.session_stream_seed(0x2545F491u) == b.session_stream_seed(0x2545F491u));
     CHECK(a.session_stream_seed(0x2545F491u) != c.session_stream_seed(0x2545F491u));
     CHECK(a.session_stream_seed(7u, 1u) != a.session_stream_seed(7u, 2u));   // per-house salt
+    // Scenario->Random is the session seed itself (simdiff L0 generator).
+    const GameRandom fresh(0x1234u);
+    bool same_table = true;
+    for (int i = 0; i < 250; ++i) same_table = same_table && a.crate_rng().table_word(i) == fresh.table_word(i);
+    CHECK(same_table);
+    CHECK(plain.crate_rng().table_word(0) == GameRandom(0).table_word(0));
     CHECK(save::save_world(a) == save::save_world(b));
     CHECK(save::save_world(a) != save::save_world(c));
     CHECK(save::save_world(a) != save::save_world(plain));

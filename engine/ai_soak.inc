@@ -34,6 +34,7 @@ struct AiSoakProbe {
         std::string diff_dump, human_country, ai_country;
         long long diff_frames = -1;
         bool no_human_deploy = false, long_game = false, ai_passive = false;
+        std::uint32_t session_seed = 0;   // Net L0: --seed <n> (0 = derived from the map)
         auto side_of = [](const std::string& c) {
             if (c == "YuriCountry") return ra2engine::World::Side::Yuri;
             if (c == "Russians" || c == "Confederation" || c == "Africans" || c == "Arabs")
@@ -59,6 +60,7 @@ struct AiSoakProbe {
             else if (a == "--ruin-ai-at") ruin_at = std::atoi(next().c_str());   // W6-03-08 probe
             else if (a == "--diff-dump") diff_dump = next();
             else if (a == "--frames") diff_frames = std::atoll(next().c_str());
+            else if (a == "--seed") session_seed = static_cast<std::uint32_t>(std::strtoul(next().c_str(), nullptr, 0));   // Net L0
             else if (a == "--no-human-deploy") no_human_deploy = true;
             else if (a == "--long-game") long_game = true;   // lobby ShortGame=no
             else if (a == "--ai-passive") ai_passive = true;   // slot 1 idle (no AI): "map ticking" rung
@@ -87,6 +89,7 @@ struct AiSoakProbe {
         }
         if (ai_vs_ai) cfg.slots[0].is_ai = true;
         if (long_game) cfg.short_game = false;
+        if (session_seed) cfg.session_seed = session_seed;   // Net L0: the original's Seed
         if (ai_passive) cfg.slots[1].is_ai = false;
         if (!human_country.empty()) { cfg.slots[0].country = human_country; cfg.slots[0].side = side_of(human_country); }
         if (!ai_country.empty()) { cfg.slots[1].country = ai_country; cfg.slots[1].side = side_of(ai_country); }
@@ -99,7 +102,7 @@ struct AiSoakProbe {
         for (int i = 0; i < (int)w.units().size() && !no_human_deploy; ++i)
             if (w.units()[(std::size_t)i].house == human && w.is_mcv(i)) { w.order_deploy_mcv(i); break; }
         std::FILE* ddump = diff_dump.empty() ? nullptr : std::fopen(diff_dump.c_str(), "w");
-        if (ddump) simdiff::write_header(ddump, cfg.map_file, 0);
+        if (ddump) simdiff::write_header(ddump, cfg.map_file, w.session_seed());   // Net L0
         auto base_hp = [&](int h) {
             long long hp = 0, mx = 0;
             for (const ra2engine::Building& b : w.buildings())
