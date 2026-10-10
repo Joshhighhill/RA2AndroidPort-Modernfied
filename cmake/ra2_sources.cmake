@@ -159,5 +159,9 @@ set(RA2_NET_SOURCES
     ${RA2_ROOT}/engine/net/wire.cpp
     ${RA2_ROOT}/engine/net/channel.cpp
     ${RA2_ROOT}/engine/net/net_manager.cpp
+    ${RA2_ROOT}/engine/net/event.cpp
+    ${RA2_ROOT}/engine/net/event_codec.cpp
+    ${RA2_ROOT}/engine/net/event_map.cpp
+    ${RA2_ROOT}/engine/net/global_msg.cpp
 )
 list(APPEND RA2_ENGINE_SOURCES ${RA2_NET_SOURCES})

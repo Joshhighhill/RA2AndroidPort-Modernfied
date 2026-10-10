@@ -313,7 +313,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_saveload.cpp engine/savegame.c
 target_compile_definitions(ra2assets_tests PRIVATE RA2_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 # engine/net (original-format networking) [RE: docs/re/net-protocol.md].
 target_sources(ra2assets_tests PRIVATE ${RA2_NET_SOURCES}
-    tests/test_net_wire.cpp)
+    tests/test_net_wire.cpp tests/test_net_event.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 if (WIN32)
