@@ -27,6 +27,22 @@ std::vector<std::uint8_t> save_world(const World& w) {
     return std::move(wr.buf);
 }
 
+std::vector<std::pair<std::string, std::uint32_t>> world_field_hashes(const World& w) {
+    FieldMarks marks;
+    field_marks() = &marks;
+    const std::vector<std::uint8_t> b = save_world(w);
+    field_marks() = nullptr;
+    std::vector<std::pair<std::string, std::uint32_t>> out;
+    std::size_t from = 0;
+    for (const auto& m : marks.v) {
+        std::uint32_t h = 2166136261u;
+        for (std::size_t i = from; i < m.second && i < b.size(); ++i) h = (h ^ b[i]) * 16777619u;
+        out.emplace_back(m.first, h);
+        from = m.second;
+    }
+    return out;
+}
+
 bool load_world(World& w, const std::vector<std::uint8_t>& bytes) {
     Reader r(bytes);
     SaveAccess::world(r, w);
