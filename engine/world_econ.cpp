@@ -262,10 +262,20 @@ bool World::econ_can_build(int house, QueueCat cat, int type) const {
     ProductionState probe;
     if (is_unit_cat(cat)) {
         if (type < 0 || type >= static_cast<int>(r->units.size())) return false;
+        // BuildLimit= (Tanya, Boris: 1): none while the limit is on the field
+        // [RE-FALLBACK: counted by the unit's art image, as the sidebar does].
+        const int lim = at_or<int>(r->unit_build_limit, type, 0);
+        if (lim > 0) {
+            int alive = 0;
+            const std::string& img = r->units[static_cast<std::size_t>(type)].combat.image;
+            for (const Unit& u : units_) alive += u.alive && u.house == house && u.image == img;
+            if (alive >= lim) return false;
+        }
         return can_start_unit(probe, type, r->units, buildings_, btypes(), house, r->groups,
                               !factory_category_lost(r->factory_types[static_cast<int>(cat)], house));
     }
     if (type < 0 || type >= static_cast<int>(btypes().size())) return false;
+    if (!r->bld_allowed.empty() && !at_or<char>(r->bld_allowed, type, 0)) return false;
     return can_start(probe, type, btypes(), buildings_, house, r->groups, econ_conyard_alive(house));
 }
 

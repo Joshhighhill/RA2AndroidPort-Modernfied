@@ -72,7 +72,28 @@ public:
             rules_.general_double("WallBuildSpeedCoefficient", ra2engine::kWallBuildSpeedCoefficient);
         r.max_queued = max_queued();
         r.wall_rules = rp_on_;
+        r.bld_allowed = bld_allowed_for(h);
+        r.unit_build_limit.assign(r.units.size(), 0);
+        for (std::size_t i = 0; i < r.units.size(); ++i)
+            r.unit_build_limit[i] = static_cast<int>(rules_.section_double(r.units[i].id, "BuildLimit", 0.0));
         return r;
+    }
+    // House h's buildable building mask (the sidebar's rp_bld_allowed_ rule
+    // for that house's country; the local house's is rp_bld_allowed_).
+    std::vector<char> bld_allowed_for(int h) const {
+        if (h == local_house_ || !cfg_.campaign_map.empty() || h < 0 ||
+            h >= static_cast<int>(cfg_.slots.size()))
+            return rp_bld_allowed_;
+        const std::string country = rp_player_country(rules_, cfg_.slots[(std::size_t)h]);
+        const camp::PlayerRules pr;
+        std::vector<char> m(ba_.roster.size(), 0);
+        for (std::size_t i = 0; i < ba_.roster.size(); ++i) {
+            const ra2engine::BuildingTypeDef& d = ba_.roster[i];
+            m[i] = d.tech_level > 0 && d.tech_level <= cfg_.tech_level &&
+                   rp_country_allows(rules_, d.id, country) && camp::allowed_type(pr, d.id);
+            if (!cfg_.superweapons && m[i] && rp_is_lobby_sw_building(rules_, d.id)) m[i] = 0;
+        }
+        return m;
     }
     void install_econ_rules() {
         for (int h = 0; h < world_.house_count(); ++h)

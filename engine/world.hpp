@@ -757,6 +757,11 @@ struct PlayerEconRules {
     std::vector<int>  wall_fill_range;  // GuardRange cells for the free wall line
     std::vector<int>  buildup_total;    // buildup frames for add_building
     std::vector<char> base_normal;      // BaseNormal (default yes)
+    // The house's buildable mask per roster building (country Owner= /
+    // RequiredHouses / ForbiddenHouses, lobby TechLevel and Superweapons;
+    // empty = every building) and BuildLimit= per unit def (0 = none).
+    std::vector<char> bld_allowed;
+    std::vector<int>  unit_build_limit;
     double build_speed = 0.7;           // [General] BuildSpeed
     double low_power_mod = 1.0;         // [General] LowPowerPenaltyModifier
     double multiple_factory = 0.8;      // [General] MultipleFactory
