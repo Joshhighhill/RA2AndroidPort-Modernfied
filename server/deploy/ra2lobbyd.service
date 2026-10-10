@@ -1,0 +1,34 @@
+# systemd unit for the static binary (no Docker):
+#   sudo install -m 0755 ra2lobbyd /usr/local/bin/ra2lobbyd
+#   sudo install -m 0644 ra2lobbyd.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now ra2lobbyd
+#   journalctl -u ra2lobbyd -f
+[Unit]
+Description=RA2 clone lobby + relay server (ra2lobbyd)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/ra2lobbyd --server-name "My RA2 server" --relay-ports 50100-50999
+# Optional: Environment=RA2_PUBLIC_IP=203.0.113.10  RA2_MOTD=Hello  RA2_BAN_FILE=/etc/ra2lobbyd/bans.json
+DynamicUser=yes
+Restart=on-failure
+RestartSec=2
+LimitNOFILE=8192
+# Hardening: the daemon needs nothing but its sockets.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

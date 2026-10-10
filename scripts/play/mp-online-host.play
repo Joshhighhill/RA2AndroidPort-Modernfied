@@ -1,0 +1,40 @@
+# mp-online-host -- HOST half of the online loopback test
+# (scripts/play/mp-online-loopback.ps1 starts ra2lobbyd on 127.0.0.1 first).
+# Internet page -> connect to the server -> Host Game (public room, code from
+# the server) -> the joiner arrives through the CnCNet V3 tunnel -> start.
+set render_every 2000
+set max_frames 3000000
+click button Internet
+require scene == mp-online
+click edit:server
+key delete
+type "127.0.0.1"
+click edit:nick
+key delete
+type "Hosty"
+click button Connect
+until 2000000 online_state == ready
+require online_state == ready
+assert server_name == "Loopback Test"
+click button "Host Game"
+require scene == mp-lobby
+assert mp_net == online
+until 2000000 room_code != ""
+require room_code != ""
+log waiting for the joiner
+until 2000000 humans == 2
+require humans == 2
+assert slot_name(1) == Joiner
+until 2000000 slot_ready(1) == 1
+until 2000000 chat_last == "Joiner: hello host"
+click edit:chat
+type "welcome"
+key enter
+until 1000 can_start == 1
+click button "Start Game"
+until 2000000 scene == mp-start
+require scene == mp-start
+assert session_transport == tunnel
+assert session_players == 2
+assert local_house == 0
+end

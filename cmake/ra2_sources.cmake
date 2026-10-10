@@ -103,6 +103,15 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/visibility.cpp
     ${RA2_ROOT}/engine/skirmish.cpp
     ${RA2_ROOT}/engine/skirmish_lobby.cpp
+    # Multiplayer shell (agent S): LAN discovery, the 0x1236 lobby, the
+    # ra2lobbyd client. engine/mp/ is SDL-free (also in ra2assets_tests).
+    ${RA2_ROOT}/engine/mp/mp_socket.cpp
+    ${RA2_ROOT}/engine/mp/mini_json.cpp
+    ${RA2_ROOT}/engine/mp/lobby_wire.cpp
+    ${RA2_ROOT}/engine/mp/mp_model.cpp
+    ${RA2_ROOT}/engine/mp/mp_lobby.cpp
+    ${RA2_ROOT}/engine/mp/lan_discovery.cpp
+    ${RA2_ROOT}/engine/mp/server_link.cpp
     ${RA2_ROOT}/engine/rectfont.cpp
     ${RA2_ROOT}/engine/maplist.cpp
     ${RA2_ROOT}/engine/repair_sell.cpp

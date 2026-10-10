@@ -1,0 +1,89 @@
+# mp-lan-solo -- the multiplayer shell in ONE process: Main Menu -> Network
+# (LAN browser) -> Host Game -> the multiplayer lobby as host: slot kinds,
+# country / colour / team / start, options, map choice ([Digest] carried),
+# chat, then Start with one AI -> the match hand-off page with the full
+# session (seed, options string, house table). No second machine needed.
+set render_every 300
+require scene == "shell:Main Menu"
+assert button_enabled(Network) == 1
+assert button_enabled(Internet) == 1
+click button Network
+require scene == mp-lan
+assert page == Network
+# Name edit: Delete clears, then type.
+click edit:nick
+key delete
+type "Hosty"
+key enter
+assert edit(nick) == Hosty
+shot lan_browser
+click button "Host Game"
+require scene == mp-lobby
+assert mp_role == host
+assert mp_net == lan
+assert slot_kind(0) == Human
+assert slot_name(0) == Hosty
+assert lan_port > 0
+assert players == 1
+# Not enough players yet.
+assert can_start == 0
+# Slot 1 -> Brutal AI, then its country / colour / team / start.
+click combo:kind1
+assert combo_open == kind
+click "pick:Brutal Enemy"
+until 30 slot_kind(1) == AI
+assert ai(1) == 0
+click combo:country1
+click pick:Libya
+click combo:color1
+click pick:RED
+click combo:team1
+click pick:B
+click combo:start1
+click pick:2
+until 30 team(1) == 1
+assert color(1) == 1
+assert start(1) == 1
+# Own row: team A, colour BLU.
+click combo:team0
+click pick:A
+click combo:color0
+click pick:BLU
+until 30 color(0) == 2
+assert team(0) == 0
+# The colour combo of row 1 no longer offers BLU (owned by row 0).
+# Options (host only): crates off, credits slider, speed.
+click check:crates
+until 10 check(crates) == 0
+click slider:credits=7500
+# (the 1-px slider target can land one 100-credit step off at the 1.5x shell scale)
+until 10 credits < 10000
+# Map choice.
+click button "Customize Battle"
+require choosing == 1
+click map:xarena.map
+click button "Use Map"
+require choosing == 0
+assert map == xarena.map
+assert max_players == 4
+assert map_digest != ""
+# Chat.
+click edit:chat
+type "gl hf"
+key enter
+until 10 chat_last == "Hosty: gl hf"
+shot lobby_host
+assert can_start == 1
+click button "Start Game"
+until 120 scene == mp-start
+require scene == mp-start
+assert session_players == 2
+assert local_house == 0
+assert is_host == 1
+assert session_transport == lan
+assert session_map == xarena.map
+assert house_ai(1) == 1
+assert house_color(1) == 1
+assert house_start(1) == 1
+shot match_ready
+end

@@ -1,0 +1,13 @@
+# Host networking: no Docker NAT / conntrack in front of 900 relay ports.
+services:
+  ra2lobbyd:
+    build: .
+    image: ra2lobbyd:latest
+    network_mode: host
+    restart: unless-stopped
+    read_only: true
+    environment:
+      RA2_SERVER_NAME: "My RA2 server"
+      RA2_MOTD: "Welcome, commander."
+      # RA2_PUBLIC_IP: "203.0.113.10"   # only needed behind 1:1 NAT (Oracle)
+    # command: ["--relay-ports", "50100-50999"]

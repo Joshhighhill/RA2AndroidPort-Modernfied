@@ -294,6 +294,14 @@ target_sources(ra2assets_tests PRIVATE tests/test_skirmish.cpp engine/skirmish.c
 # Skirmish page (dialog 0x102): the pure lobby model + RA2.INI persistence +
 # LobbyState -> SkirmishConfig converter (docs/gap/07-skirmish-page.md).
 target_sources(ra2assets_tests PRIVATE tests/test_skirmish_lobby.cpp engine/skirmish_lobby.cpp)
+# Multiplayer shell (engine/mp/, SDL-free): options string, 0x1236 framing,
+# lobby state machines over memory + loopback UDP, LAN beacons, JSON.
+target_sources(ra2assets_tests PRIVATE tests/test_mp.cpp engine/mp/mp_socket.cpp engine/mp/mini_json.cpp
+               engine/mp/lobby_wire.cpp engine/mp/mp_model.cpp engine/mp/mp_lobby.cpp
+               engine/mp/lan_discovery.cpp engine/mp/server_link.cpp)
+if (WIN32)
+  target_link_libraries(ra2assets_tests PRIVATE ws2_32)
+endif()
 # rectfont.cpp is pure C++17 (no SDL): the 5x7 rect-font glyph table + glyph_rows
 # extending the kDigits technique to A-Z/0-9/space/basic punctuation for menu
 # labels (Task 5, [RE: skirmish.md §UI]). Its coverage cases live in
