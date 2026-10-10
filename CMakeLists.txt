@@ -294,6 +294,14 @@ target_sources(ra2assets_tests PRIVATE tests/test_skirmish.cpp engine/skirmish.c
 # Skirmish page (dialog 0x102): the pure lobby model + RA2.INI persistence +
 # LobbyState -> SkirmishConfig converter (docs/gap/07-skirmish-page.md).
 target_sources(ra2assets_tests PRIVATE tests/test_skirmish_lobby.cpp engine/skirmish_lobby.cpp)
+# Multiplayer shell (engine/mp/, SDL-free): options string, 0x1236 framing,
+# lobby state machines over memory + loopback UDP, LAN beacons, JSON.
+target_sources(ra2assets_tests PRIVATE tests/test_mp.cpp engine/mp/mp_socket.cpp engine/mp/mini_json.cpp
+               engine/mp/lobby_wire.cpp engine/mp/mp_model.cpp engine/mp/mp_lobby.cpp
+               engine/mp/lan_discovery.cpp engine/mp/server_link.cpp)
+if (WIN32)
+  target_link_libraries(ra2assets_tests PRIVATE ws2_32)
+endif()
 # rectfont.cpp is pure C++17 (no SDL): the 5x7 rect-font glyph table + glyph_rows
 # extending the kDigits technique to A-Z/0-9/space/basic punctuation for menu
 # labels (Task 5, [RE: skirmish.md §UI]). Its coverage cases live in
@@ -388,10 +396,10 @@ if (RA2_BUILD_ENGINE)
   if (WIN32)
     # W2-AR-22: registry install-path lookup + the BROWSE folder picker
     # (engine/platform_os.cpp).
-    target_link_libraries(ra2engine PRIVATE advapi32 shell32 ole32 winmm)
+    target_link_libraries(ra2engine PRIVATE advapi32 shell32 ole32 winmm ws2_32)
     # R-182: the player's double-click binary (no console window).
     add_executable(ra2game WIN32 $<TARGET_OBJECTS:ra2engine_obj>)
-    target_link_libraries(ra2game PRIVATE ra2assets SDL2::SDL2main SDL2::SDL2 advapi32 shell32 ole32 winmm)
+    target_link_libraries(ra2game PRIVATE ra2assets SDL2::SDL2main SDL2::SDL2 advapi32 shell32 ole32 winmm ws2_32)
     # W6-06-02: a VERSIONINFO resource (version from VERSION + git).
     if (NOT RA2_VERSION_BASE)
       file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" RA2_VERSION_BASE)
