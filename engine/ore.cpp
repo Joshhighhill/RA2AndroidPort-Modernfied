@@ -1,4 +1,5 @@
 #include "ore.hpp"
+#include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 
 #include <algorithm>
 
@@ -137,16 +138,19 @@ void OreField::step_original(double dt, double growth_pct, double spread_pct,
         return in(x, y) && kind_at(x, y) == OreKind::None && !is_mine(x, y) &&
                passable[(size_t)x + (size_t)y * w_] != 0;
     };
-    timer_ += dt;
-    const double g_secs = growth_frames_ / 15.0;
-    while (growth_frames_ > 0 && timer_ >= g_secs) {
-        timer_ -= g_secs;
+    // Net L0: the original's growth / spread clocks count FRAMES; dt*15 is
+    // exactly 1 per logic tick, so these sums stay exact integers (a running
+    // sum of 1/15 s drifted against growth_frames/15).
+    timer_ += dt * 15.0;
+    const double g_frames = growth_frames_;
+    while (growth_frames_ > 0 && timer_ >= g_frames) {
+        timer_ -= g_frames;
         if (growth_pct < 1e-5) continue;
         std::vector<int> cand;
         for (int i = 0; i < w_ * h_; ++i)
             if (kind_[i] == (std::uint8_t)OreKind::Ore && density_[i] < kMaxOreDensity) cand.push_back(i);
         if (cand.empty()) continue;
-        const int cap = std::max(5, std::min(50, (int)(cand.size() * growth_pct)));
+        const int cap = std::max(5, std::min(50, om::ftol((cand.size() * growth_pct))));
         int n = rng.below(cap) + 1;
         for (; n > 0 && !cand.empty(); --n) {
             const int j = rng.below((int)cand.size());
@@ -154,10 +158,10 @@ void OreField::step_original(double dt, double growth_pct, double spread_pct,
             cand.erase(cand.begin() + j);
         }
     }
-    spread_timer_ += dt;
-    const double s_secs = spread_frames_ / 15.0;
-    while (spread_frames_ > 0 && spread_timer_ >= s_secs) {
-        spread_timer_ -= s_secs;
+    spread_timer_ += dt * 15.0;
+    const double s_frames = spread_frames_;
+    while (spread_frames_ > 0 && spread_timer_ >= s_frames) {
+        spread_timer_ -= s_frames;
         if (spread_pct < 1e-5) continue;
         std::vector<int> cand;
         for (int i = 0; i < w_ * h_; ++i) {
@@ -169,7 +173,7 @@ void OreField::step_original(double dt, double growth_pct, double spread_pct,
             if (open) cand.push_back(i);
         }
         if (cand.empty()) continue;
-        const int cap = std::max(5, std::min(25, (int)(cand.size() * spread_pct)));
+        const int cap = std::max(5, std::min(25, om::ftol((cand.size() * spread_pct))));
         int n = rng.below(cap) + 1;
         for (; n > 0 && !cand.empty(); --n) {
             const int j = rng.below((int)cand.size());
@@ -202,7 +206,7 @@ void OreField::step(double dt, double interval_secs, double growth_pct, double s
             if (kind_[i] == (std::uint8_t)OreKind::Ore && density_[i] < kMaxOreDensity)
                 cand.push_back(i);
         if (!cand.empty() && growth_pct > 0.0) {
-            int n = std::max(1, (int)(cand.size() * growth_pct));
+            int n = std::max(1, om::ftol((cand.size() * growth_pct)));
             for (int k = 0; k < n && !cand.empty(); ++k) {
                 int j = rng.below((int)cand.size());
                 ++density_[cand[j]];
@@ -215,7 +219,7 @@ void OreField::step(double dt, double interval_secs, double growth_pct, double s
             if (kind_[i] == (std::uint8_t)OreKind::Ore && density_[i] == kMaxOreDensity)
                 src.push_back(i);
         if (!src.empty() && spread_pct > 0.0) {
-            int n = std::max(1, (int)(src.size() * spread_pct));
+            int n = std::max(1, om::ftol((src.size() * spread_pct)));
             for (int k = 0; k < n; ++k) {
                 int i = src[rng.below((int)src.size())];
                 int sx = i % w_, sy = i / w_;

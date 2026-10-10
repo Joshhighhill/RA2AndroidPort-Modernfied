@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "combat.hpp"
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 #include "flight.hpp"
 #include "group_move.hpp"   // nearest_free_cells (W4-SQ-06)
 #include "roster2.hpp"
@@ -26,7 +27,7 @@ constexpr double kRocketDeckZ = 40.0;
 constexpr int kRocketMaxFrames = 1800;
 enum Sortie : int { kDocked = 0, kOutbound = 1, kMoveTo = 2, kReturn = 3, kLanding = 4, kParadrop = 5 };
 bool live(const Unit& u) { return u.alive && u.die_time < 0.0 && u.cargo_of < 0; }
-double cdist(double ax, double ay, double bx, double by) { return std::hypot(ax - bx, ay - by); }
+double cdist(double ax, double ay, double bx, double by) { return om::hypot(ax - bx, ay - by); }
 }  // namespace
 
 // --------------------------------------------------------------- targeting --
@@ -130,20 +131,20 @@ void World::an_step_naval(double dt) {
             } else {
                 // W6-04-25: a DecloakToFire=no weapon fires without surfacing.
                 if (u.fire_flash >= 0.4 - 1e-9 && u.w6.t.decloak_to_fire)
-                    u.an.surface_left = P.cloak_delay_frames / 15.0;
-                u.an.surface_left = std::max(0.0, u.an.surface_left - dt);
-                u.an.submerged = u.an.surface_left <= 0.0;
+                    u.an.surface_left_frames = P.cloak_delay_frames;
+                if (u.an.surface_left_frames > 0) --u.an.surface_left_frames;   // Net L0: whole frames
+                u.an.submerged = u.an.surface_left_frames <= 0;
             }
         }
         // Iron Curtain / Chrono freeze countdowns.
-        if (u.an.iron_left > 0.0) u.an.iron_left = std::max(0.0, u.an.iron_left - dt);
-        if (u.an.chrono_left > 0.0) {
-            u.an.chrono_left = std::max(0.0, u.an.chrono_left - dt);
-            if (u.an.chrono_left <= 0.0 && !u.abil_bound) u.frozen = false;
+        if (u.an.iron_left_frames > 0) --u.an.iron_left_frames;   // Net L0: whole frames
+        if (u.an.chrono_left_frames > 0) {
+            --u.an.chrono_left_frames;
+            if (u.an.chrono_left_frames <= 0 && !u.abil_bound) u.frozen = false;
         }
     }
     for (Building& b : buildings_)
-        if (b.iron_left > 0.0) b.iron_left = std::max(0.0, b.iron_left - dt);
+        if (b.iron_left_frames > 0) --b.iron_left_frames;
     // Sonar [RE: naval.md Deferred, FUN_00740780; rules Sensors=yes
     // SensorsSight=]: a submerged sub is visible (and so targetable) to a house
     // that has a live Sensors unit within SensorsSight cells of it.
@@ -326,7 +327,7 @@ void World::an_step_spawners(double dt) {
                 s.an.rocket.ty = gy * kLept;
                 s.an.rocket.tz = gz;
                 s.altitude = kRocketDeckZ;
-                s.body_facing = facing_u16_from_delta(std::cos(s.an.rocket.yaw), std::sin(s.an.rocket.yaw));
+                s.body_facing = facing_u16_from_delta(om::cos(s.an.rocket.yaw), om::sin(s.an.rocket.yaw));
             }
             --own.an.spawn_ready;
             ++own.an.spawn_out;
@@ -349,7 +350,7 @@ void World::an_step_fixed_wing(double dt) {
             const int tu = u.target, tb = u.target_building;
             order_fixed_wing(i, tu, tb, -1, -1);
         }
-        u.rof_cool = std::max(0.0, u.rof_cool - dt);
+        if (u.rearm_frames > 0) --u.rearm_frames;   // Net L0: whole frames
         u.fire_flash = std::max(0.0, u.fire_flash - dt);
         // --- where to fly ---
         double gx = u.fx, gy = u.fy;
@@ -384,7 +385,7 @@ void World::an_step_fixed_wing(double dt) {
             u.altitude = std::max(0.0, f.z);
             u.cell_x = std::max(0, std::min(grid_w_ - 1, static_cast<int>(std::lround(u.fx))));
             u.cell_y = std::max(0, std::min(grid_h_ - 1, static_cast<int>(std::lround(u.fy))));
-            u.body_facing = facing_u16_from_delta(std::cos(f.yaw), std::sin(f.yaw));
+            u.body_facing = facing_u16_from_delta(om::cos(f.yaw), om::sin(f.yaw));
             u.flight_state = f.phase >= kRocketClimb ? FlightState::Cruising : FlightState::TakingOff;
             const bool off_map = grid_w_ > 0 && grid_h_ > 0 &&
                                  (f.x < -kLept || f.y < -kLept || f.x > grid_w_ * kLept || f.y > grid_h_ * kLept);
@@ -451,7 +452,7 @@ void World::an_step_fixed_wing(double dt) {
                 if (!target_alive || u.an.ammo <= 0) { u.an.sortie = kReturn; break; }
                 goal_x = gx; goal_y = gy; fly = true;
                 // Attack pass: in weapon range -> fire one ammo point.
-                if (cdist(u.fx, u.fy, gx, gy) <= std::max(1.0, u.w_range) && u.rof_cool <= 0.0 &&
+                if (cdist(u.fx, u.fy, gx, gy) <= std::max(1.0, u.w_range) && u.rearm_frames <= 0.0 &&
                     u.altitude >= P.flight_level * 0.5) {
                     // W4: a flying projectile (the Harrier / Black Eagle
                     // Maverick, the Hornet / Osprey bombs: ROT>0 homing) is
@@ -479,13 +480,13 @@ void World::an_step_fixed_wing(double dt) {
                             for (int k = 0; k < std::max(1, u.w6.burst); ++k) {
                                 if (k > 0 && (!buildings_[tb].alive || buildings_[tb].hp <= 0)) break;
                                 if (projectiles_enabled_ && u.w_proj.flies()) launch_projectile(i, -1, tb);
-                                else if (buildings_[tb].iron_left <= 0.0 &&
+                                else if (buildings_[tb].iron_left_frames <= 0.0 &&
                                          !w6_wall_building_hit(*this, units_, buildings_, tb, u.w6.wall_flags, u.w_damage))   // W6-04-04
                                     deliver_building_hit(units_, buildings_, i, tb);
                             }
                         }
                     }
-                    u.rof_cool = std::max(1, u.w_rof) / 15.0;
+                    u.rearm_frames = std::max(1, u.w_rof);
                     u.fire_flash = 0.4;
                     fire_events_.push_back({i, -1, tu, tb, u.w_active, ""});
                     --u.an.ammo;
@@ -636,8 +637,8 @@ void World::an_step_deaths(double dt) {
             u.has_flight_goal = false;
             if (u.an.t.fixed_wing) {   // keeps gliding forward while falling
                 const double a = u.body_facing / 65536.0 * 2.0 * 3.14159265358979;
-                u.fx += std::sin(a) * u.an.t.fly_speed_cps * 0.5 * dt;
-                u.fy -= std::cos(a) * u.an.t.fly_speed_cps * 0.5 * dt;
+                u.fx += om::sin(a) * u.an.t.fly_speed_cps * 0.5 * dt;
+                u.fy -= om::cos(a) * u.an.t.fly_speed_cps * 0.5 * dt;
                 u.cell_x = std::max(0, std::min(grid_w_ - 1, static_cast<int>(std::lround(u.fx))));
                 u.cell_y = std::max(0, std::min(grid_h_ - 1, static_cast<int>(std::lround(u.fy))));
             }
@@ -824,7 +825,7 @@ void World::an_step_parachutes(double dt) {
             const InfSeqEntry& e = it->e[kSqParadrop];
             if (e.has) {
                 const int n = std::max(1, e.count);
-                const int stage = static_cast<int>((u.an.para_alt / std::max(1.0, fall)) / 2.0) % n;
+                const int stage = om::ftol((u.an.para_alt / std::max(1.0, fall)) / 2.0) % n;
                 u.frame = e.first + (e.fmult ? ((u.facing % 8 + 8) % 8) * e.fmult : 0) + (n - 1 - stage);
             }
         }
@@ -898,7 +899,7 @@ void World::step_air_naval(double dt) {
         // Open the firewall lazily: any unit carrying W2-AN type data.
         for (const Unit& u : units_)
             if (u.an.t.underwater || u.an.t.sensors || u.an.t.spawner_slot >= 0 || u.an.t.fixed_wing ||
-                u.an.t.crashable || (u.is_naval && u.an.t.weight > 1.0) || u.an.iron_left > 0.0 ||
+                u.an.t.crashable || (u.is_naval && u.an.t.weight > 1.0) || u.an.iron_left_frames > 0.0 ||
                 u.movement_domain == MovementDomain::Amphibious) {
                 an_.any = true;
                 break;

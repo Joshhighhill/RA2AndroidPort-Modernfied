@@ -7,6 +7,7 @@
 #include <cmath>
 
 #include "building.hpp"
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 #include "combat.hpp"      // damage_vs
 #include "group_move.hpp"  // nearest_free_cells
 #include "world.hpp"
@@ -121,7 +122,7 @@ void World::teleport_unit(int idx, int gx, int gy) {
     // (2-D leptons, the combat.md §6 divergence), delay = max(dist/48, 16).
     const double dx = (dest.x - u.cell_x) * kAbilityLeptonsPerCell;
     const double dy = (dest.y - u.cell_y) * kAbilityLeptonsPerCell;
-    const int dist = ability_ftol(std::sqrt(dx * dx + dy * dy));
+    const int dist = ability_ftol(om::sqrt(dx * dx + dy * dy));
     const int delay = teleport_delay_frames(dist, ability_rules_);
     // The parasite is ejected by the teleport (0x7188D9 -> ExitUnit).
     const int old_x = u.cell_x, old_y = u.cell_y;
@@ -205,7 +206,7 @@ void World::ability_erase_unit(int idx) {
 void World::ability_damage_unit(int victim, int dmg) {
     Unit& v = units_[victim];
     if (!v.alive || v.die_time >= 0.0) return;
-    if (v.an.iron_left > 0.0) return;   // W2-AN-04 Iron Curtain
+    if (v.an.iron_left_frames > 0.0) return;   // W2-AN-04 Iron Curtain
     v.hp -= dmg;
     if (v.hp <= 0) ability_kill_unit(victim);
 }
@@ -213,7 +214,7 @@ void World::ability_damage_unit(int victim, int dmg) {
 void World::ability_damage_building(int b_idx, int dmg) {
     Building& b = buildings_[b_idx];
     if (!b.alive || b.state == Building::State::Dead) return;
-    if (b.iron_left > 0.0) return;   // W2-AN-04 Iron Curtain
+    if (b.iron_left_frames > 0.0) return;   // W2-AN-04 Iron Curtain
     b.hp -= dmg;
     if (b.hp <= 0) kill_building(b);
 }
@@ -247,7 +248,7 @@ void World::ability_area_damage(int src_unit, double cx, double cy, const Weapon
     // EligibleForDelayKill building starts the delay instead.
     const AreaBuildingHook delay = [&](int b, int dmg, int dist) {
         const Building& bb = buildings_[static_cast<std::size_t>(b)];
-        if (!(bb.hp - dmg <= 0 && bb.iron_left <= 0.0 && bb.type >= 0 &&
+        if (!(bb.hp - dmg <= 0 && bb.iron_left_frames <= 0.0 && bb.type >= 0 &&
               bb.type < static_cast<int>(btypes().size()) &&
               btypes()[static_cast<std::size_t>(bb.type)].w5.delay_kill_eligible))
             return false;
@@ -269,7 +270,7 @@ void World::ability_delay_kill(int b_idx, const WeaponSpec& w, double dist_lepto
     Building& b = buildings_[static_cast<std::size_t>(b_idx)];
     const double f = static_cast<double>(w.delay_kill_frames);
     const int spread = ability_ftol(w.cell_spread) * 256;
-    const double span = (f * w.delay_kill_at_max - f) * static_cast<int>(dist_leptons);
+    const double span = (f * w.delay_kill_at_max - f) * om::ftol(dist_leptons);
     const int delay = ability_ftol(spread > 0 ? f + span / spread : f);
     const std::int64_t F = static_cast<std::int64_t>(ability_frame_);
     bool set = true;

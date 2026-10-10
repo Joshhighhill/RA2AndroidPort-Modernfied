@@ -14,12 +14,12 @@
 using namespace ra2engine;
 
 TEST_CASE("w6units W6-04-01: Burst rearm = Random(3,5) inside a burst, ROF+Random(0,2) after the last shot") {
-    // Burst 1 is exactly rearm_secs, with the same RNG draw.
+    // Burst 1 is exactly rearm_frames_for, with the same RNG draw.
     {
         ProjRng a, b;
         int idx = 0;
         for (int k = 0; k < 50; ++k) {
-            CHECK(burst_rearm_secs(idx, 1, 60, &a) == rearm_secs(60, &b));
+            CHECK(burst_rearm_frames(idx, 1, 60, &a) == rearm_frames_for(60, &b));
             CHECK(idx == 0);
         }
     }
@@ -28,8 +28,7 @@ TEST_CASE("w6units W6-04-01: Burst rearm = Random(3,5) inside a burst, ROF+Rando
     int idx = 0;
     for (int cycle = 0; cycle < 20; ++cycle) {
         for (int shot = 0; shot < 4; ++shot) {
-            const double s = burst_rearm_secs(idx, 4, 80, &rng);
-            const int f = static_cast<int>(std::lround(s * 15.0));
+            const int f = burst_rearm_frames(idx, 4, 80, &rng);   // Net L0: whole frames
             if (shot < 3) {
                 CHECK(f >= 3);
                 CHECK(f <= 5);
@@ -43,7 +42,7 @@ TEST_CASE("w6units W6-04-01: Burst rearm = Random(3,5) inside a burst, ROF+Rando
     }
     // A weapon switch to a smaller Burst wraps the index (modulo, as Fire does).
     idx = 3;
-    burst_rearm_secs(idx, 2, 60, nullptr);
+    burst_rearm_frames(idx, 2, 60, nullptr);
     CHECK(idx == 0);
 }
 

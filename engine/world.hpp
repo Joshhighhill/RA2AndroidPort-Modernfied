@@ -152,7 +152,7 @@ struct Unit {
                                     // setting one clears the other (Buildings
                                     // & Construction Task 4).
     bool attack_order = false;     // explicit order (pursues) vs auto-acquire
-    double rof_cool = 0.0;         // seconds until the weapon may fire again
+    int rearm_frames = 0;          // whole frames until the weapon may fire again (Net L0; the original's frame RearmTimer)
     double fire_flash = 0.0;       // seconds of fire-anim left (renderer)
     // W3-B: the active weapon's warhead InfDeath= / ProneDamage= (set with the
     // other w_* fields) and the infantry sequence state. Inert unless
@@ -865,6 +865,14 @@ public:
 
     std::vector<Unit>& units() { return units_; }
     const std::vector<Unit>& units() const { return units_; }
+    // Net L0: keep `n` free slots in the unit / building vectors so a caller
+    // that holds a Unit& / Building& across a trigger raise (a raise can run
+    // actions that spawn objects -- reinforcements, passengers) never reads a
+    // reallocated vector. Capacity only: no state, hash or save change.
+    void reserve_object_headroom(std::size_t n) {
+        if (units_.capacity() < units_.size() + n) units_.reserve(units_.size() * 2 + n);
+        if (buildings_.capacity() < buildings_.size() + n) buildings_.reserve(buildings_.size() * 2 + n);
+    }
     const GameRandom& crate_rng() const { return crate_rng_; }   // simdiff dump seam (read-only)
 
     // Append a unit at iso cell (cell_x, cell_y) with SHP image name + frame;
@@ -2131,6 +2139,19 @@ public:
     void set_mcv_redeploys(bool on) { mcv_redeploys_ = on; }
     bool mcv_redeploys() const { return mcv_redeploys_; }
     void set_skirmish_session(bool on) { skirmish_session_ = on; }
+    // Net L0 session seed [RE: InitRandom FUN_0052F960 seeds Scenario->Random
+    // (+0x218) and the global randomizer 0x885B08 from the session Seed
+    // DAT_00A8DCFC; docs/gap/net/01-original-protocol.md "Seed"]. Every sim RNG
+    // stream is derived from this ONE value, chosen once by the launcher (lobby
+    // host, campaign mission) and recorded in saves -- never the wall clock.
+    // 0 = "no session seed": every stream keeps its historical fixed seed, so
+    // the byte-identity gates (which never set one) are unchanged.
+    // Call right after construction, before anything draws.
+    void set_session_seed(std::uint32_t seed);
+    std::uint32_t session_seed() const { return session_seed_; }
+    // The seed of one stream: `base` when no session seed, else a mix of the
+    // session seed, `base` and `salt` (never 0, for the xorshift streams).
+    std::uint32_t session_stream_seed(std::uint32_t base, std::uint32_t salt = 0) const;
     std::vector<DeployEvent> take_deploy_events();
     void step_deploy(double dt);
     // gF G-75: trigger action 101 ReshroudMapAtWaypoint (TAction FUN_006E0FE0
@@ -2214,8 +2235,8 @@ public:
     void set_house_handicap(int h, double firepower, double rof);
     // W6-02-05: start an armed AI house's TeamDelays check clock at `secs`
     // (it fires when the clock reaches TeamDelays / 15).
-    void set_ai_team_check_clock(int h, double secs) {
-        if (ai_enabled(h)) ai_houses_[static_cast<std::size_t>(h)].team_state.check_clock = secs;
+    void set_ai_team_check_clock(int h, double frames) {   // Net L0: frames
+        if (ai_enabled(h)) ai_houses_[static_cast<std::size_t>(h)].team_state.check_clock = frames;
     }
     double house_rof_mul(int h) const;
     double house_firepower_mul(int h) const;
@@ -2775,6 +2796,7 @@ private:
     std::vector<UnitCombat> undeploy_units_;   // parallel: the unit to spawn
     bool mcv_redeploys_ = false;
     bool skirmish_session_ = false;
+    std::uint32_t session_seed_ = 0;           // Net L0: the one session seed (saved, v34)
     bool try_undeploy(int b_idx);              // called by complete_sell
     void finish_deploy(int idx);
 

@@ -5,6 +5,7 @@
 // tests/test_abilities.cpp. The World-side pass that drives these lives in
 // engine/world_abilities.cpp.
 #include <cstdint>
+#include "orig_math.hpp"
 #include <vector>
 
 #include "ability_types.hpp"
@@ -14,7 +15,7 @@ namespace ra2engine {
 constexpr double kAbilityLeptonsPerCell = 256.0;
 
 // x87 __ftol (FUN_007C4D00): truncation toward zero.
-inline int ability_ftol(double v) { return static_cast<int>(v); }
+inline int ability_ftol(double v) { return om::ftol(v); }   // Net L0: wraps like the original, never UB
 
 // --- §A Radiation -----------------------------------------------------------
 // SetSpread (0x65AF10): SpreadInLeptons = n*256 + 128.

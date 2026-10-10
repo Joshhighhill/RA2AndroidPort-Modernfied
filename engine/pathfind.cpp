@@ -1,4 +1,5 @@
 #include "pathfind.hpp"
+#include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 
 #include <algorithm>
 #include <cstdlib>
@@ -299,48 +300,66 @@ std::vector<Cellxy> astar_terrain(const std::vector<uint8_t>& passable, int widt
 // 86% of its CPU here). Each memo is validated against a byte copy of the
 // grid it was built on (memcmp per call, ~1 us), so any passability change
 // (a building placed or destroyed, a bridge) drops the stale results.
+// Net L0 (N4-11): every input is identified by CONTENT, never by address. The
+// memo used to key the leak mask / level / deck grids by pointer (and the deck
+// by a version counter), and it is thread_local, outliving a World: after a
+// resync load_world, a rematch, or a freed-then-reused address, a pointer key
+// could serve a path computed on other terrain -- and then the peer that
+// loaded state would diverge from peers that did not. Now each memo keeps a
+// byte copy of every grid its paths were built on (grid, leak, level, slope,
+// deck) and drops all paths when any of them differs; the key holds only
+// value fields.
 struct MemoKey {
     int sx, sy, gx, gy, budget, mode;
-    const void* leak;   // W5-A: the wall leak mask in use (derived per map, fixed for a World)
-    // R-210: the terrain (null = the historical 2-D search). The level / slope
-    // grids are fixed per World; the deck grid is keyed by its version, the
-    // open gates by a hash of their cells.
-    const void* level = nullptr;
-    const void* deck = nullptr;
-    std::uint32_t tver = 0;
+    bool leak = false;      // a leak mask was in use (its bytes: PathMemo::leak)
+    bool terrain = false;   // R-210 layer-aware search (bytes: PathMemo::level/slope/deck)
+    bool deck = false;
     int tlayer = 0;
-    std::uint64_t gates = 0;
+    std::uint64_t gates = 0;   // the open gates, by cell content
     bool operator==(const MemoKey& o) const {
         return sx == o.sx && sy == o.sy && gx == o.gx && gy == o.gy && budget == o.budget && mode == o.mode &&
-               leak == o.leak && level == o.level && deck == o.deck && tver == o.tver && tlayer == o.tlayer &&
-               gates == o.gates;
+               leak == o.leak && terrain == o.terrain && deck == o.deck && tlayer == o.tlayer && gates == o.gates;
     }
 };
 struct MemoKeyHash {
     std::size_t operator()(const MemoKey& k) const {
         std::uint64_t h = 1469598103934665603ull;
-        for (int v : {k.sx, k.sy, k.gx, k.gy, k.budget, k.mode}) {
+        for (int v : {k.sx, k.sy, k.gx, k.gy, k.budget, k.mode, (int)k.leak, (int)k.terrain, (int)k.deck, k.tlayer}) {
             h ^= static_cast<std::uint32_t>(v);
             h *= 1099511628211ull;
         }
-        h ^= static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(k.leak));
+        h ^= k.gates;
         h *= 1099511628211ull;
-        if (k.level) {   // R-210 (a null terrain hashes exactly as before)
-            for (std::uint64_t v : {static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(k.level)),
-                                    static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(k.deck)),
-                                    static_cast<std::uint64_t>(k.tver), static_cast<std::uint64_t>(k.tlayer), k.gates}) {
-                h ^= v;
-                h *= 1099511628211ull;
-            }
-        }
         return static_cast<std::size_t>(h);
     }
 };
+// A content snapshot of one optional grid.
+template <class T> struct GridSnap {
+    bool set = false;
+    std::vector<T> bytes;
+    // True when `v` (null = absent) matches the snapshot; adopts it when unset.
+    bool same_or_adopt(const std::vector<T>* v) {
+        if (!v) return true;   // absent inputs do not constrain the memo
+        if (!set) { set = true; bytes = *v; return true; }
+        return bytes.size() == v->size() &&
+               (v->empty() || std::memcmp(bytes.data(), v->data(), v->size() * sizeof(T)) == 0);
+    }
+    void reset() { set = false; bytes.clear(); }
+};
 struct PathMemo {
-    const void* owner = nullptr;   // the grid vector last seen (a hint only)
+    const void* owner = nullptr;   // the grid vector last seen (a lookup hint only)
     int width = 0, height = 0;
     std::vector<uint8_t> grid;
+    GridSnap<uint8_t> leak, slope, deck;
+    GridSnap<std::int8_t> level;
     std::unordered_map<MemoKey, std::vector<Cellxy>, MemoKeyHash> paths;
+    void restart(const std::vector<uint8_t>& passable, int w, int h) {
+        width = w;
+        height = h;
+        grid = passable;
+        leak.reset(); slope.reset(); deck.reset(); level.reset();
+        paths.clear();
+    }
 };
 constexpr std::size_t kMemos = 4;          // land + water grids of up to two Worlds
 constexpr std::size_t kMemoPaths = 8192;   // entries per grid before a flush
@@ -354,22 +373,14 @@ PathMemo& memo_for(const std::vector<uint8_t>& passable, int width, int height) 
     };
     for (PathMemo& m : t_memo)
         if (m.owner == &passable) {
-            if (!same(m)) {   // this grid changed: start over on its new bytes
-                m.width = width;
-                m.height = height;
-                m.grid = passable;
-                m.paths.clear();
-            }
+            if (!same(m)) m.restart(passable, width, height);   // this grid changed: start over on its new bytes
             return m;
         }
     for (PathMemo& m : t_memo)
         if (m.owner && same(m)) { m.owner = &passable; return m; }
     PathMemo& m = t_memo[t_memo_next++ % kMemos];
     m.owner = &passable;
-    m.width = width;
-    m.height = height;
-    m.grid = passable;
-    m.paths.clear();
+    m.restart(passable, width, height);
     return m;
 }
 
@@ -398,11 +409,25 @@ std::vector<Cellxy> astar_memo(const std::vector<uint8_t>& passable, int width, 
                                const PathTerrain* t = nullptr) {
     if (leak && leak->size() != passable.size()) leak = nullptr;
     PathMemo& m = memo_for(passable, width, height);
-    MemoKey k{start.x, start.y, goal.x, goal.y, max_expand, mode == Mode::Nearest ? 1 : 0, leak};
+    // Net L0: the other inputs are validated by content too; any change drops
+    // every remembered path of this grid (they are pure functions of it all).
+    const bool same_terrain = m.leak.same_or_adopt(leak) &&
+                              (!t || (m.level.same_or_adopt(t->level) && m.slope.same_or_adopt(t->slope) &&
+                                      m.deck.same_or_adopt(t->deck)));
+    if (!same_terrain) {
+        m.restart(passable, width, height);
+        m.leak.same_or_adopt(leak);
+        if (t) {
+            m.level.same_or_adopt(t->level);
+            m.slope.same_or_adopt(t->slope);
+            m.deck.same_or_adopt(t->deck);
+        }
+    }
+    MemoKey k{start.x, start.y, goal.x, goal.y, max_expand, mode == Mode::Nearest ? 1 : 0};
+    k.leak = leak != nullptr;
     if (t) {
-        k.level = t->level ? static_cast<const void*>(t->level) : static_cast<const void*>(t);
-        k.deck = t->deck;
-        k.tver = t->version;
+        k.terrain = true;
+        k.deck = t->deck != nullptr;
         k.tlayer = t->start_layer;
         k.gates = gates_hash(t);
     }

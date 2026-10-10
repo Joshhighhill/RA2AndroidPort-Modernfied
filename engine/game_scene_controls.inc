@@ -366,7 +366,8 @@
     // frames are 15-per-engine-second units). RE-T1 pinned (docs/re/
     // gamespeed.md): the per-GameSpeed rate is applied as the accumulator
     // multiplier fps/15 (gamespeed.hpp), NOT by changing kLogicDt. At most
-    // kMaxLogicSteps ticks run in one frame [RE-FALLBACK: catch-up cap].
+    // kMaxLogicSteps ticks run in one frame [RE-FALLBACK: catch-up cap]; the
+    // rest of the backlog is carried to later frames, never dropped (Net L0).
     static constexpr double kLogicDt = 1.0 / 15.0;
     static constexpr int kMaxLogicSteps = 4;
     double logic_acc_ = 0.0;

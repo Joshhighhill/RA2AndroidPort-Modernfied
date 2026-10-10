@@ -172,7 +172,7 @@ Battle), `status` (tooltip line), `confirm_open` / `confirm_text`.
 | `sel_near(h,ID)` | P4: cells from the centre of the player's selection to the nearest live house-h unit of type ID (present only while something is selected) |
 | `garrisonable`, `owned_garrisons(h)`, `garrisoned(h)`, `occupants(h)`, `in_garrison(h)`, `garrison_shots` | G16 garrisons |
 | `bridge_cells`, `bridge_destroyed`, `bridge_version`, `depth_armed`, `on_bridge(h)`, `pt_<name>_x/y`, `sel_dist_<name>` | G16 low bridges; named points below |
-| `sel_occupier`, `sel_occupy_target`, `sel_attack_cell`, `sel_target`, `sel_rof_cool`, `sel_turret`, `sel_body`, `sel_damage`, `sel_wall` | first selected unit (debug) |
+| `sel_occupier`, `sel_occupy_target`, `sel_attack_cell`, `sel_target`, `sel_rof_cool` (rearm, whole frames since Net L0), `sel_turret`, `sel_body`, `sel_damage`, `sel_wall` | first selected unit (debug) |
 
 **P3 keys / targets** (real-order micro): per controllable unit `nenemy(h,ID,n)` / `ndog(h,ID,n)` (cells to the
 nearest hostile ground unit / dog), `utgtb(h,ID,n)` (building target index), `ucell(h,ID,n)` (`x*1000+y`);

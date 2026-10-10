@@ -344,7 +344,8 @@ public:
         sync_tracks();       // W6 fix #2: the placed buildings' Insignificant/LegalTarget flags
         apply_playfield();   // W6-02-08: IsInPlayfield of every placed object (Unlimbo)
 
-        sys_ = std::make_unique<ra2engine::MapTriggerSystem>(data_, launch.difficulty, 0x5EEDu);
+        sys_ = std::make_unique<ra2engine::MapTriggerSystem>(data_, launch.difficulty,
+                                                              w_.session_stream_seed(0x5EEDu, 7u));   // Net L0
         sys_->set_campaign_mode(true);
         // Objects were placed (and attached) before scenario start [RE
         // map-triggers.md §1.8]: attach their tags now that the system exists.
@@ -367,6 +368,14 @@ public:
     // hunters, mission-end bookkeeping. The caller steps the World afterwards.
     void frame() {
         if (finished()) return;
+        // Net L0: the poll loops hold Unit& / Building& / Track& across raises,
+        // and a raise can run trigger actions that create objects (and their
+        // tracks). Found by the cross-platform gate: on Android (bionic) the
+        // freed vector read hp=0 at ALL01 frame 410 and raised an extra
+        // AttackedByAnybody; Windows happened to read the old bytes. Keep
+        // headroom so no vector reallocates while a reference is live.
+        w_.reserve_object_headroom(kObjectHeadroom);
+        reserve_track_headroom();
         // W5-A: a capture / infiltration raises EnteredBy synchronously in the
         // original (the infantry's Enter code calls TagClass::RaiseEvent before
         // any later house AI pass), so the World's entered events of the last
@@ -920,7 +929,7 @@ private:
                     if (camp::up(camp::trim_comment(kv.second)) == camp::up(house_names_[i])) { arr = k; break; }
                     ++k;
                 }
-                w_.set_ai_team_check_clock((int)i, (double)(frame_ - 175L * arr) / 15.0);
+                w_.set_ai_team_check_clock((int)i, (double)(frame_ - 175L * arr));   // Net L0: frames
             }
             char b[200];
             std::snprintf(b, sizeof b, "[camp] f%ld %s%s: %s nodes=%d", frame_,
@@ -1096,6 +1105,11 @@ private:
         for (const ra2assets::MapWaypoint& m : w_.map().waypoints())
             if (m.index == wp) { x = m.x; y = m.y; return true; }
         return false;
+    }
+    static constexpr std::size_t kObjectHeadroom = 1024;   // objects one frame may create
+    void reserve_track_headroom() {
+        if (utrack_.capacity() < utrack_.size() + kObjectHeadroom) utrack_.reserve(utrack_.size() * 2 + kObjectHeadroom);
+        if (btrack_.capacity() < btrack_.size() + kObjectHeadroom) btrack_.reserve(btrack_.size() * 2 + kObjectHeadroom);
     }
     void sync_tracks() {
         while (utrack_.size() < w_.units().size()) {
@@ -2039,7 +2053,7 @@ private:
         }
         // Exit: on across the map along the entry -> drop heading.
         double dx = x - sx, dy = y - sy;
-        const double len = std::hypot(dx, dy);
+        const double len = ra2engine::om::hypot(dx, dy);
         if (len < 0.5) { dx = 1.0; dy = 1.0; } else { dx /= len; dy /= len; }
         double ex = x, ey = y;
         for (int k = 0; k < 4 * (W + H); ++k) {
@@ -2433,7 +2447,7 @@ private:
         }
         constexpr double kPi = 3.14159265358979323846;
         const double th = f16 * (2.0 * kPi / 65536.0);
-        const int b = ra2engine::facing_from_delta(std::sin(th), -std::cos(th));   // inverse of facing_u16_from_delta
+        const int b = ra2engine::facing_from_delta(ra2engine::om::sin(th), -ra2engine::om::cos(th));   // inverse of facing_u16_from_delta
         if (b >= 0) u.facing = b;
     }
     // W6-02-18 [RE: TMission_Patrol FUN_006EC240 -- every few frames the team

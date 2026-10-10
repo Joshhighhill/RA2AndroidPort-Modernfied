@@ -22,6 +22,7 @@
 #include <cmath>
 
 #include "combat.hpp"
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 #include "world.hpp"
 
 namespace ra2engine {
@@ -264,7 +265,7 @@ void World::an_damage_unit(int idx, int dmg, int attacker) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     Unit& v = units_[idx];
     if (!v.alive || v.die_time >= 0.0 || dmg <= 0) return;
-    if (v.an.iron_left > 0.0) return;   // W2-AN-04 Iron Curtain
+    if (v.an.iron_left_frames > 0.0) return;   // W2-AN-04 Iron Curtain
     v.hp -= dmg;
     if (v.hp <= 0) {
         v.die_time = 0.0;
@@ -281,7 +282,7 @@ void World::an_damage_building(int b, int dmg) {
     if (b < 0 || b >= static_cast<int>(buildings_.size())) return;
     Building& B = buildings_[b];
     if (!B.alive || B.state == Building::State::Dead || dmg <= 0) return;
-    if (B.iron_left > 0.0) return;
+    if (B.iron_left_frames > 0.0) return;
     B.hp -= dmg;
     if (B.hp <= 0) kill_building(B);
 }
@@ -302,14 +303,14 @@ void World::an_area_damage(int house, double cx, double cy, int damage, double s
         if (!w.alive || w.die_time >= 0.0 || w.cargo_of >= 0) continue;
         if (!hit_air && w.is_aircraft && w.altitude > 0.0) continue;
         if (spare_house && w.house == house) continue;
-        double d = std::hypot((w.fx - cx) * kLept, (w.fy - cy) * kLept);
+        double d = om::hypot((w.fx - cx) * kLept, (w.fy - cy) * kLept);
         // W4: an explosion above the ground (a rocket shot down in flight) is
         // measured in 3-D [FUN_00489190 distance], so ground objects far below
         // take nothing. z = 0 (every other caller) is the old 2-D test.
-        if (z > 0.0) d = std::hypot(d, z - ((w.is_aircraft && w.altitude > 0.0) ? w.altitude : 0.0));
+        if (z > 0.0) d = om::hypot(d, z - ((w.is_aircraft && w.altitude > 0.0) ? w.altitude : 0.0));
         if (d > radius) continue;
         const double scale = 1.0 - (1.0 - pmax) * (d / radius);
-        const int dmg = damage_vs(static_cast<int>(damage * scale), vv, w.armor_ix);
+        const int dmg = damage_vs(om::ftol(damage * scale), vv, w.armor_ix);
         const int hp0 = w.hp;
         an_damage_unit(j, dmg, -1);
         feed_damage(false, j, house, hp0 - units_[j].hp);   // W6-03-04 anger
@@ -317,12 +318,12 @@ void World::an_area_damage(int house, double cx, double cy, int damage, double s
     // W6-04-04/05 [RE: FUN_00489190 @0x489581]: wall cells inside the blast
     // take Reduce_Wall per the warhead's wall keys (a Nuke's
     // WallAbsoluteDestroyer erases them), never an HP hit.
-    const int wr = static_cast<int>(std::max(0.5, std::round(spread)));
+    const int wr = om::ftol(std::max(0.5, std::round(spread)));
     if (has_wall_overlays() && z <= 0.0)
         for (int dy = -wr; dy <= wr; ++dy)
             for (int dx = -wr; dx <= wr; ++dx) {
                 const int x = static_cast<int>(std::lround(cx)) + dx, y = static_cast<int>(std::lround(cy)) + dy;
-                if (std::hypot((x - cx) * kLept, (y - cy) * kLept) <= radius)
+                if (om::hypot((x - cx) * kLept, (y - cy) * kLept) <= radius)
                     w6_overlay_wall_hit(x, y, wall_flags, damage);
             }
     for (int bi = 0; bi < static_cast<int>(buildings_.size()); ++bi) {
@@ -331,20 +332,20 @@ void World::an_area_damage(int house, double cx, double cy, int damage, double s
         if (spare_house && b.house == house) continue;
         if (b.type >= 0 && b.type < static_cast<int>(btypes().size()) &&
             btypes()[static_cast<std::size_t>(b.type)].w6.wall_levels > 0) {   // W6-04-04
-            if (z <= 0.0 && std::hypot((b.cx - cx) * kLept, (b.cy - cy) * kLept) <= radius)
+            if (z <= 0.0 && om::hypot((b.cx - cx) * kLept, (b.cy - cy) * kLept) <= radius)
                 w6_wall_building_hit(*this, units_, buildings_, bi, wall_flags, damage);
             continue;
         }
         double d = -1.0;
         for (const Cellxy& c : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
-            const double dc = std::hypot((c.x - cx) * kLept, (c.y - cy) * kLept);
+            const double dc = om::hypot((c.x - cx) * kLept, (c.y - cy) * kLept);
             if (d < 0.0 || dc < d) d = dc;
         }
-        if (z > 0.0 && d >= 0.0) d = std::hypot(d, z);   // W4: 3-D (see above)
+        if (z > 0.0 && d >= 0.0) d = om::hypot(d, z);   // W4: 3-D (see above)
         if (d < 0.0 || d > radius) continue;
         const double scale = 1.0 - (1.0 - pmax) * (d / radius);
         const int hp0 = b.hp;
-        an_damage_building(bi, damage_vs(static_cast<int>(damage * scale), vv, b.armor_ix));
+        an_damage_building(bi, damage_vs(om::ftol(damage * scale), vv, b.armor_ix));
         feed_damage(true, bi, house, hp0 - buildings_[bi].hp);   // W6-03-04 anger
     }
 }
@@ -378,7 +379,7 @@ void World::an_nuke_detonate(const SwStrike& s) {
     // spread = the warhead CellSpread, as BulletClass::Detonate's RadSite block).
     if (an_.sw.nuke_rad_level > 0 && grid_w_ > 0 && grid_h_ > 0) {
         if (rad_.empty()) rad_.init(grid_w_, grid_h_);
-        rad_.detonate(s.x, s.y, static_cast<int>(spread), an_.sw.nuke_rad_level, ability_frame_,
+        rad_.detonate(s.x, s.y, om::ftol(spread), an_.sw.nuke_rad_level, ability_frame_,
                       ability_rules_);
     }
     an_event(SwEvent::Detonated, s.house, SuperweaponType::Nuke, s.x, s.y, s.ox, s.oy);
@@ -386,7 +387,7 @@ void World::an_nuke_detonate(const SwStrike& s) {
 
 void World::an_iron_curtain(int house, int cx, int cy) {
     (void)house;
-    const double secs = an_.sw.iron_frames / 15.0;
+    const int secs = an_.sw.iron_frames;   // Net L0: whole frames
     for (const auto& o : kArea3x3) {
         const int x = cx + o[0], y = cy + o[1];
         for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
@@ -396,20 +397,20 @@ void World::an_iron_curtain(int house, int cx, int cy) {
             if (u.an.t.organic) {
                 // [RE-FALLBACK: the IronCurtain virtual (+0x154) body was not
                 // decompiled; classic RA2 kills infantry caught in the curtain.]
-                u.an.iron_left = 0.0;
+                u.an.iron_left_frames = 0;
                 an_damage_unit(i, u.hp, -1);
                 continue;
             }
-            u.an.iron_left = secs;
+            u.an.iron_left_frames = secs;
         }
         const int b = building_at_cell(x, y);
-        if (b >= 0) buildings_[b].iron_left = secs;
+        if (b >= 0) buildings_[b].iron_left_frames = secs;
     }
 }
 
 void World::an_chrono(int house, int sx, int sy, int tx, int ty) {
     (void)house;
-    const double freeze = an_.sw.chrono_delay_frames / 15.0;
+    const int freeze = an_.sw.chrono_delay_frames;   // Net L0: whole frames
     // Collect first (a teleported unit must not be picked up again at its
     // destination when the two areas overlap).
     std::vector<std::pair<int, int>> movers;   // unit, offset index
@@ -427,7 +428,7 @@ void World::an_chrono(int house, int sx, int sy, int tx, int ty) {
         Unit& u = units_[i];
         // The chrono-kill branch: Organic && !Teleporter -> full-Strength damage.
         if (u.an.t.organic && !u.an.t.teleporter) {
-            u.an.iron_left = 0.0;
+            u.an.iron_left_frames = 0;
             an_damage_unit(i, u.hp, -1);
             continue;
         }
@@ -450,7 +451,7 @@ void World::an_chrono(int house, int sx, int sy, int tx, int ty) {
                     }
         }
         if (fx < 0) {
-            u.an.iron_left = 0.0;
+            u.an.iron_left_frames = 0;
             an_damage_unit(i, u.hp, -1);
             continue;
         }
@@ -468,7 +469,7 @@ void World::an_chrono(int house, int sx, int sy, int tx, int ty) {
         u.guard_y = fy;
         if (!u.is_aircraft) occ_.set(fx, fy, i);
         if (const ra2assets::MapCell* mc = map_ ? map_->at(fx, fy) : nullptr) u.level = mc->level;
-        u.an.chrono_left = freeze;
+        u.an.chrono_left_frames = freeze;
         u.frozen = true;
     }
 }

@@ -1,4 +1,5 @@
 #include "roster2.hpp"
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 #include <algorithm>
 #include <cmath>
 #include "factory.hpp"      // exit_cell
@@ -30,7 +31,7 @@ int wall_stage(int hp, int max_hp, double condition_yellow) {
 }
 
 int wall_fill_range(double guard_range_cells) {
-    const int leptons = static_cast<int>(guard_range_cells * 256.0);
+    const int leptons = om::ftol(guard_range_cells * 256.0);
     return leptons >> 8;
 }
 
@@ -59,7 +60,7 @@ std::vector<Cellxy> wall_line_fill(int x, int y, int range,
 
 int wall_build_frames(int cost, double build_speed, double coefficient) {
     // FUN_006F3D00: FILD the integer time, FMUL WallBuildSpeedCoefficient, ftol.
-    return static_cast<int>(static_cast<double>(build_frames(cost, build_speed)) * coefficient);
+    return om::ftol(static_cast<double>(build_frames(cost, build_speed)) * coefficient);
 }
 
 bool water_bound_ok(int cx, int cy, int fw, int fh, const std::vector<std::uint8_t>& water,
@@ -117,7 +118,7 @@ Cellxy lepton_cell(LeptonXY p) {
 }
 
 int reload_cycle_frames(double reload_rate_minutes) {
-    return std::max(1, static_cast<int>(reload_rate_minutes * 900.0));
+    return std::max(1, om::ftol(reload_rate_minutes * 900.0));
 }
 
 int first_free_pad(const std::vector<int>& pad_owner) {
@@ -130,7 +131,7 @@ namespace {
 // Straight-line move toward (tx,ty) by at most `step`; true on arrival (snap).
 bool move_toward(double& x, double& y, double tx, double ty, double step) {
     const double dx = tx - x, dy = ty - y;
-    const double d = std::sqrt(dx * dx + dy * dy);
+    const double d = om::sqrt(dx * dx + dy * dy);
     if (d <= step || d == 0.0) { x = tx; y = ty; return true; }
     x += dx / d * step;
     y += dy / d * step;
@@ -164,7 +165,7 @@ SortieEvent step_sortie(Sortie& s, int reload_cycle) {
         return SortieEvent::None;
     case Sortie::State::Cruise: {
         const double dx = s.target.x - s.x, dy = s.target.y - s.y;
-        const double d = std::sqrt(dx * dx + dy * dy);
+        const double d = om::sqrt(dx * dx + dy * dy);
         if (d <= static_cast<double>(s.range_leptons)) {
             --s.ammo;
             ++s.shots;

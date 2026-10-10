@@ -1,4 +1,5 @@
 #include "rocket.hpp"
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 
 #include <algorithm>
 #include <cctype>
@@ -11,7 +12,7 @@ namespace ra2engine {
 
 namespace {
 
-int ftol_i(double v) { return static_cast<int>(std::trunc(v)); }
+int ftol_i(double v) { return om::ftol(v); }   // Net L0: the original _ftol (FUN_007C4D00)
 
 std::string upper(std::string s) {
     for (char& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
@@ -61,17 +62,17 @@ RocketBlock resolve_block(const ra2assets::Rules& rules, const std::string& pre,
                           const char* ewh_def) {
     RocketBlock b = d;
     auto num = [&](const char* k, double def) { return rules.general_double(pre + k, def); };
-    b.pause_frames = static_cast<int>(num("PauseFrames", d.pause_frames));
-    b.tilt_frames = static_cast<int>(num("TiltFrames", d.tilt_frames));
+    b.pause_frames = om::ftol(num("PauseFrames", d.pause_frames));
+    b.tilt_frames = om::ftol(num("TiltFrames", d.tilt_frames));
     b.pitch_initial = num("PitchInitial", d.pitch_initial);
     b.pitch_final = num("PitchFinal", d.pitch_final);
     b.turn_rate = num("TurnRate", d.turn_rate);
-    b.raise_rate = static_cast<int>(num("RaiseRate", d.raise_rate));
+    b.raise_rate = om::ftol(num("RaiseRate", d.raise_rate));
     b.acceleration = num("Acceleration", d.acceleration);
-    b.altitude = static_cast<int>(num("Altitude", d.altitude));
-    b.damage = static_cast<int>(num("Damage", d.damage));
-    b.elite_damage = static_cast<int>(num("EliteDamage", d.elite_damage));
-    b.body_length = static_cast<int>(num("BodyLength", d.body_length));
+    b.altitude = om::ftol(num("Altitude", d.altitude));
+    b.damage = om::ftol(num("Damage", d.damage));
+    b.elite_damage = om::ftol(num("EliteDamage", d.elite_damage));
+    b.body_length = om::ftol(num("BodyLength", d.body_length));
     b.lazy_curve = yes(rules.section_string("General", pre + "LazyCurve", ""), d.lazy_curve);
     const std::string wh = warhead_key(rules, wh_key, wh_def);
     const std::string ewh = warhead_key(rules, ewh_key, ewh_def);
@@ -130,14 +131,14 @@ void rocket_launch(const RocketBlock& b, RocketFlight& f, double x, double y, do
     f.y = y;
     f.z = z;
     const double dx = tx - x, dy = ty - y;
-    f.yaw = (dx == 0.0 && dy == 0.0) ? 0.0 : std::atan2(dy, dx);
+    f.yaw = (dx == 0.0 && dy == 0.0) ? 0.0 : om::atan2(dy, dx);
 }
 
 void rocket_nose(const RocketBlock& b, const RocketFlight& f, double& x, double& y, double& z) {
-    const double c = std::cos(f.pitch);
-    x = f.x + b.body_length * c * std::cos(f.yaw);
-    y = f.y + b.body_length * c * std::sin(f.yaw);
-    z = f.z + b.body_length * std::sin(f.pitch);
+    const double c = om::cos(f.pitch);
+    x = f.x + b.body_length * c * om::cos(f.yaw);
+    y = f.y + b.body_length * c * om::sin(f.yaw);
+    z = f.z + b.body_length * om::sin(f.pitch);
 }
 
 namespace {
@@ -191,12 +192,12 @@ int rocket_step(const RocketBlock& b, int speed_cap, RocketFlight& f, double tx,
             accelerate();
             if (static_cast<double>(b.altitude) <= f.z) {
                 f.phase = kRocketCruise;
-                f.horiz0 = ftol_i(std::hypot(tx - f.x, ty - f.y));
+                f.horiz0 = ftol_i(om::hypot(tx - f.x, ty - f.y));
             }
             break;
         case kRocketCruise: {
             accelerate();
-            const double horiz = std::hypot(tx - f.x, ty - f.y);
+            const double horiz = om::hypot(tx - f.x, ty - f.y);
             if (!b.lazy_curve || f.horiz0 == 0) {
                 // LazyCurve=no: level off by TurnRate, then dive once the
                 // target is inside the 45-degree cone below [RE-FALLBACK: the
@@ -213,16 +214,16 @@ int rocket_step(const RocketBlock& b, int speed_cap, RocketFlight& f, double tx,
                 // LazyCurve=yes: blend the line of sight and PitchFinal by the
                 // remaining horizontal fraction -- the big lazy arc.
                 const double t = horiz / static_cast<double>(f.horiz0);
-                const double los = horiz <= 0.0 ? -kHalfPi : std::atan((tz - f.z) / horiz);
+                const double los = horiz <= 0.0 ? -kHalfPi : om::atan((tz - f.z) / horiz);
                 f.pitch = los * (1.0 - t) + b.pitch_final * kHalfPi * t;
             }
-            if (horiz > 0.0) f.yaw = std::atan2(ty - f.y, tx - f.x);   // re-aimed every frame
+            if (horiz > 0.0) f.yaw = om::atan2(ty - f.y, tx - f.x);   // re-aimed every frame
             break;
         }
         case kRocketDive: {
             if (nose_contact(b, f, tz)) return kRocketDetonate;
-            const double horiz = std::hypot(tx - f.x, ty - f.y);
-            const double want = horiz <= 0.0 ? -kHalfPi : std::atan((tz - f.z) / horiz);   // 0x7EFC10
+            const double horiz = om::hypot(tx - f.x, ty - f.y);
+            const double want = horiz <= 0.0 ? -kHalfPi : om::atan((tz - f.z) / horiz);   // 0x7EFC10
             const double d = want - f.pitch;
             if (std::fabs(d) <= b.turn_rate) f.pitch += d;
             else f.pitch += d > 0.0 ? b.turn_rate : -b.turn_rate;
@@ -233,10 +234,10 @@ int rocket_step(const RocketBlock& b, int speed_cap, RocketFlight& f, double tx,
     }
     // Common tail: move speed along the pitch and the yaw.
     if (f.speed > 0.0) {
-        const double c = std::cos(f.pitch);
-        f.x += f.speed * c * std::cos(f.yaw);
-        f.y += f.speed * c * std::sin(f.yaw);
-        f.z += f.speed * std::sin(f.pitch);
+        const double c = om::cos(f.pitch);
+        f.x += f.speed * c * om::cos(f.yaw);
+        f.y += f.speed * c * om::sin(f.yaw);
+        f.z += f.speed * om::sin(f.pitch);
     }
     return result;
 }

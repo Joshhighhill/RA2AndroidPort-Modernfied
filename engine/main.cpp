@@ -16,7 +16,25 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
+// Net L0: RA2_ANDROID_CLI builds the DESKTOP command line (--demo-*, --play,
+// --ai-soak) as a plain Android executable for the cross-platform determinism
+// gate (tools/xplat_gate.ps1): no SDLActivity, so SDL must not rename main().
+#ifdef RA2_ANDROID_CLI
+#define SDL_MAIN_HANDLED
+#endif
 #include <SDL.h>
+#ifdef RA2_ANDROID_CLI
+// No Java activity: SDL's Android pref / storage paths need JNI and would
+// crash. The CLI uses RA2_PREF_DIR (else no settings file) like --play does.
+#include <SDL_system.h>
+#include <cstdlib>
+static char* ra2_cli_pref_path() {
+    const char* d = std::getenv("RA2_PREF_DIR");
+    return d && *d ? SDL_strdup(d) : nullptr;
+}
+#define SDL_GetPrefPath(org, app) ra2_cli_pref_path()
+#define SDL_AndroidGetExternalStoragePath() static_cast<const char*>(nullptr)
+#endif
 
 #include <algorithm>
 #include <array>
@@ -44,6 +62,7 @@
 
 #include "audio_mixer.hpp"
 #include "bridges.hpp"      // G16 (agent G): bridge overlay classes
+#include "orig_math.hpp"    // Net L0: the original FastMath for sim code living in main.cpp
 #include "audio_sdl.hpp"
 #include "music_stream.hpp"
 #include <chrono>     // W2-GA-22 streamed score
@@ -4393,7 +4412,7 @@ double factory_speedup(const ra2engine::World& world, const std::vector<int>& ft
         for (int t : ftypes) if (b.type == t) { ++n; break; }
     }
     if (n <= 1 || mf <= 0.0) return 1.0;
-    return std::pow(1.0 / mf, n - 1);
+    return ra2engine::om::ipow(1.0 / mf, n - 1);   // Net L0: deterministic (no libm pow)
 }
 
 // Per-frame production glue for the FOUR concurrent queues [RE-GATE APPLIED:
@@ -5539,6 +5558,23 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
 // existing CRATES toggle (cfg.crates). launch_skirmish (shared with
 // --demo-skirmish) is deliberately NOT touched, so that gate's World never
 // opens either firewall.
+// Net L0: the session seed a game runs on -- the one a network host chose
+// (SkirmishConfig::session_seed), else 0. Seed 0 keeps every RNG stream on its
+// historical fixed seed, so single-player games (lobby skirmish, campaign,
+// --play scripts) behave exactly as before; a multiplayer session sets one
+// seed and every stream derives from it. Never the wall clock.
+std::uint32_t session_seed_for(const ra2engine::SkirmishConfig& cfg) { return cfg.session_seed; }
+
+// The crate generator's seed when no session seed is set: a campaign mission's
+// name hash (W5-A: a mission replays identically), else a fixed value (it was
+// the wall clock: a skirmish was not reproducible).
+std::uint32_t fallback_crate_seed(const ra2engine::SkirmishConfig& cfg) {
+    if (cfg.campaign_map.empty()) return 0x52413252u;
+    std::uint32_t h = 2166136261u;
+    for (char ch : cfg.campaign_map) h = (h ^ static_cast<unsigned char>(std::toupper(static_cast<unsigned char>(ch)))) * 16777619u;
+    return h;
+}
+
 void enable_p5_features(ra2engine::World& world, const Rules& rules, const BuildingAssets& ba,
                         const ra2engine::SkirmishConfig& cfg,
                         const std::vector<const std::vector<ra2engine::UnitTypeDef>*>& rosters) {
@@ -5551,18 +5587,12 @@ void enable_p5_features(ra2engine::World& world, const Rules& rules, const Build
     if (!cfg.crates && !campaign) return;
     ra2engine::World::CrateConfig cc;
     cc.rules = resolve_crate_rules(rules);
-    // ScenarioClass::Random is seeded per game in the original; the clone uses
-    // the wall clock (the interactive game is not a gate).
-    cc.seed = static_cast<std::uint32_t>(SDL_GetTicks()) ^ 0x52413252u;
+    // Net L0 [RE: InitRandom FUN_0052F960]: ScenarioClass::Random is seeded
+    // with the session Seed itself. The session seed was chosen by the
+    // launcher (session_seed_for) -- no wall clock -- and is in the save.
+    cc.seed = world.session_seed() ? world.session_seed() : fallback_crate_seed(cfg);
     if (g_crate_seed_override >= 0) cc.seed = static_cast<std::uint32_t>(g_crate_seed_override);   // NET L1 replay
-    // W5-A: a campaign seeds its crate RNG from the mission name, so a mission
-    // replays identically (the --play proofs) [RE-FALLBACK: the original's
-    // per-game ScenarioClass::Random seed is not modelled for campaigns].
-    if (campaign) {
-        std::uint32_t h = 2166136261u;
-        for (char ch : cfg.campaign_map) h = (h ^ static_cast<unsigned char>(std::toupper(static_cast<unsigned char>(ch)))) * 16777619u;
-        cc.seed = h;
-    }
+
     int humans = 0;
     for (const ra2engine::SkirmishSlot& sl : cfg.slots)
         if (sl.combatant && !sl.is_ai) ++humans;
@@ -6044,6 +6074,7 @@ public:
         cfg_ = cfg;   // P7: the save's 'CONF' section rebuilds this scene's assets
         local_house_ = local_slot_of(cfg);   // L2: the house this client plays
         g_local_house = local_house_;
+        world_.set_session_seed(session_seed_for(cfg));   // Net L0: before anything draws
         world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
         depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
         w5_arm_combat(world_, rules_, &a_.map, &a_.theater);   // W5-B: sub-cells, land speed, crush
@@ -6426,8 +6457,8 @@ public:
 
         now_ = SDL_GetTicks();   // frame clock for draw_sidebar's animation timing
         // G-13: the simulation advances in FIXED logic ticks (accumulator over the
-        // wall-clock dt; at most kMaxLogicSteps per frame, the rest dropped so a
-        // stall never spirals). Input, scrolling, rendering and the per-frame
+        // wall-clock dt; at most kMaxLogicSteps per frame, the rest carried to
+        // the next frames -- Net L0: ticks are never dropped). Input, scrolling, rendering and the per-frame
         // tail below stay per-frame. The tick length is kLogicDt (see the
         // RE-FALLBACK note at its definition).
         // RE-T1 (gap fix C) [RE: docs/re/gamespeed.md]: the user's GameSpeed
@@ -6437,7 +6468,10 @@ public:
         // [SK-20] A skirmish started from the lobby runs at the page's Game
         // Speed slider (0x6829F0 stores it as the session speed); other paths
         // keep [Options] GameSpeed.
-        logic_acc_ += dt * (net_ ? 1.0   // NET-PLAY: fixed 15 Hz logic
+        // Net L0: a frame that took longer than 1 s (a debugger, an OS suspend)
+        // counts as 1 s of game time -- like the original, which never catches
+        // up wall time at all -- so the carried backlog stays bounded.
+        logic_acc_ += std::min(dt, 1.0) * (net_ ? 1.0   // NET-PLAY: fixed 15 Hz logic
                             : cfg_.game_speed >= 0
                                 ? ra2engine::game_speed_multiplier(cfg_.game_speed)
                                 : g_user_settings
@@ -6447,11 +6481,14 @@ public:
         select_notify_tick();   // NET L1: event 33 sees the selection via the command log
         int logic_steps = 0;
         while (logic_acc_ + 1e-9 >= kLogicDt) {
+            // Net L0 (N4-07): never DROP a tick -- the remainder stays in the
+            // accumulator and is caught up over the following frames (at most
+            // kMaxLogicSteps per frame, so rendering keeps going). A lockstep
+            // peer must run every tick; a slow device runs the game slower
+            // rather than skipping simulation.
             if (logic_steps == kMaxLogicSteps) {
-                // NET-PLAY: a lockstep match never drops ticks -- the backlog
-                // runs in the next frames (bounded to 2 s of catch-up).
+                // NET-PLAY: a lockstep match bounds the backlog to 2 s of catch-up.
                 if (net_) logic_acc_ = std::min(logic_acc_, 30 * kLogicDt);
-                else logic_acc_ = 0.0;
                 break;
             }
             if (net_ && !net_gate()) break;   // NET-PLAY: the session decides (stall / end)
@@ -7066,6 +7103,7 @@ private:
                 arm_skirmish_ai(world_, cfg_, ba_, rules_, rules_ini_, ur_ai_,
                                 load_aimd_or_empty(dir_), &a_.map, ua_);
             setup_player_economies();   // L2: fresh wallets + queues for every human house
+            world_.set_session_seed(session_seed_for(cfg_));   // Net L0
             if (!cfg_.campaign_map.empty()) setup_campaign(cfg_);
             world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
         depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
@@ -13914,7 +13952,8 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
     // UnitCount force at a start chosen by the recovered spread rule -- no
     // pre-built base. The gates pass nothing and keep the historical setup.
     if (gf_rules_ini) {
-        GfRng rng(gf_seed_of(cfg.map_file.empty() ? cfg.map_id : cfg.map_file));
+        GfRng rng(cfg.session_seed ? cfg.session_seed   // Net L0: the session seed when the launcher chose one
+                                     : gf_seed_of(cfg.map_file.empty() ? cfg.map_id : cfg.map_file));
         std::vector<ra2assets::MapWaypoint> real_starts = a.map.start_waypoints();
         int ncomb = 0;
         for (const ra2engine::SkirmishSlot& s : cfg.slots) ncomb += s.combatant ? 1 : 0;
@@ -18125,8 +18164,11 @@ int main(int argc, char** argv) {
     // W2-AR-30: SDL-internal assertions log and continue; they never block on
     // a console prompt (desktop) or a modal dialog (Android).
     install_sdl_assert_handler();
+#ifdef RA2_ANDROID_CLI
+    SDL_SetMainReady();   // Net L0: plain executable, no SDLActivity
+#endif
     try {
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && !defined(RA2_ANDROID_CLI)
         // Android launches straight into the interactive engine: there is no
         // CLI, so the desktop-only verification modes (--screenshot/--demo-*)
         // are unreachable here. Touch drives select/move (see platform.cpp

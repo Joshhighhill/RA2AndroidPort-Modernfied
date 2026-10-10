@@ -1,4 +1,5 @@
 #include "world.hpp"
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 #include "weapon_unit.hpp"  // Gap fix C
 
 #include <algorithm>
@@ -56,7 +57,7 @@ int seq_frame(const SeqEntry& e, int facing, int phase) {
 // (sx, sy) ~ (dx - dy, dx + dy) with y down.
 int facing_from_delta(double dx, double dy) {
     if (dx == 0.0 && dy == 0.0) return -1;
-    const double ang = std::atan2(dx + dy, dx - dy) * 180.0 / 3.14159265358979323846;
+    const double ang = om::atan2(dx + dy, dx - dy) * 180.0 / 3.14159265358979323846;
     const double ccw = std::fmod(-90.0 - ang + 720.0, 360.0);
     return static_cast<int>(std::lround(ccw / 45.0)) % 8;
 }
@@ -79,7 +80,7 @@ double facing_u16_from_delta(double dx, double dy) {
     constexpr double kPi = 3.14159265358979323846;
     // atan2 in [-pi, pi] -> [-32768, 32768]; the +65536 then fmod normalizes
     // into [0, 65536) without a separate negative-wrap fixup.
-    return std::fmod(std::atan2(dx, -dy) * (65536.0 / (2.0 * kPi)) + 65536.0, 65536.0);
+    return std::fmod(om::atan2(dx, -dy) * (65536.0 / (2.0 * kPi)) + 65536.0, 65536.0);
 }
 
 double turn_toward(double facing, double target, double max_step) {
@@ -365,9 +366,9 @@ ra2assets::Palette pal_for_color(const ra2assets::Palette& unit_pal, int color_i
 // integer HSV2RGB 0x517260; SIN/COS are the game's 8192-step float table
 // (0x84E004, index (n>>1)+(n&1), n = trunc(x * 16384/2pi)).
 namespace {
-float rmp_table(int k) { return std::sin(static_cast<float>(k) * 6.2831855f / 8192.0f); }
+float rmp_table(int k) { return om::sin_table(k); }   // Net L0: the 0x84E004 entry itself
 int rmp_index(float x) {
-    const int n = static_cast<int>(x * 2607.594482421875f);
+    const int n = om::ftol(x * 2607.594482421875f);
     int idx = n >> 1;
     if ((n & 1) && idx < 0x1FFF) ++idx;
     return idx & 0x1FFF;
@@ -399,8 +400,8 @@ ra2assets::Palette pal_for_hsv(const ra2assets::Palette& unit_pal, int h, int s,
         double ang_a = i * 0.08144869842640204 + 0.3490658503988659;
         if (i == 0) ang_a = 0.19634954084936207;
         const double ang_b = i * 0.046542113386515455 + 0.8726646259971648;
-        const int s2 = static_cast<int>(rmp_sin(static_cast<float>(ang_b)) * static_cast<float>(s));
-        const int v2 = static_cast<int>(rmp_cos(static_cast<float>(ang_a)) * static_cast<float>(v));
+        const int s2 = om::ftol(rmp_sin(static_cast<float>(ang_b)) * static_cast<float>(s));
+        const int v2 = om::ftol(rmp_cos(static_cast<float>(ang_a)) * static_cast<float>(v));
         out[16 + i] = rmp_hsv2rgb(static_cast<unsigned>(std::clamp(h, 0, 255)), static_cast<unsigned>(std::clamp(s2, 0, 255)),
                                   static_cast<unsigned>(std::clamp(v2, 0, 255)), unit_pal[16 + i].a);
     }
@@ -708,8 +709,8 @@ void World::update_sub_offsets() {
                 const Cellxy t = u.path[pi];
                 const int ns = occ_.spot_of(t.x, t.y, i);
                 if (ns >= 0) {
-                    const double seg = std::hypot(t.x - u.cell_x, t.y - u.cell_y);
-                    const double rem = std::hypot(t.x - u.fx, t.y - u.fy);
+                    const double seg = om::hypot(t.x - u.cell_x, t.y - u.cell_y);
+                    const double rem = om::hypot(t.x - u.fx, t.y - u.fy);
                     double f = seg > 0.0 ? 1.0 - rem / seg : 1.0;
                     if (f < 0.0) f = 0.0;
                     if (f > 1.0) f = 1.0;
@@ -1966,6 +1967,40 @@ void World::step_flight(double dt) {
 
 // --- AI-1 base-planning phase [RE: ai-base.md] ------------------------------
 
+namespace {
+// splitmix32-style finaliser (Net L0 stream derivation).
+std::uint32_t seed_mix(std::uint32_t x) {
+    x ^= x >> 16; x *= 0x7FEB352Du;
+    x ^= x >> 15; x *= 0x846CA68Bu;
+    x ^= x >> 16;
+    return x;
+}
+}  // namespace
+
+std::uint32_t World::session_stream_seed(std::uint32_t base, std::uint32_t salt) const {
+    if (session_seed_ == 0) return base;
+    const std::uint32_t h = seed_mix(session_seed_ ^ seed_mix(base + 0x9E3779B9u * (salt + 1u)));
+    return h ? h : base;
+}
+
+void World::set_session_seed(std::uint32_t seed) {
+    session_seed_ = seed;
+    proj_rng_.s = session_stream_seed(ProjRng{}.s);
+    combat_rng_.s = session_stream_seed(0x2545F491u);
+    ore_rng_.s = session_stream_seed(OreRng{}.s);
+    bridge_rng_.s = session_stream_seed(0x42524447u);
+    // [RE: InitRandom FUN_0052F960] Scenario->Random (+0x218) is seeded with
+    // the session Seed itself whether or not crates are on -- the clone's
+    // crate GameRandom is that generator (simdiff L0: bit-exact). Seed 0
+    // (gates) leaves it alone; enable_crates re-seeds it with the same value.
+    if (seed) crate_rng_ = GameRandom(seed);
+    // Houses already enabled (a launcher that enables AI first) re-derive too.
+    for (std::size_t h = 0; h < ai_houses_.size(); ++h) {
+        ai_houses_[h].state.rng = session_stream_seed(AiBaseState{}.rng, 1u + static_cast<std::uint32_t>(h));
+        ai_houses_[h].team_state.rng = session_stream_seed(AiTeamState{}.rng, 101u + static_cast<std::uint32_t>(h));
+    }
+}
+
 void World::enable_ai_house(int house, AiHouseConfig cfg) {
     if (house < 0) return;
     if ((int)ai_houses_.size() <= house) ai_houses_.resize(house + 1);
@@ -1974,6 +2009,9 @@ void World::enable_ai_house(int house, AiHouseConfig cfg) {
     rec.cfg = std::move(cfg);
     rec.state = AiBaseState{};
     rec.team_state = AiTeamState{};  // AI-2: fresh team state per enable
+    // Net L0: the house streams come from the session seed (fixed when none).
+    rec.state.rng = session_stream_seed(rec.state.rng, 1u + static_cast<std::uint32_t>(house));
+    rec.team_state.rng = session_stream_seed(rec.team_state.rng, 101u + static_cast<std::uint32_t>(house));
     rec.trigger_state = make_trigger_state(rec.cfg.team.aimd);  // AI-3: current
                                     // weights seeded from starting_weight
                                     // (NB reads rec.cfg — cfg was moved from)
@@ -3110,8 +3148,10 @@ void World::step_ai_houses(double dt) {
         //     RE-FALLBACK: the window is exactly RepairDelay minutes (the
         //     rand(lo,hi) bounds were not decoded); "damaged" = hp < Strength;
         //     the lowest-index damaged Idle building is picked.]
-        rec.state.repair_clock += dt;
-        if (rec.state.repair_clock >= cfg.mods.repair_delay_min * 60.0 &&
+        // Net L0: counted in whole FRAMES (dt*15 is exactly 1 per logic tick),
+        // never as a running sum of 1/15 s, which drifts against k/15.
+        rec.state.repair_clock += dt * 15.0;
+        if (rec.state.repair_clock >= cfg.mods.repair_delay_min * 900.0 &&
             ai_econ(rec).credits >= cfg.ai.credit_reserve) {
             for (int bi = 0; bi < (int)buildings_.size(); ++bi) {
                 const Building& b = buildings_[bi];
@@ -3193,7 +3233,7 @@ void World::step_ai_houses(double dt) {
                 for (int t : cfg.team.inf_factory_types) if (t == b.type) { ++ninf; break; }
                 for (int t : cfg.team.veh_factory_types) if (t == b.type) { ++nveh; break; }
             }
-            auto spd = [&](int n) { return n <= 1 ? 1.0 : std::pow(1.0 / cfg.multiple_factory, n - 1); };
+            auto spd = [&](int n) { return n <= 1 ? 1.0 : om::ipow(1.0 / cfg.multiple_factory, n - 1); };
             sp[0] = sp[1] = spd(ncy);
             sp[2] = spd(ninf);
             sp[3] = spd(nveh);
@@ -3212,6 +3252,13 @@ void World::step_ai_houses(double dt) {
         //    [RE-FALLBACK: secs = min x 60]. The jitter draw uses the
         //    engine-local xorshift32 [RE-FALLBACK: ai-base.md deviations —
         //    stands in for the lockstep game RNG; NEVER wall-clock].
+        // Net L0: this clock deliberately stays in SECONDS (a running sum of dt).
+        // Counting exact frames re-times every AI build pass by a frame (the
+        // sum of 1/15 s runs one tick past k/15), which re-times the whole AI
+        // base build order and the gates that ride it (--demo-ai-base,
+        // --demo-ai-team). The sum is IEEE-exact on every platform, so it is
+        // deterministic; matching the original's frame period is left to the
+        // AI calibration work (tools/simdiff build-order rung).
         rec.state.build_clock += dt;
         if (rec.state.build_clock < rec.state.build_gate) continue;
         rec.state.build_clock = 0.0;
@@ -3361,7 +3408,7 @@ void World::step_ai_houses(double dt) {
         const BuildingTypeDef& t = cfg.roster[d.type];
         const int basis = t.charge > 0 ? t.charge : t.cost;
         const int ai_charge =
-            std::max(1, (int)(basis * cfg.mods.cost_mul));
+            std::max(1, om::ftol((basis * cfg.mods.cost_mul)));
         ai_econ(rec).queues.set_credits(ai_econ(rec).credits);
         start(ai_econ(rec).queues.state(cat), t.cost, ai_charge,
               cfg.build_speed * cfg.mods.build_time_mul);
@@ -3540,7 +3587,7 @@ void World::ai_note_damage(bool building, int victim, int attacker_house, int dm
         cost = (t >= 0) ? rec.cfg.team.unit_roster[(std::size_t)t].cost : u.max_hp;
     }
     if (strength <= 0) strength = 1;
-    const int delta = (int)((double)cost * ((double)dmg / (double)strength));
+    const int delta = om::ftol(((double)cost * ((double)dmg / (double)strength)));
     if (delta != 0) ai_add_anger(vh, attacker_house, delta);
 }
 
@@ -4413,8 +4460,8 @@ void World::step_ai_teams(double dt) {
         //    check pass, AutocreateTime (minutes) gates the actual SPAWN; the
         //    TotalAITeamCap hard cap is enforced inside select_autocreate_team.
         //    At most ONE new team per spawn, highest priority first, deterministic.
-        st.check_clock += dt;
-        const double check_period = (double)tc.rules.team_delay_frames / 15.0;
+        st.check_clock += dt * 15.0;   // Net L0: whole frames
+        const double check_period = (double)tc.rules.team_delay_frames;
         if (st.check_clock >= check_period) {
             st.check_clock = 0.0;
             // [G-60] per-TeamType buildable test (FUN_0041ff00): every
@@ -4438,7 +4485,7 @@ void World::step_ai_teams(double dt) {
                         team_ok[ti] = 0;
             }
             st.spawn_clock += check_period;
-            const double spawn_period = tc.rules.autocreate_time_min * 60.0;  // min->s
+            const double spawn_period = tc.rules.autocreate_time_min * 900.0;  // min->frames (Net L0)
             if (st.spawn_clock >= spawn_period) {
                 st.spawn_clock = 0.0;
                 // CONTRACT F: select_autocreate_team takes a trailing seeded rng
@@ -4681,7 +4728,7 @@ void World::step_ai_teams(double dt) {
                 // difficulty cost handicap on the charge and the BuildTime
                 // handicap on the speed. No BuildSlowdown time-mul.
                 const int cost = tc.unit_roster[want].cost;
-                const int charge = std::max(1, (int)(cost * rec.cfg.mods.cost_mul));
+                const int charge = std::max(1, om::ftol((cost * rec.cfg.mods.cost_mul)));
                 ai_econ(rec).queues.set_credits(ai_econ(rec).credits);
                 start(ai_econ(rec).queues.state(cat), cost, charge,
                       rec.cfg.build_speed * rec.cfg.mods.build_time_mul);
@@ -5275,8 +5322,8 @@ void World::step(double dt) {
         // W5-B R-063: the same 3-D / elevation / cliff test step_combat fires
         // on, measured from the committed cell (Finding-1 semantics above).
         if (!u.path.empty() &&
-            weapon_in_range_from(*this, u, u.cell_x * 256 + static_cast<int>(u.sub_x),
-                                 u.cell_y * 256 + static_cast<int>(u.sub_y), unit_lept_z(u),
+            weapon_in_range_from(*this, u, u.cell_x * 256 + om::ftol(u.sub_x),
+                                 u.cell_y * 256 + om::ftol(u.sub_y), unit_lept_z(u),
                                  unit_lept_x(t), unit_lept_y(t), unit_lept_z(t))) {
             // In range with a live pursue-path -> stop and hold (snap onto the
             // committed cell so we don't strand mid-segment; Finding-1 semantics).
@@ -5303,8 +5350,8 @@ void World::step(double dt) {
         if (!b.alive || b.state == Building::State::Dead) continue;
         int bax = 0, bay = 0, baz = 0;
         building_aim_lept(b, cell_level(b.cx, b.cy), bax, bay, baz);
-        if (weapon_in_range_from(*this, u, u.cell_x * 256 + static_cast<int>(u.sub_x),
-                                 u.cell_y * 256 + static_cast<int>(u.sub_y), unit_lept_z(u), bax, bay, baz,
+        if (weapon_in_range_from(*this, u, u.cell_x * 256 + om::ftol(u.sub_x),
+                                 u.cell_y * 256 + om::ftol(u.sub_y), unit_lept_z(u), bax, bay, baz,
                                  (b.fw + b.fh) * 64)) {
             u.path.clear();
             u.path_idx = 0;
@@ -5391,7 +5438,7 @@ void World::step(double dt) {
             // just a defensive backstop, not a pacing choice (contrast the
             // Task 7 table this replaced, which capped die_count to force
             // reachability -- see docs/re/infantry-anim.md §2/§3).
-            const int adv = static_cast<int>(u.die_time * kDieAnimFps);
+            const int adv = om::ftol(u.die_time * kDieAnimFps);
             u.frame = seq_frame(seq.die, u.facing, adv);
         } else if (u.fire_flash > 0.0) {
             // Play the fire/recoil sequence ONCE across the flash window.
@@ -5405,7 +5452,7 @@ void World::step(double dt) {
             // kTileW/kTileH/kLevelPx duplicating iso_renderer.cpp/input.cpp
             // (task-12-report.md Minor). MUST stay in sync with combat.cpp's
             // kFireFlashSecs if that ever changes.
-            const int adv = static_cast<int>((kFireFlashSecs - u.fire_flash) * kFireAnimFps);
+            const int adv = om::ftol((kFireFlashSecs - u.fire_flash) * kFireAnimFps);
             u.frame = seq_frame(seq.fire, u.facing, adv);
         }
         // else: leave step_units' stand/walk choice untouched.
@@ -5677,7 +5724,7 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
             }
             const double dx = tgt.x - u.fx;
             const double dy = tgt.y - u.fy;
-            const double dist = std::sqrt(dx * dx + dy * dy);
+            const double dist = om::sqrt(dx * dx + dy * dy);
             if (dist <= 1e-9 || budget >= dist) {
                 occ.release(u.cell_x, u.cell_y, self);  // leave the old cell
                 u.fx = tgt.x;
@@ -5752,8 +5799,8 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 u.wait_time = 0.0;
             } else if (u.wait_time >= first_try &&
                        (prev_wait < first_try ||
-                        static_cast<int>((prev_wait - first_try) / kBlockedWait) !=
-                            static_cast<int>((u.wait_time - first_try) / kBlockedWait))) {
+                        om::ftol((prev_wait - first_try) / kBlockedWait) !=
+                            om::ftol((u.wait_time - first_try) / kBlockedWait))) {
                 // On a re-path attempt boundary (first_try, then every
                 // kBlockedWait after) -> attempt a re-path around the current
                 // traffic. On FAILURE keep the original path and keep waiting:
@@ -5796,7 +5843,7 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
 
         // Still walking: cycle the walk frames.
         u.anim_time += dt;
-        const int phase = static_cast<int>(u.anim_time * kWalkFps) % seq.walk.count;
+        const int phase = om::ftol(u.anim_time * kWalkFps) % seq.walk.count;
         u.frame = seq_frame(seq.walk, u.facing, phase);
     }
 }
@@ -5820,7 +5867,7 @@ int unit_ly(const Unit& u) { return ftol(u.fy * 256.0 + u.sub_y); }
 int unit_lz(const Unit& u) { return u.is_aircraft ? ftol(u.altitude) : 0; }
 int dist3(int ax, int ay, int az, int bx, int by, int bz) {
     const double dx = ax - bx, dy = ay - by, dz = az - bz;
-    return ftol(std::sqrt(dx * dx + dy * dy + dz * dz));
+    return ftol(om::sqrt(dx * dx + dy * dy + dz * dz));
 }
 }  // namespace
 
@@ -5863,7 +5910,7 @@ void World::launch_projectile(int attacker, int target_unit, int target_building
         int nx = b.cx, ny = b.cy;
         for (const Cellxy& c : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
             const double dx = (c.x - u.fx) * 256.0, dy = (c.y - u.fy) * 256.0;
-            const double d = std::hypot(dx, dy);
+            const double d = om::hypot(dx, dy);
             if (best < 0.0 || d < best) { best = d; nx = c.x; ny = c.y; }
         }
         tgt = Vec3i{nx * 256, ny * 256, 0};
@@ -5879,10 +5926,10 @@ void World::launch_projectile(int attacker, int target_unit, int target_building
     double fwx = 0.0, fwy = 1.0;
     if (u.is_vehicle) {
         const double a = u.turret_facing * (2.0 * kProjPi / 65536.0);
-        fwx = std::sin(a);
-        fwy = -std::cos(a);
+        fwx = om::sin(a);
+        fwy = -om::cos(a);
     } else {
-        const double dx = tgt.x - ux, dy = tgt.y - uy, len = std::hypot(dx, dy);
+        const double dx = tgt.x - ux, dy = tgt.y - uy, len = om::hypot(dx, dy);
         if (len > 0.0) { fwx = dx / len; fwy = dy / len; }
     }
     Vec3i src;
@@ -6135,7 +6182,7 @@ void World::step_projectiles_frame() {
         }
         // §7 out of speed: |V| < 8 (sampled pre-gravity), or |V| < 10 and height <= 9.
         if (!det && p.kind == ProjKind::Ballistic) {
-            const double mag = std::sqrt(p.vx * p.vx + p.vy * p.vy + p.vz * p.vz);
+            const double mag = om::sqrt(p.vx * p.vx + p.vy * p.vy + p.vz * p.vz);
             if (p.slow || (mag < kRestSpeed && p.z <= 9)) det = true;
         }
         // §12.2 IsBlocked: height <= -4*LevelHeight.

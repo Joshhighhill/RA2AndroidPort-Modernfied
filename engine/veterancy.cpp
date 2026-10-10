@@ -1,4 +1,5 @@
 #include "veterancy.hpp"
+#include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 
 #include <cctype>
 
@@ -6,7 +7,7 @@ namespace ra2engine {
 
 namespace {
 // ftol: the binary's _ftol (0x7C4D00) truncates toward zero.
-inline int ftol(double x) { return static_cast<int>(x); }
+inline int ftol(double x) { return om::ftol(x); }
 
 const char* const kAbilityNames[18] = {
     "FASTER", "STRONGER", "FIREPOWER", "SCATTER", "ROF", "SIGHT", "CLOAK",

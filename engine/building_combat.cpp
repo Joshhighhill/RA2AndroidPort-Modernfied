@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "capture.hpp"     // apply_blackout
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 #include "combat.hpp"      // deliver_hit_from, apply_spread_damage, damage_vs
 #include "production.hpp"  // power_totals
 #include "weapon_unit.hpp"
@@ -171,7 +172,7 @@ void World::step_building_combat(double dt) {
         // boosted shot. Nothing else fires while charging (GetFireError
         // REARM).
         if (w5_.armed && b.w5.prism_stage != 0) {
-            b.def_rof_cool = std::max(0.0, b.def_rof_cool - dt);
+            if (b.def_rearm_frames > 0) --b.def_rearm_frames;   // Net L0: whole frames
             if (--b.w5.delay > 0) continue;
             b.w5.delay = 0;
             const int stage = b.w5.prism_stage;
@@ -183,7 +184,7 @@ void World::step_building_combat(double dt) {
                 b.def_fire_flash = kFireFlashSecs;
                 b.w5.supporting = 0;
                 b.w5.master = -1;
-                b.def_rof_cool = w5_.rules.prism_support_delay / 15.0;
+                b.def_rearm_frames = w5_.rules.prism_support_delay;   // frames
                 ++w5_.prism_supports;
                 continue;
             }
@@ -219,7 +220,7 @@ void World::step_building_combat(double dt) {
                 continue;
             }
         }
-        b.def_rof_cool = std::max(0.0, b.def_rof_cool - dt);
+        if (b.def_rearm_frames > 0) --b.def_rearm_frames;   // Net L0: whole frames
 
         const double cx = bcenter_x(b), cy = bcenter_y(b);
         auto slot_for = [&](const Unit& v) {
@@ -245,7 +246,7 @@ void World::step_building_combat(double dt) {
             const int tx = unit_lept_x(v), ty = unit_lept_y(v), tz = unit_lept_z(v);
             if (ws.min_range > 0.0) {
                 const double dx = tx - bx, dy = ty - by, dz = tz - bz;
-                if (std::sqrt(dx * dx + dy * dy + dz * dz) < ws.min_range * kLept) return false;
+                if (om::sqrt(dx * dx + dy * dy + dz * dz) < ws.min_range * kLept) return false;
             }
             return weapon_in_range_from(*this, sh, bx, by, bz, tx, ty, tz);
         };
@@ -269,7 +270,7 @@ void World::step_building_combat(double dt) {
             for (int j = 0; j < nu; ++j) {
                 if (!engageable(j)) continue;
                 const Unit& v = units_[j];
-                const double d = std::hypot(v.fx - cx, v.fy - cy);
+                const double d = om::hypot(v.fx - cx, v.fy - cy);
                 if (b.def_target < 0 || d < best) { b.def_target = j; best = d; }
             }
         }
@@ -296,7 +297,7 @@ void World::step_building_combat(double dt) {
                 if (!o.alive || o.state == Building::State::Dead || !is_enemy(b.house, o.house)) return false;
                 if (o.type < 0 || o.type >= static_cast<int>(types.size())) return false;
                 const BuildingTypeDef& ot = types[static_cast<std::size_t>(o.type)];
-                if (ot.wall || ot.insignificant || o.iron_left > 0.0) return false;
+                if (ot.wall || ot.insignificant || o.iron_left_frames > 0.0) return false;
                 const bool armed = ot.armed || (ot.can_occupy_fire && !o.occupants.empty());
                 if (!armed && !(house_is_computer(b.house) && ai_threat_any_building())) return false;
                 if (!object_visible_at(b.house, o.cx, o.cy)) return false;
@@ -310,7 +311,7 @@ void World::step_building_combat(double dt) {
                 building_aim_lept(o, cell_level(o.cx, o.cy), ox, oy, oz);
                 if (ws.min_range > 0.0) {
                     const double dx = ox - bx, dy = oy - by, dz = oz - bz;
-                    if (std::sqrt(dx * dx + dy * dy + dz * dz) < ws.min_range * kLept) return false;
+                    if (om::sqrt(dx * dx + dy * dy + dz * dz) < ws.min_range * kLept) return false;
                 }
                 return weapon_in_range_from(*this, sh, bx, by, bz, ox, oy, oz, (o.fw + o.fh) * 64);
             };
@@ -321,7 +322,7 @@ void World::step_building_combat(double dt) {
                 for (int j = 0; j < nb; ++j) {
                     if (!bld_ok(j)) continue;
                     const Building& o = buildings_[static_cast<std::size_t>(j)];
-                    const double d = std::hypot(bcenter_x(o) - cx, bcenter_y(o) - cy);
+                    const double d = om::hypot(bcenter_x(o) - cx, bcenter_y(o) - cy);
                     if (tb < 0 || d < best) { tb = j; best = d; }
                 }
             }
@@ -335,9 +336,9 @@ void World::step_building_combat(double dt) {
                 b.def_turret_facing = turn_toward(b.def_turret_facing, want, step);
                 if (b.def_turret_facing != want) continue;
             }
-            if (b.def_rof_cool > 0.0) continue;
+            if (b.def_rearm_frames > 0.0) continue;
             const WeaponSlot& bw = t.weapon[bslot];
-            b.def_rof_cool = burst_rearm_secs(b.w6.burst_index, bw.burst, house_rof_frames(b.house, bw.rof), &combat_rng_);   // W6-02-03
+            b.def_rearm_frames = burst_rearm_frames(b.w6.burst_index, bw.burst, house_rof_frames(b.house, bw.rof), &combat_rng_);   // W6-02-03
             b.def_fire_flash = kFireFlashSecs;
             b.def_slot = bslot;
             fire_events_.push_back({-1, bi, -1, tb, bslot, bw.id});
@@ -363,7 +364,7 @@ void World::step_building_combat(double dt) {
             b.def_turret_facing = turn_toward(b.def_turret_facing, want, step);
             if (b.def_turret_facing != want) continue;
         }
-        if (b.def_rof_cool > 0.0) continue;
+        if (b.def_rearm_frames > 0.0) continue;
         // Wave-5 (R-043) [RE: abilities-w5.md §2, BuildingClass::Mission_Attack
         // 0x44B2F8]: a delayed-fire building (art IsAnimDelayedFire) charges
         // first. A prism recruits ONE supporter per frame -- the nearest own
@@ -383,7 +384,7 @@ void World::step_building_combat(double dt) {
                     const Building& L = buildings_[li];
                     if (!L.alive || L.house != b.house || L.type != b.type || L.w5.prism_stage != 0) continue;
                     if (L.w5.supporting <= 0 || L.def_target < 0) continue;
-                    lead = std::hypot(bcenter_x(L) - cx, bcenter_y(L) - cy) <= types[L.type].weapon[1].range;
+                    lead = om::hypot(bcenter_x(L) - cx, bcenter_y(L) - cy) <= types[L.type].weapon[1].range;
                 }
                 if (lead) {
                     b.def_target = -1;
@@ -399,9 +400,9 @@ void World::step_building_combat(double dt) {
                     const Building& c = buildings_[ci];
                     if (!c.alive || c.state != Building::State::Idle || c.house != b.house) continue;
                     if (c.type != b.type) continue;   // Rules->PrismType
-                    if (c.def_rof_cool > 0.0 || c.w5.delay != 0 || c.w5.prism_stage != 0) continue;
+                    if (c.def_rearm_frames > 0.0 || c.w5.delay != 0 || c.w5.prism_stage != 0) continue;
                     if (c.def_target >= 0) continue;  // a tower in its Attack mission
-                    const double d = std::hypot(bcenter_x(c) - cx, bcenter_y(c) - cy);
+                    const double d = om::hypot(bcenter_x(c) - cx, bcenter_y(c) - cy);
                     if (d > reach) continue;
                     if (best >= 0 && d >= bestd) continue;
                     best = ci;
@@ -423,7 +424,7 @@ void World::step_building_combat(double dt) {
         const WeaponSlot& w = t.weapon[slot];
         // W6-02-03 [RE: Building vtbl 0x7E2EBC +0x318 = GetROF FUN_006FC460]: the owner's
         // handicap ROF multiplies a defence rearm too.
-        b.def_rof_cool = burst_rearm_secs(b.w6.burst_index, w.burst, house_rof_frames(b.house, w.rof), &combat_rng_);   // G-50 jitter, W6-04-01 Burst
+        b.def_rearm_frames = burst_rearm_frames(b.w6.burst_index, w.burst, house_rof_frames(b.house, w.rof), &combat_rng_);   // G-50 jitter, W6-04-01 Burst
         b.def_fire_flash = kFireFlashSecs;
         b.def_slot = slot;
         fire_events_.push_back({-1, bi, b.def_target, -1, slot, w.id});
@@ -451,7 +452,7 @@ bool World::w5_prism_fire(int bi, int target_unit, int slot) {
                                 : 256u;
         // W6-02-03 [RE: Building vtbl 0x7E2EBC +0x318 = GetROF FUN_006FC460]: the owner's
         // handicap ROF multiplies a defence rearm too.
-    b.def_rof_cool = burst_rearm_secs(b.w6.burst_index, w.burst, house_rof_frames(b.house, w.rof), &combat_rng_);   // W6-04-01
+    b.def_rearm_frames = burst_rearm_frames(b.w6.burst_index, w.burst, house_rof_frames(b.house, w.rof), &combat_rng_);   // W6-04-01
     b.def_fire_flash = kFireFlashSecs;
     b.def_slot = slot;
     fire_events_.push_back({-1, bi, target_unit, -1, slot, n > 0 ? "PrismShotSupported" : w.id});

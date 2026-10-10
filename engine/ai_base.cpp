@@ -1,4 +1,5 @@
 #include "ai_base.hpp"
+#include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -333,7 +334,7 @@ BuildDecision next_build(AiBaseState& state, const BaseView& view,
         const BuildingTypeDef& t = roster[n.type];
         if (t.power < 0 && cat.power >= 0 && n.type != cat.power &&
             view.power_drain + (-t.power) >
-                view.power_output - (int)ai.power_surplus) {
+                view.power_output - om::ftol(ai.power_surplus)) {
             PlannedNode p;
             p.id = state.next_node_id++;  // stable id -> pending[] never aliases
             p.type = cat.power;
@@ -375,7 +376,7 @@ BuildDecision next_build(AiBaseState& state, const BaseView& view,
         const BuildingTypeDef& et = roster[t];
         if (et.power < 0 && cat.power >= 0 && t != cat.power &&
             view.power_drain + (-et.power) >
-                view.power_output - (int)ai.power_surplus) {
+                view.power_output - om::ftol(ai.power_surplus)) {
             PlannedNode p;
             p.id = state.next_node_id++;  // stable id -> pending[] never aliases
             p.type = cat.power;

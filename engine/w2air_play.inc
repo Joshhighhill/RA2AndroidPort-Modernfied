@@ -182,8 +182,8 @@
             const std::string hs = std::to_string(u.house);
             if (u.an.submerged) p.add("submerged(" + hs + ")", 1);
             if (u.an.submerged && (u.an.detected_mask & 1u)) p.add("sub_detected_by0(" + hs + ")", 1);
-            if (u.an.iron_left > 0.0) p.add("iron_units(" + hs + ")", 1);
-            if (u.an.chrono_left > 0.0) p.add("chrono_units(" + hs + ")", 1);
+            if (u.an.iron_left_frames > 0.0) p.add("iron_units(" + hs + ")", 1);
+            if (u.an.chrono_left_frames > 0.0) p.add("chrono_units(" + hs + ")", 1);
             if (u.is_aircraft && u.altitude > 0.0) p.add("airborne(" + hs + ")", 1);
             if (u.an.t.spawned && u.cargo_of < 0) p.add("spawned_out(" + hs + ")", 1);
             if (u.an.t.fixed_wing && !u.an.t.spawned) {
@@ -203,7 +203,7 @@
             if (u.cargo_of < 0) p.add("cargo_total(" + hs + ")", static_cast<double>(u.cargo.size()));
         }
         for (const ra2engine::Building& b : world_.buildings())
-            if (b.alive && b.iron_left > 0.0) p.add("iron_buildings(" + std::to_string(b.house) + ")", 1);
+            if (b.alive && b.iron_left_frames > 0.0) p.add("iron_buildings(" + std::to_string(b.house) + ")", 1);
         // W4: RocketLocomotion rockets per house -- launched (ever spawned),
         // shot down (killed by damage before detonating) and detonated.
         for (const char* f : {"rockets_launched", "rockets_shot", "rockets_hit", "rockets_live", "bhp"})

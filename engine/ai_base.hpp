@@ -180,7 +180,7 @@ struct PlannedNode {
 // jitter); deterministic, NEVER wall-clock].
 struct AiBaseState {
     AiDifficulty difficulty = AiDifficulty::Normal;
-    double build_clock = 0.0;  // secs since the last build pass
+    double build_clock = 0.0;  // secs since the last build pass (kept in seconds, Net L0 note in world.cpp)
     double build_gate = 0.0;   // secs the next pass waits for; 0 = fire
                                // immediately. Re-armed after each pass to
                                // max(~7 s tick jitter, difficulty BuildDelay)
@@ -192,7 +192,7 @@ struct AiBaseState {
     std::uint32_t rng = 0x2545F491u;  // deterministic fixed seed
     // [G-65] the house repair window (house+0x245 "a repair was started" +
     // the +0x280 timer, FUN_00450620): secs since the last AI repair start.
-    double repair_clock = 0.0;
+    double repair_clock = 0.0;   // frames (Net L0)
     int pending[2] = {-1, -1};        // STABLE node id in production per queue
                                       // (0=Structure, 1=Defense); -1 = idle
     int next_node_id = 0;             // monotonic id source; every PlannedNode

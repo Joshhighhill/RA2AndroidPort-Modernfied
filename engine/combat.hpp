@@ -115,7 +115,7 @@ struct MoveRequest {
 // Advances combat by dt seconds for every unit, ascending index (fully
 // deterministic -- docs/re/combat.md §5: CONFIRMED no ROF jitter/RNG
 // anywhere in vanilla combat, so this whole module is intentionally free of
-// any randomness). Per living, non-dying unit: decays rof_cool/fire_flash,
+// any randomness). Per living, non-dying unit: decays rearm_frames/fire_flash,
 // validates/acquires a target, fires on ROF cadence when in range (applying
 // damage_vs and starting the victim's death/retaliation), and emits a
 // MoveRequest when an out-of-range target needs pursuing (explicit
@@ -135,7 +135,7 @@ struct MoveRequest {
 // unit with target_building >= 0: the target is first validated (alive &&
 // state != Dead, else cleared and normal targeting resumes); range is the
 // distance to the NEAREST foundation cell (a 4x4 building is in range at its
-// edge, not its center); in range, it fires on the same rof_cool cadence as
+// edge, not its center); in range, it fires on the same rearm_frames cadence as
 // unit combat (damage_vs against the building's armor_ix, hp -= dmg, hp <= 0
 // -> kill_building, which also clears every OTHER unit's target_building
 // pointing at it); out of range with attack_order set, it emits a
@@ -236,18 +236,18 @@ bool w6_wall_building_hit(const World& world, std::vector<Unit>& units, std::vec
 bool weapon_in_range_from(const World& world, const Unit& u, int ux, int uy, int uz, int tx, int ty,
                           int tz, int extra = 0);
 
-// Gap fix C (G-50): RearmTimer in seconds = (ROF + Random(0,2)) / 15
-// [veterancy.md V7]; rng null -> no jitter.
-double rearm_secs(int rof_frames, ProjRng* rng);
+// Gap fix C (G-50): RearmTimer in whole frames = ROF + Random(0,2)
+// [veterancy.md V7]; rng null -> no jitter. (Net L0: frames, not seconds.)
+int rearm_frames_for(int rof_frames, ProjRng* rng);
 
 // W6-04-01 [RE: TechnoClass::Fire FUN_006FD210 @0x6FDD2C..: CurrentBurstIndex
 // (+0x3B8)++, RearmTimer = GetROF(), CurrentBurstIndex %= Burst (+0x9C);
 // GetROF FUN_006FC460 @0x6FC4D6: while CurrentBurstIndex < Burst the rearm is
 // Random(3,5) (the per-burst delay table at UnitType+0xE44 has no rulesmd
 // key on this install), after the last shot of the burst the full
-// ROF + Random(0,2)]. Burst=1 is exactly rearm_secs (same RNG draw).
-double burst_rearm_secs(int& burst_index, int burst, int rof_frames, ProjRng* rng);
+// ROF + Random(0,2)]. Burst=1 is exactly rearm_frames_for (same RNG draw).
+int burst_rearm_frames(int& burst_index, int burst, int rof_frames, ProjRng* rng);
 // The unit form: the active weapon's Burst (Unit::w6.burst).
-double unit_rearm_secs(Unit& u, ProjRng* rng);
+int unit_rearm_frames(Unit& u, ProjRng* rng);
 
 }  // namespace ra2engine

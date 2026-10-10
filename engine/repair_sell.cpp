@@ -1,4 +1,5 @@
 #include "repair_sell.hpp"
+#include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 
 #include <algorithm>
 
@@ -7,7 +8,7 @@ namespace ra2engine {
 int repair_interval_frames(double repair_rate) {
     // [RE: repair-sell.md §A2] FLD Rules.RepairRate; FMUL 900.0; __ftol.
     // __ftol truncates toward zero -- 0.016*900 = 14.4 -> 14.
-    const int n = static_cast<int>(repair_rate * 900.0);
+    const int n = om::ftol(repair_rate * 900.0);
     return n > 1 ? n : 1;   // floor at 1: a zero rate must not divide by zero
 }
 
@@ -25,7 +26,7 @@ int repair_step_cost(int cost, int strength, int repair_step, double repair_perc
     //   CMP/JG -> clamp to >= 1
     const int per = (repair_step != 0) ? strength / repair_step : 0;
     const int n = (per != 0) ? cost / per : cost;
-    const int c = static_cast<int>(static_cast<double>(n) * repair_percent);
+    const int c = om::ftol(static_cast<double>(n) * repair_percent);
     return c > 1 ? c : 1;
 }
 
@@ -35,13 +36,13 @@ int sell_refund(int cost, int soylent, double refund_percent, bool owner_is_huma
     // override and BYPASSES RefundPercent. [RE-GATE APPLIED §D0.2] GAREFN and
     // NAREFN -- both rostered -- set Soylent=300, so this branch is REACHED in
     // the clone today: a refinery refunds 300, not trunc(2000 * 0.50) = 1000.
-    if (soylent != 0) return static_cast<int>(static_cast<double>(soylent) * country_mult);
+    if (soylent != 0) return om::ftol(static_cast<double>(soylent) * country_mult);
     // v = ftol(Cost * HouseCostMult * CountryCostMult)
-    const int v = static_cast<int>(static_cast<double>(cost) * house_mult * country_mult);
+    const int v = om::ftol(static_cast<double>(cost) * house_mult * country_mult);
     // RefundPercent is applied ONLY when the owning house is human-controlled
     // (TEST AL,AL / JZ at 0x00711399). An AI house receives the UNSCALED value.
     if (!owner_is_human) return v;
-    return static_cast<int>(static_cast<double>(v) * refund_percent);
+    return om::ftol(static_cast<double>(v) * refund_percent);
 }
 
 int survivor_divisor(const RepairSellRules& r, int side_ix) {
@@ -99,7 +100,7 @@ int mirrored_buildup_frame(const Building& b, int buildup_shp_frame_count) {
     if (image_frames < 1) return 0;
     if (b.buildup_total <= 0.0) return 0;   // no buildup art -> instant sell
     const double period = b.buildup_total / image_frames;
-    int f = static_cast<int>(b.sell_time / period);
+    int f = om::ftol(b.sell_time / period);
     f = std::clamp(f, 0, image_frames - 1);
     return image_frames - 1 - f;
 }

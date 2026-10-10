@@ -1,4 +1,5 @@
 #include "flight.hpp"
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 
 #include <cmath>
 
@@ -13,7 +14,7 @@ double step_altitude(double altitude, double target, double max_delta) {
 bool cruise_step(double& fx, double& fy, double gx, double gy, double max_step) {
     const double dx = gx - fx;
     const double dy = gy - fy;
-    const double dist = std::sqrt(dx * dx + dy * dy);
+    const double dist = om::sqrt(dx * dx + dy * dy);
     if (dist <= max_step || dist == 0.0) {             // arrival: snap exactly
         fx = gx;
         fy = gy;

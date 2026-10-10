@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "world.hpp"
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 #include "weapon_unit.hpp"  // Gap fix C: active weapon slot
 
 namespace ra2engine {
@@ -391,7 +392,7 @@ void World::collect_crate(int slot, int unit_idx) {
         const double dy = static_cast<double>(ccy - oy);
         const double sq = dx * dx;
         const double d2 = sq + dy * dy;
-        return ftol(std::sqrt(d2)) < crate_rules_.radius_leptons;
+        return ftol(om::sqrt(d2)) < crate_rules_.radius_leptons;
     };
     auto on_map = [](const Unit& o) { return o.alive && o.die_time < 0.0 && o.cargo_of < 0; };
 
@@ -469,7 +470,7 @@ void World::collect_crate(int slot, int unit_idx) {
                     const double dy = static_cast<double>(ccy - by);
                     const double sq = dx * dx;
                     const double d2 = sq + dy * dy;
-                    if (ftol(std::sqrt(d2)) >= crate_rules_.radius_leptons) continue;
+                    if (ftol(om::sqrt(d2)) >= crate_rules_.radius_leptons) continue;
                     if (b.armor_mult != 1.0) continue;
                     b.armor_mult = b.armor_mult * arg;
                     ++ev.affected;

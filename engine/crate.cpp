@@ -1,4 +1,5 @@
 #include "crate.hpp"
+#include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 
 #include <cctype>
 #include <cstdlib>
@@ -17,7 +18,7 @@ inline std::uint32_t sar16(std::uint32_t x) {
     return static_cast<std::uint32_t>(s >> 16);   // implementation-defined pre-C++20,
                                                    // arithmetic on every target we build
 }
-inline int ftol(double x) { return static_cast<int>(x); }
+inline int ftol(double x) { return om::ftol(x); }
 
 const char* const kNames[kPowerupCount] = {
     "Money", "Unit", "HealBase", "Cloak", "Explosion", "Napalm", "Squad", "Darkness",

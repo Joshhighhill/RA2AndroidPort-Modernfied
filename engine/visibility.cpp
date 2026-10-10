@@ -1,4 +1,5 @@
 #include "visibility.hpp"
+#include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 
 namespace ra2engine {
 

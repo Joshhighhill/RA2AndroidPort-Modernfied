@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "orig_math.hpp"   // Net L0: om::ipow / om::ftol
 #include "factory.hpp"
 #include "roster2.hpp"
 #include "capture.hpp"   // apply_blackout
@@ -120,7 +121,7 @@ double World::econ_factory_speedup(int house, const std::vector<int>& ftypes, do
             if (b.type == t) { ++n; break; }
     }
     if (n <= 1 || mf <= 0.0) return 1.0;
-    return std::pow(1.0 / mf, n - 1);
+    return om::ipow(1.0 / mf, n - 1);   // Net L0: deterministic, no libm pow
 }
 
 // An own alive Idle ConYard (BuildingType factory) [RE: construction.md §10].

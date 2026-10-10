@@ -34,6 +34,8 @@ struct AiSoakProbe {
         std::string diff_dump, human_country, ai_country;
         long long diff_frames = -1;
         bool no_human_deploy = false, long_game = false, ai_passive = false;
+        std::uint32_t session_seed = 0;   // Net L0: --seed <n> (0 = none)
+        int hash_every = 0;   // Net L0: --hash-every N prints fnv1a(save_world) (the match sync hash basis)
         auto side_of = [](const std::string& c) {
             if (c == "YuriCountry") return ra2engine::World::Side::Yuri;
             if (c == "Russians" || c == "Confederation" || c == "Africans" || c == "Arabs")
@@ -59,6 +61,8 @@ struct AiSoakProbe {
             else if (a == "--ruin-ai-at") ruin_at = std::atoi(next().c_str());   // W6-03-08 probe
             else if (a == "--diff-dump") diff_dump = next();
             else if (a == "--frames") diff_frames = std::atoll(next().c_str());
+            else if (a == "--hash-every") hash_every = std::max(0, std::atoi(next().c_str()));   // Net L0
+            else if (a == "--seed") session_seed = static_cast<std::uint32_t>(std::strtoul(next().c_str(), nullptr, 0));   // Net L0
             else if (a == "--no-human-deploy") no_human_deploy = true;
             else if (a == "--long-game") long_game = true;   // lobby ShortGame=no
             else if (a == "--ai-passive") ai_passive = true;   // slot 1 idle (no AI): "map ticking" rung
@@ -87,6 +91,7 @@ struct AiSoakProbe {
         }
         if (ai_vs_ai) cfg.slots[0].is_ai = true;
         if (long_game) cfg.short_game = false;
+        if (session_seed) cfg.session_seed = session_seed;   // Net L0: the original's Seed
         if (ai_passive) cfg.slots[1].is_ai = false;
         if (!human_country.empty()) { cfg.slots[0].country = human_country; cfg.slots[0].side = side_of(human_country); }
         if (!ai_country.empty()) { cfg.slots[1].country = ai_country; cfg.slots[1].side = side_of(ai_country); }
@@ -99,7 +104,7 @@ struct AiSoakProbe {
         for (int i = 0; i < (int)w.units().size() && !no_human_deploy; ++i)
             if (w.units()[(std::size_t)i].house == human && w.is_mcv(i)) { w.order_deploy_mcv(i); break; }
         std::FILE* ddump = diff_dump.empty() ? nullptr : std::fopen(diff_dump.c_str(), "w");
-        if (ddump) simdiff::write_header(ddump, cfg.map_file, 0);
+        if (ddump) simdiff::write_header(ddump, cfg.map_file, w.session_seed());   // Net L0
         auto base_hp = [&](int h) {
             long long hp = 0, mx = 0;
             for (const ra2engine::Building& b : w.buildings())
@@ -163,6 +168,12 @@ struct AiSoakProbe {
             for (ra2engine::SuperweaponType t : w.sw_types(ai)) ready_before |= w.sw_ready(ai, t);
             const int seq0 = w.sw_events().empty() ? 0 : w.sw_events().back().seq;
             g.update(1.0 / 15.0);
+            if (hash_every > 0 && f % hash_every == 0) {   // Net L0: fnv1a(save_world), as net_state_hash
+                const std::vector<std::uint8_t> sb = ra2engine::save::save_world(w);
+                std::uint64_t hh = 1469598103934665603ull;
+                for (std::uint8_t c : sb) { hh ^= c; hh *= 1099511628211ull; }
+                std::printf("[ai-soak] hash f=%lld h=%016llx\n", f, static_cast<unsigned long long>(hh));
+            }
             if (ddump) simdiff::write_frame(ddump, w, (int)(f - 1));   // frame 0 = state after the first logic step
             // W2-AN-21: every AI superweapon launch/activation (any type).
             for (const ra2engine::SwEvent& e : w.sw_events())
@@ -314,6 +325,15 @@ struct AiSoakProbe {
                   << " first_human_damage_min=" << (first_dmg < 0 ? -1.0 : first_dmg / 900.0)
                   << " human_defeated=" << w.house_defeated(human)
                   << " winning_team=" << w.winning_team() << "\n";
+        {   // Net L0: the whole World state (save_world bytes, FNV-1a 64) -- the
+            // cross-platform gate compares it (tools/xplat_gate.ps1 -Soak).
+            const std::vector<std::uint8_t> sb = ra2engine::save::save_world(w);
+            std::uint64_t hh = 1469598103934665603ull;
+            for (std::uint8_t c : sb) { hh ^= c; hh *= 1099511628211ull; }
+            char hb[40];
+            std::snprintf(hb, sizeof hb, "%016llx", static_cast<unsigned long long>(hh));
+            std::cout << "[ai-soak] state_hash=" << hb << " bytes=" << sb.size() << "\n";
+        }
         if (!png.empty()) {
             const int W = 1280, H = 720;
             if (SDL_Init(SDL_INIT_VIDEO) == 0) {

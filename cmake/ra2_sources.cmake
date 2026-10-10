@@ -76,6 +76,7 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/world_econ.cpp   # L2 per-house economy
     ${RA2_ROOT}/engine/world_veterancy.cpp
     ${RA2_ROOT}/engine/pathfind.cpp
+    ${RA2_ROOT}/engine/orig_math.cpp
     ${RA2_ROOT}/engine/input.cpp
     ${RA2_ROOT}/engine/input_original.cpp
     ${RA2_ROOT}/engine/hotkeys.cpp

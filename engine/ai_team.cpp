@@ -1,4 +1,5 @@
 #include "ai_team.hpp"
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -52,8 +53,8 @@ Cellxy gather_cell(int ex, int ey, std::uint32_t& rng) {
     const double theta =
         (double)ai_rand(rng) / 4294967296.0 * 6.283185307179586;  // [0, 2*pi)
     const double rad = (double)kAiSafeDistance;
-    return Cellxy{ex + (int)std::lround(rad * std::cos(theta)),
-                  ey + (int)std::lround(rad * std::sin(theta))};
+    return Cellxy{ex + (int)std::lround(rad * om::cos(theta)),
+                  ey + (int)std::lround(rad * om::sin(theta))};
 }
 
 namespace {

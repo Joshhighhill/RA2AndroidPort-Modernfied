@@ -93,7 +93,9 @@ TEST_CASE("step_combat: in-range hostile is auto-acquired and killed on exact RO
     units[1].w_damage = 0;
 
     std::vector<Building> bs;
-    const double dt = 1.0 / 60.0;
+    // Net L0: one step_combat call is one game frame (whole-frame rearm timer),
+    // so the cadence is checked at the logic rate.
+    const double dt = 1.0 / 15.0;
     double t = 0;
     while (units[1].die_time < 0 && t < 30.0) { ra2engine::step_combat(test_world(), units, bs, occ, dt); t += dt; }
     REQUIRE(units[1].die_time >= 0);          // died
@@ -190,7 +192,9 @@ TEST_CASE("step_combat: return fire — idle victim retaliates against its attac
     units.push_back(make_soldier(3, 0, 1, 1, occ));
 
     std::vector<Building> bs;
-    const double dt = 1.0 / 60.0;
+    // Net L0: one step_combat call is one game frame (whole-frame rearm timer),
+    // so the cadence is checked at the logic rate.
+    const double dt = 1.0 / 15.0;
     double t = 0;
     // Run until the first GI shot lands.
     while (units[1].hp >= 125 && t < 5.0) { ra2engine::step_combat(test_world(), units, bs, occ, dt); t += dt; }
@@ -210,7 +214,9 @@ TEST_CASE("step_combat: R3 a victim cruising to a flight goal does not return fi
     units.push_back(make_soldier(3, 0, 1, 1, occ));
     units[1].has_flight_goal = true;
     std::vector<Building> bs;
-    const double dt = 1.0 / 60.0;
+    // Net L0: one step_combat call is one game frame (whole-frame rearm timer),
+    // so the cadence is checked at the logic rate.
+    const double dt = 1.0 / 15.0;
     double t = 0;
     while (units[1].hp >= 125 && t < 5.0) { ra2engine::step_combat(test_world(), units, bs, occ, dt); t += dt; }
     REQUIRE(units[1].hp < 125);
@@ -253,7 +259,9 @@ TEST_CASE("step_combat: death invariants — dying then tombstoned, occupancy fr
     units[2].w_damage = 0;  // isolate: the Conscript never damages either GI back
 
     std::vector<Building> bs;
-    const double dt = 1.0 / 60.0;
+    // Net L0: one step_combat call is one game frame (whole-frame rearm timer),
+    // so the cadence is checked at the logic rate.
+    const double dt = 1.0 / 15.0;
     double t = 0;
     while (units[2].die_time < 0 && t < 20.0) { ra2engine::step_combat(test_world(), units, bs, occ, dt); t += dt; }
     REQUIRE(units[2].die_time >= 0);
@@ -374,7 +382,8 @@ TEST_CASE("combat: attack-building — range to nearest foundation cell, kill, t
     auto reqs = ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 15.0);
     CHECK(reqs.empty());                            // in range -> no pursuit
     CHECK(b.hp == 90);                              // one 90-damage hit
-    ra2engine::step_combat(test_world(), units, bs, occ, 1.0);     // rof elapses, second hit
+    for (int f = 0; f < 15; ++f)   // Net L0: the 15-frame rof elapses one frame per call
+        ra2engine::step_combat(test_world(), units, bs, occ, 1.0 / 15.0);   // second hit
     CHECK(b.hp <= 0);
     CHECK(b.state == Building::State::Dead);
     CHECK(units[0].target_building == -1);          // target cleared on death
@@ -414,7 +423,7 @@ TEST_CASE("combat: empty buildings vector == legacy behavior") {
     units[1].w_damage = 0;
 
     std::vector<Building> bs;  // empty -- legacy behavior guard
-    const double dt = 1.0 / 60.0;
+    const double dt = 1.0 / 15.0;   // Net L0: one call = one frame
     double t = 0;
     while (units[1].die_time < 0 && t < 30.0) { ra2engine::step_combat(test_world(), units, bs, occ, dt); t += dt; }
     REQUIRE(units[1].die_time >= 0);          // died

@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include "ai_base.hpp"     // ai_rand, kAiSafeDistance, kAiCreditReserve, kAiInfantryReserve, AiDifficulty
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 #include "aimd_parse.hpp"  // AimdData / TeamType / TaskForce / ScriptType
 #include "pathfind.hpp"    // Cellxy
 #include "unit_type.hpp"   // UnitTypeDef (production intent)
@@ -57,7 +58,7 @@ constexpr double kAiMusterSecs = 60.0;
 // line never completed]. The radius grows with the live member count so the
 // disc holds twice that many cells (room for obstacles): max(base, sqrt(2n / pi) + 1).
 inline double team_reach_cells(double base, int alive) {
-    const double r = alive > 0 ? std::sqrt(2.0 * (double)alive / 3.14159265358979) + 1.0 : 0.0;
+    const double r = alive > 0 ? om::sqrt(2.0 * (double)alive / 3.14159265358979) + 1.0 : 0.0;
     return r > base ? r : base;
 }
 // Timed-guard argument unit [RE: c14.log idx 5 -- the handler stores arg x 15
@@ -197,8 +198,8 @@ struct TeamInstance {
 // wall-clock]. teams_created feeds the gate hash + witnesses.
 struct AiTeamState {
     std::vector<TeamInstance> teams;
-    double check_clock = 0.0;  // secs since the last TeamDelays management pass [§4]
-    double spawn_clock = 0.0;  // secs accrued toward the AutocreateTime spawn [§4]
+    double check_clock = 0.0;  // FRAMES since the last TeamDelays management pass [§4] (Net L0)
+    double spawn_clock = 0.0;  // FRAMES accrued toward the AutocreateTime spawn [§4] (Net L0)
     std::uint32_t rng = 0x2545F491u;  // deterministic fixed seed
     int teams_created = 0;     // lifetime counter (witness + hash)
 };

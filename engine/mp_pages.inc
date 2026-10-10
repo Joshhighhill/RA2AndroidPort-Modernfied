@@ -1508,6 +1508,7 @@ Scene* defer_net_game_scene(bool no_audio, ra2engine::SkirmishConfig cfg, std::s
         } restore;
         g_net_local_house = local_house;
         g_crate_seed_override = seed;
+        c->session_seed = seed;   // Net L0: every sim RNG stream derives from the lobby's session seed
         g_simdiff_starts = starts;
         g_pending_netplay = np;
         return new GameScene(no_audio, *c);

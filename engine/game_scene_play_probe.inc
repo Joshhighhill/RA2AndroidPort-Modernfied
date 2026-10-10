@@ -185,7 +185,7 @@
             p.set("sel_occupy_target", s0 ? s0->occupy_target : -1);
             p.set("sel_attack_cell", s0 ? s0->attack_cell_x : -1);
             p.set("sel_target", s0 ? s0->target : -1);
-            p.set("sel_rof_cool", s0 ? s0->rof_cool : -1);
+            p.set("sel_rof_cool", s0 ? s0->rearm_frames : -1);
             p.set("sel_turret", s0 ? s0->turret_facing : -1);
             p.set("sel_body", s0 ? s0->body_facing : -1);
             p.set("sel_damage", s0 ? s0->w_damage : -1);

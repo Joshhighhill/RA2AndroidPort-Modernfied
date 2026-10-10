@@ -1,4 +1,5 @@
 #include "production.hpp"
+#include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 #include <algorithm>
 #include <cmath>
 
@@ -9,7 +10,7 @@ int build_frames(int cost, double build_speed) {
     // ftol(Cost * BuildSpeed * 0.9). Do NOT algebraically rearrange —
     // /1000*900 rounds differently under IEEE 754 (503 vs 504 for GAPOWR:
     // 800*0.7 = exactly 560.0, *0.9 = exactly 504.0).
-    return (int)(cost * build_speed * 0.9);
+    return om::ftol((cost * build_speed * 0.9));
 }
 
 PowerTotals power_totals(const std::vector<Building>& buildings,
@@ -25,7 +26,7 @@ PowerTotals power_totals(const std::vector<Building>& buildings,
         // power plant delivers less (drain does not scale, FUN_0044E880).
         // Building::max_hp carries Type.Strength (the map's health % lowers hp).
         const int st = b.max_hp;
-        if (pw > 0 && st > 0) p.output += (int)((double)b.hp / (double)st * (double)pw);
+        if (pw > 0 && st > 0) p.output += om::ftol(((double)b.hp / (double)st * (double)pw));
         else if (pw >= 0) p.output += pw;
         else if (!b.power_off) p.drain -= pw;   // W5-E2: a powered-down building draws nothing
     }

@@ -3,6 +3,7 @@
 // declared in world.hpp ("W6 fix #2"). Everything is inert until a campaign
 // host calls set_playfield / set_house_handicap / set_building_target_flags.
 #include "world.hpp"
+#include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 #include "campaign.hpp"   // within_usable_area (IsWithinUsableArea FUN_00577E90)
 #include "veterancy.hpp"  // rof_frames (the GetROF ftol)
 

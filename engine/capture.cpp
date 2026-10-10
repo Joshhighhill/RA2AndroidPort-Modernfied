@@ -1,4 +1,5 @@
 #include "capture.hpp"
+#include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 namespace ra2engine {
 // All capture arithmetic is header-inline (small scalar math, the
 // Superweapon::tick precedent). This TU exists so engine/capture.cpp can be

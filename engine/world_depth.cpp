@@ -6,7 +6,8 @@
 #include <cmath>
 
 #include "bridges.hpp"
-#include "combat.hpp"       // deliver_hit_from, deliver_unit_hit, deliver_building_hit, rearm_secs
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
+#include "combat.hpp"       // deliver_hit_from, deliver_unit_hit, deliver_building_hit, rearm_frames_for
 #include "group_move.hpp"   // nearest_free_cells
 #include "veterancy.hpp"    // is_elite
 #include "world.hpp"
@@ -236,7 +237,7 @@ void World::step_garrison_combat(double dt) {
     for (int bi = 0; bi < nb; ++bi) {
         Building& b = buildings_[bi];
         if (!b.alive || b.state != Building::State::Idle || !garrison_firing(bi)) continue;
-        b.garrison_rof_cool = std::max(0.0, b.garrison_rof_cool - dt);
+        if (b.garrison_rearm_frames > 0) --b.garrison_rearm_frames;   // Net L0: whole frames
         b.def_fire_flash = std::max(0.0, b.def_fire_flash - dt);
         if (b.firing_occupant < 0 || b.firing_occupant >= static_cast<int>(b.occupants.size()))
             b.firing_occupant = 0;
@@ -255,23 +256,23 @@ void World::step_garrison_combat(double dt) {
             if (!is_enemy(b.house, v.house) || v.disguised) return false;
             if (!(v.seen_by_mask & (1u << b.house))) return false;
             if (!slot_can_target(w, v.is_aircraft && v.altitude > 0.0, v.armor_ix)) return false;
-            return std::hypot(v.fx - cx, v.fy - cy) <= range + 0.5;
+            return om::hypot(v.fx - cx, v.fy - cy) <= range + 0.5;
         };
         if (!engageable(b.garrison_target)) {
             b.garrison_target = -1;
             double best = 0.0;
             for (int j = 0; j < nu; ++j) {
                 if (!engageable(j)) continue;
-                const double d = std::hypot(units_[j].fx - cx, units_[j].fy - cy);
+                const double d = om::hypot(units_[j].fx - cx, units_[j].fy - cy);
                 if (b.garrison_target < 0 || d < best) { b.garrison_target = j; best = d; }
             }
         }
-        if (b.garrison_target < 0 || b.garrison_rof_cool > 0.0) continue;
+        if (b.garrison_target < 0 || b.garrison_rearm_frames > 0.0) continue;
         // TechnoClass::GetROF (FUN_006FC460): ROF / OccupantCount, then
         // ftol(ROF / OccupyROFMultiplier) when the multiplier is > 1.0.
         int rof = w.rof / static_cast<int>(b.occupants.size());
         if (depth_rules_.occupy_rof_mult > 1.0) rof = ftol(rof / depth_rules_.occupy_rof_mult);
-        b.garrison_rof_cool = rearm_secs(rof, &combat_rng_);
+        b.garrison_rearm_frames = rearm_frames_for(rof, &combat_rng_);
         b.def_fire_flash = kFireFlashSecs;
         // TechnoClass::Fire (FUN_006FD210): damage x OccupyDamageMultiplier.
         Unit shooter;

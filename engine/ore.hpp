@@ -151,7 +151,7 @@ private:
     double timer_ = 0.0;
     std::vector<OreMine> mines_;   // W2-SK-01 (save v13)
     int growth_frames_ = 0, spread_frames_ = 0;   // W2-SK-01 original timing (0 = fallback)
-    double spread_timer_ = 0.0;                    // W2-SK-01 spread clock (s)
+    double spread_timer_ = 0.0;                    // W2-SK-01 spread clock (frames since Net L0)
     void step_original(double dt, double growth_pct, double spread_pct,
                        const std::vector<std::uint8_t>& passable, OreRng& rng, const Occupancy* occ);
 };
