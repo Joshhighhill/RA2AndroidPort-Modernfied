@@ -35,7 +35,11 @@ p.select_types(["E2", "SENGINEER"]).add("click cell 99 95", "until 1500 sel_movi
 p.select_types(["SENGINEER"]).add("click cell 99 95", "until 1500 sel_moving == 0", "dump", "click unit 0:SENGINEER:0", "click building 4:CABHUT:1", "wait 20", "dump",
       "until 1800 bridge_destroyed < $broken", "assert units(0,SENGINEER) == 0", "assert outcome == RUNNING", "shot repaired")
 p.train("E2", 2, 25)
-p.add("wait 1500")
+# MR2 (human structures take their full fractional build time): the base comes
+# up a few frames later, the fights on the way play out differently
+# and the army was wiped out by the Pentagon (61 -> 4, RUNNING at f19733). Setting off
+# 300 frames later (1800) it reaches the east side intact again.
+p.add("wait 1800")
 # MR1 (after L0: the original FastMath/_ftol and the frame timers): the old
 # sweep -- clear the GIs in the (62..72, 84..85) corridor, then round to the
 # gully bridge (50,84) for the Rhinos -- now loses the whole Conscript army to

@@ -11,6 +11,14 @@ require scene == lobby
 click combo:ai1
 click "pick:Easy Enemy"
 click check:crates
+# Short Game off: the passive player stays in the game while its guard units
+# live. With Short Game on (the lobby default) the wave-6 AI (anger, income
+# bonus) razed the guarded base at ~min 45 (f30750: buildings(0)=0, 36 guard
+# tanks alive) -> LOST, and the scene left the game before the last two
+# economy checks. The defeat rule itself is the original's either way; only
+# the AI's mines/ore/income are under test after min 30.
+click check:short
+assert check(short) == 0
 click slider:speed=3
 click start
 until 120 scene == game
@@ -110,17 +118,19 @@ assert income(1) > $i2 @W2-SK-04
 let m3 = mine_spawned
 let i3 = income(1)
 let c4 = credits
-# reinforce the guard (scaffolding: only the economy is under test)
-cheat spawn MTNK 0 building 0:GACNST -4 -4
-cheat spawn MTNK 0 building 0:GACNST +6 +6
-cheat spawn MTNK 0 building 0:GACNST -5 +2
-cheat spawn MTNK 0 building 0:GACNST +2 -5
-cheat spawn MTNK 0 building 0:GACNST +9 +2
-cheat spawn MTNK 0 building 0:GACNST +2 +9
-cheat spawn MTNK 0 building 0:GACNST -4 +4
-cheat spawn MTNK 0 building 0:GACNST +4 -4
-cheat spawn MTNK 0 building 0:GACNST -6 -1
-cheat spawn MTNK 0 building 0:GACNST -1 -6
+# reinforce the guard (scaffolding: only the economy is under test) while the
+# Construction Yard stands -- with Short Game off the base may be gone by now
+# and the surviving guard keeps the player in the game
+if buildings(0,GACNST) > 0 then cheat spawn MTNK 0 building 0:GACNST -4 -4
+if buildings(0,GACNST) > 0 then cheat spawn MTNK 0 building 0:GACNST +6 +6
+if buildings(0,GACNST) > 0 then cheat spawn MTNK 0 building 0:GACNST -5 +2
+if buildings(0,GACNST) > 0 then cheat spawn MTNK 0 building 0:GACNST +2 -5
+if buildings(0,GACNST) > 0 then cheat spawn MTNK 0 building 0:GACNST +9 +2
+if buildings(0,GACNST) > 0 then cheat spawn MTNK 0 building 0:GACNST +2 +9
+if buildings(0,GACNST) > 0 then cheat spawn MTNK 0 building 0:GACNST -4 +4
+if buildings(0,GACNST) > 0 then cheat spawn MTNK 0 building 0:GACNST +4 -4
+if buildings(0,GACNST) > 0 then cheat spawn MTNK 0 building 0:GACNST -6 -1
+if buildings(0,GACNST) > 0 then cheat spawn MTNK 0 building 0:GACNST -1 -6
 # 60
 wait 10125
 assert mine_spawned > $m3 @W2-SK-01

@@ -108,7 +108,7 @@ click cameo:E2
 click cameo:E2
 click cameo:E2
 click cameo:E2
-wait 1500
+wait 1800
 if units(0,E2) > 0 then click unit 0:E2:0
 key t
 key t
