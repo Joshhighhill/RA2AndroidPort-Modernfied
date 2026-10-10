@@ -4806,11 +4806,16 @@ libm-only build), ai-team and ai-trigger (the frame TeamDelays clock),
 saveload (v34). The other 18 print their pins.
 
 **Mission scripts.** The original math and frame timers change combat
-outcomes, and three recorded real-order mission wins no longer win:
+outcomes, and three recorded real-order mission wins no longer won:
 `m-sov01-real` (already with the FastMath commit alone), `m-all04-real` (the
-timers) and `m-sov09-real`. They need re-recording against the new combat.
-`m-all06-real`, failing on master, wins again. Failing on master too:
-`m-all08`, `m-all11-real`, `m-sov07-real`, `m-sov12-real`. The two-process
+timers) and `m-sov09-real`. Re-recorded against the new combat (generators
+only, no engine regression found; docs/gap/wave4/05-mission-sequences.md "MR1
+status"): `m-sov01-real` WON f6090 (Normal), `m-all04-real` WON f9030
+(Normal), `m-sov09-real` WON f13275 (Easy); each `--record`/`--replay` pair
+ends with the same state hash. `m-all06-real`, failing on master, wins again.
+`m-all08` (failing since R-212 `40a3296`, before the networking work) passes
+again with the player calling Tanya back. Failing on master too:
+`m-all11-real`, `m-sov07-real`, `m-sov12-real`. The two-process
 pairs pass through their drivers: `net-match.ps1` (LAN and `-Online`; with
 `-DesyncAt 600` both peers stop out of sync with dumps), `mp-lan-loopback.ps1`,
 `mp-online-loopback.ps1`.

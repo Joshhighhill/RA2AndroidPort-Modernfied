@@ -1,7 +1,7 @@
 # M-ALL08 -- W2-CA-09 team release/recruit. ALL08u: the paradrop start team
 # finishes and 'Each to His Own House' recruits Tanya/GIs/engineers into the
 # TanyaLand/GILand/EngineerLand teams -> no '_Loss (Tanya KIA)' (the run
-# must survive past f=900 with no input), then the Soviet houses removed
+# must survive past f=900; Tanya is called back to her drop cell, see below), then the Soviet houses removed
 # (combat skip) -> '_Win Occurred' -> WON.
 set render_every 600
 set on_quit continue
@@ -13,7 +13,23 @@ click start
 until 300 scene == game
 require scene == game
 assert mode == campaign
-wait 1200
+# R-212 (40a3296, faithful: FootClass::PointerExpired keeps a CELL
+# Destination) -- an idle unit whose auto-target vanishes walks ON to its
+# firing cell. TanyaLand's Tanya acquires a BadGuy unit at ~f640, it vanishes,
+# and she walks on to (80,25) into the patrols (Tanya KIA at ~f700). The player
+# (TanyaLand is PlayerControl) calls her back behind her drop cell (92,31 -> 91,30) whenever
+# she wanders (the order goes to the nearest free cell, remembered as $home)
+# -- a real move order, the walk-back the clone did before R-212.
+until 600 units(5) > 0
+let home = 90028
+repeat 250
+wait 3
+if upath(5,TANY,0) > 0 and upath(5,TANY,0) != $home then click unit 5:TANY:0
+if selected >= 1 then click cell 92 31
+if selected >= 1 then wait 2
+if selected >= 1 then let home = upath(5,TANY,0)
+if selected >= 1 then click xy 500 400 right
+endrepeat
 assert outcome == RUNNING
 assert units(5) > 0
 assert units(6) > 0

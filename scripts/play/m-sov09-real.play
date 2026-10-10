@@ -30,6 +30,9 @@ until 300 units(6,FV) >= 1
 click xy 500 400 right
 click unit 6:FV:0
 click cell 30 76
+if ucell(6,YURI,1) != 30075 then click xy 500 400 right
+if ucell(6,YURI,1) != 30075 then click unit 6:YURI:1
+if ucell(6,YURI,1) != 30075 then click cell 31 76
 click xy 500 400 right
 click unit 6:YURI:0
 click cell 26 74
@@ -74,7 +77,12 @@ click tab:2
 click cameo:DOG
 click cameo:DOG
 click cameo:DOG
-until 1500 units(0,DOG) >= 4
+click cameo:DOG
+click cameo:DOG
+click cameo:DOG
+click cameo:DOG
+click cameo:DOG
+until 2460 units(0,DOG) >= 9
 click xy 500 400 right
 click unit 0:DOG:0
 key t
@@ -239,18 +247,42 @@ dump
 click xy 500 400 right
 click unit 6:FV:0
 click cell 40 77
-wait 20
-until 2500 umov(6,FV,0) == 0
+wait 10
+repeat 60
+wait 10
+if units(6,FV) > 0 and ucell(6,FV,0) != 40077 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if units(6,FV) > 0 and ucell(6,FV,0) != 40077 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if units(6,FV) > 0 and ucell(6,FV,0) != 40077 and utgt(6,FV,0) != -1 then click cell 40 77
+if units(6,FV) > 0 and ucell(6,FV,0) != 40077 and umov(6,FV,0) == 0 then click xy 500 400 right
+if units(6,FV) > 0 and ucell(6,FV,0) != 40077 and umov(6,FV,0) == 0 then click unit 6:FV:0
+if units(6,FV) > 0 and ucell(6,FV,0) != 40077 and umov(6,FV,0) == 0 then click cell 40 77
+endrepeat
 click xy 500 400 right
 click unit 6:FV:0
 click cell 55 78
-wait 20
-until 2500 umov(6,FV,0) == 0
+wait 10
+repeat 60
+wait 10
+if units(6,FV) > 0 and ucell(6,FV,0) != 55078 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if units(6,FV) > 0 and ucell(6,FV,0) != 55078 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if units(6,FV) > 0 and ucell(6,FV,0) != 55078 and utgt(6,FV,0) != -1 then click cell 55 78
+if units(6,FV) > 0 and ucell(6,FV,0) != 55078 and umov(6,FV,0) == 0 then click xy 500 400 right
+if units(6,FV) > 0 and ucell(6,FV,0) != 55078 and umov(6,FV,0) == 0 then click unit 6:FV:0
+if units(6,FV) > 0 and ucell(6,FV,0) != 55078 and umov(6,FV,0) == 0 then click cell 55 78
+endrepeat
 click xy 500 400 right
 click unit 6:FV:0
 click cell 66 75
-wait 20
-until 2500 umov(6,FV,0) == 0
+wait 10
+repeat 60
+wait 10
+if units(6,FV) > 0 and ucell(6,FV,0) != 66075 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if units(6,FV) > 0 and ucell(6,FV,0) != 66075 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if units(6,FV) > 0 and ucell(6,FV,0) != 66075 and utgt(6,FV,0) != -1 then click cell 66 75
+if units(6,FV) > 0 and ucell(6,FV,0) != 66075 and umov(6,FV,0) == 0 then click xy 500 400 right
+if units(6,FV) > 0 and ucell(6,FV,0) != 66075 and umov(6,FV,0) == 0 then click unit 6:FV:0
+if units(6,FV) > 0 and ucell(6,FV,0) != 66075 and umov(6,FV,0) == 0 then click cell 66 75
+endrepeat
 if ucell(6,FV,0) != 66075 then click xy 500 400 right
 if ucell(6,FV,0) != 66075 then click unit 6:FV:0
 if ucell(6,FV,0) != 66075 then click cell 66 75
@@ -396,166 +428,157 @@ until 1500 cursor_name == move
 assert cursor_name == move
 dump
 shot breach
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
-if power_out(1) >= 575 then click xy 500 400 right
-if power_out(1) >= 575 then click unit 6:FV:0
-if power_out(1) >= 575 then click building 1:GAPOWR:near
-if power_out(1) >= 575 then wait 200
+click xy 500 400 right
+click unit 6:YURI:0
+click cell 29 77
+repeat 25
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgt(6,FV,0) != -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click xy 500 400 right
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click unit 6:FV:0
+if power_out(1) >= 575 and units(6,FV) > 0 and utgtb(6,FV,0) == -1 then click building 1:GAPOWR:near
+if power_out(1) >= 575 then wait 10
+if power_out(1) >= 575 and umov(6,YURI,1) == 1 and upath(6,YURI,1) != 31076 then click xy 500 400 right
+if power_out(1) >= 575 and umov(6,YURI,1) == 1 and upath(6,YURI,1) != 31076 then click unit 6:YURI:1
+if power_out(1) >= 575 and umov(6,YURI,1) == 1 and upath(6,YURI,1) != 31076 then click cell 31 76
+if power_out(1) >= 575 and umov(6,YURI,2) == 1 and upath(6,YURI,2) != 30075 then click xy 500 400 right
+if power_out(1) >= 575 and umov(6,YURI,2) == 1 and upath(6,YURI,2) != 30075 then click unit 6:YURI:2
+if power_out(1) >= 575 and umov(6,YURI,2) == 1 and upath(6,YURI,2) != 30075 then click cell 30 75
+endrepeat
 until 900 power_out(1) < 575
 assert power_out(1) < 575
 assert outcome == RUNNING
