@@ -109,15 +109,15 @@ public:
                 for (int x = 0; x < gw_; ++x) {
                     ra2assets::Rgba c = base_[static_cast<std::size_t>(y) * gw_ + x];
                     if (c.a == 0) continue;
-                    if (!w.explored_at(0, x, y)) { plot(x, y, ra2assets::Rgba{0, 0, 0, 255}, 1.0); continue; }
+                    if (!w.explored_at(g_local_house, x, y)) { plot(x, y, ra2assets::Rgba{0, 0, 0, 255}, 1.0); continue; }
                     if (w.ore().has_ore(x, y))
                         c = w.ore().kind_at(x, y) == ra2engine::OreKind::Gems ? ra2assets::Rgba{60, 110, 200, 255}
                                                                                 : ra2assets::Rgba{200, 170, 40, 255};
-                    plot(x, y, c, (w.fog_of_war() && !w.visible_at(0, x, y)) ? 0.55 : 1.0);   // W2-GA-03
+                    plot(x, y, c, (w.fog_of_war() && !w.visible_at(g_local_house, x, y)) ? 0.55 : 1.0);   // W2-GA-03
                 }
             if (g_map_dressing)
                 for (const auto& o : g_map_dressing->objects())
-                    if (w.explored_at(0, o.x, o.y))
+                    if (w.explored_at(g_local_house, o.x, o.y))
                         for (int j = 0; j < o.fh; ++j)
                             for (int i = 0; i < o.fw; ++i)
                                 plot(o.x + i, o.y + j, ra2assets::Rgba{70, 90, 60, 255}, 1.0);
@@ -129,7 +129,7 @@ public:
             }
             for (const ra2engine::Unit& u : w.units()) {
                 if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
-                if (u.house != 0 && !w.object_visible_at(0, u.cell_x, u.cell_y)) continue;
+                if (u.house != g_local_house && !w.object_visible_at(0, u.cell_x, u.cell_y)) continue;
                 plot(u.cell_x, u.cell_y, w.house_palette(ba.unit_pal, u.house)[24], 1.0);
             }
             if (tex_ && (tw_ != TW || th_ != TH)) { SDL_DestroyTexture(tex_); tex_ = nullptr; }

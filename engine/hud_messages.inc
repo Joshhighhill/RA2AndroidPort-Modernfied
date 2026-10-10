@@ -41,7 +41,7 @@
                                    [&](const HudMsg& m) { return m.expire <= msg_clock_; }),
                     msgs_.end());
         // TXT_LOW_POWER on the drop into low power (edge).
-        const ra2engine::PowerTotals pt = ra2engine::power_totals(world_.buildings(), ba_.roster, 0);
+        const ra2engine::PowerTotals pt = ra2engine::power_totals(world_.buildings(), ba_.roster, local_house_);
         const bool low = pt.drain > pt.output;
         if (low && !low_power_was_) post_message(camp::csf_text(dir_, "TXT_LOW_POWER"));
         low_power_was_ = low;

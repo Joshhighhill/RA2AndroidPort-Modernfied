@@ -172,7 +172,7 @@
                 break;
             }
         for (const ra2engine::Unit& u : world_.units())   // first own unit's cell
-            if (u.house == 0 && u.alive && u.die_time < 0.0 && u.cargo_of < 0) {
+            if (u.house == local_house_ && u.alive && u.die_time < 0.0 && u.cargo_of < 0) {
                 out["own.cx"] = u.cell_x;
                 out["own.cy"] = u.cell_y;
                 break;
@@ -203,6 +203,10 @@
         // L2: every house's wallet + outcome (multi-human probes).
         for (int h = 0; h < world_.house_count(); ++h) {
             out["credits." + std::to_string(h)] = std::llround(world_.credits(h));
+            if (const ra2engine::HouseEcon* e = world_.econ(h)) {
+                out["qready." + std::to_string(h)] = e->queues.ready(ra2engine::QueueCat::Structure) ? 1 : 0;
+                out["qinf." + std::to_string(h)] = e->queues.producing(ra2engine::QueueCat::Infantry);
+            }
             if (world_.house_outcome(h) != 0) out["outcome." + std::to_string(h)] = world_.house_outcome(h);
         }
         for (const ra2engine::Building& b : world_.buildings())   // first own building
@@ -231,7 +235,7 @@
 #include "pres_play_cheats.inc"  // W5-PRES presentation acceptance verbs (--play only)
         if (args.size() == 1 && args[0] == "center_own") {   // camera on the first own unit
             for (const ra2engine::Unit& u : world_.units())
-                if (u.house == 0 && u.alive && u.die_time < 0.0 && u.cargo_of < 0) {
+                if (u.house == local_house_ && u.alive && u.die_time < 0.0 && u.cargo_of < 0) {
                     input_.center_on_cell(u.fx, u.fy);
                     return true;
                 }
@@ -259,6 +263,61 @@
         if (args.size() == 2 && args[0] == "credits") {
             world_.set_wallet(local_house_, std::atof(args[1].c_str()));
             return true;
+        }
+        // L2 multi-human: issue a production command for ANY player house
+        // (the way a remote peer's PRODUCE / PLACE event arrives).
+        //   econ_produce H TYPE   -> PRODUCE (category from the roster)
+        //   econ_place H          -> PLACE the finished structure / defense
+        //                            on the first cell the World accepts
+        if (args.size() == 3 && args[0] == "econ_produce") {
+            const int h = std::atoi(args[1].c_str());
+            const ra2engine::PlayerEconRules* r = world_.player_econ_rules(h);
+            if (!r) return false;
+            for (int t = 0; t < static_cast<int>(ba_.roster.size()); ++t)
+                if (ba_.roster[t].id == args[2]) {
+                    const bool def = t < static_cast<int>(ba_.defense.size()) && ba_.defense[t] != 0;
+                    const ra2engine::ProdResult res = world_.econ_produce(
+                        h, def ? ra2engine::QueueCat::Defense : ra2engine::QueueCat::Structure, t);
+                    return res == ra2engine::ProdResult::Started || res == ra2engine::ProdResult::Resumed;
+                }
+            for (int t = 0; t < static_cast<int>(r->units.size()); ++t)
+                if (r->units[(std::size_t)t].id == args[2]) {
+                    const ra2engine::ProdResult res =
+                        world_.econ_produce(h, rp_unit_cat(r->units[(std::size_t)t]), t);
+                    return res == ra2engine::ProdResult::Started || res == ra2engine::ProdResult::Queued ||
+                           res == ra2engine::ProdResult::Resumed;
+                }
+            return false;
+        }
+        if (args.size() == 2 && args[0] == "deploy_house") {   // L2: DEPLOY 0x09 for house H's MCVs
+            const int h = std::atoi(args[1].c_str());
+            bool any = false;
+            for (int i = 0; i < static_cast<int>(world_.units().size()); ++i) {
+                const ra2engine::Unit& u = world_.units()[(std::size_t)i];
+                if (u.alive && u.die_time < 0.0 && u.house == h && world_.is_mcv(i)) {
+                    world_.order_deploy(i);
+                    any = true;
+                }
+            }
+            return any;
+        }
+        if (args.size() == 2 && args[0] == "econ_place") {
+            const int h = std::atoi(args[1].c_str());
+            int ox = -1, oy = -1;
+            for (const ra2engine::Building& b : world_.buildings())
+                if (b.alive && b.house == h) { ox = b.cx; oy = b.cy; break; }
+            if (ox < 0) return false;
+            for (ra2engine::QueueCat c : {ra2engine::QueueCat::Structure, ra2engine::QueueCat::Defense}) {
+                const ra2engine::HouseEcon* e = world_.econ(h);
+                if (!e || !e->queues.ready(c)) continue;
+                for (int rr = 1; rr <= 14; ++rr)
+                    for (int dy = -rr; dy <= rr; ++dy)
+                        for (int dx = -rr; dx <= rr; ++dx)
+                            if ((std::abs(dx) == rr || std::abs(dy) == rr) &&
+                                world_.econ_place(h, c, ox + dx, oy + dy) == ra2engine::ProdResult::Placed)
+                                return true;
+            }
+            return false;
         }
         // W5-E: `crate NAME DX DY` -- a typed crate (FUN_0056B9F0 PlaceCrate)
         // at the lowest selected unit's cell + (DX, DY); needs the lobby's

@@ -418,7 +418,7 @@ public:
             const ra2engine::OreField& ore = world_->ore();
             for (const Twinkle& t : twinkles_) {
                 if (t.wait > 0 || !ore.has_ore(t.x, t.y)) continue;   // HideIfNoOre
-                if (!world_->explored_at(0, t.x, t.y)) continue;
+                if (!world_->explored_at(g_local_house, t.x, t.y)) continue;
                 const int fr = PresFx::loop_frame(*twinkle_t_, t.age);
                 const ra2assets::MapCell* mc = world_->map().at(t.x, t.y);
                 const double z = (mc ? mc->level : 0) * 104.0;

@@ -7,7 +7,7 @@
     int w2_first_selected() const {
         const auto& us = world_.units();
         for (int i = 0; i < static_cast<int>(us.size()); ++i)
-            if (us[i].selected && us[i].house == 0 && us[i].alive && us[i].die_time < 0.0) return i;
+            if (us[i].selected && us[i].house == local_house_ && us[i].alive && us[i].die_time < 0.0) return i;
         return -1;
     }
     bool w2_water_cell(int x, int y) const {
@@ -23,7 +23,7 @@
         n = 0;
         std::vector<std::pair<int, int>> cells;
         for (const ra2engine::Unit& u : world_.units())
-            if (u.selected && u.house == 0 && u.alive && u.die_time < 0.0 && u.cargo_of < 0 &&
+            if (u.selected && u.house == local_house_ && u.alive && u.die_time < 0.0 && u.cargo_of < 0 &&
                 !(u.is_aircraft && u.altitude > 0.0))
                 cells.push_back({u.cell_x, u.cell_y});
         for (const auto& c0 : cells)
@@ -63,7 +63,7 @@
                         if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
                         const int x = s.cell_x + dx, y = s.cell_y + dy;
                         if (!w2_water_cell(x, y) || !free_at(x, y)) continue;
-                        if (!world_.selection_can_enter(0, x, y)) continue;
+                        if (!world_.selection_can_enter(local_house_, x, y)) continue;
                         // keep away from the shore so a group fans out on water
                         bool open = true;
                         for (int k = -1; k <= 1 && open; ++k)
@@ -80,7 +80,7 @@
             // (DockingOffset0 = 384,-128 leptons from the centre).
             int best = -1, bx = 0, by = 0;
             for (const ra2engine::Building& b : world_.buildings()) {
-                if (!b.alive || b.house != 0 || b.type < 0 || b.type >= static_cast<int>(ba_.roster.size()))
+                if (!b.alive || b.house != local_house_ || b.type < 0 || b.type >= static_cast<int>(ba_.roster.size()))
                     continue;
                 if (!rp_flag(rules_, ba_.roster[b.type].id, "UnitRepair")) continue;
                 const double dkx = (b.cx * 256.0 + b.fw * 128.0 + 384.0) / 256.0;
@@ -359,7 +359,7 @@
         using T = ra2engine::SuperweaponType;
         T t = static_cast<T>(w2_armed_);
         if (t == T::None) {
-            const ra2engine::Superweapon* s = world_.sw_state(0);
+            const ra2engine::Superweapon* s = world_.sw_state(local_house_);
             if (!s) return;
             t = s->type;
         }
@@ -370,9 +370,9 @@
             return;
         }
         if (t == T::ChronoSphere)
-            world_.fire_superweapon_at(0, t, w2_chrono_x_, w2_chrono_y_, cx, cy);
+            world_.fire_superweapon_at(local_house_, t, w2_chrono_x_, w2_chrono_y_, cx, cy);
         else
-            world_.fire_superweapon_at(0, t, cx, cy);
+            world_.fire_superweapon_at(local_house_, t, cx, cy);
         w2_armed_ = 0;
         w2_chrono_x_ = w2_chrono_y_ = -1;
     }
@@ -393,7 +393,7 @@
             const int house = a.size() >= 4 ? std::atoi(a[3].c_str()) : 0;
             int ax = -1, ay = -1;
             for (const ra2engine::Building& b : world_.buildings())
-                if (b.alive && b.house == 0 && b.state != ra2engine::Building::State::Dead) {
+                if (b.alive && b.house == local_house_ && b.state != ra2engine::Building::State::Dead) {
                     ax = b.cx + b.fw / 2;
                     ay = b.cy + b.fh / 2;
                     break;

@@ -116,6 +116,10 @@
 using namespace ra2assets;
 
 namespace {
+// L2: the house this client plays (presentation-side reads: shroud, radar,
+// sidebar draw, EVA, cursor, power bar). GameScene sets it to its
+// local_house_ and resets it to 0 when it ends; every gate keeps 0.
+int g_local_house = 0;
 
 // W2-AR-03/-05/-22: data-dir discovery + the required-file preflight.
 #include "data_dir.inc"
@@ -3138,7 +3142,7 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
     const ra2assets::Palette opal = overlay ? ra2engine::house_draw_palette(ba.unit_pal, b.house) : ba.unit_pal;
     const std::string& oimg = def.image.empty() ? def.id : def.image;
     if (overlay)
-        pres_building_overlay(ren, tc, oimg, fcx, fcy, bdamaged, !(b.house == 0 && g_pres_low_power), opal,
+        pres_building_overlay(ren, tc, oimg, fcx, fcy, bdamaged, !(b.house == g_local_house && g_pres_low_power), opal,
                               ra2engine::house_draw_key(b.house), W, H, 0);
     // G-85: the shadow half (frame + Frames/2) first, darkened 50 % [RE:
     // presentation.md §7, FUN_00705290 + the Darken blitter dst = dst >> 1].
@@ -3176,7 +3180,7 @@ void draw_building(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engi
         ra2engine::blit_object(ren, tex, &dst);   // W5-PRES ObjTint (none in the gates)
     }
     if (overlay)
-        pres_building_overlay(ren, tc, oimg, fcx, fcy, bdamaged, !(b.house == 0 && g_pres_low_power), opal,
+        pres_building_overlay(ren, tc, oimg, fcx, fcy, bdamaged, !(b.house == g_local_house && g_pres_low_power), opal,
                               ra2engine::house_draw_key(b.house), W, H, 1);
     // W4-FIX-POS: RA2_POS_DBG=1 outlines the foundation (magenta) and marks
     // the draw point (green x) -- the visual check for the anchor.
@@ -3494,7 +3498,7 @@ void draw_ore(SDL_Renderer* ren, ra2engine::TextureCache& tc, const OreArt& oa,
     // W2-GA-P1: only the cells that can reach the view (cached painter rows).
     ra2engine::for_each_visible_cell(map, cam, W, H, 48, [&](const ra2assets::MapCell& c, int, int) {
         if (!ore.has_ore(c.x, c.y)) return;
-        if (vis && !vis->explored_at(0, c.x, c.y)) return;   // G-84: never under shroud
+        if (vis && !vis->explored_at(g_local_house, c.x, c.y)) return;   // G-84: never under shroud
         const int kind = (ore.kind_at(c.x, c.y) == ra2engine::OreKind::Gems) ? 1 : 0;
         int slot = ore.variant_at(c.x, c.y);
         if (slot < 0 || slot >= 20) slot = 0;
@@ -3652,7 +3656,7 @@ void draw_p5_crates(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2eng
     if (!g_p5_art || !g_p5_art->has_crate || !world.crates_enabled()) return;
     for (const ra2engine::World::Crate& c : world.crates()) {
         if (c.x < 0) continue;
-        if (!world.explored_at(0, c.x, c.y)) continue;   // G-84: crates respect shroud
+        if (!world.explored_at(g_local_house, c.x, c.y)) continue;   // G-84: crates respect shroud
         const ra2assets::MapCell* mc = map.at(c.x, c.y);
         const int level = mc ? static_cast<int>(mc->level) : 0;
         // W4-FIX-POS [RE: FUN_005fd4b0 Crate=yes]: cell centre - 12 px, centred.
@@ -3843,7 +3847,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         // G-88: in the real game only the player's SELECTED units show their
         // route, and only with RA2.INI "Target Lines" on (UnitActionLines);
         // the non-interactive render paths keep the old every-unit debug lines.
-        if (!input || (u.selected && u.house == 0 && pres_target_lines()))
+        if (!input || (u.selected && u.house == g_local_house && pres_target_lines()))
             ra2engine::draw_path(ren, u, cam, W, H);   // carried units draw nothing
         // W2-UI-11: in the real game the selection marker IS the pip board
         // (drawn with the bars below); other render paths keep the diamond.
@@ -3874,13 +3878,13 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         // house 0 cannot see (object_visible_at: explored, or visible with FogOfWar). Inert with shroud
         // off (visible_at returns true on empty grids) -> every existing render
         // is pixel-identical. Own units (u.house == 0) are always drawn.
-        if (u.house != 0 && !world.object_visible_at(0, u.cell_x, u.cell_y)) return;
+        if (u.house != g_local_house && !world.object_visible_at(0, u.cell_x, u.cell_y)) return;
         // W2-AN-13: a submerged enemy sub without our sonar contact is unseen.
         if (world.unit_hidden_from(0, u)) return;
         if (u.ia.vanish) return;   // W3-B: a death anim replaced the body
         // W5-PRES R-047 [RE: abilities-w5.md §9]: an enemy viewer sees a still
         // Mirage as its DefaultMirageDisguises tree; owner and allies see the tank.
-        if (u.house != 0 && world.is_enemy(0, u.house) && g_map_dressing) {
+        if (u.house != g_local_house && world.is_enemy(g_local_house, u.house) && g_map_dressing) {
             const std::string tree = pres_mirage_tree(u);
             if (!tree.empty() && g_map_dressing->draw_tree_at(ren, tc, world, tree, u.cell_x, u.cell_y, u.level,
                                                              g_map_pals, cam, W, H))
@@ -4692,7 +4696,7 @@ ra2engine::SbRect sw_slot_rect(const ra2engine::SidebarLayout& lay, int k) {
 
 void draw_sw_slot(SDL_Renderer* ren, ra2engine::TextureCache& tc, const BuildingAssets& ba,
                   const ra2engine::World& world, const ra2engine::SbRect& slot0, double t_now) {
-    const std::vector<ra2engine::SuperweaponType> types = world.sw_types(0);
+    const std::vector<ra2engine::SuperweaponType> types = world.sw_types(g_local_house);
     for (int k = 0; k < static_cast<int>(types.size()); ++k) {
     const ra2engine::SuperweaponType ty = types[k];
     const ra2engine::Superweapon* sw = world.sw_state(0, ty);
@@ -4766,12 +4770,12 @@ void draw_radar_minimap(SDL_Renderer* ren, const ra2engine::SbRect& radar_rect,
     const double sy = static_cast<double>(radar_rect.h) / gh;
     for (int y = 0; y < gh; ++y)
         for (int x = 0; x < gw; ++x) {
-            if (!world.explored_at(0, x, y)) continue;         // unexplored -> black (skip)
+            if (!world.explored_at(g_local_house, x, y)) continue;         // unexplored -> black (skip)
             SDL_Rect px{radar_rect.x + static_cast<int>(x * sx),
                         radar_rect.y + static_cast<int>(y * sy),
                         std::max(1, static_cast<int>(sx)), std::max(1, static_cast<int>(sy))};
             // terrain tint (dim if fogged, brighter if visible)
-            Uint8 g = (!world.fog_of_war() || world.visible_at(0, x, y)) ? 120 : 60;   // W2-GA-03
+            Uint8 g = (!world.fog_of_war() || world.visible_at(g_local_house, x, y)) ? 120 : 60;   // W2-GA-03
             SDL_SetRenderDrawColor(ren, 30, g, 30, 255);
             SDL_RenderFillRect(ren, &px);
         }
@@ -4782,7 +4786,7 @@ void draw_radar_minimap(SDL_Renderer* ren, const ra2engine::SbRect& radar_rect,
     // the building/unit sprites use.
     for (const ra2engine::Unit& u : world.units()) {
         if (!u.alive) continue;
-        if (u.house != 0 && !world.object_visible_at(0, u.cell_x, u.cell_y)) continue;
+        if (u.house != g_local_house && !world.object_visible_at(0, u.cell_x, u.cell_y)) continue;
         SDL_Rect bp{radar_rect.x + static_cast<int>(u.cell_x * sx),
                     radar_rect.y + static_cast<int>(u.cell_y * sy), 2, 2};
         const ra2assets::Rgba col = world.house_palette(ba.unit_pal, u.house)[24];
@@ -4826,7 +4830,7 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
     // (today's behavior, byte-identical with shroud off / no radar) [§11a]. The
     // gate is behind world.shroud_enabled() (false in every existing gate), so
     // the static-logo branch runs exactly as today.
-    if (world.shroud_enabled() && house_owns_operational_radar(world, ba, 0)) {
+    if (world.shroud_enabled() && house_owns_operational_radar(world, ba, g_local_house)) {
         // G-09: radar.shp frames 1..N-1 are the power-up animation, the last
         // frame is the open frame drawn over the live map.
         const int boot = (g_radar && ba.has_radar) ? g_radar->boot_frame(ba.sb_radar.count()) : -1;
@@ -4904,8 +4908,8 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
     // a spied power plant's timer runs (identity when !house_blacked_out(0), so
     // every existing demo's readout is byte-identical).
     const ra2engine::PowerTotals pt =
-        ra2engine::apply_blackout(ra2engine::power_totals(world.buildings(), ba.roster, 0),
-                                  world.house_blacked_out(0));
+        ra2engine::apply_blackout(ra2engine::power_totals(world.buildings(), ba.roster, g_local_house),
+                                  world.house_blacked_out(g_local_house));
     const int output = pt.output, drain = pt.drain;
     int total_pips = lay.power_pips;
     if (total_pips < 1) total_pips = 1;
@@ -4977,7 +4981,7 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
                                             ba.groups, unit_factory_alive);
         else
             can = ra2engine::can_start(ps, type, ba.roster, world.buildings(), 0, ba.groups,
-                                       conyard_alive(world, ba, 0));
+                                       conyard_alive(world, ba, g_local_house));
         // W2-UI-02/05 [RE: wave2/04 #2, FUN_0067F800]: DARKEN.SHP (0x401) when
         // the item cannot be built; while in production GCLOCK2 frame stage+1
         // TRANSLUCENT (0x404 = 50 %) with no shade under it; a ready item shows
@@ -5078,7 +5082,7 @@ bool draw_mode_cursor(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Mode
     int state = 0;
     if (bi >= 0) {
         const ra2engine::Building& b = world.buildings()[bi];
-        bool valid = (b.house == 0 && b.type >= 0 && b.type < static_cast<int>(ba.roster.size()));
+        bool valid = (b.house == g_local_house && b.type >= 0 && b.type < static_cast<int>(ba.roster.size()));
         if (valid)
             valid = repair ? (!b.selling && ra2engine::can_be_click_repaired(b, ba.roster[b.type]))
                            : ra2engine::can_be_sold(b, ba.roster[b.type], /*c4_applied=*/b.c4_applied);
@@ -5127,7 +5131,7 @@ void draw_production_chrome(SDL_Renderer* ren, const ra2engine::World& world,
         const int sbi = input.selected_building();
         if (sbi >= 0 && sbi < static_cast<int>(world.buildings().size())) {
             const ra2engine::Building& b = world.buildings()[sbi];
-            if (b.alive && b.house == 0 && b.primary) {
+            if (b.alive && b.house == g_local_house && b.primary) {
                 const ra2engine::ScreenPt dp = ra2engine::building_draw_point(b.cx, b.cy,
                     a.map.at(b.cx, b.cy) ? a.map.at(b.cx, b.cy)->level : 0);
                 pres_draw_primary_label(ren, *tc, world, b, dp.x + cam.x, dp.y + cam.y + 15 * (b.fw + b.fh) / 2,
@@ -5139,7 +5143,7 @@ void draw_production_chrome(SDL_Renderer* ren, const ra2engine::World& world,
     SDL_SetRenderDrawColor(ren, 255, 220, 40, 220);
     for (const ra2engine::Building& b : world.buildings()) {
         if (tc && g_fx && g_game_font) break;   // W5-PRES: replaced by the label above
-        if (!b.alive || b.house != 0 || !b.primary) continue;
+        if (!b.alive || b.house != g_local_house || !b.primary) continue;
         int sx = 0, sy = 0;
         cell_center_px(b.cx + b.fw / 2, b.cy + b.fh / 2, sx, sy);
         if (sx < 0 || sx >= playfield_w) continue;
@@ -5154,7 +5158,7 @@ void draw_production_chrome(SDL_Renderer* ren, const ra2engine::World& world,
     const int sb = input.selected_building();
     if (sb >= 0 && sb < static_cast<int>(world.buildings().size())) {
         const ra2engine::Building& b = world.buildings()[sb];
-        if (b.alive && b.has_rally && b.house == 0 && tc && g_fx) {
+        if (b.alive && b.has_rally && b.house == g_local_house && tc && g_fx) {
             // W5-PRES R-144: the original's marching-ants rally line.
             const ra2assets::MapCell* bm = a.map.at(b.cx, b.cy);
             const double bx = b.cx + (b.fw - 1) / 2.0, by = b.cy + (b.fh - 1) / 2.0;
@@ -6009,6 +6013,7 @@ public:
         // --demo-projectile) -- every byte-identity gate keeps the instant path.
         cfg_ = cfg;   // P7: the save's 'CONF' section rebuilds this scene's assets
         local_house_ = local_slot_of(cfg);   // L2: the house this client plays
+        g_local_house = local_house_;
         world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
         depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
         w5_arm_combat(world_, rules_, &a_.map, &a_.theater);   // W5-B: sub-cells, land speed, crush
@@ -6192,6 +6197,7 @@ public:
     }
     ~GameScene() override {
         ra2engine::TouchGestures::set_box_mode(false);   // W6-01-11: BOX never outlives the game
+        g_local_house = 0;   // L2
         lifecycle_teardown();   // W2-AR-09: a normal end removes the autosave
         prewarm_stop_ = true;
         if (prewarm_.joinable()) prewarm_.join();
@@ -6236,10 +6242,10 @@ public:
                 // SW cameo slots (W2-AN-04: one per granted type): left-click
                 // arms that SW's targeting when it is READY.
                 {
-                    const std::vector<ra2engine::SuperweaponType> swt = world_.sw_types(0);
+                    const std::vector<ra2engine::SuperweaponType> swt = world_.sw_types(local_house_);
                     for (int k = 0; k < static_cast<int>(swt.size()); ++k) {
                         if (!sw_slot_rect(lay_, k).contains(ev.x, ev.y)) continue;
-                        if (world_.sw_ready(0, swt[k])) w2_arm_sw(swt[k]);
+                        if (world_.sw_ready(local_house_, swt[k])) w2_arm_sw(swt[k]);
                         return;  // consumed by the SW slot
                     }
                 }
@@ -6631,7 +6637,7 @@ public:
         // default_anim and pick frames from the wrong SHP layout).
         for (const auto& [image, seq] : ua_.anims) world_.set_anim(image, seq);
         enable_live_infantry_anims(world_, rules_ini_, art_ini_, 0);   // W3-B
-        const ra2engine::World::Side s = world_.house_side(0);
+        const ra2engine::World::Side s = world_.house_side(local_house_);
         pres_.init(dir_, ra2_, audio_, audio_.enabled, rules_, rules_ini_, art_ini_, {&ur_.defs, &ur_ai_.defs},
                    s == ra2engine::World::Side::Soviet ? 1 : s == ra2engine::World::Side::Yuri ? 2 : 0);
         {   // W2-UI-14: the 0xB8 score list = RA2 theme.ini [Themes] with
@@ -7102,7 +7108,7 @@ private:
             r.name = st.rows[i].name;
             r.kills = st.rows[i].kills;
             r.self = h == 0;
-            r.ally = world_.house_team(h) == world_.house_team(0);
+            r.ally = world_.house_team(h) == world_.house_team(local_house_);
             const ra2assets::Rgba c = world_.house_palette(ba_.unit_pal, h)[24];
             r.color = SDL_Color{c.r, c.g, c.b, 255};
             rows.push_back(r);
@@ -7146,9 +7152,9 @@ private:
     // Anchor = house 0's first live building (stable), else its first unit.
     bool play_anchor(int& ax, int& ay) const {
         for (const ra2engine::Building& b : world_.buildings())
-            if (b.house == 0 && b.alive && b.state != ra2engine::Building::State::Dead) { ax = b.cx; ay = b.cy; return true; }
+            if (b.house == local_house_ && b.alive && b.state != ra2engine::Building::State::Dead) { ax = b.cx; ay = b.cy; return true; }
         for (const ra2engine::Unit& u : world_.units())
-            if (u.house == 0 && u.alive && u.die_time < 0.0 && u.cargo_of < 0) { ax = u.cell_x; ay = u.cell_y; return true; }
+            if (u.house == local_house_ && u.alive && u.die_time < 0.0 && u.cargo_of < 0) { ax = u.cell_x; ay = u.cell_y; return true; }
         return false;
     }
     bool play_find_point(const std::string& name, double& cx, double& cy) const {
@@ -7166,7 +7172,7 @@ private:
                 const ra2engine::BuildingTypeDef& t = ba_.roster[b.type];
                 const bool ok = name == "garrison"
                                     ? t.can_be_occupied && b.occupants.empty() && !world_.house_combatant(b.house)
-                                : name == "garrisoned" ? t.can_be_occupied && !b.occupants.empty() && b.house == 0
+                                : name == "garrisoned" ? t.can_be_occupied && !b.occupants.empty() && b.house == local_house_
                                                        : t.bridge_repair_hut;
                 if (!ok) continue;
                 const int d = d2(b.cx, b.cy);
@@ -7278,7 +7284,7 @@ private:
         double sx = 0, sy = 0;
         int k = 0;
         for (const ra2engine::Unit& u : world_.units())
-            if (u.selected && u.alive && u.die_time < 0.0 && u.house == 0) { sx += u.fx; sy += u.fy; ++k; }
+            if (u.selected && u.alive && u.die_time < 0.0 && u.house == local_house_) { sx += u.fx; sy += u.fy; ++k; }
         if (k == 0) return false;
         x = sx / k;
         y = sy / k;
@@ -18173,6 +18179,13 @@ int main(int argc, char** argv) {
                 demo_audio = true;
             } else if (arg == "--no-audio") {
                 no_audio = true;
+            } else if (arg == "--local-house" && i + 1 < argc) {
+                g_debug_local_house = std::atoi(argv[++i]);   // L2 debug: play house N
+            } else if (arg == "--humans" && i + 1 < argc) {   // L2 debug: these slots are human
+                g_debug_humans.clear();
+                std::stringstream ss(argv[++i]);
+                std::string t;
+                while (std::getline(ss, t, ',')) if (!t.empty()) g_debug_humans.push_back(std::atoi(t.c_str()));
             } else if (arg == "--quick-skirmish") {
                 quick_skirmish = true;   // W2-AR-02 dev: default 1v1 through the loading screen
             } else if (arg == "--campaign" && i + 1 < argc) {

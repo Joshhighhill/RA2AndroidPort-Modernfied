@@ -115,7 +115,7 @@ public:
         using P = ra2engine::Powerup;
         for (const auto& e : crates) {
             const double x = e.x, y = e.y;
-            const bool own = e.house == 0;
+            const bool own = e.house == g_local_house;
             switch (static_cast<P>(e.applied)) {
                 case P::Money: snd_.play_at(w5_crate_[0], x, y, "crate money"); break;
                 case P::Reveal: snd_.play_at(w5_crate_[1], x, y, "crate reveal"); break;
@@ -166,10 +166,10 @@ public:
             if (e.building < 0 || e.building >= static_cast<int>(bs.size())) continue;
             const ra2engine::Building& b = bs[static_cast<std::size_t>(e.building)];
             const double cx = b.cx + (b.fw - 1) / 2.0, cy = b.cy + (b.fh - 1) / 2.0;
-            if (e.kind == ra2engine::World::GarrisonEvent::Garrisoned && e.house == 0) {
+            if (e.kind == ra2engine::World::GarrisonEvent::Garrisoned && e.house == g_local_house) {
                 snd_.eva("EVA_StructureGarrisoned");
                 snd_.play_at(w5_garrisoned_, cx, cy, "garrisoned");
-            } else if (e.kind == ra2engine::World::GarrisonEvent::Abandoned && e.house == 0 &&
+            } else if (e.kind == ra2engine::World::GarrisonEvent::Abandoned && e.house == g_local_house &&
                        radar_event(15, cx, cy)) {
                 snd_.eva("EVA_StructureAbandoned");
             }
@@ -310,7 +310,7 @@ private:
                 continue;
             }
             // VoiceFeedback on the NowYellow edge, 30%, player-controlled.
-            if (u.house == 0 && u.alive && u.die_time < 0.0 && u.max_hp > 0 && u.hp > 0 && u.hp < p.hp &&
+            if (u.house == g_local_house && u.alive && u.die_time < 0.0 && u.max_hp > 0 && u.hp > 0 && u.hp < p.hp &&
                 !v.feedback.empty()) {
                 const double was = static_cast<double>(p.hp) / u.max_hp, now = static_cast<double>(u.hp) / u.max_hp;
                 if (was > w5_yellow_ && now <= w5_yellow_) {
@@ -319,7 +319,7 @@ private:
                 }
             }
             // UnitRepaired: a player vehicle the service depot brought to full.
-            if (u.house == 0 && u.alive && u.die_time < 0.0 && u.hp >= u.max_hp && p.hp < u.max_hp && p.hp > 0 &&
+            if (u.house == g_local_house && u.alive && u.die_time < 0.0 && u.hp >= u.max_hp && p.hp < u.max_hp && p.hp > 0 &&
                 u.is_vehicle && w5_next_to_depot(w, ba, u) && radar_event(8, u.fx, u.fy))
                 snd_.eva("EVA_UnitRepaired");
             // Sinking / crashing start: voice, then the sound on a controller.
@@ -397,7 +397,7 @@ private:
             }
             // W5-E2 [RE: FUN_00452350 / FUN_00452250 -- IsPlayerControl(owner)]:
             // the player's building powered down / up (toggle mode or trigger).
-            if (!dead && b.house == 0 && b.power_off != p.power_off) note_power_toggle(!b.power_off);
+            if (!dead && b.house == g_local_house && b.power_off != p.power_off) note_power_toggle(!b.power_off);
             p.power_off = b.power_off;
             if (t) {
                 const std::string& trs = w5_bld_key(t->id, "TurretRotateSound");
@@ -406,19 +406,19 @@ private:
             }
             // Repair_To_Full by an engineer: an allied building jumped to full
             // health without the wrench running.
-            if (!dead && b.house == 0 && b.hp >= b.max_hp && p.hp < b.max_hp && !p.wrench && b.house == p.house &&
+            if (!dead && b.house == g_local_house && b.hp >= b.max_hp && p.hp < b.max_hp && !p.wrench && b.house == p.house &&
                 b.max_hp - p.hp > 8)
                 snd_.play_at(w5_bld_repaired_, cx, cy, "building repaired");
             // Capture [RE: FUN_004481AB @448310]. A garrison flip is not a capture.
             if (!dead && b.house != p.house && p.house >= 0 && !w5_garrison_flip(static_cast<int>(i))) {
                 const bool tech = t && t->capturable;
                 if (tech) {
-                    if (p.house == 0) snd_.eva("EVA_TechBuildingLost");
-                    if (b.house == 0) {
+                    if (p.house == g_local_house) snd_.eva("EVA_TechBuildingLost");
+                    if (b.house == g_local_house) {
                         const std::string& ev = w5_bld_key(t->id, "CaptureEvaEvent");
                         if (!ev.empty() && snd_.has_eva(ev)) snd_.eva(ev);
                     }
-                } else if ((p.house == 0 || b.house == 0) && radar_event(10, cx, cy)) {
+                } else if ((p.house == g_local_house || b.house == g_local_house) && radar_event(10, cx, cy)) {
                     snd_.eva("EVA_BuildingCaptured");
                 }
             }
@@ -706,7 +706,7 @@ private:
         }
         pres_log(frame_, "infiltrated b" + std::to_string(bi) + " purpose=" + std::to_string(purpose));
         if (victim == 0 && vline) snd_.eva(vline);
-        if (spy_house == 0)
+        if (spy_house == g_local_house)
             for (const char* l : sline) snd_.eva(l);
     }
     struct W5B {

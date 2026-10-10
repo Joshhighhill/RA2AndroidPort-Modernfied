@@ -88,7 +88,7 @@
         int pick = -1;
         for (int i = 0; i < static_cast<int>(world_.buildings().size()); ++i) {
             const ra2engine::Building& b = world_.buildings()[i];
-            if (!b.alive || b.house != 0 || b.state == ra2engine::Building::State::Dead) continue;
+            if (!b.alive || b.house != local_house_ || b.state == ra2engine::Building::State::Dead) continue;
             const bool cy = b.type >= 0 && b.type < static_cast<int>(ba_.roster.size()) &&
                             ba_.roster[b.type].conyard;
             if (cy && (pick < 0 || b.primary || !ba_.roster[world_.buildings()[pick].type].conyard)) {
@@ -117,7 +117,7 @@
         // garrison = Mission_Unload -> UnloadOccupants (FUN_0044D880).
         const int sb = input_.selected_building();
         if (sb >= 0 && sb < static_cast<int>(world_.buildings().size()) &&
-            world_.buildings()[sb].house == 0 && !world_.buildings()[sb].occupants.empty())
+            world_.buildings()[sb].house == local_house_ && !world_.buildings()[sb].occupants.empty())
             world_.unload_occupants(sb);
         world_.order_unload_selected();
         int first = -1;
@@ -292,7 +292,7 @@
         const long now = static_cast<long>(g_pres_tick);
         if (now < cheer_next_) return;
         cheer_next_ = now + 30;
-        world_.make_house_cheer(0);
+        world_.make_house_cheer(local_house_);   // ALLCHEER 0x2D: the issuing house
         pres_.note_cheer();
     }
     // CenterOnRadarEvent [RE: FUN_007331F0]: a press within 1600 ms of the
@@ -463,7 +463,7 @@
     // (grid scaled to the radar rect); if agent E moves the minimap to the
     // original 140x108 iso viewport, radar_cell_at must follow it.]
     bool radar_active() const {
-        if (!world_.shroud_enabled() || !house_owns_operational_radar(world_, ba_, 0)) return false;
+        if (!world_.shroud_enabled() || !house_owns_operational_radar(world_, ba_, local_house_)) return false;
         // The radar takes clicks only once its power-up animation has finished
         // and the map picture is up (agent E's boot frames) [RE: RadarClass
         // activation -- TS lineage IsRadarActive is set at the end of the

@@ -170,7 +170,7 @@ public:
         for (const auto& e : vet) {
             if (e.unit < 0 || e.unit >= static_cast<int>(w.units().size())) continue;
             const ra2engine::Unit& u = w.units()[e.unit];
-            if (u.house != 0) continue;
+            if (u.house != g_local_house) continue;
             snd_.play_at(e.new_rank >= 2 ? elite_sound_ : vet_sound_, u.fx, u.fy, "promotion");
             snd_.eva("EVA_UnitPromoted");
         }
@@ -178,15 +178,15 @@ public:
         // [RE: presentation.md §1.3 FUN_004fc800 / FUN_004fc9f0] end of game,
         // local player only, once.
         if (!end_spoken_) {
-            if (w.house_defeated(0)) { snd_.eva("EVA_YouHaveLost"); end_spoken_ = true; }
-            else if (w.winning_team() >= 0 && w.winning_team() == w.house_team(0)) {
+            if (w.house_defeated(g_local_house)) { snd_.eva("EVA_YouHaveLost"); end_spoken_ = true; }
+            else if (w.winning_team() >= 0 && w.winning_team() == w.house_team(g_local_house)) {
                 snd_.eva("EVA_YouAreVictorious");
                 end_spoken_ = true;
             }
         }
         // G-09: radar power-up animation + RadarOn/RadarOff ([AudioVisual]).
         {
-            const bool online = w.shroud_enabled() && house_owns_operational_radar(w, ba, 0);
+            const bool online = w.shroud_enabled() && house_owns_operational_radar(w, ba, g_local_house);
             if (online && !radar_online_) {
                 g_radar_online_since = g_pres_tick;
                 snd_.play(radar_on_, 0.0, "radar on");
@@ -269,7 +269,7 @@ private:
         using T = ra2engine::SuperweaponType;
         T t = static_cast<T>(armed);
         if (t == T::None) {
-            const ra2engine::Superweapon* sw = w.sw_state(0);
+            const ra2engine::Superweapon* sw = w.sw_state(g_local_house);
             if (sw) t = sw->type;
         }
         switch (t) {
@@ -353,7 +353,7 @@ private:
         for (int i = static_cast<int>(us.size()) - 1; i >= 0; --i) {
             const ra2engine::Unit& u = us[i];
             if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
-            if (u.house != 0 && !w.object_visible_at(0, u.cell_x, u.cell_y)) continue;
+            if (u.house != g_local_house && !w.object_visible_at(0, u.cell_x, u.cell_y)) continue;
             const int gx = static_cast<int>(std::lround((u.fx - u.fy) * 30.0)) + cam_.x + 30;
             int gy = static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + cam_.y + 15;
             // W2-AN-24: the cursor tracks the RAISED sprite of an airborne unit.
@@ -363,15 +363,15 @@ private:
         }
         bool any_sel = false;
         for (const ra2engine::Unit& u : us)
-            if (u.selected && u.house == 0 && u.alive && u.die_time < 0.0) { any_sel = true; break; }
+            if (u.selected && u.house == g_local_house && u.alive && u.die_time < 0.0) { any_sel = true; break; }
         if (hit >= 0) {
             const ra2engine::Unit& u = us[hit];
-            if (u.house == 0 || !w.is_enemy(0, u.house)) return kSelect;
+            if (u.house == g_local_house || !w.is_enemy(g_local_house, u.house)) return kSelect;
             if (!any_sel) return kDefault;
             // [RE: presentation.md §3 FUN_004aada0] Attack only when in range,
             // else AttackOutOfRange (measured from the lowest selected unit).
             for (const ra2engine::Unit& s : us)
-                if (s.selected && s.house == 0 && s.alive && s.die_time < 0.0) {
+                if (s.selected && s.house == g_local_house && s.alive && s.die_time < 0.0) {
                     const double d = std::hypot(s.fx - u.fx, s.fy - u.fy);
                     return d <= s.w_range ? kAttack : kAttackOutOfRange;
                 }
@@ -380,8 +380,8 @@ private:
         const int bi = in.building_under(mx, my);
         if (bi >= 0 && bi < static_cast<int>(w.buildings().size())) {
             const ra2engine::Building& b = w.buildings()[bi];
-            if (any_sel && b.house != 0 && w.is_enemy(0, b.house) && pres_building_seen(w, b)) return kAttack;
-            if (b.house == 0) return any_sel ? kNoMove : kDefault;
+            if (any_sel && b.house != g_local_house && w.is_enemy(g_local_house, b.house) && pres_building_seen(w, b)) return kAttack;
+            if (b.house == g_local_house) return any_sel ? kNoMove : kDefault;
         }
         if (!any_sel) return kDefault;
         if (mx >= view_w) return kDefault;
@@ -389,10 +389,10 @@ private:
         // order into the shroud), no-move otherwise.
         int cx = 0, cy = 0;
         ra2engine::screen_to_cell(mx - cam_.x, my - cam_.y, 60, 30, cx, cy);
-        if (!w.explored_at(0, cx, cy)) return kMove;
+        if (!w.explored_at(g_local_house, cx, cy)) return kMove;
         const int gw = w.grid_w(), gh = w.grid_h();
         if (cx < 0 || cy < 0 || cx >= gw || cy >= gh) return kNoMove;
-        return w.selection_can_enter(0, cx, cy) ? kMove : kNoMove;   // W2-AN-09
+        return w.selection_can_enter(g_local_house, cx, cy) ? kMove : kNoMove;   // W2-AN-09
     }
 
     // B's Input::Action (the authoritative "what would a click do") ->
@@ -403,7 +403,7 @@ private:
         using A = ra2engine::Input::Action;
         int cx = 0, cy = 0;
         ra2engine::screen_to_cell(mx - cam_.x, my - cam_.y, 60, 30, cx, cy);
-        const bool shrouded = !w.explored_at(0, cx, cy);
+        const bool shrouded = !w.explored_at(g_local_house, cx, cy);
         switch (a) {
             case A::Select: case A::ToggleSelect: case A::SelectBuilding: case A::SetPrimary: return kSelect;
             case A::Move: return kMove;
@@ -411,7 +411,7 @@ private:
             case A::Attack: {
                 if (shrouded) return kMove;
                 for (const ra2engine::Unit& s : w.units())
-                    if (s.selected && s.house == 0 && s.alive && s.die_time < 0.0)
+                    if (s.selected && s.house == g_local_house && s.alive && s.die_time < 0.0)
                         return std::hypot(s.fx - cx, s.fy - cy) <= s.w_range + 0.5 ? kAttack : kAttackOutOfRange;
                 return kAttack;
             }
@@ -503,8 +503,8 @@ private:
             if (e.seq <= sw_seen_) continue;
             sw_seen_ = e.seq;
             const T t = static_cast<T>(e.type);
-            const bool own = e.house == 0;
-            const bool hostile = !own && w.is_enemy(0, e.house);
+            const bool own = e.house == g_local_house;
+            const bool hostile = !own && w.is_enemy(g_local_house, e.house);
             switch (e.kind) {
                 case E::Granted:
                     if (!hostile) break;
@@ -858,11 +858,11 @@ private:
     // [RE: presentation.md §1.3 -- 3-entry Rules list, probably BuildConst: Medium].
     void power_eva(const ra2engine::World& w, const BuildingAssets& ba) {
         if (!ba.ok) return;
-        const ra2engine::PowerTotals pt = ra2engine::power_totals(w.buildings(), ba.roster, 0);
+        const ra2engine::PowerTotals pt = ra2engine::power_totals(w.buildings(), ba.roster, g_local_house);
         const bool low = pt.drain > pt.output;
         bool yard = false;
         for (const ra2engine::Building& b : w.buildings())
-            if (b.alive && b.house == 0 && b.type >= 0 && b.type < static_cast<int>(ba.roster.size()) &&
+            if (b.alive && b.house == g_local_house && b.type >= 0 && b.type < static_cast<int>(ba.roster.size()) &&
                 ba.roster[b.type].conyard)
                 yard = true;
         if (low && !low_power_ && yard) snd_.eva("EVA_LowPower");
@@ -889,12 +889,12 @@ private:
             // W2-GA-26 [RE: FUN_004f9200 @4f93ce]: an ALLIED (non-local)
             // house's building attacked -> RadarEvent 16 AllyBaseAttacked ->
             // EVA_OurAllyIsUnderAttack plus the siren.
-            if (b.house != 0 && b.house == p.house && b.house >= 0 && w.are_allied(0, b.house) &&
+            if (b.house != g_local_house && b.house == p.house && b.house >= 0 && w.are_allied(g_local_house, b.house) &&
                 b.hp < p.hp && !dead && radar_event(16, cx, cy)) {
                 snd_.eva("EVA_OurAllyIsUnderAttack");
                 snd_.play(base_attack_siren_, 0.0, "ally under attack");
             }
-            if (b.house == 0 && p.house == 0 && b.hp < p.hp && !dead) {
+            if (b.house == g_local_house && p.house == g_local_house && b.hp < p.hp && !dead) {
                 // [RE: presentation.md §1.2 FUN_004f9200] throttled by
                 // RadarEvent 3 BaseAttacked (8 cells, alive 400 frames); the
                 // same event is the radar flash. Plays BaseUnderAttackSound.
@@ -928,7 +928,7 @@ private:
                     if (!da.empty()) fx_.spawn_hold(da, b.cx - 0.5, b.cy - 0.5, building_level(w, b), b.house, own);
                 }
             }
-            if (b.selling && !p.selling && b.house == 0) {
+            if (b.selling && !p.selling && b.house == g_local_house) {
                 snd_.play_at(sell_sound_, cx, cy, "sell");
                 snd_.eva("EVA_StructureSold");
             }
@@ -966,7 +966,7 @@ public:
             const ra2engine::Building& b = bs[e.building];
             const double fx = b.cx + (b.fw - 1) / 2.0, fy = b.cy + (b.fh - 1) / 2.0;
             snd_.play_at(fx_.weapon_report(e.weapon), fx, fy, "defense report");
-            if (b.house != 0 && !w.object_visible_at(0, b.cx, b.cy)) continue;
+            if (b.house != g_local_house && !w.object_visible_at(0, b.cx, b.cy)) continue;
             // W2-GA-15: Tesla Coil bolts / Prism Tower beams from the tower top.
             const FxWeapon& bw = fx_.weapon_def(e.weapon);
             if (bw.bolt || bw.laser) {
@@ -996,7 +996,7 @@ public:
 private:
     void infantry_death_fx(const ra2engine::World& w, const ra2engine::Unit& u, bool was_living, bool was_alive) {
         if (!u.ia.armed || u.is_vehicle || u.is_aircraft || u.cargo_of >= 0) return;
-        if (!w.object_visible_at(0, u.cell_x, u.cell_y) && u.house != 0) return;
+        if (!w.object_visible_at(0, u.cell_x, u.cell_y) && u.house != g_local_house) return;
         const int lvl = level_at(w, u.fx, u.fy);
         if (u.die_time >= 0.0 && was_living && u.ia.vanish) {
             static const char* kKey[11] = {nullptr, nullptr, nullptr, "InfantryExplode", "FlamingInfantry",
@@ -1045,7 +1045,7 @@ private:
             alive_prev_[i] = u.alive ? 1 : 0;
             if (u.fire_flash > prev_[i].first && u.cargo_of < 0) {
                 snd_.play_at(pick_report(v.report), u.fx, u.fy, "report");
-                if (u.house == 0 || w.object_visible_at(0, u.cell_x, u.cell_y)) fire_fx(w, u);
+                if (u.house == g_local_house || w.object_visible_at(0, u.cell_x, u.cell_y)) fire_fx(w, u);
             }
             if (u.die_time >= 0.0 && prev_[i].second < 0.0) {
                 // W2-GA-25: crushed infantry (killed by an adjacent Crusher
@@ -1088,7 +1088,7 @@ private:
                     effects_.spawn_debris(effects_.unit_id(u.image), u.fx * 256.0, u.fy * 256.0, z,
                                           on_water(u.fx, u.fy) && (!u.is_aircraft || u.altitude < 11.0));
                 }
-                if (u.house == 0 && radar_event(7, u.fx, u.fy)) snd_.eva("EVA_UnitLost");
+                if (u.house == g_local_house && radar_event(7, u.fx, u.fy)) snd_.eva("EVA_UnitLost");
             }
             prev_[i] = {u.fire_flash, u.die_time};
         }
@@ -1109,7 +1109,7 @@ private:
             // W2-GA-26 [RE: presentation.md §1.3 FUN_00736d60]: the player's
             // harvester taking (non-lethal) damage -> RadarEvent 4
             // HarvesterAttacked (8 cells) -> EVA_OreMinerUnderAttack, no siren.
-            if (u.house == 0 && u.is_harvester && u.alive && u.die_time < 0.0 && uhp_prev_[i] >= 0 &&
+            if (u.house == g_local_house && u.is_harvester && u.alive && u.die_time < 0.0 && uhp_prev_[i] >= 0 &&
                 u.hp < uhp_prev_[i] && u.hp > 0 && radar_event(4, u.fx, u.fy))
                 snd_.eva("EVA_OreMinerUnderAttack");
             uhp_prev_[i] = u.hp;
@@ -1155,7 +1155,7 @@ private:
             if (t != ra2engine::SuperweaponType::None) {
                 if (h == 0 && ready && !p.ready)
                     if (const char* l = sw_line(t, 0)) snd_.eva(l);
-                if (h != 0 && p.type != t && w.is_enemy(0, h))
+                if (h != 0 && p.type != t && w.is_enemy(g_local_house, h))
                     if (const char* l = sw_line(t, 1)) snd_.eva(l);
                 // Fired: was ready, same type, charge restarted from zero.
                 if (p.ready && !ready && p.type == t && sw->timer <= 0.5)

@@ -112,7 +112,7 @@ bool touch_confirm_tap(ra2engine::InputEvent& ev) {
     }
     if (bmode) {
         const int bi = input_.pick_building(ev.x, ev.y, true);
-        const bool own = bi >= 0 && world_.buildings()[static_cast<std::size_t>(bi)].house == 0;
+        const bool own = bi >= 0 && world_.buildings()[static_cast<std::size_t>(bi)].house == local_house_;
         if (own && bi == touch_aim_bld_) {   // the confirming tap: Input commits it
             touch_aim_bld_ = -1;
             return false;

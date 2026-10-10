@@ -175,6 +175,7 @@ private:
 
     GfSkirmishStats gf_stats() const {
         GfSkirmishStats s;
+        s.local_house = local_house_;   // L2
         for (const ra2engine::Unit& u : world_.units()) {
             if (u.deployed_away) continue;
             if (u.vet.dont_score) continue;   // W4: DontScore=yes (spent V3/DMisl rockets)
