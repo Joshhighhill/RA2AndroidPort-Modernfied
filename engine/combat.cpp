@@ -1088,22 +1088,30 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         // stale "pursue indefinitely" flag for a target it hasn't picked
         // yet.
         if (u.target != -1 && !valid_target(units, world, u, u.target)) {
-            // fv-a (ALL01 idle Tanya): an AUTO-acquired target that vanishes
-            // (killed, out of sight, loaded into a transport) while the unit is
-            // still walking its approach path ends that approach -- the move's
-            // destination was the target [RE-FALLBACK: the C&C-family FootClass
-            // drops a NavCom that was the TarCom it chased (RA1 GPL source); not
-            // traced in gamemd]. Like the leash drop in
-            // (f), the unit then walks back to its guard anchor instead of
-            // finishing a stale path and re-anchoring wherever it ends (Tanya
-            // followed a Soviet transport's stale approach to the Dreadnought
-            // pier, re-anchored there and died).
-            const bool chasing = !u.attack_order && u.moving() && !u.path.empty() &&
-                                 (u.path.back().x != u.guard_x || u.path.back().y != u.guard_y);
+            // An AUTO-acquired target that vanishes (killed, out of sight,
+            // loaded into a transport) while the unit is walking its approach
+            // path: the target is dropped and the unit FINISHES the walk to the
+            // firing cell, then guards there (its guard anchor becomes the path's
+            // end -- Enter_Idle_Mode at the destination).
+            // [RE: the Guard mission approaches through FootClass::Approach_Target
+            // FUN_004D55B0 (via UnitClass FUN_007402F0, vtbl+0x53C), whose
+            // Destination is a CELL (SetDestination(MapClass::GetCellAt(..)),
+            // vtbl+0x480); only a TechnoType +0xD27 / VehicleThief (+0xEC6)
+            // infantry heads for the object itself. When the target expires,
+            // TechnoClass::PointerExpired FUN_00706C50 clears TarCom (+0x2B4) and
+            // FootClass::PointerExpired FUN_004D9870 clears Destination (+0x5A4)
+            // only if it IS the expired object -- a cell destination stays, and
+            // UnitClass::Enter_Idle_Mode FUN_00737990 picks Mission_Move while a
+            // Destination remains. Nothing walks the unit back to where it
+            // acquired.] fv-a's walk back to the guard anchor (RE-FALLBACK) is
+            // gone: it broke the SOV01 and SOV09 real-order wins.
+            const bool chasing = !u.attack_order && u.moving() && !u.path.empty();
             u.target = -1;
             u.attack_order = false;
-            if (chasing && (u.cell_x != u.guard_x || u.cell_y != u.guard_y))
-                requests.push_back({i, u.guard_x, u.guard_y});
+            if (chasing) {
+                u.guard_x = u.path.back().x;
+                u.guard_y = u.path.back().y;
+            }
         }
 
         // (e) Auto-acquire: nearest hostile within weapon range, ties ->
