@@ -368,6 +368,14 @@ public:
     // hunters, mission-end bookkeeping. The caller steps the World afterwards.
     void frame() {
         if (finished()) return;
+        // Net L0: the poll loops hold Unit& / Building& / Track& across raises,
+        // and a raise can run trigger actions that create objects (and their
+        // tracks). Found by the cross-platform gate: on Android (bionic) the
+        // freed vector read hp=0 at ALL01 frame 410 and raised an extra
+        // AttackedByAnybody; Windows happened to read the old bytes. Keep
+        // headroom so no vector reallocates while a reference is live.
+        w_.reserve_object_headroom(kObjectHeadroom);
+        reserve_track_headroom();
         // W5-A: a capture / infiltration raises EnteredBy synchronously in the
         // original (the infantry's Enter code calls TagClass::RaiseEvent before
         // any later house AI pass), so the World's entered events of the last
@@ -1097,6 +1105,11 @@ private:
         for (const ra2assets::MapWaypoint& m : w_.map().waypoints())
             if (m.index == wp) { x = m.x; y = m.y; return true; }
         return false;
+    }
+    static constexpr std::size_t kObjectHeadroom = 1024;   // objects one frame may create
+    void reserve_track_headroom() {
+        if (utrack_.capacity() < utrack_.size() + kObjectHeadroom) utrack_.reserve(utrack_.size() * 2 + kObjectHeadroom);
+        if (btrack_.capacity() < btrack_.size() + kObjectHeadroom) btrack_.reserve(btrack_.size() * 2 + kObjectHeadroom);
     }
     void sync_tracks() {
         while (utrack_.size() < w_.units().size()) {

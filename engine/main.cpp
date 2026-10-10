@@ -23,6 +23,18 @@
 #define SDL_MAIN_HANDLED
 #endif
 #include <SDL.h>
+#ifdef RA2_ANDROID_CLI
+// No Java activity: SDL's Android pref / storage paths need JNI and would
+// crash. The CLI uses RA2_PREF_DIR (else no settings file) like --play does.
+#include <SDL_system.h>
+#include <cstdlib>
+static char* ra2_cli_pref_path() {
+    const char* d = std::getenv("RA2_PREF_DIR");
+    return d && *d ? SDL_strdup(d) : nullptr;
+}
+#define SDL_GetPrefPath(org, app) ra2_cli_pref_path()
+#define SDL_AndroidGetExternalStoragePath() static_cast<const char*>(nullptr)
+#endif
 
 #include <algorithm>
 #include <array>
@@ -18038,11 +18050,7 @@ int main(int argc, char** argv) {
         } prof_guard;
         // R-182: ra2game.exe (the WIN32 GUI build, no console window) writes
         // its log to <pref dir>/ra2engine.log, SDL_Log lines included.
-#ifdef RA2_ANDROID_CLI
-        if (char* pref = nullptr) {   // SDL_GetPrefPath needs the JNI activity
-#else
         if (char* pref = SDL_GetPrefPath("ra2engine", "RA2")) {
-#endif
             const std::string log = std::string(pref) + "ra2engine.log";
             SDL_free(pref);
             if (ra2engine::os_log_to_file_if_no_console(log)) {

@@ -859,6 +859,14 @@ public:
 
     std::vector<Unit>& units() { return units_; }
     const std::vector<Unit>& units() const { return units_; }
+    // Net L0: keep `n` free slots in the unit / building vectors so a caller
+    // that holds a Unit& / Building& across a trigger raise (a raise can run
+    // actions that spawn objects -- reinforcements, passengers) never reads a
+    // reallocated vector. Capacity only: no state, hash or save change.
+    void reserve_object_headroom(std::size_t n) {
+        if (units_.capacity() < units_.size() + n) units_.reserve(units_.size() * 2 + n);
+        if (buildings_.capacity() < buildings_.size() + n) buildings_.reserve(buildings_.size() * 2 + n);
+    }
     const GameRandom& crate_rng() const { return crate_rng_; }   // simdiff dump seam (read-only)
 
     // Append a unit at iso cell (cell_x, cell_y) with SHP image name + frame;

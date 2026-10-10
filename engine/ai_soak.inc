@@ -317,6 +317,15 @@ struct AiSoakProbe {
                   << " first_human_damage_min=" << (first_dmg < 0 ? -1.0 : first_dmg / 900.0)
                   << " human_defeated=" << w.house_defeated(human)
                   << " winning_team=" << w.winning_team() << "\n";
+        {   // Net L0: the whole World state (save_world bytes, FNV-1a 64) -- the
+            // cross-platform gate compares it (tools/xplat_gate.ps1 -Soak).
+            const std::vector<std::uint8_t> sb = ra2engine::save::save_world(w);
+            std::uint64_t hh = 1469598103934665603ull;
+            for (std::uint8_t c : sb) { hh ^= c; hh *= 1099511628211ull; }
+            char hb[40];
+            std::snprintf(hb, sizeof hb, "%016llx", static_cast<unsigned long long>(hh));
+            std::cout << "[ai-soak] state_hash=" << hb << " bytes=" << sb.size() << "\n";
+        }
         if (!png.empty()) {
             const int W = 1280, H = 720;
             if (SDL_Init(SDL_INIT_VIDEO) == 0) {
