@@ -34,7 +34,8 @@ struct AiSoakProbe {
         std::string diff_dump, human_country, ai_country;
         long long diff_frames = -1;
         bool no_human_deploy = false, long_game = false, ai_passive = false;
-        std::uint32_t session_seed = 0;   // Net L0: --seed <n> (0 = derived from the map)
+        std::uint32_t session_seed = 0;   // Net L0: --seed <n> (0 = none)
+        int hash_every = 0;   // Net L0: --hash-every N prints fnv1a(save_world) (the match sync hash basis)
         auto side_of = [](const std::string& c) {
             if (c == "YuriCountry") return ra2engine::World::Side::Yuri;
             if (c == "Russians" || c == "Confederation" || c == "Africans" || c == "Arabs")
@@ -60,6 +61,7 @@ struct AiSoakProbe {
             else if (a == "--ruin-ai-at") ruin_at = std::atoi(next().c_str());   // W6-03-08 probe
             else if (a == "--diff-dump") diff_dump = next();
             else if (a == "--frames") diff_frames = std::atoll(next().c_str());
+            else if (a == "--hash-every") hash_every = std::max(0, std::atoi(next().c_str()));   // Net L0
             else if (a == "--seed") session_seed = static_cast<std::uint32_t>(std::strtoul(next().c_str(), nullptr, 0));   // Net L0
             else if (a == "--no-human-deploy") no_human_deploy = true;
             else if (a == "--long-game") long_game = true;   // lobby ShortGame=no
@@ -166,6 +168,12 @@ struct AiSoakProbe {
             for (ra2engine::SuperweaponType t : w.sw_types(ai)) ready_before |= w.sw_ready(ai, t);
             const int seq0 = w.sw_events().empty() ? 0 : w.sw_events().back().seq;
             g.update(1.0 / 15.0);
+            if (hash_every > 0 && f % hash_every == 0) {   // Net L0: fnv1a(save_world), as net_state_hash
+                const std::vector<std::uint8_t> sb = ra2engine::save::save_world(w);
+                std::uint64_t hh = 1469598103934665603ull;
+                for (std::uint8_t c : sb) { hh ^= c; hh *= 1099511628211ull; }
+                std::printf("[ai-soak] hash f=%lld h=%016llx\n", f, static_cast<unsigned long long>(hh));
+            }
             if (ddump) simdiff::write_frame(ddump, w, (int)(f - 1));   // frame 0 = state after the first logic step
             // W2-AN-21: every AI superweapon launch/activation (any type).
             for (const ra2engine::SwEvent& e : w.sw_events())

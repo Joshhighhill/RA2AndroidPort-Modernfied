@@ -21,7 +21,8 @@ param(
     [string]$DesktopData = "D:\Red Alert 2",
     [switch]$SkipPush,
     # Also run `--ai-soak --ai-vs-ai --minutes N --seed $SoakSeed` on both and
-    # compare the RESULT line + the full World state_hash (0 = skip).
+    # compare fnv1a(save_world) every 15 frames, the RESULT line and the final
+    # state_hash (0 = skip).
     [int]$SoakMinutes = 0,
     [string]$SoakSeed = "0x4E4C3030"
 )
@@ -69,15 +70,20 @@ foreach ($g in $Gates) {
     Write-Host $line
 }
 if ($SoakMinutes -gt 0) {
-    $sargs = "--ai-soak --ai-vs-ai --minutes $SoakMinutes --seed $SoakSeed"
+    $sargs = "--ai-soak --ai-vs-ai --minutes $SoakMinutes --seed $SoakSeed --hash-every 15"
     $dlog = Join-Path $Out "ai-soak.desktop.log"
     $alog = Join-Path $Out "ai-soak.android.log"
     & $Exe @($sargs -split ' ') *> $dlog
     adb shell "cd $RemoteDir && SDL_RENDER_DRIVER=software SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy RA2_PREF_DIR=$RemoteDir/ RA2_INSTALL_DIR=$RemoteDir/ra2/ ./ra2engine $sargs" *> $alog
-    $pick = { param($f) ((Select-String -Path $f -Pattern '\[ai-soak\] (RESULT|state_hash)').Line) -join ' | ' }
-    $dw = & $pick $dlog
-    $aw = & $pick $alog
-    $ok = ($dw -eq $aw) -and ($dw -match 'state_hash=')
+    # fnv1a(save_world) every 15 frames -- the lockstep match's sync hash basis
+    # (GameScene::net_state_hash) -- plus the RESULT line and the final state.
+    $pick = { param($f) ((Select-String -Path $f -Pattern '\[ai-soak\] (RESULT|state_hash|hash f=)').Line) -join ' | ' }
+    $dall = & $pick $dlog
+    $aall = & $pick $alog
+    $nh = (Select-String -Path $dlog -Pattern '\[ai-soak\] hash f=').Count
+    $ok = ($dall -eq $aall) -and ($dall -match 'state_hash=') -and ($nh -gt 0)
+    $dw = "periodic_hashes=$nh " + (((Select-String -Path $dlog -Pattern '\[ai-soak\] (RESULT|state_hash)').Line) -join ' | ')
+    $aw = "periodic_hashes=" + (Select-String -Path $alog -Pattern '\[ai-soak\] hash f=').Count
     if (-not $ok) { $fail++ }
     $line = "{0} ai-soak {1} desktop=[{2}]" -f ($(if ($ok) { "MATCH" } else { "DIFF " })), $sargs, $dw
     if (-not $ok) { $line += " android=[$aw]" }
