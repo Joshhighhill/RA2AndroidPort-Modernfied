@@ -435,7 +435,7 @@ bool World::econ_place_building(int house, int type, int cx, int cy) {
     auto add = [&](int x, int y) {
         const BuildingTypeDef d = btypes()[static_cast<std::size_t>(type)];
         add_building(type, x, y, d.fw, d.fh, house, d.strength, d.armor_ix,
-                     r ? at_or<int>(r->buildup_total, type, 0) : 0, /*instant=*/false, d.sight,
+                     r ? at_or<double>(r->buildup_total, type, 0.0) : 0.0, /*instant=*/false, d.sight,
                      d.grants_map_reveal);
         if (r && at_or<char>(r->water_bound, type, 0))
             block_water_footprint(x, y, d.fw, d.fh);   // ships path around the yard

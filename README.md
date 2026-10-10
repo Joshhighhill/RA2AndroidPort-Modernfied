@@ -4816,6 +4816,18 @@ ends with the same state hash. `m-all06-real`, failing on master, wins again.
 `m-all08` (failing since R-212 `40a3296`, before the networking work) passes
 again with the player calling Tanya back. Failing on master too:
 `m-all11-real`, `m-sov07-real`, `m-sov12-real`. The two-process
+
+timers) and `m-sov09-real`. They need re-recording against the new combat.
+`m-all06-real`, failing on master, wins again. Failing on master too:
+`m-all08`, `m-all11-real`, `m-sov07-real`, `m-sov12-real`. **MR2** (branch `mr2`): `m-sov07-real` and `m-sov12-real` were broken by
+net-l2 (bisected `c39089c` PASS / `868b18d` FAIL): `PlayerEconRules::buildup_total`
+held ints, truncating the Buildup seconds of every human-placed structure;
+fixed (`std::vector<double>`, unit test), both WIN again unchanged.
+`m-all11-real` dodges BadGuy2's first nuke and builds two more war factories
+(generator; WON f14933, Easy). The replay state hash no longer mixes the UI
+field `place_cat` (ALL11's replay reported `match=no` with an identical World);
+`RA2_REC_CHECK=N` / `RA2_REC_DUMP=T` find the first diverging tick of a replay.
+Results and hashes: docs/gap/wave4/05-mission-sequences.md (MR2). The two-process
 pairs pass through their drivers: `net-match.ps1` (LAN and `-Online`; with
 `-DesyncAt 600` both peers stop out of sync with dumps), `mp-lan-loopback.ps1`,
 `mp-online-loopback.ps1`.

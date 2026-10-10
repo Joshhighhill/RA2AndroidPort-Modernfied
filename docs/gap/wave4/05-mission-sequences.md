@@ -118,6 +118,42 @@ Observed, not changed (outside this task): BadGuy2's dogs fire at Grizzlies (~58
 - **W6 restore R2 (branch `w6r2`): ALL10 and ALL11 WON again with real orders.** RE re-check first (Ghidra headless, private project copy): the full-strength start (`FUN_006E86B0` begins a team only when `+0x79` IsFullStrength or `+0x77` IsForcedActive; `FUN_006E9950` sets `+0x79` when the member count equals `FUN_006E76D0` = the sum of every TaskForce count; `FUN_006E9640` regroups a begun Reinforce=yes team) and Patrol (`FUN_006EC240`: every N frames the strongest member runs Greatest_Threat(THREAT_RANGE), retarget `FUN_006E85C0`, attack `FUN_006EA9F0`, else regroup/move) both match the engine, so no engine change; the generators were adapted.
   - `m-all10-real` (`gen/mk_all10.py`): **WON f=23052, Normal** (loading-screen default), play_hash `8583dbd59315b552`. BadGuy2's waiting 14-unit team at its Con Yard broke the army after it had taken BadGuy3 and BadGuy1 with no income left (the start Chrono Miner died, ~9400 credits sat idle). Change: two extra Chrono Miners after the second war factory, and the lab guard (GIs, Rocketeers) joins the final sweeps.
   - `m-all11-real` (`gen/mk_all11.py`): **WON f=17355, Easy**, play_hash `03b9b3a41ee6b2b8`. On Normal the landings now take the radar (the SEAL / Prism prerequisite) and the base. On Easy the old plan failed in four places, all fixed in the generator: (1) only 1 of 10 SEALs boarded -- the IFVs stood packed at the factory exit, and a still-selected SEAL turned the next IFV click into a board order (now: war-factory rally to a holding ground south of the base, IFVs spread on their own cells, descending-index pairing so a mid-sweep boarding only shifts already-clicked indexes, a right-click deselect between phases); (2) the loaded IFVs chased landings at guard range and died while the Chronosphere charged (now: the SEALs/IFVs are trained only once the Chronosphere is charging, Grizzlies + 3 pairs of Prism towers hold the base, the group is called back to the holding ground every 150 frames); (3) only ~5 IFVs were inside the lifted 3x3 -- the old stage (116,96) sits on a level-3 slope where several cells cannot be reached by a click (now: per-cell Alt force-move parking on the flat (119,106), a conditional second pass, box select); (4) the shifted SEALs take two silos and die on the way to silo A (now: a second chronoshift wave; only SEALs on Cuba get the C4 orders).
+## MR2 re-record after the networking merges (branch `mr2`, on master 57a5dcc)
+
+**Bisect** (first-parent merges after `43f4128`, `m-sov12-real`): PASS at `c39089c` (net-s, play_hash
+`82b9e7a78b169f91`, same as `43f4128`), FAIL at `868b18d` (net-l2) and at `018abfb` (net-h). The cause is a REAL
+L2 regression, not the faithful L0 math: `PlayerEconRules::buildup_total` was `std::vector<int>` but carries the
+art Buildup duration in **seconds** (`image_frames * rate / 15`, e.g. 2.6 s), so every structure a human placed
+through `World::econ_place_building` reached Idle 5-10 frames early (place -> built 34 frames instead of 39 on
+SOV12's power plant); power, factories and the Kirov line came online early and SOV12's war factory fell before the
+second Kirov. Fixed (`3aafc48`, `engine/world.hpp` / `world_econ.cpp`: `std::vector<double>`), unit test "house econ:
+PLACE keeps the fractional buildup time". No gate moves (`--demo-saveload` installs no buildup times; prints its pin
+`6f2350c85771f15d`).
+
+Second engine fix (`ed5d672`): the `--record` / `--replay` state hash mixed `SceneSave::place_cat` (the queue the
+cameo click armed for placement -- UI; the PLACE command carries the type). A recording whose last armed placement
+was a defense (ALL11's Chronosphere) reported `match=no` with a byte-identical World. Found with the new debug
+checkpoints `RA2_REC_CHECK=N` (record writes `H <tick> <hash>` every N ticks, replay names the first differing one)
+and `RA2_REC_DUMP=T` (both runs write the hashed blobs at tick T).
+
+| Script | Result | Difficulty | play_hash | `--record` / `--replay` | Change |
+|---|---|---|---|---|---|
+| `m-sov07-real` (`gen/mk_sov07.py`) | **WON** f41679 | Easy | `94d0a8168131fd3e` | 55181 ticks, 407 commands, `3728ce028ef29dbd` match | none (the buildup fix) |
+| `m-sov12-real` (`gen/mk_sov12.py`) | **WON** f8737 | Easy | `75ad66b1644b10f3` | 11292 ticks, 45 commands, `ef8c5620cd2261f6` match | none (the buildup fix) |
+| `m-all11-real` (`gen/mk_all11.py`) | **WON** f14933 | Easy | `a0a066d091ddb8c6` | 19906 ticks, 221 commands, `9cbcd9764fe494b2` match | generator (below) |
+
+`m-all11-real` failed already on `43f4128` (and still with the buildup fix): BadGuy2's first Cuba nuke (launched
+~f11466, about 6800 frames after 'Chronosphere is Built' hands it the silos) targets the IFVs + SEALs waiting on the
+holding ground (`ai_sw_pick_target`, FUN_0050ca10: a transport scores highest) and killed 15 units; only 2 IFVs were
+left. Generator: on "Nuclear missile launched" (`evareq`) the group leaves the holding ground for the missile's
+300-frame flight and returns; 4 replacement IFVs; two more war factories (MultipleFactory, rallied to the holding
+ground). The first chronoshift now takes all three silos and the script ends on WON; the second wave remains as a
+fallback and dodges the second nuke (~f18250) too. Also re-run: `m-all01` PASS (f2306, `c64e19376c4eb04c`),
+`m-sov01` PASS (f3017, `883b8e96933366d6`).
+
+Note for the other re-records: the buildup fix shifts every real-order script that places buildings back toward
+its pre-L2 timeline; recordings re-tuned on master without it (MR1's) should be re-checked after merging `mr2`.
+
 ## W4-FIX-SEQ status (wave-4 fix agent 4, branch `w4fix-seq`)
 
 The same no-input runs (`scratch\play\sq-*.play`, 400 campaign seconds) were re-run on the fixed tree; real-order play

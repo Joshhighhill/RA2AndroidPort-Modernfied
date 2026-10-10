@@ -34,6 +34,13 @@ bx, by = 112, 92   # open ground north of the base (spare SEALs wait here)
 
 DESEL = "click xy 900 650 right nopark"   # right-click = deselect (original scheme)
 
+def dodge(n=1, far=(112, 92)):
+    p.add(f"until 6000 evareq(EVA_NuclearMissileLaunched) >= {n} or outcome != RUNNING", DESEL)
+    p.select_types(["FV", "GHOST", "MTNK"])
+    p.add(f"if outcome == RUNNING then click cell {far[0]} {far[1]} alt", "wait 330", DESEL)
+    p.select_types(["FV", "GHOST", "MTNK"])
+    p.add(f"if outcome == RUNNING then click cell {hx} {hy} alt", "wait 60", DESEL)
+
 def spread_ifvs(n):
     # W6 (full-strength/Size wave): IFVs fresh from the factory park in a
     # packed 2x6 block at its exit and the SEALs cannot reach the inner ones
@@ -115,11 +122,24 @@ p.train("MTNK", 3, 6)
 p.build("GATECH").add("dump")
 p.add("until 900 can_build(GACSPH) == 1", "click tab:1", "click cameo:GACSPH", "until 3000 queue_ready(defense) == 1",
       "cycle cameo:GACSPH placing == 1", "place auto", "until 900 buildings(0,GACSPH) >= 1", "dump", "shot csph")
+# MR2: two more war factories (MultipleFactory) so the IFVs are ready
+# between BadGuy2's nukes; each rallies to the holding ground too.
+for k in (1, 2):
+    p.build("GAWEAP")
+    p.add(f"click building 0:GAWEAP:{k}", "wait 2", f"click cell {hx} {hy}", "wait 2", DESEL)
 p.train("GHOST", 2, 12)
 p.train("FV", 3, 12)
 for _ in range(3):
     p.build("GAPOWR")
     p.build("ATESLA", tab=1, cat="defense").build("ATESLA", tab=1, cat="defense")
+# MR2 (master after the networking merges): BadGuy2's first nuke (charged
+# from the 'Chronosphere is Built' silo hand-over, launched ~f11466) goes
+# for the IFVs and SEALs waiting on the holding ground (FUN_0050ca10 scores
+# a transport highest) and wiped 15 units out. Like a player hearing "Nuclear
+# missile launched", scatter the group off the holding ground for the
+# missile's flight, then bring it back.
+dodge(1)
+p.train("FV", 3, 4, guard=True)   # replace the IFVs lost meanwhile
 p.add("until 3000 units(0,FV) >= 9 and units(0,GHOST) >= 9", "dump")
 p.train("GHOST", 2, 5, guard=True)
 def wave(tag):
@@ -141,13 +161,18 @@ def wave(tag):
     strike(tag)
 
 wave("1")
+# MR2: with the extra factories the first strike can take all three silos.
+p.add("if outcome == WON then end expect WON")
 # W6 re-tune: the first strike now takes two of the three silos (the Cuba
 # garrison kills the SEALs heading for silo A). The Chronosphere recharges
 # well before the nuke timer runs out: train a second, smaller group from
 # the same base and shift it again; every SEAL then goes for the last silo.
 p.train("FV", 3, 9, guard=True)
 p.train("GHOST", 2, 10, guard=True)
-p.add(f"if {G} then wait 2700")
+# MR2: the second nuke (~6800 frames after the first) lands while this
+# group trains: dodge it too, then let the factories finish.
+dodge(2)
+p.add(f"if {G} then wait 900")
 wave("2")
 p.add("shot final", "until 3000 outcome == WON", "end expect WON")
 p.save(out)

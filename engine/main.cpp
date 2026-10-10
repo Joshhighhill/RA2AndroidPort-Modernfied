@@ -6258,7 +6258,7 @@ public:
         if (!g_cmd_record_path.empty()) {   // --record: this scene's command log
             cmd_rec_.reset(new CmdRecorder);
             if (!cmd_rec_->open(g_cmd_record_path, cfg_, g_crate_seed_used, kWinW, kWinH)) cmd_rec_.reset();
-            else SDL_Log("[record] command log -> %s", g_cmd_record_path.c_str());
+            else { SDL_Log("[record] command log -> %s", g_cmd_record_path.c_str()); rec_check_every_ = rec_check_env(); }
             g_cmd_record_path.clear();   // one game per recording
         }
         net_attach();   // NET-PLAY: a lobby hand-off makes this a lockstep match
@@ -6654,6 +6654,10 @@ public:
         // same World mutation order as applying them at the next tick's start,
         // since nothing touches the World in between. A lockstep session must
         // leave them for the tick (remote commands may still be in flight).
+        // MR2: RA2_REC_CHECK checkpoints -- before the late flush, so a replay
+        // (which applies all of tick T's commands in this flush) and the
+        // recording (which applied some at T's start) hash the same state.
+        rec_checkpoint();
         if (!net_) apply_due_commands();
     }
     // G-87: the map's own dressing in the real game (trees, overlays, smudges,
@@ -9085,6 +9089,7 @@ int run_cmd_replay(const std::string& path) {
     {
         GameScene g(/*no_audio=*/true, log.cfg);
         g.begin_replay(log.cmds);
+        g.begin_replay_checks(log.checks);
         while (g.sim_frame() < log.end_tick) g.update(1.0 / 15.0);
         const std::uint64_t h = g.sim_state_hash();
         char hb[64];

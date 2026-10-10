@@ -761,7 +761,7 @@ struct PlayerEconRules {
     std::vector<char> water_bound;      // WaterBound=yes (every foundation cell on water)
     std::vector<char> wall;             // Wall=yes (line fill + WallBuildSpeedCoefficient)
     std::vector<int>  wall_fill_range;  // GuardRange cells for the free wall line
-    std::vector<int>  buildup_total;    // buildup frames for add_building
+    std::vector<double> buildup_total;  // Buildup seconds for add_building (art buildup_total; MR2: was int, truncated)
     std::vector<char> base_normal;      // BaseNormal (default yes)
     // The house's buildable mask per roster building (country Owner= /
     // RequiredHouses / ForbiddenHouses, lobby TechLevel and Superweapons;

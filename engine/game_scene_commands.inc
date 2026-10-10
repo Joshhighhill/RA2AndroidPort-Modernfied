@@ -139,27 +139,78 @@
     // scene's economy (wallet, queues, backlog / hold, building states) and the
     // campaign trigger runtime. Camera, sidebar tab and the rolling credits
     // display are UI and stay out.
-    std::uint64_t sim_state_hash() const {
-        std::uint64_t h = 1469598103934665603ull;
-        auto mix = [&h](const std::vector<uint8_t>& b) {
-            for (uint8_t c : b) { h ^= c; h *= 1099511628211ull; }
-        };
-        mix(ra2engine::save::save_world(world_));
+    // MR2: the hashed blobs, named (RA2_REC_DUMP writes them one file each).
+    // place_cat is UI too: the PLACE command carries the type, the replay
+    // never clicks a cameo (it made every replay after a defense placement
+    // report match=no).
+    std::vector<std::pair<const char*, std::vector<uint8_t>>> sim_state_blobs() const {
+        std::vector<std::pair<const char*, std::vector<uint8_t>>> v;
+        v.emplace_back("world", ra2engine::save::save_world(world_));
         ra2engine::save::SceneSave sc = capture_save();
         sc.cam_x = sc.cam_y = 0;
         sc.active_tab = 0;
         sc.credits_shown = 0.0;
-        mix(ra2engine::save::to_bytes(sc));
+        sc.place_cat = ra2engine::QueueCat::Structure;
+        v.emplace_back("scene", ra2engine::save::to_bytes(sc));
         if (campaign_) {
-            mix(ra2engine::save::save_triggers(const_cast<CampaignRuntime&>(*campaign_).trigger_system()));
+            v.emplace_back("trig", ra2engine::save::save_triggers(const_cast<CampaignRuntime&>(*campaign_).trigger_system()));
             ra2engine::CampaignHostSave hs = const_cast<CampaignRuntime&>(*campaign_).capture();
-            mix(ra2engine::save::to_bytes(hs));
+            v.emplace_back("host", ra2engine::save::to_bytes(hs));
         }
+        return v;
+    }
+    std::uint64_t sim_state_hash() const {
+        std::uint64_t h = 1469598103934665603ull;
+        for (const auto& [name, b] : sim_state_blobs())
+            for (uint8_t c : b) { h ^= c; h *= 1099511628211ull; }
         return h;
+    }
+    void dump_state_blobs(const std::string& prefix) const {
+        for (const auto& [name, b] : sim_state_blobs()) {
+            std::ofstream o(prefix + "." + name + ".bin", std::ios::binary);
+            o.write(reinterpret_cast<const char*>(b.data()), static_cast<std::streamsize>(b.size()));
+        }
     }
     std::uint32_t sim_frame() const { return sim_frame_; }
     const ra2engine::Selection& ui_selection() const { return input_.selection(); }
     ra2engine::Selection& ui_selection_mut() { return input_.selection(); }
+    // MR2: RA2_REC_CHECK=N -- --record writes a state-hash checkpoint every N
+    // ticks; --replay compares each one and names the first differing tick.
+    // RA2_REC_DUMP=T (+ RA2_REC_DUMP_PREFIX) writes the hashed blobs at tick T
+    // in both runs, to cmp them.
+    std::uint32_t rec_check_every_ = 0, rec_checked_ = 0, rec_dumped_ = 0;
+    std::vector<std::pair<std::uint32_t, std::string>> replay_checks_;
+    std::size_t replay_check_ix_ = 0;
+    bool replay_diverged_ = false;
+    static std::uint32_t rec_check_env() {
+        const char* e = std::getenv("RA2_REC_CHECK");
+        return e ? static_cast<std::uint32_t>(std::max(0, std::atoi(e))) : 0u;
+    }
+    void rec_checkpoint() {   // end of update(), before the frame's late commands
+        if (const char* d = std::getenv("RA2_REC_DUMP"))
+            if (static_cast<std::uint32_t>(std::atoi(d)) == sim_frame_ && sim_frame_ != rec_dumped_) {
+                rec_dumped_ = sim_frame_;
+                const char* pfx = std::getenv("RA2_REC_DUMP_PREFIX");
+                dump_state_blobs(std::string(pfx ? pfx : "state") + (replaying_ ? ".replay" : ".record"));
+            }
+        if (cmd_rec_ && rec_check_every_ && sim_frame_ % rec_check_every_ == 0 && sim_frame_ != rec_checked_) {
+            rec_checked_ = sim_frame_;
+            cmd_rec_->check(sim_frame_, sim_state_hash());
+        }
+        while (replaying_ && replay_check_ix_ < replay_checks_.size() &&
+               replay_checks_[replay_check_ix_].first <= sim_frame_) {
+            const auto& ck = replay_checks_[replay_check_ix_++];
+            if (ck.first != sim_frame_ || replay_diverged_) continue;
+            char hb[32];
+            std::snprintf(hb, sizeof hb, "%016llx", static_cast<unsigned long long>(sim_state_hash()));
+            if (ck.second != hb) {
+                replay_diverged_ = true;
+                std::cerr << "[replay] first divergence at checkpoint tick " << ck.first << ": " << hb
+                          << " recorded " << ck.second << '\n';
+            }
+        }
+    }
+    void begin_replay_checks(const std::vector<std::pair<std::uint32_t, std::string>>& c) { replay_checks_ = c; }
     // --replay: the log's commands go straight into the queue (each at its
     // recorded tick); update() then runs exactly one tick per call.
     void begin_replay(const std::vector<ra2engine::Command>& cmds) {
