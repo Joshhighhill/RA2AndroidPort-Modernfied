@@ -522,3 +522,56 @@ TEST_CASE("command apply: stale ids (out of range, dead) are skipped") {
     apply_command(w, make_building_event(EventType::Sell, 12345));
     apply_command(w, make_building_event(EventType::Primary, -1));
 }
+
+// ---------------------------------------------------------------------------
+// the wire bridge (engine/net/command_bridge.hpp)
+// ---------------------------------------------------------------------------
+#include "net/command_bridge.hpp"
+
+TEST_CASE("command bridge: a Whom run goes out as one record per object and comes back as one Command") {
+    Command c;
+    c.type = EventType::MegaMission;
+    c.house = 1;
+    c.frame = 40;
+    c.mission = Mission::Move;
+    c.whom = {{Rtti::Infantry, 3}, {Rtti::Unit, 8}, {Rtti::Infantry, 12}};
+    c.dest = Target::cell(77, 101);
+    const std::vector<ra2::net::NetCommand> recs = ra2::net::to_net(c);
+    REQUIRE(recs.size() == 3);
+    CHECK(recs[1].whom.id == 8);
+    CHECK(recs[1].mission == 2);
+    Command stop;
+    stop.type = EventType::Idle;
+    stop.house = 1;
+    stop.frame = 40;
+    stop.whom = {{Rtti::Infantry, 3}};
+    std::vector<ra2::net::NetCommand> all = recs;
+    for (const auto& r : ra2::net::to_net(stop)) all.push_back(r);
+    const std::vector<Command> back = ra2::net::from_net(all);
+    REQUIRE(back.size() == 2);
+    CHECK(back[0].type == EventType::MegaMission);
+    CHECK(back[0].whom == c.whom);
+    CHECK(back[0].dest == c.dest);
+    CHECK(back[0].house == 1);
+    CHECK(back[0].frame == 40);
+    CHECK(back[1].type == EventType::Idle);
+    CHECK(back[1].whom.size() == 1);
+}
+
+TEST_CASE("command bridge: the Chronosphere's two picks pair up; SW index is the binary index") {
+    Command c;
+    c.type = EventType::SpecialPlace;
+    c.value = static_cast<int>(SuperweaponType::ChronoSphere);
+    c.cx = 10; c.cy = 11; c.cx2 = 40; c.cy2 = 41;
+    const auto recs = ra2::net::to_net(c);
+    REQUIRE(recs.size() == 2);
+    CHECK(recs[0].value == 3);   // binary ChronoSphere
+    CHECK(recs[1].value == 4);   // binary ChronoWarp
+    const auto back = ra2::net::from_net(recs);
+    REQUIRE(back.size() == 1);
+    CHECK(back[0].value == c.value);
+    CHECK((back[0].cx2 == 40 && back[0].cy2 == 41));
+    Command sel;
+    sel.type = EventType::SelectNotify;
+    CHECK(ra2::net::to_net(sel).empty());   // clone-local, never on the wire
+}
