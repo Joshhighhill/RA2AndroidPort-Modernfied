@@ -27,8 +27,8 @@ package lobby
 // ProtoMin/ProtoMax: the net_proto range this server accepts (bump on any
 // wire change; old clients get a clear "please update").
 const (
-	ProtoMin = 1
-	ProtoMax = 1
+	ProtoMin = 2
+	ProtoMax = 2
 	Magic    = "RA2N"
 	MaxLine  = 4096
 )

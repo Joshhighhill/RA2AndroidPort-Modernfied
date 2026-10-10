@@ -279,8 +279,11 @@ void apply_debug_humans(ra2engine::SkirmishConfig& cfg) {
 }
 // The house this client plays: the debug override when it names a human
 // combatant slot, else house 0 (the campaign player is always house 0).
+int g_net_local_house_value();   // NET-PLAY (net_play.inc)
 int local_slot_of(const ra2engine::SkirmishConfig& cfg) {
     if (!cfg.campaign_map.empty() || cfg.slots.empty()) return 0;
+    // NET-PLAY: the networked match being built plays the lobby's local house.
+    if (const int n = g_net_local_house_value(); n >= 0 && n < static_cast<int>(cfg.slots.size())) return n;
     const int l = g_debug_local_house;
     if (l >= 0 && l < static_cast<int>(cfg.slots.size()) && cfg.slots[(std::size_t)l].combatant &&
         !cfg.slots[(std::size_t)l].is_ai)

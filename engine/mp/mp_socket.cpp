@@ -79,16 +79,8 @@ std::string Addr::ip_str() const {
 std::string Addr::str() const { return ip_str() + ":" + std::to_string(port); }
 
 bool net_init() {
-#ifdef _WIN32
-    static int state = 0;   // 0 untried, 1 ok, -1 failed
-    if (state == 0) {
-        WSADATA d;
-        state = WSAStartup(MAKEWORD(2, 2), &d) == 0 ? 1 : -1;
-    }
-    return state == 1;
-#else
-    return true;
-#endif
+    static const bool ok = ra2::net::net_platform_init();   // WSAStartup, once per process
+    return ok;
 }
 
 bool parse_ipv4(const std::string& s, std::uint32_t& ip) {
@@ -214,103 +206,13 @@ std::vector<std::uint32_t> local_ipv4s() {
 
 // ------------------------------------------------------------ UdpSocket --
 
-UdpSocket::~UdpSocket() { close(); }
-
-UdpSocket::UdpSocket(UdpSocket&& o) noexcept : fd_(o.fd_) { o.fd_ = kInvalid; }
-
-UdpSocket& UdpSocket::operator=(UdpSocket&& o) noexcept {
-    if (this != &o) {
-        close();
-        fd_ = o.fd_;
-        o.fd_ = kInvalid;
-    }
-    return *this;
-}
-
-bool UdpSocket::open(std::uint16_t port, bool reuse, bool broadcast, std::uint32_t bind_ip) {
-    close();
-    if (!net_init()) return false;
-    const auto s = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-#ifdef _WIN32
-    if (s == INVALID_SOCKET) return false;
-    fd_ = static_cast<Fd>(s);
-    // Windows reports an ICMP port-unreachable for an earlier send as a
-    // WSAECONNRESET on the NEXT recvfrom; turn that off (SIO_UDP_CONNRESET).
-    BOOL off = FALSE;
-    DWORD ret = 0;
-    WSAIoctl(s, _WSAIOW(IOC_VENDOR, 12), &off, sizeof off, nullptr, 0, &ret, nullptr, nullptr);
-#else
-    if (s < 0) return false;
-    fd_ = s;
-#endif
-    const int one = 1;
-    if (reuse) {
-        setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&one), sizeof one);
-#if defined(SO_REUSEPORT) && !defined(_WIN32)
-        setsockopt(fd_, SOL_SOCKET, SO_REUSEPORT, reinterpret_cast<const char*>(&one), sizeof one);
-#endif
-    }
-    if (broadcast)
-        setsockopt(fd_, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<const char*>(&one), sizeof one);
-    const sockaddr_in sa = to_sa(Addr{bind_ip, port});
-    if (::bind(fd_, reinterpret_cast<const sockaddr*>(&sa), sizeof sa) != 0 || !set_nonblock(fd_)) {
-        close();
-        return false;
-    }
-    return true;
-}
-
-void UdpSocket::close() {
-    if (fd_ != kInvalid) close_fd(fd_);
-    fd_ = kInvalid;
-}
-
-std::uint16_t UdpSocket::local_port() const {
-    if (fd_ == kInvalid) return 0;
-    sockaddr_in sa;
-    socklen_t len = sizeof sa;
-    if (getsockname(fd_, reinterpret_cast<sockaddr*>(&sa), &len) != 0) return 0;
-    return ntohs(sa.sin_port);
-}
-
-bool UdpSocket::send_to(const Addr& to, const void* data, std::size_t len) {
-    if (fd_ == kInvalid) return false;
-    const sockaddr_in sa = to_sa(to);
-    const auto n = ::sendto(fd_, static_cast<const char*>(data), static_cast<int>(len), 0,
-                            reinterpret_cast<const sockaddr*>(&sa), sizeof sa);
-    return n == static_cast<decltype(n)>(len);
-}
-
-int UdpSocket::recv_from(Addr& from, void* buf, std::size_t cap) {
-    if (fd_ == kInvalid) return -1;
-    for (int guard = 0; guard < 64; ++guard) {
-        sockaddr_in sa;
-        socklen_t len = sizeof sa;
-        const auto n = ::recvfrom(fd_, static_cast<char*>(buf), static_cast<int>(cap), 0,
-                                  reinterpret_cast<sockaddr*>(&sa), &len);
-        if (n >= 0) {
-            from = from_sa(sa);
-            return static_cast<int>(n);
-        }
-        if (would_block()) return 0;
-#ifdef _WIN32
-        const int e = WSAGetLastError();
-        if (e == WSAECONNRESET || e == WSAEMSGSIZE) continue;   // stale ICMP / oversize: skip it
-#else
-        if (errno == EINTR || errno == ECONNREFUSED) continue;
-#endif
-        return -1;
-    }
-    return 0;
-}
-
 // ------------------------------------------------------------ TcpStream --
 
 TcpStream::~TcpStream() { close(); }
 
 void TcpStream::close() {
-    if (fd_ != UdpSocket::kInvalid) close_fd(fd_);
-    fd_ = UdpSocket::kInvalid;
+    if (fd_ != kInvalid) close_fd(fd_);
+    fd_ = kInvalid;
     state_ = State::Closed;
     in_.clear();
     out_.clear();
@@ -326,7 +228,7 @@ bool TcpStream::connect(const Addr& to) {
 #else
     if (s < 0) { state_ = State::Failed; err_ = "socket"; return false; }
 #endif
-    fd_ = static_cast<UdpSocket::Fd>(s);
+    fd_ = static_cast<Fd>(s);
     const int one = 1;
     setsockopt(fd_, IPPROTO_TCP, 1 /*TCP_NODELAY*/, reinterpret_cast<const char*>(&one), sizeof one);
     set_nonblock(fd_);

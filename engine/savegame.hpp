@@ -50,6 +50,16 @@ public:
     std::vector<std::uint8_t> buf;
 };
 
+// NET-PLAY: optional per-member marks while a World is written, so a desync
+// report can name the World member whose bytes differ between two machines
+// (world_field_hashes). Off (nullptr) except inside world_field_hashes.
+struct FieldMarks { std::vector<std::pair<const char*, std::size_t>> v; };
+inline FieldMarks*& field_marks() { static FieldMarks* m = nullptr; return m; }
+template <class Ar> inline void mark(Ar&, const char*) {}
+inline void mark(Writer& w, const char* name) {
+    if (FieldMarks* m = field_marks()) m->v.emplace_back(name, w.buf.size());
+}
+
 class Reader {
 public:
     static constexpr bool kLoading = true;
@@ -219,6 +229,9 @@ template <class Ar, class T> void io(Ar& ar, T& v) {
 // save_world never mutates the World (the writer only reads) -- serialization
 // is read-only w.r.t. simulation, so every byte-identity gate is untouched.
 std::vector<std::uint8_t> save_world(const World& w);
+// NET-PLAY: FNV-1a of each World member's save bytes, in visit order
+// ("name" -> 32-bit hash); two machines' lists differ at the desynced member.
+std::vector<std::pair<std::string, std::uint32_t>> world_field_hashes(const World& w);
 // Overwrites EVERY serialized member of `w` (all but the MapFile pointer).
 // `w` must have been constructed from the same map. Returns false on a
 // truncated/corrupt blob (w is then in an unspecified-but-valid state).

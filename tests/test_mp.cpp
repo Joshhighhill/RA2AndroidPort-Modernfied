@@ -10,52 +10,20 @@
 #include "mp/mini_json.hpp"
 #include "mp/mp_lobby.hpp"
 #include "mp/mp_model.hpp"
+#include "mp/mp_net.hpp"
+#include "net/wire.hpp"
 
+#include <map>
+#include <memory>
 #include <set>
 
 using namespace ra2mp;
 
-TEST_CASE("mp: Add_CRC is rotl1-then-add over LE words with a masked tail") {
-    const std::uint8_t a[4] = {1, 0, 0, 0};
-    CHECK(add_crc(a, 4) == 1u);
-    const std::uint8_t b[8] = {1, 0, 0, 0, 2, 0, 0, 0};
-    CHECK(add_crc(b, 8) == ((1u << 1) + 2u));
-    const std::uint8_t c[5] = {0xFF, 0xFF, 0xFF, 0xFF, 0x07};
-    // crc = 0xFFFFFFFF; tail word 0x07 (mask 0xFF): rotl1(0xFFFFFFFF) + 7
-    CHECK(add_crc(c, 5) == 0xFFFFFFFFu + 7u);
-}
-
-TEST_CASE("mp: 0x1236 global packet layout (16-byte header, 455-byte body, CRC)") {
-    GlobalPacket g;
-    g.code = kDataAck;
-    g.packet_id = 0x11223344;
-    g.body = {0x0C, 0, 0, 0, 'h', 'i'};
-    const std::vector<std::uint8_t> d = encode_global(g);
-    REQUIRE(d.size() == 4 + 16 + 455);
-    CHECK(d[4] == 0x36);
-    CHECK(d[5] == 0x12);                  // magic 0x1236 LE
-    CHECK(d[6] == kDataAck);
-    CHECK(d[8] == 0x44);
-    CHECK(d[11] == 0x11);                 // PacketID LE
-    CHECK(d[18] == 0x04);
-    CHECK(d[19] == 0xAA);                 // ProductID 0xAA04 at +14
-    CHECK(d[20] == 0x0C);                 // body starts at +16
-    GlobalPacket back;
-    REQUIRE(decode_global(d.data(), d.size(), back));
-    CHECK(back.packet_id == 0x11223344u);
-    CHECK(back.body.size() == 455u);
-    CHECK(back.body[4] == 'h');
-    std::vector<std::uint8_t> bad = d;
-    bad[30] ^= 1;
-    CHECK_FALSE(decode_global(bad.data(), bad.size(), back));   // CRC
-    GlobalPacket ra2 = g;
-    ra2.product = 0xAA03;                                         // RA2 game.exe
-    const auto r = encode_global(ra2);
-    CHECK_FALSE(decode_global(r.data(), r.size(), back));
-    GlobalPacket ack;
-    ack.code = kAck;
-    ack.packet_id = 9;
-    CHECK(encode_global(ack).size() == 20u);                      // ACKs carry no body
+TEST_CASE("mp: the room-name hash is engine/net's Add_CRC (packet_crc)") {
+    // The datagram CRC, the 0x1236 header, ACK / resend / dedupe are
+    // engine/net's (tests/test_net_wire.cpp); the lobby only hashes the name.
+    CHECK(game_name_hash("") == 0u);
+    CHECK(game_name_hash(std::string("\x01\x00\x00\x00\x02", 5)) == ((1u << 1) + 2u));
 }
 
 TEST_CASE("mp: chat packet uses the original 0x0C layout") {
@@ -210,6 +178,24 @@ MpIdentity ident(const std::string& nick, std::uint64_t pid, std::uint32_t rules
     return id;
 }
 
+// In-process network (engine/net LoopbackHub) on the test's virtual clock:
+// endpoint n is the address n.0.0.0:1.
+struct MemNet {
+    ra2::net::LoopbackHub hub;
+    std::uint64_t* t;
+    std::map<std::uint32_t, std::unique_ptr<MpNet>> nets;
+    explicit MemNet(std::uint64_t& clock) : hub([&clock]() { return static_cast<std::uint32_t>(clock); }), t(&clock) {}
+    MpNet& add(std::uint32_t n) {
+        auto m = std::make_unique<MpNet>();
+        std::uint64_t* tt = t;
+        m->open_loopback(hub, Addr{n, 1}, [tt]() { return static_cast<std::uint32_t>(*tt); });
+        MpNet& r = *m;
+        nets[n] = std::move(m);
+        return r;
+    }
+};
+PeerId mem_peer(std::uint32_t n) { return peer_of(Addr{n, 1}); }
+
 template <class F>
 bool pump(LobbyHost& h, std::vector<LobbyClient*> cs, std::uint64_t& t, F done, int steps = 400) {
     for (int i = 0; i < steps; ++i) {
@@ -223,16 +209,16 @@ bool pump(LobbyHost& h, std::vector<LobbyClient*> cs, std::uint64_t& t, F done, 
 }  // namespace
 
 TEST_CASE("mp: lobby join, slot requests, ready, chat relay and start (memory transport)") {
-    MemoryHub hub;
-    auto* eh = hub.add(1);
-    auto* e1 = hub.add(2);
-    auto* e2 = hub.add(3);
-    LobbyHost host(*eh, ident("Host", 0x1111), host_model());
-    host.set_room_name("Room");
-    LobbyClient c1(*e1, 1, ident("Alice", 0x2222));
-    LobbyClient c2(*e2, 1, ident("Bob", 0x3333));
-    c1.have_map = c2.have_map = [](const MpMap& m) { return m.digest == "abc"; };
     std::uint64_t t = 1000;
+    MemNet hub(t);
+    MpNet& eh = hub.add(1);
+    MpNet& e1 = hub.add(2);
+    MpNet& e2 = hub.add(3);
+    LobbyHost host(eh, ident("Host", 0x1111), host_model());
+    host.set_room_name("Room");
+    LobbyClient c1(e1, mem_peer(1), ident("Alice", 0x2222));
+    LobbyClient c2(e2, mem_peer(1), ident("Bob", 0x3333));
+    c1.have_map = c2.have_map = [](const MpMap& m) { return m.digest == "abc"; };
     REQUIRE(pump(host, {&c1, &c2}, t, [&] {
         return c1.state() == LobbyClient::State::Joined && c2.state() == LobbyClient::State::Joined &&
                c1.rev() == host.rev() && c2.rev() == host.rev() && host.model().slots[1].has_map &&
@@ -296,43 +282,52 @@ TEST_CASE("mp: lobby join, slot requests, ready, chat relay and start (memory tr
         CHECK(c1.session().players[i].color == host.session().players[i].color);
         CHECK(c2.session().players[i].start == host.session().players[i].start);
     }
+    // NET-PLAY: GO's peer table -- every machine knows every other human's
+    // transport peer (the match is a full mesh), AIs and itself have none.
+    CHECK(host.session().players[1].peer == mem_peer(2));
+    CHECK(host.session().players[2].peer == mem_peer(3));
+    CHECK(c1.session().players[0].peer == mem_peer(1));
+    CHECK(c1.session().players[1].peer == 0u);           // itself
+    CHECK(c1.session().players[2].peer == mem_peer(3));  // Bob, as the host sees him
+    CHECK(c2.session().players[1].peer == mem_peer(2));
+    CHECK(c2.session().players[3].peer == 0u);           // the AI
 }
 
 TEST_CASE("mp: version / rules gate, full room, kick, leave") {
-    MemoryHub hub;
-    auto* eh = hub.add(1);
-    LobbyHost host(*eh, ident("Host", 1), host_model());
     std::uint64_t t = 0;
+    MemNet hub(t);
+    MpNet& eh = hub.add(1);
+    LobbyHost host(eh, ident("Host", 1), host_model());
     {
-        auto* e = hub.add(2);
+        MpNet& e = hub.add(2);
         MpIdentity old = ident("Old", 2);
         old.net_proto = 99;
-        LobbyClient c(*e, 1, old);
+        LobbyClient c(e, mem_peer(1), old);
         pump(host, {&c}, t, [&] { return c.state() == LobbyClient::State::Rejected; });
         CHECK(c.reject_reason() == RejectReason::Version);
     }
     {
-        auto* e = hub.add(3);
-        LobbyClient c(*e, 1, ident("Modder", 3, 0xBAD));
+        MpNet& e = hub.add(3);
+        LobbyClient c(e, mem_peer(1), ident("Modder", 3, 0xBAD));
         pump(host, {&c}, t, [&] { return c.state() == LobbyClient::State::Rejected; });
         CHECK(c.reject_reason() == RejectReason::Rules);
     }
     // Fill the 4-player map: host + AI + AI + one human; the next is refused.
     host.set_slot_kind(1, SlotKind::AI, 1);
     host.set_slot_kind(2, SlotKind::AI, 1);
-    auto* e4 = hub.add(4);
-    auto* e5 = hub.add(5);
-    LobbyClient c4(*e4, 1, ident("Four", 4));
+    MpNet& e4 = hub.add(4);
+    MpNet& e5 = hub.add(5);
+    LobbyClient c4(e4, mem_peer(1), ident("Four", 4));
     REQUIRE(pump(host, {&c4}, t, [&] { return c4.state() == LobbyClient::State::Joined; }));
-    LobbyClient c5(*e5, 1, ident("Five", 5));
+    LobbyClient c5(e5, mem_peer(1), ident("Five", 5));
     pump(host, {&c4, &c5}, t, [&] { return c5.state() == LobbyClient::State::Rejected; });
     CHECK(c5.reject_reason() == RejectReason::Full);
     host.kick(3);
     REQUIRE(pump(host, {&c4}, t, [&] { return c4.state() == LobbyClient::State::Rejected; }));
     CHECK(c4.reject_reason() == RejectReason::Kicked);
     CHECK(host.model().slots[3].kind == SlotKind::Open);
-    auto* e6 = hub.add(6);
-    LobbyClient c6(*e6, 1, ident("Six", 6));
+    MpNet& e6 = hub.add(6);
+    LobbyClient c6(e6, mem_peer(1), ident("Six", 6));
     REQUIRE(pump(host, {&c6}, t, [&] { return c6.state() == LobbyClient::State::Joined; }));
     c6.leave();
     REQUIRE(pump(host, {}, t, [&] { return host.members() == 0; }));
@@ -340,14 +335,16 @@ TEST_CASE("mp: version / rules gate, full room, kick, leave") {
 }
 
 TEST_CASE("mp: lobby converges over a lossy link (resend + dedupe)") {
-    MemoryHub hub;
-    auto* eh = hub.add(1);
-    auto* ec = hub.add(2);
-    eh->drop_every = 3;
-    ec->drop_every = 4;
-    LobbyHost host(*eh, ident("Host", 1), host_model());
-    LobbyClient c(*ec, 1, ident("Lossy", 2));
     std::uint64_t t = 0;
+    MemNet hub(t);
+    hub.hub.set_loss(0.3);
+    hub.hub.set_duplicate(0.1);
+    MpNet& eh = hub.add(1);
+    MpNet& ec = hub.add(2);
+    LobbyHost host(eh, ident("Host", 1), host_model());
+    LobbyClient c(ec, mem_peer(1), ident("Lossy", 2));
+    // (With this loss pattern the CONFIRM is lost and arrives after the
+    // options: the join must still complete.)
     REQUIRE(pump(host, {&c}, t, [&] { return c.state() == LobbyClient::State::Joined && c.rev() == host.rev(); }));
     c.request_slot(1, 6, -1, 1);
     c.chat("one");
@@ -364,12 +361,12 @@ TEST_CASE("mp: lobby converges over a lossy link (resend + dedupe)") {
 }
 
 TEST_CASE("mp: host lost -> client reports it") {
-    MemoryHub hub;
-    auto* eh = hub.add(1);
-    auto* ec = hub.add(2);
-    LobbyHost host(*eh, ident("Host", 1), host_model());
-    LobbyClient c(*ec, 1, ident("C", 2));
     std::uint64_t t = 0;
+    MemNet hub(t);
+    MpNet& eh = hub.add(1);
+    MpNet& ec = hub.add(2);
+    LobbyHost host(eh, ident("Host", 1), host_model());
+    LobbyClient c(ec, mem_peer(1), ident("C", 2));
     REQUIRE(pump(host, {&c}, t, [&] { return c.state() == LobbyClient::State::Joined; }));
     for (int i = 0; i < 400 && c.state() == LobbyClient::State::Joined; ++i) {
         t += 100;
@@ -379,9 +376,9 @@ TEST_CASE("mp: host lost -> client reports it") {
 }
 
 TEST_CASE("mp: lobby over real loopback UDP sockets") {
-    UdpLobbyTransport th, tc;
-    REQUIRE(th.open(0));
-    REQUIRE(tc.open(0));
+    MpNet th, tc;
+    REQUIRE(th.open_direct(0));
+    REQUIRE(tc.open_direct(0));
     LobbyHost host(th, ident("Host", 1), host_model());
     LobbyClient c(tc, peer_of(Addr{kLoopback, th.port()}), ident("Udp", 2));
     bool ok = false;
@@ -414,15 +411,17 @@ TEST_CASE("mp: lobby through a CnCNet V3 tunnel (8-byte LE header)") {
             const std::uint8_t* pl;
             std::size_t pn;
             if (n == 50 && buf[0] == 0 && buf[4] == 0) { relay.send_to(from, buf, 12); continue; }
-            if (!v3_unwrap(buf, static_cast<std::size_t>(n), s, r, pl, pn) || s == 0) continue;
+            if (!ra2::net::tunnel_unwrap(ra2::net::TunnelMode::V3, buf, static_cast<std::size_t>(n), &s, &r, &pl, &pn) ||
+                s == 0)
+                continue;
             reg[s] = from;
             const auto it = reg.find(r);
             if (it != reg.end()) { relay.send_to(it->second, buf, static_cast<std::size_t>(n)); ++forwarded; }
         }
     };
-    TunnelLobbyTransport th, tc;
-    REQUIRE(th.open(ra, 0xAAAA0001));
-    REQUIRE(tc.open(ra, 0xBBBB0002));
+    MpNet th, tc;
+    REQUIRE(th.open_tunnel(ra, 0xAAAA0001));
+    REQUIRE(tc.open_tunnel(ra, 0xBBBB0002));
     LobbyHost host(th, ident("Host", 1), host_model());
     LobbyClient c(tc, peer_of_v3(0xAAAA0001), ident("Tunnel", 2));
     bool ok = false;
@@ -441,6 +440,38 @@ TEST_CASE("mp: lobby through a CnCNet V3 tunnel (8-byte LE header)") {
     REQUIRE(ok);
     CHECK(forwarded > 2);
     CHECK(host.peer_of_slot(1) == peer_of_v3(0xBBBB0002));
+    // The tunnel answered our 50-byte ping (seen through UdpDatagramIO::on_foreign).
+    for (int i = 0; i < 200 && th.rtt_ms() < 0; ++i) {
+        run_relay();
+        th.net().service();
+        const std::uint64_t until = now_ms() + 2;
+        while (now_ms() < until) {}
+    }
+    CHECK(th.rtt_ms() >= 0);
+}
+
+TEST_CASE("mp: NET-PLAY platform tag -- mixed platforms need the cross-platform option") {
+    std::uint64_t t = 0;
+    MemNet hub(t);
+    MpNet& eh = hub.add(1);
+    MpIdentity hi = ident("Host", 1);
+    hi.platform = 1;
+    LobbyHost host(eh, hi, host_model());
+    MpNet& e2 = hub.add(2);
+    MpIdentity droid = ident("Droid", 2);
+    droid.platform = 2;
+    {
+        LobbyClient c(e2, mem_peer(1), droid);
+        pump(host, {&c}, t, [&] { return c.state() == LobbyClient::State::Rejected; });
+        CHECK(c.reject_reason() == RejectReason::Platform);
+    }
+    MpOptions o = host.model().opt;
+    o.cross_platform = true;
+    host.set_options(o);
+    MpNet& e3 = hub.add(3);
+    LobbyClient c(e3, mem_peer(1), droid);
+    REQUIRE(pump(host, {&c}, t, [&] { return c.state() == LobbyClient::State::Joined; }));
+    CHECK(c.model().opt.cross_platform);   // travels in the options string (xp=1)
 }
 
 TEST_CASE("mp: LAN beacon / query codec") {

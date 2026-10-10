@@ -260,8 +260,8 @@ first power-plant blackout); their generators live in `scripts/play/gen/` (edit 
 ## Multiplayer (agent S, engine/mp_pages.inc)
 
 Pages: `shell:Main Menu` -> `button:Network` (scene `mp-lan`) /
-`button:Internet` (scene `mp-online`) -> `mp-lobby` -> `mp-start` (the
-lockstep hand-off placeholder). Edits on every page: `edit:<id>`; while an
+`button:Internet` (scene `mp-online`) -> `mp-lobby` -> `game` (NET-PLAY:
+the lockstep match; the old `mp-start` placeholder page is gone). Edits on every page: `edit:<id>`; while an
 edit has focus `type "..."` appends, `key delete` clears it, `key enter`
 commits (chat: sends). Probe `edit(<id>)`, `focus`, `status`.
 
@@ -270,11 +270,15 @@ commits (chat: sends). Probe `edit(<id>)`, `focus`, `status`.
 | `mp-lan` | `button:Host Game`, `button:Join Game`, `button:Join by IP`, `button:Back`, `edit:nick`, `edit:ip`, `game:<i>` | `lan_games`, `lan_listening`, `lan_sel`, `lan_game_host(i)`, `lan_game_room(i)`, `nick` |
 | `mp-online` | `button:Connect`, `button:Host Game`, `button:Host Private`, `button:Join Game`, `button:Join Code`, `button:Back`, `edit:server`, `edit:nick`, `edit:code`, `room:<i>` | `online_state` (`idle/connecting/hello/ready/failed`), `rooms`, `room_code(i)`, `server_name`, `motd`, `online_error` |
 | `mp-lobby` | `button:Start Game` / `button:Customize Battle` (host), `button:Ready` / `button:Not Ready` (client), `button:Back`, `edit:chat`, `combo:kind<N>` (host, rows 1-7), `combo:country<N>` / `combo:color<N>` / `combo:team<N>` / `combo:start<N>` (rows you may edit), with a list open `pick:<label>` / `item:<i>` / `list:up` / `list:down`, `check:short|mcv|crates|superweapons`, `slider:speed|credits|units=<v>` (host), `map:<file>` + `button:Use Map` / `button:Cancel` while choosing | `mp_role` (`host/client`), `mp_net` (`lan/online`), `mp_state` (`joining/joined/rejected/lost/started`), `reject_reason`, `local_slot`, `members`, `rev`, `players`, `humans`, `max_players`, `map`, `map_digest`, `room_code`, `where`, `lan_port`, `credits`, `unit_count`, `game_speed`, `check(<id>)`, `can_start`, `choosing`, `combo_open`, per slot N `slot_kind(N)` (`Open/Closed/Human/AI`), `slot_name(N)`, `slot_ready(N)`, `slot_has_map(N)`, `country(N)`, `color(N)`, `team(N)`, `start(N)`, `ai(N)`; `chat_count`, `chat_last` (`"Name: text"`), `ready` (client) |
-| `mp-start` | `button:Preview Map`, `button:Main Menu` | `session_seed`, `session_players`, `local_house`, `local_slot`, `is_host`, `session_options` (the original options string), `session_transport` (`lan/tunnel`), `session_map`, per house h `house_slot(h)`, `house_color(h)`, `house_start(h)`, `house_country(h)`, `house_ai(h)` |
+| `game` (a network match) | the usual game targets | NET-PLAY keys (only in a match): `net` (1), `sim_frame`, `net_frame`, `net_stalled`, `net_stalls`, `net_players`, `net_max_ahead`, `net_fsr`, `net_left` (our EXIT executed), `net_exiting`, `net_end` (the match ended: out of sync / mismatch / timeout), `net_end_title`, `net_oos_frame`, `net_chat_open`, `net_away`, `net_hash`, `net_hash_avg_us`, `net_house_out(h)` |
 
 Network is real time (wall clock), not the harness's virtual clock: wait
 with large `until` budgets (`until 2000000 humans == 2`). Two-process tests:
 `scripts/play/mp-lan-loopback.ps1` (host + joiner over UDP, LAN discovery on
 50010) and `scripts/play/mp-online-loopback.ps1` (also starts `ra2lobbyd
 --allow-loopback`; the join goes through the room list and the CnCNet V3
-tunnel). Both check that the two games agree on the seed and options string.
+tunnel). Both check that the two games agree on the seed and options string
+and that the match starts. `scripts/play/net-match.ps1` [`-Online`] [`-DesyncAt N`]
+plays a whole 3000-frame match between two processes (net-*-host/join.play)
+and compares the two machines' sync-hash trails (`[net] trail f=N crc=X`
+on stderr); in a match Enter opens the chat line (`type`, `key enter`).

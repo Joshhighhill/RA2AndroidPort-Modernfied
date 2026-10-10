@@ -4616,3 +4616,98 @@ ra2assets_tests --test-case="net*"                    # 32 cases, ~1 s (golden b
 ra2netpeer --selftest --frames 600                    # two peers, real 127.0.0.1 sockets
 pwsh scripts/net_two_process.ps1 -Exe <build>\ra2netpeer.exe   # two OS processes, LAN
 ```
+
+## Networking: playing a match (NET-PLAY, branch `net-play`)
+
+Network and Internet games are real now: the lobby's **Start Game** builds the match and every
+machine runs the same simulation in lockstep, the way the original does (one EventClass stream,
+the frame scheduler, the per-frame CRC compare). Pieces: `engine/net/net_game.*` (the driver),
+`engine/net_play.inc` + `engine/game_scene_net.inc` (the game side), `engine/mp/mp_net.*` (the
+shared endpoint), the hand-off in `engine/mp_pages.inc` (`mp_start_session`).
+
+**How to play**
+
+* **LAN (same Wi-Fi / network):** *Network* -> *Host Game* on one machine; on the others
+  *Network* -> pick the game in the list (or *Join by IP* with the address the host's lobby
+  shows, e.g. `192.168.1.20:50020`). Pick country / colour / team / start, the joiners press
+  *Ready*, the host presses *Start Game*.
+* **Internet:** run your own `ra2lobbyd` ([docs/SERVER.md](docs/SERVER.md)); everyone enters its
+  address under *Internet* -> *Connect*. The host creates a room (public, or private with a
+  room code), the others join from the list or with the code. Game traffic goes through the
+  server's CnCNet-V3 tunnel, so no port forwarding is needed.
+* **In the game:** Enter (or the *Chat* button, touch) opens the chat line, Enter / *Send*
+  sends it to everyone (the original chat packet 0x0C on the global channel); lines show in
+  the message list in the sender's colour. The options menu does **not** pause a network game
+  (save / load are disabled). *Abort* leaves: an EXIT is scheduled like any order, the game
+  keeps running until it executes on every machine at the same frame, then you go to the menu
+  and the others see "<name> has left the game.".
+* **Waiting / reconnect:** when a player's packets stop, the game waits ("Waiting for
+  players..."). After the original's dialog timeout a dialog names the player we wait for with
+  a countdown and offers *Drop player* / *Quit game*; at the original's total timeout (LAN 2400
+  ticks = 38 s, Internet 7200 ticks) the slowest player is dropped automatically. A dropped or
+  leaving player's house is **defeated** (everything it owns blows up) -- or, when the host
+  ticked *AI takes over* (options string `ait=1`), a Normal AI takes the house over with its
+  money, queues and units. Frame 0 waits up to 3 minutes for slow loaders (phones).
+* **Android:** sending the app to the background tells the others (AWAY, clone global packet
+  0x41): their game shows "<name> paused the game -- waiting N s" for 90 s instead of opening
+  the drop dialog; coming back within that time sends BACK and play simply continues. A
+  network game is not autosaved. **Not done yet:** rejoining after the app was killed or the
+  network changed (reconnect by state snapshot, 05-transport-infra.md §7.2 step 4 / §7.3).
+* **Windows vs Android:** the simulation is not yet bit-identical across CPU / maths libraries
+  (that is net L0: deterministic maths). Until L0 is merged a match must be **same platform
+  only**: the join handshake carries a platform tag (1 Windows, 2 Android arm64, 3 Android
+  x86_64) and the host refuses a mixed-platform joiner ("The host plays on another platform")
+  unless the lobby option *Cross-platform (experimental)* (`xp=1`) is on.
+
+**What runs where.** The lobby and the match share ONE endpoint (`MpNet`: engine/net's
+`UdpDatagramIO` + `NetManager`; the lobby is the 0x1236 global channel, the match adds one
+private channel per remote human on the same socket / tunnel id). `GO` now carries the peer
+table, so every machine reaches every other human (the match is a full mesh, the lobby a star).
+`mp_start_session` builds the World from `session_to_skirmish` with the session seed (crates),
+the lobby's resolved start waypoints and the local house; the GameScene then:
+
+* sends local orders through `NetGame::issue` (EventClass records, `Frame = now + MaxAhead`);
+  they come back from `Execute_DoList` with everyone else's on their frame and are applied at
+  that tick's start in the original's order -- local orders never short-cut the queue;
+* ticks at a fixed **15 Hz** (the lobby speed is not used; the TIMING fps cap is GameSpeed 4)
+  and only when `NetGame::step` says Run; ticks are never dropped (a backlog runs up to 4 per
+  frame). Start values from the original (net-protocol.md §8): LAN FrameSendRate 5 /
+  MaxAhead 10, Internet 5 / 15; the host's TIMING events resize both from the measured round
+  trip (RA2.INI `[Net] FrameSendRate=` / `MaxAhead=` override the start values). At 15 Hz
+  MaxAhead 10 means an order lands ~0.7 s after the click (the original at speed 4 behaves
+  the same);
+* drains the World's per-frame presentation event queues (fire / ability / garrison /
+  projectile) at tick end, because those queues are part of the hashed save bytes.
+
+**Sync check.** The FRAMEINFO CRC is a full-state hash: FNV-1a over `save_world(world)` (every
+World member, bit-exact doubles) plus the scene's FreeUnit tracker, folded to 32 bits. Measured
+on the desktop (Release, 2 players, frames 0-3000 of the test match): **3.6 ms average, 6.1 ms
+max** per hash. So it runs every **N = 15 frames** (once a second; RA2.INI `[Net] HashEvery=`
+overrides) and the last value is fed in between -- every machine feeds identical CRCs each
+frame, a divergence is caught at the first compared frame after the next hash (in the test,
+diverged at 600 -> compared frame 615, both machines stopped at 630, i.e. within 2 s; the two
+TXT files named `econ_`, the member the test changed). The original's 256-frame grace after the start
+applies; a different frame-0 state (different rules / map / roster) is "Scenarios do not match"
+at once. On a mismatch the game shows the original's TXT_OUT_OF_SYNC message, writes
+`Saved Games/DESYNC_F<frame>_H<house>.SAV` (this machine's full save) and `.TXT` (frames, both
+CRCs, the last 256 fed CRCs and an FNV of **every World member** -- diff the two machines' TXT
+files and the differing member is named), and ends the match.
+
+Two determinism fixes this needed (found by the frame-0 check): the crate unit pool was built
+from the local country's roster (now the side-independent AI roster in a match), and a remote
+player's PRODUCE resolved its queue from the local roster (now the issuing house's roster).
+
+**Tests**
+
+```
+ra2assets_tests --test-case="net play*,mp*"          # two real Worlds in lockstep over a lossy loopback:
+                                                     # 2000 frames identical every frame; desync at 400 caught
+                                                     # (frame 405, detected 420); EXIT at a common frame; chat;
+                                                     # resign_house
+pwsh scripts/play/net-match.ps1                      # two processes, LAN lobby, 3000-frame match
+                                                     # (+ chat and an Android-style AWAY / BACK from the joiner)
+pwsh scripts/play/net-match.ps1 -Online              # same through a local ra2lobbyd + the V3 tunnel
+pwsh scripts/play/net-match.ps1 -DesyncAt 600        # joiner diverges at 600: both stop out of sync + dumps
+pwsh scripts/play/mp-lan-loopback.ps1                # lobby agreement (now ends in the running match)
+pwsh scripts/play/mp-online-loopback.ps1
+```

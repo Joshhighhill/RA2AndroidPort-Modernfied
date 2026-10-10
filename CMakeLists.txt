@@ -301,7 +301,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_skirmish_lobby.cpp engine/skir
 # Multiplayer shell (engine/mp/, SDL-free): options string, 0x1236 framing,
 # lobby state machines over memory + loopback UDP, LAN beacons, JSON.
 target_sources(ra2assets_tests PRIVATE tests/test_mp.cpp engine/mp/mp_socket.cpp engine/mp/mini_json.cpp
-               engine/mp/lobby_wire.cpp engine/mp/mp_model.cpp engine/mp/mp_lobby.cpp
+               engine/mp/lobby_wire.cpp engine/mp/mp_net.cpp engine/mp/mp_model.cpp engine/mp/mp_lobby.cpp
                engine/mp/lan_discovery.cpp engine/mp/server_link.cpp)
 if (WIN32)
   target_link_libraries(ra2assets_tests PRIVATE ws2_32)
@@ -325,7 +325,8 @@ target_sources(ra2assets_tests PRIVATE tests/test_saveload.cpp engine/savegame.c
 target_compile_definitions(ra2assets_tests PRIVATE RA2_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 # engine/net (original-format networking) [RE: docs/re/net-protocol.md].
 target_sources(ra2assets_tests PRIVATE ${RA2_NET_SOURCES}
-    tests/test_net_wire.cpp tests/test_net_event.cpp tests/test_net_lockstep.cpp)
+    tests/test_net_wire.cpp tests/test_net_event.cpp tests/test_net_lockstep.cpp
+    tests/test_net_play.cpp)   # NET-PLAY: two real Worlds in lockstep
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 if (WIN32)
@@ -335,7 +336,7 @@ endif()
 # command_bridge.cpp needs the engine's Command/World headers; the stub-model
 # driver uses only the SDL-free transport, codec and lockstep layers.
 set(RA2_NETPEER_SOURCES ${RA2_NET_SOURCES})
-list(FILTER RA2_NETPEER_SOURCES EXCLUDE REGEX "command_bridge\\.cpp$")
+list(FILTER RA2_NETPEER_SOURCES EXCLUDE REGEX "(command_bridge|net_game)\\.cpp$")
 add_executable(ra2netpeer tools/ra2netpeer.cpp ${RA2_NETPEER_SOURCES})
 target_include_directories(ra2netpeer PRIVATE engine)
 if (WIN32)

@@ -28,6 +28,10 @@ enum GlobalCmd : uint32_t {
     kGlobalBeaconPlace = 0x20,
     kGlobalBeaconDelete = 0x21,
     kGlobalBeaconMessage = 0x22,
+    // Clone extensions (outside the original's 0x00-0x2F range; an original
+    // peer ignores unknown commands):
+    kGlobalAway = 0x41,        // NET-PLAY: a player paused (Android background)
+    kGlobalBack = 0x42,        // NET-PLAY: ... and is back
 };
 
 inline uint32_t global_cmd(const std::vector<uint8_t>& body) {
@@ -53,5 +57,19 @@ struct KickVote {
 };
 std::vector<uint8_t> encode_kick_vote(const KickVote& k);  // 0x1C7 bytes
 bool decode_kick_vote(const std::vector<uint8_t>& body, KickVote& out);
+
+// UTF-8 <-> UTF-16 for the chat text (BMP; anything else becomes '?').
+std::u16string utf8_to_u16(const std::string& s);
+std::string u16_to_utf8(const std::u16string& s);
+
+// NET-PLAY away notice (cmd 0x41 / 0x42): +0x04 i32 house, +0x08 u32 seconds
+// the others hold the player's slot before the normal stall / kick resumes.
+struct AwayNotice {
+    bool back = false;          // false = AWAY (0x41), true = BACK (0x42)
+    int32_t house = -1;
+    uint32_t seconds = 0;
+};
+std::vector<uint8_t> encode_away(const AwayNotice& a);  // 0x1C7 bytes
+bool decode_away(const std::vector<uint8_t>& body, AwayNotice& out);
 
 }  // namespace ra2::net

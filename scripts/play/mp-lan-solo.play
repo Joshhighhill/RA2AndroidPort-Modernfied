@@ -1,8 +1,8 @@
 # mp-lan-solo -- the multiplayer shell in ONE process: Main Menu -> Network
 # (LAN browser) -> Host Game -> the multiplayer lobby as host: slot kinds,
 # country / colour / team / start, options, map choice ([Digest] carried),
-# chat, then Start with one AI -> the match hand-off page with the full
-# session (seed, options string, house table). No second machine needed.
+# chat, then Start with one AI -> the networked game (a one-human lockstep
+# session). No second machine needed.
 set render_every 300
 require scene == "shell:Main Menu"
 assert button_enabled(Network) == 1
@@ -75,15 +75,14 @@ until 10 chat_last == "Hosty: gl hf"
 shot lobby_host
 assert can_start == 1
 click button "Start Game"
-until 120 scene == mp-start
-require scene == mp-start
-assert session_players == 2
+# NET-PLAY: the match starts for real -- a lockstep session with one human
+# (no remote player: every frame runs at once) and the Brutal AI.
+until 3000 scene == game
+require scene == game
+require net == 1
+assert net_players == 1
 assert local_house == 0
-assert is_host == 1
-assert session_transport == lan
-assert session_map == xarena.map
-assert house_ai(1) == 1
-assert house_color(1) == 1
-assert house_start(1) == 1
-shot match_ready
+until 600 sim_frame >= 60
+assert net_stalled == 0
+shot match_running
 end

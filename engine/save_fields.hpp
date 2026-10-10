@@ -117,163 +117,163 @@ struct SaveAccess {
 
     // --- World: every member except map_ (the caller-owned MapFile) ---
     template <class Ar> static void world(Ar& ar, World& w) {
-        save::io(ar, w.ally_reveal_);
+        save::io(ar, w.ally_reveal_); save::mark(ar, "ally_reveal_");
         // Projectile phase (P2)
-        save::io(ar, w.projectiles_enabled_);
-        save::io(ar, w.proj_rules_);
-        save::io(ar, w.proj_rng_);
-        save::io(ar, w.projectiles_);
-        save::io(ar, w.proj_events_);
-        save::io(ar, w.proj_accum_);
-        save::io(ar, w.proj_frame_);
-        save::io(ar, w.proj_seq_);   // W4 (v15)
+        save::io(ar, w.projectiles_enabled_); save::mark(ar, "projectiles_enabled_");
+        save::io(ar, w.proj_rules_); save::mark(ar, "proj_rules_");
+        save::io(ar, w.proj_rng_); save::mark(ar, "proj_rng_");
+        save::io(ar, w.projectiles_); save::mark(ar, "projectiles_");
+        save::io(ar, w.proj_events_); save::mark(ar, "proj_events_");
+        save::io(ar, w.proj_accum_); save::mark(ar, "proj_accum_");
+        save::io(ar, w.proj_frame_); save::mark(ar, "proj_frame_");
+        save::io(ar, w.proj_seq_); save::mark(ar, "proj_seq_");   // W4 (v15)
         // AI-1/2/3
-        save::io(ar, w.ai_houses_);
-        save::io(ar, w.ai_any_);
+        save::io(ar, w.ai_houses_); save::mark(ar, "ai_houses_");
+        save::io(ar, w.ai_any_); save::mark(ar, "ai_any_");
         // L2 per-house economy (save v32): wallets + queues of every player
         // and AI house, the human mask, the latched outcomes, the cheer flags.
-        save::io(ar, w.econ_);
-        save::io(ar, w.human_mask_);
-        save::io(ar, w.house_outcome_);
-        save::io(ar, w.victory_cheered_);
+        save::io(ar, w.econ_); save::mark(ar, "econ_");
+        save::io(ar, w.human_mask_); save::mark(ar, "human_mask_");
+        save::io(ar, w.house_outcome_); save::mark(ar, "house_outcome_");
+        save::io(ar, w.victory_cheered_); save::mark(ar, "victory_cheered_");
         // CB-4 superweapons
-        save::io(ar, w.sw_houses_);
-        save::io(ar, w.sw_any_);
+        save::io(ar, w.sw_houses_); save::mark(ar, "sw_houses_");
+        save::io(ar, w.sw_any_); save::mark(ar, "sw_any_");
         // W2-AN (save v9): air/naval/SW v2 state + the amphibious scratch grid
-        save::io(ar, w.an_);
-        save::io(ar, w.amphib_passable_);
+        save::io(ar, w.an_); save::mark(ar, "an_");
+        save::io(ar, w.amphib_passable_); save::mark(ar, "amphib_passable_");
         // Capture
-        save::io(ar, w.capture_any_);
-        save::io(ar, w.tech_income_);
-        save::io(ar, w.blackout_frames_);
-        save::io(ar, w.produced_veteran_);
+        save::io(ar, w.capture_any_); save::mark(ar, "capture_any_");
+        save::io(ar, w.tech_income_); save::mark(ar, "tech_income_");
+        save::io(ar, w.blackout_frames_); save::mark(ar, "blackout_frames_");
+        save::io(ar, w.produced_veteran_); save::mark(ar, "produced_veteran_");
         // Shroud
-        save::io(ar, w.explored_);
-        save::io(ar, w.visible_);
-        save::io(ar, w.shroud_any_);
-        save::io(ar, w.fog_of_war_);   // v9: W2-GA-03 FogOfWar flag
-        save::io(ar, w.map_reveal_);
+        save::io(ar, w.explored_); save::mark(ar, "explored_");
+        save::io(ar, w.visible_); save::mark(ar, "visible_");
+        save::io(ar, w.shroud_any_); save::mark(ar, "shroud_any_");
+        save::io(ar, w.fog_of_war_); save::mark(ar, "fog_of_war_");   // v9: W2-GA-03 FogOfWar flag
+        save::io(ar, w.map_reveal_); save::mark(ar, "map_reveal_");
         // Multi-house / victory
-        save::io(ar, w.houses_);
-        save::io(ar, w.houses_configured_);
-        save::io(ar, w.ally_pairs_);       // W2-CA-10 (save v12)
-        save::io(ar, w.victory_enabled_);
-        save::io(ar, w.short_game_);
-        save::io(ar, w.house_defeated_);
-        save::io(ar, w.winning_team_);
+        save::io(ar, w.houses_); save::mark(ar, "houses_");
+        save::io(ar, w.houses_configured_); save::mark(ar, "houses_configured_");
+        save::io(ar, w.ally_pairs_); save::mark(ar, "ally_pairs_");       // W2-CA-10 (save v12)
+        save::io(ar, w.victory_enabled_); save::mark(ar, "victory_enabled_");
+        save::io(ar, w.short_game_); save::mark(ar, "short_game_");
+        save::io(ar, w.house_defeated_); save::mark(ar, "house_defeated_");
+        save::io(ar, w.winning_team_); save::mark(ar, "winning_team_");
         // Cargo / flight
-        save::io(ar, w.cargo_any_);
-        save::io(ar, w.cargo_events_);
-        save::io(ar, w.player_orders_);   // W4-SQ (save v16)
-        save::io(ar, w.passive_houses_);  // W4-SQ-02 (save v16)
-        save::io(ar, w.playfield_);       // W6 fix #2 (save v25)
-        save::io(ar, w.handicap_set_);
-        save::io(ar, w.handicap_fp_);
-        save::io(ar, w.handicap_rof_);
-        save::io(ar, w.ai_demand_ids_);   // W4-SQ-12 (save v16)
-        save::io(ar, w.ai_demand_counts_);
-        save::io(ar, w.aircraft_any_);
+        save::io(ar, w.cargo_any_); save::mark(ar, "cargo_any_");
+        save::io(ar, w.cargo_events_); save::mark(ar, "cargo_events_");
+        save::io(ar, w.player_orders_); save::mark(ar, "player_orders_");   // W4-SQ (save v16)
+        save::io(ar, w.passive_houses_); save::mark(ar, "passive_houses_");  // W4-SQ-02 (save v16)
+        save::io(ar, w.playfield_); save::mark(ar, "playfield_");       // W6 fix #2 (save v25)
+        save::io(ar, w.handicap_set_); save::mark(ar, "handicap_set_");
+        save::io(ar, w.handicap_fp_); save::mark(ar, "handicap_fp_");
+        save::io(ar, w.handicap_rof_); save::mark(ar, "handicap_rof_");
+        save::io(ar, w.ai_demand_ids_); save::mark(ar, "ai_demand_ids_");   // W4-SQ-12 (save v16)
+        save::io(ar, w.ai_demand_counts_); save::mark(ar, "ai_demand_counts_");
+        save::io(ar, w.aircraft_any_); save::mark(ar, "aircraft_any_");
         // Core
-        save::io(ar, w.units_);
-        save::io(ar, w.buildings_);
-        save::io(ar, w.passable_);
-        save::io(ar, w.water_passable_);
-        save::io(ar, w.naval_any_);
-        save::io(ar, w.occ_);
-        save::io(ar, w.grid_w_);
-        save::io(ar, w.grid_h_);
-        save::io(ar, w.move_cps_);
-        save::io(ar, w.anims_);
-        save::io(ar, w.inf_anims_); save::io(ar, w.inf_human_); save::io(ar, w.inf_idle_freq_);   // W3-B
-        save::io(ar, w.inf_tables_);
+        save::io(ar, w.units_); save::mark(ar, "units_");
+        save::io(ar, w.buildings_); save::mark(ar, "buildings_");
+        save::io(ar, w.passable_); save::mark(ar, "passable_");
+        save::io(ar, w.water_passable_); save::mark(ar, "water_passable_");
+        save::io(ar, w.naval_any_); save::mark(ar, "naval_any_");
+        save::io(ar, w.occ_); save::mark(ar, "occ_");
+        save::io(ar, w.grid_w_); save::mark(ar, "grid_w_");
+        save::io(ar, w.grid_h_); save::mark(ar, "grid_h_");
+        save::io(ar, w.move_cps_); save::mark(ar, "move_cps_");
+        save::io(ar, w.anims_); save::mark(ar, "anims_");
+        save::io(ar, w.inf_anims_); save::mark(ar, "inf_anims_"); save::io(ar, w.inf_human_); save::io(ar, w.inf_idle_freq_);   // W3-B
+        save::io(ar, w.inf_tables_); save::mark(ar, "inf_tables_");
         // Economy
-        save::io(ar, w.ore_);
-        save::io(ar, w.ore_rng_);
-        save::io(ar, w.types_);
-        save::io(ar, w.refinery_types_);
-        save::io(ar, w.lookup_types_);
-        save::io(ar, w.ore_value_ore_);
-        save::io(ar, w.ore_value_gems_);
-        save::io(ar, w.growth_interval_);
-        save::io(ar, w.growth_pct_);
-        save::io(ar, w.spread_pct_);
-        save::io(ar, w.purifier_bonus_);   // gap owner A (G-27)
-        save::io(ar, w.harvest_scan_);     // W2-SK-02 (v13)
-        save::io(ar, w.harvest_income_);   // W2-SK income witness (v13)
-        save::io(ar, w.house_credits_);
-        save::io(ar, w.harvest_events_);
+        save::io(ar, w.ore_); save::mark(ar, "ore_");
+        save::io(ar, w.ore_rng_); save::mark(ar, "ore_rng_");
+        save::io(ar, w.types_); save::mark(ar, "types_");
+        save::io(ar, w.refinery_types_); save::mark(ar, "refinery_types_");
+        save::io(ar, w.lookup_types_); save::mark(ar, "lookup_types_");
+        save::io(ar, w.ore_value_ore_); save::mark(ar, "ore_value_ore_");
+        save::io(ar, w.ore_value_gems_); save::mark(ar, "ore_value_gems_");
+        save::io(ar, w.growth_interval_); save::mark(ar, "growth_interval_");
+        save::io(ar, w.growth_pct_); save::mark(ar, "growth_pct_");
+        save::io(ar, w.spread_pct_); save::mark(ar, "spread_pct_");
+        save::io(ar, w.purifier_bonus_); save::mark(ar, "purifier_bonus_");   // gap owner A (G-27)
+        save::io(ar, w.harvest_scan_); save::mark(ar, "harvest_scan_");     // W2-SK-02 (v13)
+        save::io(ar, w.harvest_income_); save::mark(ar, "harvest_income_");   // W2-SK income witness (v13)
+        save::io(ar, w.house_credits_); save::mark(ar, "house_credits_");
+        save::io(ar, w.harvest_events_); save::mark(ar, "harvest_events_");
         // Repair & Sell
-        save::io(ar, w.repair_rules_);
-        save::io(ar, w.repair_sell_any_);
-        save::io(ar, w.repair_frame_);
-        save::io(ar, w.survivor_crew_);
-        save::io(ar, w.survivor_crew_set_);
+        save::io(ar, w.repair_rules_); save::mark(ar, "repair_rules_");
+        save::io(ar, w.repair_sell_any_); save::mark(ar, "repair_sell_any_");
+        save::io(ar, w.repair_frame_); save::mark(ar, "repair_frame_");
+        save::io(ar, w.survivor_crew_); save::mark(ar, "survivor_crew_");
+        save::io(ar, w.survivor_crew_set_); save::mark(ar, "survivor_crew_set_");
         // P5 Veterancy + crates
-        save::io(ar, w.vet_any_);
-        save::io(ar, w.vet_rules_);
-        save::io(ar, w.vet_building_costs_);
-        save::io(ar, w.vet_frame_);
-        save::io(ar, w.vet_events_);
-        save::io(ar, w.crates_any_);
-        save::io(ar, w.crate_rules_);
-        save::io(ar, w.crate_rng_);
-        save::io(ar, w.crate_pool_);
-        save::io(ar, w.crates_);
-        save::io(ar, w.crate_events_);
+        save::io(ar, w.vet_any_); save::mark(ar, "vet_any_");
+        save::io(ar, w.vet_rules_); save::mark(ar, "vet_rules_");
+        save::io(ar, w.vet_building_costs_); save::mark(ar, "vet_building_costs_");
+        save::io(ar, w.vet_frame_); save::mark(ar, "vet_frame_");
+        save::io(ar, w.vet_events_); save::mark(ar, "vet_events_");
+        save::io(ar, w.crates_any_); save::mark(ar, "crates_any_");
+        save::io(ar, w.crate_rules_); save::mark(ar, "crate_rules_");
+        save::io(ar, w.crate_rng_); save::mark(ar, "crate_rng_");
+        save::io(ar, w.crate_pool_); save::mark(ar, "crate_pool_");
+        save::io(ar, w.crates_); save::mark(ar, "crates_");
+        save::io(ar, w.crate_events_); save::mark(ar, "crate_events_");
         // P4 abilities
-        save::io(ar, w.abilities_any_);
-        save::io(ar, w.ability_frame_);
-        save::io(ar, w.ability_rules_);
-        save::io(ar, w.ability_profiles_);
-        save::io(ar, w.rad_);
-        save::io(ar, w.no_c4_types_);
-        save::io(ar, w.ability_events_);
-        save::io(ar, w.fire_events_);   // Gap fix C
-        save::io(ar, w.combat_rng_);
+        save::io(ar, w.abilities_any_); save::mark(ar, "abilities_any_");
+        save::io(ar, w.ability_frame_); save::mark(ar, "ability_frame_");
+        save::io(ar, w.ability_rules_); save::mark(ar, "ability_rules_");
+        save::io(ar, w.ability_profiles_); save::mark(ar, "ability_profiles_");
+        save::io(ar, w.rad_); save::mark(ar, "rad_");
+        save::io(ar, w.no_c4_types_); save::mark(ar, "no_c4_types_");
+        save::io(ar, w.ability_events_); save::mark(ar, "ability_events_");
+        save::io(ar, w.fire_events_); save::mark(ar, "fire_events_");   // Gap fix C
+        save::io(ar, w.combat_rng_); save::mark(ar, "combat_rng_");
         // gF MCV deploy
-        save::io(ar, w.deploy_any_);
-        save::io(ar, w.deploy_events_);
-        save::io(ar, w.buildup_totals_);
-        save::io(ar, w.undeploy_types_);
-        save::io(ar, w.undeploy_units_);
-        save::io(ar, w.mcv_redeploys_);
-        save::io(ar, w.skirmish_session_);
-        save::io(ar, w.session_seed_);   // Net L0 (v34)
+        save::io(ar, w.deploy_any_); save::mark(ar, "deploy_any_");
+        save::io(ar, w.deploy_events_); save::mark(ar, "deploy_events_");
+        save::io(ar, w.buildup_totals_); save::mark(ar, "buildup_totals_");
+        save::io(ar, w.undeploy_types_); save::mark(ar, "undeploy_types_");
+        save::io(ar, w.undeploy_units_); save::mark(ar, "undeploy_units_");
+        save::io(ar, w.mcv_redeploys_); save::mark(ar, "mcv_redeploys_");
+        save::io(ar, w.skirmish_session_); save::mark(ar, "skirmish_session_");
+        save::io(ar, w.session_seed_); save::mark(ar, "session_seed_");   // Net L0 (v34)
         // G16 world depth (agent G)
-        save::io(ar, w.depth_rules_);
-        save::io(ar, w.garrison_any_);
-        save::io(ar, w.garrison_shots_);
-        save::io(ar, w.garrison_events_);
-        save::io(ar, w.entered_events_);   // W2-CA-01 (save v12)
-        save::io(ar, w.track_entered_);
-        save::io(ar, w.bridge_ovl_);
-        save::io(ar, w.bridge_tile_land_);
-        save::io(ar, w.bridge_version_);
-        save::io(ar, w.bridge_rng_);
-        save::io(ar, w.hbridge_);   // W4-SQ-10 (save v16)
-        save::io(ar, w.deck_land_);   // R-210 derived scratch (save v30)
-        save::io(ar, w.deck_amph_);
-        save::io(ar, w.deck_ver_);
-        save::io(ar, w.w5_);   // wave-5 abilities (agent C)
-        save::io(ar, w.w5_hide_);   // wave-5 gap scratch (the amphib_passable_ precedent)
-        save::io(ar, w.w5_own_);
+        save::io(ar, w.depth_rules_); save::mark(ar, "depth_rules_");
+        save::io(ar, w.garrison_any_); save::mark(ar, "garrison_any_");
+        save::io(ar, w.garrison_shots_); save::mark(ar, "garrison_shots_");
+        save::io(ar, w.garrison_events_); save::mark(ar, "garrison_events_");
+        save::io(ar, w.entered_events_); save::mark(ar, "entered_events_");   // W2-CA-01 (save v12)
+        save::io(ar, w.track_entered_); save::mark(ar, "track_entered_");
+        save::io(ar, w.bridge_ovl_); save::mark(ar, "bridge_ovl_");
+        save::io(ar, w.bridge_tile_land_); save::mark(ar, "bridge_tile_land_");
+        save::io(ar, w.bridge_version_); save::mark(ar, "bridge_version_");
+        save::io(ar, w.bridge_rng_); save::mark(ar, "bridge_rng_");
+        save::io(ar, w.hbridge_); save::mark(ar, "hbridge_");   // W4-SQ-10 (save v16)
+        save::io(ar, w.deck_land_); save::mark(ar, "deck_land_");   // R-210 derived scratch (save v30)
+        save::io(ar, w.deck_amph_); save::mark(ar, "deck_amph_");
+        save::io(ar, w.deck_ver_); save::mark(ar, "deck_ver_");
+        save::io(ar, w.w5_); save::mark(ar, "w5_");   // wave-5 abilities (agent C)
+        save::io(ar, w.w5_hide_); save::mark(ar, "w5_hide_");   // wave-5 gap scratch (the amphib_passable_ precedent)
+        save::io(ar, w.w5_own_); save::mark(ar, "w5_own_");
         // W5-B R-062 land speed (save v20)
-        save::io(ar, w.land_speed_armed_);
-        save::io(ar, w.speed_land_);
-        save::io(ar, w.ramp_);
-        save::io(ar, w.level_grid_);
-        save::io(ar, w.land_rules_);
-        save::io(ar, w.crush_rules_);   // W5-B R-050 (v20)
-        save::io(ar, w.elev_rules_);    // W5-B R-063 (v20)
-        save::io(ar, w.wall_leak_);   // W5-A diagonal wall gaps (save v21)
-        save::io(ar, w.crush_wall_);  // P4 crushable / crushed walls (save v23)
-        save::io(ar, w.wall_ov_type_);    // W6-04-05 map wall overlays (v25; re-registered on load)
-        save::io(ar, w.wall_ov_types_);
-        save::io(ar, w.wall_ov_stage_);   // W6-04-05 their damage stages
-        save::io(ar, w.w6_wall_kills_);   // W6-04-05 walls destroyed this frame (opened next step)
-        save::io(ar, w.crush_grid_);  // P4 derived scratch (the amphib_passable_ precedent)
-        save::io(ar, w.crush_leak_);
-        save::io(ar, w.sw_quarry_);   // W5-A AI SW PreferredTarget (save v21)
+        save::io(ar, w.land_speed_armed_); save::mark(ar, "land_speed_armed_");
+        save::io(ar, w.speed_land_); save::mark(ar, "speed_land_");
+        save::io(ar, w.ramp_); save::mark(ar, "ramp_");
+        save::io(ar, w.level_grid_); save::mark(ar, "level_grid_");
+        save::io(ar, w.land_rules_); save::mark(ar, "land_rules_");
+        save::io(ar, w.crush_rules_); save::mark(ar, "crush_rules_");   // W5-B R-050 (v20)
+        save::io(ar, w.elev_rules_); save::mark(ar, "elev_rules_");    // W5-B R-063 (v20)
+        save::io(ar, w.wall_leak_); save::mark(ar, "wall_leak_");   // W5-A diagonal wall gaps (save v21)
+        save::io(ar, w.crush_wall_); save::mark(ar, "crush_wall_");  // P4 crushable / crushed walls (save v23)
+        save::io(ar, w.wall_ov_type_); save::mark(ar, "wall_ov_type_");    // W6-04-05 map wall overlays (v25; re-registered on load)
+        save::io(ar, w.wall_ov_types_); save::mark(ar, "wall_ov_types_");
+        save::io(ar, w.wall_ov_stage_); save::mark(ar, "wall_ov_stage_");   // W6-04-05 their damage stages
+        save::io(ar, w.w6_wall_kills_); save::mark(ar, "w6_wall_kills_");   // W6-04-05 walls destroyed this frame (opened next step)
+        save::io(ar, w.crush_grid_); save::mark(ar, "crush_grid_");  // P4 derived scratch (the amphib_passable_ precedent)
+        save::io(ar, w.crush_leak_); save::mark(ar, "crush_leak_");
+        save::io(ar, w.sw_quarry_); save::mark(ar, "sw_quarry_");   // W5-A AI SW PreferredTarget (save v21)
     }
 
     // --- MapTriggerSystem: every member except d_ (the parsed map data, a
