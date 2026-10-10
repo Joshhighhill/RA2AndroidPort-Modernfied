@@ -266,6 +266,37 @@ TEST_CASE("gapC crush + stop/scatter on the real map (G-47)") {
     CHECK((w.units()[0].cell_x != sx || w.units()[0].cell_y != sy));
 }
 
+TEST_CASE("last-fix: an owner change drops target and move and re-plants the guard post (SetOwningHouse FUN_00700940)") {
+    ra2assets::MapFile map;
+    World w(map);
+    UnitCombat ifv;
+    ifv.strength = 200;
+    ifv.is_vehicle = true;
+    w.add_combat_unit(5, 5, 1, ifv);
+    w.add_combat_unit(9, 5, 0, ifv);
+    Unit& u = w.units()[0];
+    // Walking its old owner's path (standing on a cell), chasing a target,
+    // with a guard post far away.
+    u.target = 1;
+    u.attack_order = false;
+    u.guard_x = 30;
+    u.guard_y = 30;
+    u.path = {{5, 5}, {6, 5}, {7, 5}};
+    u.path_idx = 1;
+    w.set_unit_owner(0, 6);
+    const Unit& v = w.units()[0];
+    CHECK(v.house == 6);
+    CHECK(v.target == -1);
+    CHECK(v.target_building == -1);
+    CHECK_FALSE(v.moving());
+    CHECK(v.guard_x == 5);
+    CHECK(v.guard_y == 5);
+    // Same owner: a no-op (the guard post set by hand stays).
+    w.units()[0].guard_x = 12;
+    w.set_unit_owner(0, 6);
+    CHECK(w.units()[0].guard_x == 12);
+}
+
 TEST_CASE("gapC G-46: an idle unit engages an enemy base defense in range, not a plain building") {
     ra2assets::MapFile map;
     World w(map);

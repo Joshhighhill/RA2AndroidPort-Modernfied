@@ -1871,6 +1871,10 @@ public:
     // Stop / Guard / Scatter (unit_orders.cpp). B binds S / G / X to the
     // *_selected forms (house-0 selection); the per-unit forms serve AI/tests.
     void order_stop(int idx);
+    // Owner change (mind control, its release, trigger ChangeHouse): the unit
+    // stops and guards where it stands (unit_orders.cpp, TechnoClass::
+    // SetOwningHouse FUN_00700940).
+    void set_unit_owner(int idx, int house);
     void order_guard(int idx);
     void order_scatter(int idx);
     void order_stop_selected();

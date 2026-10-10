@@ -1610,7 +1610,8 @@ private:
         if (v < 0 || v >= (int)utrack_.size()) return;
         Track& vt = utrack_[(std::size_t)v];
         ra2engine::Unit& vu = w_.units()[(std::size_t)v];
-        if (vt.mc_orig >= 0 && live(vu)) { vu.house = vt.mc_orig; vu.target = -1; vu.target_building = -1; }
+        // SetOwningHouse back to the old owner: stop and guard here.
+        if (vt.mc_orig >= 0 && live(vu)) w_.set_unit_owner(v, vt.mc_orig);
         vt.mc_orig = -1;
     }
     void poll_mind_control() {
@@ -1662,9 +1663,12 @@ private:
             const int from = v.house;
             if (vt.mc_orig < 0) vt.mc_orig = from;
             raise_attacked(vt, from, u.house);
-            v.house = u.house;
-            v.target = -1;
-            v.target_building = -1;
+            // [RE: TechnoClass::SetOwningHouse FUN_00700940]: the victim drops
+            // its target and move and guards where it stands, whoever the new
+            // owner is (before, only a team member taken by the player was
+            // stopped; any other kept walking its old path and kept its old
+            // guard anchor).
+            w_.set_unit_owner(vi, u.house);
             // [RE: FootClass::SetOwningHouse FUN_004DBDE0 -- after the owner
             // change (TechnoClass FUN_00700940), a foot whose NEW owner is a
             // human-controlled house (+0x1EC) leaves its team (FUN_006E9DD0)]:
@@ -1675,7 +1679,6 @@ private:
                 mm.erase(std::remove(mm.begin(), mm.end(), vi), mm.end());
                 vt.team = -1;
                 vt.hunt = false;
-                w_.order_stop(vi);
             }
             u.target = -1;
             u.attack_order = false;
@@ -2572,7 +2575,7 @@ private:
         case K::ChangeHouse: {
             const int eh = engine_house(c.arg);
             if (eh < 0) return;
-            for (int m : tm.members) w_.units()[(std::size_t)m].house = eh;
+            for (int m : tm.members) w_.set_unit_owner(m, eh);   // SetOwningHouse FUN_00700940
             tm.st.done = true;
             return;
         }
@@ -3011,7 +3014,7 @@ private:
             for (std::size_t i = 0; i < utrack_.size(); ++i)
                 if (!utrack_[i].dead && utrack_[i].tag >= 0 &&
                     sys_->tag_has_trigger(utrack_[i].tag, e.trigger_type)) {
-                    w_.units()[i].house = eh;
+                    w_.set_unit_owner((int)i, eh);   // SetOwningHouse FUN_00700940
                     ++n;
                 }
             for (std::size_t i = 0; i < btrack_.size(); ++i)
@@ -3030,7 +3033,7 @@ private:
             const int from = engine_house(e.trigger_house_type), to = engine_house(e.house_type);
             if (from < 0 || to < 0) return false;
             for (std::size_t i = 0; i < w_.units().size(); ++i)
-                if (live(w_.units()[i]) && w_.units()[i].house == from) w_.units()[i].house = to;
+                if (live(w_.units()[i]) && w_.units()[i].house == from) w_.set_unit_owner((int)i, to);
             for (std::size_t i = 0; i < w_.buildings().size(); ++i)
                 if (live(w_.buildings()[i]) && w_.buildings()[i].house == from) {
                     w_.capture_building((int)i, to, 0);
