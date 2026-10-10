@@ -8,6 +8,28 @@ The question here is not "can the trigger chain reach Win" (wave 2 proved that w
 out the way the map's own triggers, teams and scripts intend": intro sequences, enemy waves, AI-vs-AI set pieces,
 reinforcement arrivals, objectives and end sequences.
 
+## MR1 status (mission re-record agent MR1, branch `mr1`, on master `57a5dcc`: SOV01, ALL04, SOV09, ALL08)
+
+After the networking merges (L0 original FastMath/_ftol and whole-frame timers, L1 command layer, L2 per-house
+economy, net-play) four scripts no longer won. All four win again with generator/script changes only; **no engine
+regression was found** (every order reached the World and was applied; the outcomes changed because the fights and
+timers changed, faithfully). Each real-order win replays: `--play <script> --record x.cmd`, then `--replay x.cmd`
+ends with the same state hash.
+
+| Script | Difficulty | Result | play_hash | Replay (ticks, commands, state_hash) | Cause of the failure | Change |
+|---|---|---|---|---|---|---|
+| `m-sov01-real` (`gen/mk_sov01.py`) | Normal (loading-screen default) | **WON** f6090, run end f6249 | `83440c887e063d53` | 8201, 72, `12ec29fd4e4f5ee0` = recorded | L0 combat: the old sweep through the (62..72,84..85) corridor loses the whole Conscript army to the base's Vulcan pillboxes (71,84)/(71,86) and GIs (61 -> 7 units, Pentagon untouched) | after the bridge repair the army walks straight to (72,40); the pathfinder skirts the base's north edge, the paratroopers join, and the Ctrl force-fire loop takes the four 180-HP sections from the Pentagon's east side (out of its pillboxes' reach) |
+| `m-all04-real` (`gen/mk_all04.py`) | Normal | **WON** f9030, run end f9083 | `6a1847e06fdc7057` | 12106, 50, `afc78195e9465e6c` = recorded | L0 frame timers: the Russian assault on the base comes at ~f7000 (refinery, then everything gone by ~f8700); 12 Grizzlies left the Amplifier at 181/1000 HP and no reinforcement could follow | the Grizzlies train as soon as the first war factory stands and two more war factories are built meanwhile (MultipleFactory 0.8 -> x1.25, x1.5625): 15 out by f6665 |
+| `m-sov09-real` (`gen/mk_sov09.py`) | Easy | **WON** f13275, run end f14175 | `042ceccf0f86aa3d` | 17784, 469, `e60b947498a231e8` = recorded | L0 combat plus R-212's faithful walk-on after a vanished auto-target: four dogs lose to the five American dogs + GI; the IFV, idle at (40,77), chases east, and later retaliates from the gap north into the Prisms; Yuri 1 (at (44,74) after taking the IFV patrol) and Yuri 0 (at (25,66)) are worn down, so `6:YURI:2` no longer exists for the President | 8 more dogs; the IFV's legs re-issue the move while it stops short or has a target; the plant shelling is polled every 10 frames (a unit target or no building target -> a fresh attack order on the plant); Yuri 1 back after the IFV, Yuri 0 after the breach, wandering Yuris called back during the shelling. Emits `repeat` blocks (818 lines) |
+| `m-all08` (cheat script) | Normal | **PASS** f1722 | `f9e2352eac7ba469` | does not replay (uses `kill_house`, not a command -- README) | **not** L1/L2/net-play: already failing before the networking work. Bisected (pre-built exes + first-parent merges): PASS at fix-bridge `2525af9`, fv-a `32cec38`, fv-b `543551d`; FAIL from `40a3296` (R-212, faithful per FootClass::PointerExpired FUN_004D9870). TanyaLand's Tanya auto-acquires at ~f640, the target vanishes and she walks on to (80,25) and is run down -> `_Loss (Tanya KIA)` | the player (TanyaLand is PlayerControl) calls her back to (92,31) whenever her path leads away from her post -- the walk-back the RE-FALLBACK used to do |
+
+Also re-run, unchanged: `m-all01` PASS (f2306, `c64e19376c4eb04c`), `m-sov01` PASS (f3012, `dbb2762007cf0b34`). No
+engine change, so no gate moves and nothing is re-pinned.
+
+Notes for script authors: `--play` expressions have no parentheses (`a and (b or c)` silently reads the `(b` clause as
+a missing probe); the `n`-th-unit specs (`6:YURI:2`) shift when a lower-index unit dies, so keep every unit a later step
+names alive (or out of harm's way).
+
 ## FV-B status (final-verify cleanup B, branch `fv-b`: ALL09 opening, ALL10, ALL06)
 
 The three real-order scripts that failed the final verify on 961a748, re-run on the merged build (master with
