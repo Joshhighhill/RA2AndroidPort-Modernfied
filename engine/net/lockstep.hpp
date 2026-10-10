@@ -150,6 +150,11 @@ public:
     void destroy_connection(int house, int error);
     std::function<void(int house, int error)> on_player_removed;
 
+    // NET-PLAY (clone): a peer announced it is away (Android background,
+    // 05-transport-infra.md §7.2). Restarts the stall timers so neither the
+    // reconnect dialog nor the timeout kick fires while its countdown runs.
+    void hold_wait();
+
 private:
     bool fsr_boundary() const;
     void initial_reset();

@@ -32,6 +32,7 @@ bool UdpDatagramIO::recv(PeerAddr& from, std::vector<uint8_t>& data) {
                                                        : static_cast<int64_t>(local_id_);
         if (!tunnel_unwrap(mode_, buf, static_cast<size_t>(n), &fid, &tid, &p, &plen, expect)) {
             ++dropped_foreign_;
+            if (on_foreign) on_foreign(src, buf, static_cast<size_t>(n));
             continue;
         }
         from = PeerAddr{src, fid};

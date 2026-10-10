@@ -1,6 +1,9 @@
 // engine/net/channel.cpp -- see channel.hpp for the format and addresses.
 #include "net/channel.hpp"
 
+#include <algorithm>
+#include <iterator>
+
 #include "net/net_bytes.hpp"
 
 #include <cstring>
@@ -108,6 +111,9 @@ bool ChannelBase::service(uint32_t now, const ChannelEmit& emit) {
             }
         }
     }
+    if (bad)
+        for (auto it = send_.begin(); it != send_.end();)
+            it = (it->failed && retire_failed(*it)) ? send_.erase(it) : std::next(it);
     return !bad;
 }
 
@@ -299,6 +305,28 @@ bool GlobalChannel::receive(const uint8_t* pkt, size_t len, const PeerAddr& from
         ack_sent_packet(id);
         return true;
     }
+    return true;
+}
+
+// NET-PLAY: the lobby's per-peer view of the global channel.
+bool GlobalChannel::pending_to(const PeerAddr& to) const {
+    for (const auto& e : send_)
+        if (!e.done && e.to == to && e.pkt[2] == kCodeDataAck) return true;
+    return false;
+}
+
+void GlobalChannel::drop_pending_to(const PeerAddr& to) {
+    for (auto it = send_.begin(); it != send_.end();) it = it->to == to ? send_.erase(it) : std::next(it);
+}
+
+std::vector<PeerAddr> GlobalChannel::take_failed() {
+    std::vector<PeerAddr> out;
+    out.swap(failed_);
+    return out;
+}
+
+bool GlobalChannel::retire_failed(const SendEntry& e) {
+    if (std::find(failed_.begin(), failed_.end(), e.to) == failed_.end()) failed_.push_back(e.to);
     return true;
 }
 

@@ -96,7 +96,7 @@ void UdpSocket::set_err(const char* what) {
     err_ = b;
 }
 
-bool UdpSocket::open(uint16_t port, uint32_t bind_ip) {
+bool UdpSocket::open(uint16_t port, uint32_t bind_ip, bool reuse) {
     close();
     if (!net_platform_init()) {
         err_ = "socket library init failed";
@@ -117,6 +117,14 @@ bool UdpSocket::open(uint16_t port, uint32_t bind_ip) {
     }
     fd_ = s;
 #endif
+    if (reuse) {
+        int one = 1;
+        ::setsockopt(static_cast<decltype(s)>(fd_), SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&one),
+                     sizeof one);
+#if defined(SO_REUSEPORT) && !defined(_WIN32)
+        ::setsockopt(fd_, SOL_SOCKET, SO_REUSEPORT, &one, sizeof one);
+#endif
+    }
     sockaddr_in sa;
     std::memset(&sa, 0, sizeof sa);
     sa.sin_family = AF_INET;

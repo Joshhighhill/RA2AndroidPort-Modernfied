@@ -50,6 +50,9 @@ public:
     bool recv(PeerAddr& from, std::vector<uint8_t>& data) override;
 
     uint32_t dropped_foreign() const { return dropped_foreign_; }
+    // NET-PLAY: sees every datagram that is not for this endpoint (tunnel
+    // mode: wrong receiver id or too short -- e.g. a tunnel ping reply).
+    std::function<void(const NetAddr& from, const uint8_t* data, size_t len)> on_foreign;
 
 private:
     UdpSocket sock_;

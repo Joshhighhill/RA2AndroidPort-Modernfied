@@ -49,4 +49,58 @@ bool decode_kick_vote(const std::vector<uint8_t>& b, KickVote& out) {
     return true;
 }
 
+std::vector<uint8_t> encode_away(const AwayNotice& a) {
+    std::vector<uint8_t> b(kGlobalPacketSize, 0);
+    put_u32le(b.data(), a.back ? kGlobalBack : kGlobalAway);
+    put_i32le(b.data() + 0x04, a.house);
+    put_u32le(b.data() + 0x08, a.seconds);
+    return b;
+}
+
+bool decode_away(const std::vector<uint8_t>& b, AwayNotice& out) {
+    const uint32_t c = global_cmd(b);
+    if (b.size() < 0x0C || (c != kGlobalAway && c != kGlobalBack)) return false;
+    out.back = c == kGlobalBack;
+    out.house = get_i32le(b.data() + 0x04);
+    out.seconds = get_u32le(b.data() + 0x08);
+    return true;
+}
+
+std::u16string utf8_to_u16(const std::string& s) {
+    std::u16string o;
+    for (std::size_t i = 0; i < s.size();) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        uint32_t cp = '?';
+        std::size_t n = 1;
+        if (c < 0x80) cp = c;
+        else if ((c >> 5) == 6 && i + 1 < s.size()) { cp = ((c & 0x1Fu) << 6) | (s[i + 1] & 0x3Fu); n = 2; }
+        else if ((c >> 4) == 14 && i + 2 < s.size()) {
+            cp = ((c & 0x0Fu) << 12) | ((s[i + 1] & 0x3Fu) << 6) | (s[i + 2] & 0x3Fu);
+            n = 3;
+        } else if ((c >> 3) == 30) n = 4;
+        o.push_back(cp <= 0xFFFF ? static_cast<char16_t>(cp) : u'?');
+        i += n;
+    }
+    return o;
+}
+
+std::string u16_to_utf8(const std::u16string& s) {
+    std::string o;
+    for (char16_t ch : s) {
+        const uint32_t c = ch;
+        if (c < 0x80) o.push_back(static_cast<char>(c));
+        else if (c < 0x800) {
+            o.push_back(static_cast<char>(0xC0 | (c >> 6)));
+            o.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+        } else if (c >= 0xD800 && c <= 0xDFFF) {
+            o.push_back('?');
+        } else {
+            o.push_back(static_cast<char>(0xE0 | (c >> 12)));
+            o.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
+            o.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+        }
+    }
+    return o;
+}
+
 }  // namespace ra2::net

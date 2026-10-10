@@ -341,6 +341,12 @@ void LockstepSession::protocol_zero_handle(const Event& e) {
     precalc_max_ahead_ = static_cast<uint32_t>(kP0MaxAhead[lvl]);
 }
 
+void LockstepSession::hold_wait() {
+    const uint32_t now = net_.now_ticks();
+    wait_start_ = now;
+    dialog_open_ = false;
+}
+
 void LockstepSession::execute_net_event(const Event& e) {
     switch (e.kind()) {
         case EventType::TIMING: {  // case 0x20 in FUN_004C6BD0
