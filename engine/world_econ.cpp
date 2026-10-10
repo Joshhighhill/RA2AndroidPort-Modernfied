@@ -528,4 +528,20 @@ void World::step_house_outcomes() {
     }
 }
 
+void World::resign_house(int h) {
+    const int n = house_count();
+    if (h < 0 || h >= n) return;
+    if (static_cast<int>(house_defeated_.size()) < n) house_defeated_.resize(static_cast<std::size_t>(n), 0);
+    house_defeated_[static_cast<std::size_t>(h)] = 1;
+    for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
+        const Unit& u = units_[static_cast<std::size_t>(i)];
+        if (u.alive && u.die_time < 0.0 && u.house == h) ability_kill_unit(i);
+    }
+    for (Building& b : buildings_)
+        if (b.alive && b.state != Building::State::Dead && b.house == h) {
+            b.hp = 0;
+            kill_building(b);
+        }
+}
+
 }  // namespace ra2engine
