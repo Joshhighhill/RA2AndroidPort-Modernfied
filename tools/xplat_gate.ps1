@@ -1,7 +1,7 @@
 # Net L0 cross-platform determinism gate.
 #
 # Runs the --demo-* gates on the desktop build AND on an Android device /
-# emulator (the RA2_ANDROID_CLI executable, see docs/gap/net/L0-xplat-gate.md)
+# emulator (the RA2_ANDROID_CLI executable, see README.md "Networking L0")
 # and compares every hash / witness count they print. Lockstep multiplayer
 # needs these to be identical across compilers (MinGW gcc vs NDK clang),
 # C libraries (UCRT vs bionic) and CPUs.

@@ -368,7 +368,7 @@ if (RA2_BUILD_ENGINE)
   # Net L0: RA2_ANDROID_CLI (with the NDK toolchain) builds ra2engine as a plain
   # Android EXECUTABLE running the desktop command line (--demo-*, --play,
   # --ai-soak) under SDL's dummy video/audio drivers -- the cross-platform
-  # determinism gate (tools/xplat_gate.ps1, docs/gap/net/L0-xplat-gate.md).
+  # determinism gate (tools/xplat_gate.ps1, README.md "Networking L0").
   option(RA2_ANDROID_CLI "Android: build the CLI gate executable (static SDL)" OFF)
   if (ANDROID AND RA2_ANDROID_CLI)
     set(SDL_SHARED OFF CACHE BOOL "" FORCE)
