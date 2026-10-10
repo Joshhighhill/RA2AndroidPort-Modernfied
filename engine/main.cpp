@@ -16,6 +16,12 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
+// Net L0: RA2_ANDROID_CLI builds the DESKTOP command line (--demo-*, --play,
+// --ai-soak) as a plain Android executable for the cross-platform determinism
+// gate (tools/xplat_gate.ps1): no SDLActivity, so SDL must not rename main().
+#ifdef RA2_ANDROID_CLI
+#define SDL_MAIN_HANDLED
+#endif
 #include <SDL.h>
 
 #include <algorithm>
@@ -18000,8 +18006,11 @@ int main(int argc, char** argv) {
     // W2-AR-30: SDL-internal assertions log and continue; they never block on
     // a console prompt (desktop) or a modal dialog (Android).
     install_sdl_assert_handler();
+#ifdef RA2_ANDROID_CLI
+    SDL_SetMainReady();   // Net L0: plain executable, no SDLActivity
+#endif
     try {
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && !defined(RA2_ANDROID_CLI)
         // Android launches straight into the interactive engine: there is no
         // CLI, so the desktop-only verification modes (--screenshot/--demo-*)
         // are unreachable here. Touch drives select/move (see platform.cpp
@@ -18022,7 +18031,11 @@ int main(int argc, char** argv) {
         } prof_guard;
         // R-182: ra2game.exe (the WIN32 GUI build, no console window) writes
         // its log to <pref dir>/ra2engine.log, SDL_Log lines included.
+#ifdef RA2_ANDROID_CLI
+        if (char* pref = nullptr) {   // SDL_GetPrefPath needs the JNI activity
+#else
         if (char* pref = SDL_GetPrefPath("ra2engine", "RA2")) {
+#endif
             const std::string log = std::string(pref) + "ra2engine.log";
             SDL_free(pref);
             if (ra2engine::os_log_to_file_if_no_console(log)) {

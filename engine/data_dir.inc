@@ -118,7 +118,7 @@ bool save_data_dir_to_ini(const std::string& dir) {
 
 std::vector<std::string> data_dir_candidates() {
     std::vector<std::string> c;
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && !defined(RA2_ANDROID_CLI)
     const char* ext = SDL_AndroidGetExternalStoragePath();
     std::string dir = ext ? ext : "/sdcard/Android/data/org.ra2.engine/files";
     c.push_back(dir + "/ra2/");
@@ -146,7 +146,7 @@ std::vector<std::string> data_dir_candidates() {
 
 std::string resolve_data_dir() {
     const std::vector<std::string> c = data_dir_candidates();
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && !defined(RA2_ANDROID_CLI)
     return c.front();
 #else
     // An EXPLICIT choice (CLI / env / INI, the first three candidates) is
@@ -166,7 +166,7 @@ void reset_data_dir() { g_data_dir_resolved.clear(); }
 std::string env_install_dir() {
     if (!g_data_dir_resolved.empty()) return g_data_dir_resolved;
     g_data_dir_resolved = resolve_data_dir();
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && !defined(RA2_ANDROID_CLI)
     // std::cerr/std::cout are not captured on Android; SDL_Log routes to
     // logcat (tag "SDL"). Create the folder so it shows up over MTP.
     std::error_code ec;
