@@ -4439,3 +4439,38 @@ Calibration: docs/gap/wave6/02-missions.md (Ghidra on `gamemd.exe`, private copy
 - **Teams/triggers.** Team tags on recruits (W6-02-14), built units tracked by rules id (W6-02-15), full-strength team start + Reinforce refill (W6-02-16), recruit filters (W6-02-17), Patrol = attack-move (W6-02-18).
 - **Play:** `m-trn02-real` (Boot Camp 2) WON by real orders; SOV01 / SOV07 / SOV12 / ALL12-opening scripts adapted; ALL05, ALL06, ALL10, ALL11, SOV09 scripts now fail (bisected causes in 02-missions.md).
 - **Save format v29.** Gates re-pinned: combat, tank, naval, saveload, campaign (table); every other gate prints its pin. Unit suite 878/878.
+## Networking: original-format transport and lockstep (agent T, branch `net-t`)
+
+`engine/net/` speaks gamemd's own multiplayer wire format, so a future bit-exact simulation can play
+against real `gamemd` peers without new network code. The full format, with addresses, is in
+[docs/re/net-protocol.md](docs/re/net-protocol.md).
+
+* **Transport:** non-blocking IPv4 UDP (Winsock / BSD, works on the Android NDK). Every datagram carries
+  the original rotate-add checksum (`0x7B0DD0`). An optional CnCNet tunnel header (V2 or V3) is added
+  for relayed play.
+* **Private channel 0xAA04:** a byte-exact port of ConnectionClass. It has DATA_ACK, DATA_NOACK and ACK
+  packets, retransmit, timeouts, and exactly-once in-order delivery (`0x48BF50`, `0x48C230`, `0x48C4B0`).
+* **Global channel 0x1236:** a byte-exact port of the lobby, chat and kick-vote channel, deduped on
+  (address, id).
+* **EventClass codec:** all 47 YR event types plus the spawner's 0x30. It covers FRAMEINFO and
+  FRAMESYNC, and the MEGAMISSION run-length coding with both unit-list caches, quirks included. It is a
+  port of `0x64B0D0` / `0x64B840`.
+* **Lockstep scheduler:** a non-blocking port of `Queue_AI_Multiplayer`. It covers:
+  * frame stamping on FrameSendRate boundaries;
+  * Wait_For_Players with the original timeouts;
+  * the master's TIMING;
+  * the CnCNet "Protocol 0" latency levels;
+  * per-frame CRC exchange and out-of-sync detection;
+  * REMOVEPLAYER on timeout, and EXIT.
+
+  The frame CRC is a caller hook.
+* **Android:** the manifest declares INTERNET, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE and
+  CHANGE_WIFI_MULTICAST_STATE.
+
+Tests:
+
+```
+ra2assets_tests --test-case="net*"                    # 32 cases, ~1 s (golden bytes, loopback peers)
+ra2netpeer --selftest --frames 600                    # two peers, real 127.0.0.1 sockets
+pwsh scripts/net_two_process.ps1 -Exe <build>\ra2netpeer.exe   # two OS processes, LAN
+```

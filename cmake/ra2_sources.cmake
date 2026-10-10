@@ -150,3 +150,19 @@ file(WRITE "${RA2_GENERATED_DIR}/ra2_notices.inc.tmp"
 configure_file("${RA2_GENERATED_DIR}/ra2_notices.inc.tmp" "${RA2_GENERATED_DIR}/ra2_notices.inc" COPYONLY)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
              "${RA2_ROOT}/THIRD_PARTY_NOTICES.md" "${RA2_ROOT}/LICENSE")
+
+# engine/net: original-format network layer (UDP + 0xAA04/0x1236 channels,
+# EventClass codec, lockstep scheduler). SDL-free; part of the engine (so the
+# Android libmain.so carries it) and of ra2assets_tests. Windows links ws2_32.
+set(RA2_NET_SOURCES
+    ${RA2_ROOT}/engine/net/udp_socket.cpp
+    ${RA2_ROOT}/engine/net/wire.cpp
+    ${RA2_ROOT}/engine/net/channel.cpp
+    ${RA2_ROOT}/engine/net/net_manager.cpp
+    ${RA2_ROOT}/engine/net/event.cpp
+    ${RA2_ROOT}/engine/net/event_codec.cpp
+    ${RA2_ROOT}/engine/net/lockstep.cpp
+    ${RA2_ROOT}/engine/net/event_map.cpp
+    ${RA2_ROOT}/engine/net/global_msg.cpp
+)
+list(APPEND RA2_ENGINE_SOURCES ${RA2_NET_SOURCES})
