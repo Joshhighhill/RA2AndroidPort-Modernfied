@@ -347,6 +347,8 @@ target_include_directories(ra2extract PRIVATE third_party)
 target_link_libraries(ra2extract PRIVATE ra2assets)
 # W3-FIX-A: the art-resolution census (developer tool, not built by default).
 add_executable(art_census EXCLUDE_FROM_ALL tools/art_census.cpp)
+# simdiff harness, L0 rung (docs/re/simdiff-harness.md): GameRandom draw stream.
+add_executable(simdiff_l0 EXCLUDE_FROM_ALL tools/simdiff/l0_clone.cpp engine/crate.cpp)
 target_link_libraries(art_census PRIVATE ra2assets)
 
 option(RA2_BUILD_ENGINE "Build the SDL2 engine/app (needs SDL2)" ON)
