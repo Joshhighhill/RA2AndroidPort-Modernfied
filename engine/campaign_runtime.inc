@@ -2035,7 +2035,7 @@ private:
         }
         // Exit: on across the map along the entry -> drop heading.
         double dx = x - sx, dy = y - sy;
-        const double len = std::hypot(dx, dy);
+        const double len = ra2engine::om::hypot(dx, dy);
         if (len < 0.5) { dx = 1.0; dy = 1.0; } else { dx /= len; dy /= len; }
         double ex = x, ey = y;
         for (int k = 0; k < 4 * (W + H); ++k) {
@@ -2429,7 +2429,7 @@ private:
         }
         constexpr double kPi = 3.14159265358979323846;
         const double th = f16 * (2.0 * kPi / 65536.0);
-        const int b = ra2engine::facing_from_delta(std::sin(th), -std::cos(th));   // inverse of facing_u16_from_delta
+        const int b = ra2engine::facing_from_delta(ra2engine::om::sin(th), -ra2engine::om::cos(th));   // inverse of facing_u16_from_delta
         if (b >= 0) u.facing = b;
     }
     // W6-02-18 [RE: TMission_Patrol FUN_006EC240 -- every few frames the team

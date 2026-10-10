@@ -99,6 +99,8 @@ target_sources(ra2assets_tests PRIVATE tests/test_projection.cpp engine/iso_proj
 # compiled into BOTH this test binary and the ra2engine executable below
 # from a single source of truth (same pattern as iso_project.cpp above).
 target_sources(ra2assets_tests PRIVATE tests/test_pathfind.cpp tests/test_bridge_cliff.cpp engine/pathfind.cpp)
+# Net L0: the original FastMath / _ftol port + its emulator oracle + the sim libm ban.
+target_sources(ra2assets_tests PRIVATE tests/test_orig_math.cpp engine/orig_math.cpp)
 # world.cpp is pure C++17 (no SDL) -- its passability-grid builder + coordinate
 # reconciliation are unit-tested here (test_world.cpp) alongside the projection
 # it must agree with. Compiled from the same single source of truth as the

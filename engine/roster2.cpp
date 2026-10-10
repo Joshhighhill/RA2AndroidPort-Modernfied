@@ -1,4 +1,5 @@
 #include "roster2.hpp"
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 #include <algorithm>
 #include <cmath>
 #include "factory.hpp"      // exit_cell
@@ -130,7 +131,7 @@ namespace {
 // Straight-line move toward (tx,ty) by at most `step`; true on arrival (snap).
 bool move_toward(double& x, double& y, double tx, double ty, double step) {
     const double dx = tx - x, dy = ty - y;
-    const double d = std::sqrt(dx * dx + dy * dy);
+    const double d = om::sqrt(dx * dx + dy * dy);
     if (d <= step || d == 0.0) { x = tx; y = ty; return true; }
     x += dx / d * step;
     y += dy / d * step;
@@ -164,7 +165,7 @@ SortieEvent step_sortie(Sortie& s, int reload_cycle) {
         return SortieEvent::None;
     case Sortie::State::Cruise: {
         const double dx = s.target.x - s.x, dy = s.target.y - s.y;
-        const double d = std::sqrt(dx * dx + dy * dy);
+        const double d = om::sqrt(dx * dx + dy * dy);
         if (d <= static_cast<double>(s.range_leptons)) {
             --s.ammo;
             ++s.shots;

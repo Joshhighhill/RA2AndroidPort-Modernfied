@@ -22,6 +22,7 @@
 #include <cmath>
 
 #include "combat.hpp"
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 #include "world.hpp"
 
 namespace ra2engine {
@@ -302,11 +303,11 @@ void World::an_area_damage(int house, double cx, double cy, int damage, double s
         if (!w.alive || w.die_time >= 0.0 || w.cargo_of >= 0) continue;
         if (!hit_air && w.is_aircraft && w.altitude > 0.0) continue;
         if (spare_house && w.house == house) continue;
-        double d = std::hypot((w.fx - cx) * kLept, (w.fy - cy) * kLept);
+        double d = om::hypot((w.fx - cx) * kLept, (w.fy - cy) * kLept);
         // W4: an explosion above the ground (a rocket shot down in flight) is
         // measured in 3-D [FUN_00489190 distance], so ground objects far below
         // take nothing. z = 0 (every other caller) is the old 2-D test.
-        if (z > 0.0) d = std::hypot(d, z - ((w.is_aircraft && w.altitude > 0.0) ? w.altitude : 0.0));
+        if (z > 0.0) d = om::hypot(d, z - ((w.is_aircraft && w.altitude > 0.0) ? w.altitude : 0.0));
         if (d > radius) continue;
         const double scale = 1.0 - (1.0 - pmax) * (d / radius);
         const int dmg = damage_vs(static_cast<int>(damage * scale), vv, w.armor_ix);
@@ -322,7 +323,7 @@ void World::an_area_damage(int house, double cx, double cy, int damage, double s
         for (int dy = -wr; dy <= wr; ++dy)
             for (int dx = -wr; dx <= wr; ++dx) {
                 const int x = static_cast<int>(std::lround(cx)) + dx, y = static_cast<int>(std::lround(cy)) + dy;
-                if (std::hypot((x - cx) * kLept, (y - cy) * kLept) <= radius)
+                if (om::hypot((x - cx) * kLept, (y - cy) * kLept) <= radius)
                     w6_overlay_wall_hit(x, y, wall_flags, damage);
             }
     for (int bi = 0; bi < static_cast<int>(buildings_.size()); ++bi) {
@@ -331,16 +332,16 @@ void World::an_area_damage(int house, double cx, double cy, int damage, double s
         if (spare_house && b.house == house) continue;
         if (b.type >= 0 && b.type < static_cast<int>(btypes().size()) &&
             btypes()[static_cast<std::size_t>(b.type)].w6.wall_levels > 0) {   // W6-04-04
-            if (z <= 0.0 && std::hypot((b.cx - cx) * kLept, (b.cy - cy) * kLept) <= radius)
+            if (z <= 0.0 && om::hypot((b.cx - cx) * kLept, (b.cy - cy) * kLept) <= radius)
                 w6_wall_building_hit(*this, units_, buildings_, bi, wall_flags, damage);
             continue;
         }
         double d = -1.0;
         for (const Cellxy& c : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
-            const double dc = std::hypot((c.x - cx) * kLept, (c.y - cy) * kLept);
+            const double dc = om::hypot((c.x - cx) * kLept, (c.y - cy) * kLept);
             if (d < 0.0 || dc < d) d = dc;
         }
-        if (z > 0.0 && d >= 0.0) d = std::hypot(d, z);   // W4: 3-D (see above)
+        if (z > 0.0 && d >= 0.0) d = om::hypot(d, z);   // W4: 3-D (see above)
         if (d < 0.0 || d > radius) continue;
         const double scale = 1.0 - (1.0 - pmax) * (d / radius);
         const int hp0 = b.hp;

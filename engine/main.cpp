@@ -44,6 +44,7 @@
 
 #include "audio_mixer.hpp"
 #include "bridges.hpp"      // G16 (agent G): bridge overlay classes
+#include "orig_math.hpp"    // Net L0: the original FastMath for sim code living in main.cpp
 #include "audio_sdl.hpp"
 #include "music_stream.hpp"
 #include <chrono>     // W2-GA-22 streamed score
@@ -4368,7 +4369,7 @@ double factory_speedup(const ra2engine::World& world, const std::vector<int>& ft
         for (int t : ftypes) if (b.type == t) { ++n; break; }
     }
     if (n <= 1 || mf <= 0.0) return 1.0;
-    return std::pow(1.0 / mf, n - 1);
+    return ra2engine::om::ipow(1.0 / mf, n - 1);   // Net L0: deterministic (no libm pow)
 }
 
 // Per-frame production glue for the FOUR concurrent queues [RE-GATE APPLIED:

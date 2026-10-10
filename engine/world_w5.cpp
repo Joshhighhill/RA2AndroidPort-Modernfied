@@ -7,6 +7,7 @@
 #include <cmath>
 
 #include "combat.hpp"   // deliver_hit_from, rearm_secs
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 #include "group_move.hpp"   // nearest_free_cells
 #include "veterancy.hpp"    // has_ability (SCATTER)
 #include "weapon_unit.hpp"  // activate_weapon_slot (W6-04-15)
@@ -242,14 +243,14 @@ void World::step_w5(double dt) {
                     if (p.house < 8 && !(v.seen_by_mask & (1u << p.house))) return false;
                     const bool air = v.is_aircraft && v.altitude > 0.0;
                     if (air ? !p.w_aa : !p.w_ag) return false;
-                    return std::hypot(v.fx - t.fx, v.fy - t.fy) <= range;
+                    return om::hypot(v.fx - t.fx, v.fy - t.fy) <= range;
                 };
                 int tgt = ok(t.target) ? t.target : (ok(p.target) ? p.target : -1);
                 if (tgt < 0) {
                     double best = 0.0;
                     for (int j = 0; j < nu; ++j) {
                         if (!ok(j)) continue;
-                        const double d = std::hypot(units_[(std::size_t)j].fx - t.fx, units_[(std::size_t)j].fy - t.fy);
+                        const double d = om::hypot(units_[(std::size_t)j].fx - t.fx, units_[(std::size_t)j].fy - t.fy);
                         if (tgt < 0 || d < best) { tgt = j; best = d; }
                     }
                 }
@@ -385,7 +386,7 @@ void World::w5_step_defuse() {
             tx = std::max<double>(b.cx, std::min<double>(e.fx, b.cx + b.fw - 1));
             ty = std::max<double>(b.cy, std::min<double>(e.fy, b.cy + b.fh - 1));
         }
-        if (std::hypot(e.fx - tx, e.fy - ty) <= reach + 1e-9) {
+        if (om::hypot(e.fx - tx, e.fy - ty) <= reach + 1e-9) {
             if (e.w5.defuse_unit >= 0) units_[(std::size_t)e.w5.defuse_unit].bomb_frame = -1;
             else buildings_[(std::size_t)e.w5.defuse_bld].bomb_frame = -1;
             fire_events_.push_back({i, -1, e.w5.defuse_unit, e.w5.defuse_bld, 0, "DefuseKit"});
@@ -429,7 +430,7 @@ void World::w5_step_repair_ifv(double dt) {
             const double reach = std::max(u.w_range, (double)u.sight);
             for (int j = 0; j < nu; ++j) {
                 if (!ok(j)) continue;
-                const double d = std::hypot(units_[(std::size_t)j].fx - u.fx, units_[(std::size_t)j].fy - u.fy);
+                const double d = om::hypot(units_[(std::size_t)j].fx - u.fx, units_[(std::size_t)j].fy - u.fy);
                 if (d > reach || (t >= 0 && d >= best)) continue;
                 t = j;
                 best = d;
@@ -439,7 +440,7 @@ void World::w5_step_repair_ifv(double dt) {
         u.rof_cool = std::max(0.0, u.rof_cool - dt);
         if (t < 0) continue;
         Unit& v = units_[(std::size_t)t];
-        if (std::hypot(v.fx - u.fx, v.fy - u.fy) <= u.w_range + 1e-9) {
+        if (om::hypot(v.fx - u.fx, v.fy - u.fy) <= u.w_range + 1e-9) {
             if (u.rof_cool > 0.0) continue;
             const int heal = damage_vs(-u.w_damage, u.w_verses, v.armor_ix);
             v.hp += std::min(heal, v.max_hp - v.hp);
@@ -471,7 +472,7 @@ void World::w5_ai_pass() {
         if (view.own.empty()) continue;
         const std::vector<IdleUnitView> idle = ai_idle_units(h, rec);
         auto dist_base = [&](const Building& b) {
-            return std::hypot(b.cx + b.fw / 2.0 - view.center_x, b.cy + b.fh / 2.0 - view.center_y);
+            return om::hypot(b.cx + b.fw / 2.0 - view.center_x, b.cy + b.fh / 2.0 - view.center_y);
         };
         // (a) garrison -- W6-03-09: OFF. No original source for a computer
         // house garrisoning civilian buildings was found (the stock aimd
@@ -553,7 +554,7 @@ void World::w5_step_airstrike() {
         const Building& tgt = buildings_[(std::size_t)tb];
         const double nx = std::max<double>(tgt.cx, std::min<double>(b.fx, tgt.cx + tgt.fw - 1));
         const double ny = std::max<double>(tgt.cy, std::min<double>(b.fy, tgt.cy + tgt.fh - 1));
-        if (std::hypot(nx - b.fx, ny - b.fy) > b.w5.p.flare_range) continue;
+        if (om::hypot(nx - b.fx, ny - b.fy) > b.w5.p.flare_range) continue;
         const bool elite = is_elite(b.vet.veterancy);
         const int n = elite ? b.w5.p.elite_airstrike_team : b.w5.p.airstrike_team;
         const int tcy = tgt.cy + tgt.fh / 2;

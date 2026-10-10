@@ -1,4 +1,5 @@
 #include "abilities.hpp"
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 
 #include <algorithm>
 #include <cmath>
@@ -66,7 +67,7 @@ void RadField::radiate(const RadSite& s, double scale, bool add) {
             if (x < 0 || y < 0 || x >= w_ || y >= h_) continue;
             const double dx = (x - s.cx) * kAbilityLeptonsPerCell;
             const double dy = (y - s.cy) * kAbilityLeptonsPerCell;
-            const int d = ability_ftol(std::sqrt(dx * dx + dy * dy));   // FUN_004CAB60 + __ftol
+            const int d = ability_ftol(om::sqrt(dx * dx + dy * dy));   // FUN_004CAB60 + __ftol
             const double amt = rad_cell_amount(d, s.spread_leptons, s.rad_level);
             double& c = cell_[static_cast<std::size_t>(y) * w_ + x];
             if (add) {

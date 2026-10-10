@@ -1,4 +1,5 @@
 #include "projectile.hpp"
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 
 #include <algorithm>
 #include <cmath>
@@ -43,7 +44,7 @@ int weapon_speed_leptons(int ini_speed) {
 int arcing_launch_speed(int dist2d, double gravity) {
     // FUN_0048AAA0 (§0.2): FILD d; FMUL g; FMUL 1.2 (DAT_007E4190); sqrt; ftol.
     const double v = static_cast<double>(dist2d) * gravity * 1.2;
-    return v > 0.0 ? ftol(std::sqrt(v)) : 0;
+    return v > 0.0 ? ftol(om::sqrt(v)) : 0;
 }
 
 bool arc_solve_core(bool lofted, int v, int d, int z, double g, double& theta) {
@@ -60,12 +61,12 @@ bool arc_solve_core(bool lofted, int v, int d, int z, double g, double& theta) {
     double den = (dz * dz) / dd + 1.0;
     den = den + den;
     if (!(disc >= 0.0) || den == 0.0) return false;
-    const double root = std::sqrt(disc);
+    const double root = om::sqrt(disc);
     const double t = (lofted ? (a - root) : (a + root)) / den;
     if (!(t >= 0.0) || v == 0) return false;
-    double c = std::sqrt(t) / static_cast<double>(v);
+    double c = om::sqrt(t) / static_cast<double>(v);
     c = std::clamp(c, -1.0, 1.0);  // FUN_004CACD0 is a table acos; guard the domain
-    theta = std::acos(c);
+    theta = om::acos(c);
     return true;
 }
 
@@ -88,7 +89,7 @@ double straight_pitch(int horiz, int dz) {
     const int adz = std::abs(dz);
     if (adz <= 200) return quantise_pitch(0.0);
     const double h = static_cast<double>(std::max(horiz, 1));
-    double th = std::atan2(static_cast<double>(adz) - 20.0, h);
+    double th = om::atan2(static_cast<double>(adz) - 20.0, h);
     if (dz < 0) th = -th;
     return quantise_pitch(th);
 }
@@ -139,7 +140,7 @@ LaunchResult compute_launch(const ProjectileSpec& spec, const ProjectileRules& r
     const int dz = tgt.z - src.z;
 
     // Step 2 (§0.2): GetSpeed(distance) -- 2-D muzzle->target distance, pre-scatter.
-    const int d2 = ftol(std::sqrt(static_cast<double>(tdx) * tdx + static_cast<double>(tdy) * tdy));
+    const int d2 = ftol(om::sqrt(static_cast<double>(tdx) * tdx + static_cast<double>(tdy) * tdy));
     int speed = (spec.rot == 0) ? arcing_launch_speed(d2, g) : spec.speed_cap;
 
     // Step 4 (§5.1/§5.2): scatter perturbs the working delta. Radius drawn FIRST,
@@ -152,7 +153,7 @@ LaunchResult compute_launch(const ProjectileSpec& spec, const ProjectileRules& r
             r = static_cast<double>(rng.random(rules.ballistic_scatter / 2, rules.ballistic_scatter));
         } else {
             // §5.2 [FlakTProj]: Random(0, BS) * ftol(|delta|_3d) / WeaponRange (integer).
-            const int dist = ftol(std::sqrt(static_cast<double>(dx) * dx +
+            const int dist = ftol(om::sqrt(static_cast<double>(dx) * dx +
                                             static_cast<double>(dy) * dy +
                                             static_cast<double>(dz) * dz));
             const int pick = rng.random(0, rules.ballistic_scatter);
@@ -161,8 +162,8 @@ LaunchResult compute_launch(const ProjectileSpec& spec, const ProjectileRules& r
                     : 0.0;
         }
         const double th = rng.angle();
-        dx = ftol(static_cast<double>(dx) + std::cos(th) * r);
-        dy = ftol(static_cast<double>(dy) - std::sin(th) * r);
+        dx = ftol(static_cast<double>(dx) + om::cos(th) * r);
+        dy = ftol(static_cast<double>(dy) - om::sin(th) * r);
     }
     out.aim_dx = dx;
     out.aim_dy = dy;
@@ -170,14 +171,14 @@ LaunchResult compute_launch(const ProjectileSpec& spec, const ProjectileRules& r
     out.scatter_dy = dy - tdy;
 
     // Step 3 (§4): never cross more than half the remaining distance in frame 1.
-    const int d3 = ftol(std::sqrt(static_cast<double>(dx) * dx + static_cast<double>(dy) * dy +
+    const int d3 = ftol(om::sqrt(static_cast<double>(dx) * dx + static_cast<double>(dy) * dy +
                                   static_cast<double>(dz) * dz));
     if (d3 / 2 < speed) speed = d3 / 2;
     // §12.3: Vertical (and homing) projectiles leave the launcher at 1 lept/frame.
     if (spec.kind == ProjKind::Vertical || spec.rot > 0) speed = 1;
 
     // Step 7: pitch.
-    const int horiz = ftol(std::sqrt(static_cast<double>(dx) * dx + static_cast<double>(dy) * dy));
+    const int horiz = ftol(om::sqrt(static_cast<double>(dx) * dx + static_cast<double>(dy) * dy));
     double phi = 0.0;
     if (spec.arcing) {
         if (!arc_pitch(speed, horiz, dz, g, phi)) {
@@ -191,15 +192,15 @@ LaunchResult compute_launch(const ProjectileSpec& spec, const ProjectileRules& r
 
     // Steps 6/8: |V| = speed along the yaw, then pitched (V.xy *= cos, V.z = sin*|V|).
     double ux = 1.0, uy = 0.0;  // degenerate (target straight below): any yaw
-    const double hl = std::sqrt(static_cast<double>(dx) * dx + static_cast<double>(dy) * dy);
+    const double hl = om::sqrt(static_cast<double>(dx) * dx + static_cast<double>(dy) * dy);
     if (hl > 0.0) {
         ux = dx / hl;
         uy = dy / hl;
     }
     const double s = static_cast<double>(speed);
-    out.vx = ux * s * std::cos(phi);
-    out.vy = uy * s * std::cos(phi);
-    out.vz = s * std::sin(phi);
+    out.vx = ux * s * om::cos(phi);
+    out.vy = uy * s * om::cos(phi);
+    out.vz = s * om::sin(phi);
     out.speed = speed;
     out.ok = true;
     return out;
@@ -207,7 +208,7 @@ LaunchResult compute_launch(const ProjectileSpec& spec, const ProjectileRules& r
 
 void integrate_ballistic(Projectile& p, double gravity) {
     // FUN_004666D0 non-homing !Vertical branch (§6.1, dis_arcgrav_4673F2.txt).
-    p.slow = std::sqrt(p.vx * p.vx + p.vy * p.vy + p.vz * p.vz) < kMinSpeed;
+    p.slow = om::sqrt(p.vx * p.vx + p.vy * p.vy + p.vz * p.vz) < kMinSpeed;
     const double g = p.floater ? gravity * 0.5 : gravity;
     p.vz -= g;
     p.x = ftol(static_cast<double>(p.x) + p.vx);
@@ -218,12 +219,12 @@ void integrate_ballistic(Projectile& p, double gravity) {
 
 void integrate_vertical(Projectile& p) {
     // FUN_004666D0 Vertical branch (§6.2).
-    const double mag = std::sqrt(p.vx * p.vx + p.vy * p.vy + p.vz * p.vz);
+    const double mag = om::sqrt(p.vx * p.vx + p.vy * p.vy + p.vz * p.vz);
     const int s = ftol(mag);
     if (s < p.speed_cap) {
         const int ns = p.acceleration + s;
         if (p.vx == 0.0 && p.vy == 0.0 && p.vz == 0.0) p.vx = 100.0;  // 0x40590000 = 100.0
-        const double m = std::sqrt(p.vx * p.vx + p.vy * p.vy + p.vz * p.vz);
+        const double m = om::sqrt(p.vx * p.vx + p.vy * p.vy + p.vz * p.vz);
         const double f = static_cast<double>(ns) / m;
         p.vx *= f;
         p.vy *= f;
@@ -266,23 +267,23 @@ int integrate_homing(Projectile& p, const Vec3i& tgt, int frame, const HomingRul
     }
     // --- turn rate with the MissileROTVar wobble (0x466B9F..0x466CF1) ---
     const double ph = static_cast<double>((p.uid + frame) % 15) * (1.0 / 15.0) * kTwoPi;
-    int turn = ftol((hr.rot_var * std::sin(ph) + hr.rot_var + 1.0) * p.rot);
+    int turn = ftol((hr.rot_var * om::sin(ph) + hr.rot_var + 1.0) * p.rot);
     const double dx = static_cast<double>(tgt.x) - p.x, dy = static_cast<double>(tgt.y) - p.y;
     const double dz = static_cast<double>(tgt.z) - p.z;
-    const double d3 = std::sqrt(dx * dx + dy * dy + dz * dz);
+    const double d3 = om::sqrt(dx * dx + dy * dy + dz * dz);
     if (!p.lost && d3 < 256.0) turn = ftol(turn * 1.5);   // 0x7E38F0 inside one cell
     if (p.locked) turn = 0;
     const int lim16 = (turn & 0xFF) << 8;                 // MOV CH,AL
     const double lim = lim16 * kU16Rad;
     // --- FUN_005B1B20 steering ---
-    const double hv = std::sqrt(p.vx * p.vx + p.vy * p.vy);
-    double yaw = hv > 0.0 ? std::atan2(p.vy, p.vx) : std::atan2(dy, dx);
-    double pitch = std::atan2(p.vz, hv);
-    const double horiz = std::sqrt(dx * dx + dy * dy);
+    const double hv = om::sqrt(p.vx * p.vx + p.vy * p.vy);
+    double yaw = hv > 0.0 ? om::atan2(p.vy, p.vx) : om::atan2(dy, dx);
+    double pitch = om::atan2(p.vz, hv);
+    const double horiz = om::sqrt(dx * dx + dy * dy);
     if (p.lost) {
         if (!p.level) pitch = turn_toward_rad(pitch, kPi / 4.0, lim);   // toward climb 0x2000
     } else {
-        if (horiz > 0.0) yaw = turn_toward_rad(yaw, std::atan2(dy, dx), lim);
+        if (horiz > 0.0) yaw = turn_toward_rad(yaw, om::atan2(dy, dx), lim);
         const int far = (p.very_high ? 6 : 3) * 256;
         if (p.level) {
             // Level=yes: every pitch change is skipped (torpedoes).
@@ -301,16 +302,16 @@ int integrate_homing(Projectile& p, const Vec3i& tgt, int frame, const HomingRul
             pitch = turn_toward_rad(pitch, want, lim / 2.0);
         } else {
             // Direct: straight at the target (air targets / close in).
-            pitch = turn_toward_rad(pitch, std::atan2(dz, std::max(horiz, 1.0)), lim);
+            pitch = turn_toward_rad(pitch, om::atan2(dz, std::max(horiz, 1.0)), lim);
         }
     }
-    const double cp = std::cos(pitch);
-    p.vx = p.speed * cp * std::cos(yaw);
-    p.vy = p.speed * cp * std::sin(yaw);
-    p.vz = p.level ? 0.0 : p.speed * std::sin(pitch);
+    const double cp = om::cos(pitch);
+    p.vx = p.speed * cp * om::cos(yaw);
+    p.vy = p.speed * cp * om::sin(yaw);
+    p.vz = p.level ? 0.0 : p.speed * om::sin(pitch);
     // The returned distance: z quartered (zeroed for Airburst).
     const double qz = p.airburst ? 0.0 : dz / 4.0;
-    const int dist = ftol(std::sqrt(dx * dx + dy * dy + qz * qz));
+    const int dist = ftol(om::sqrt(dx * dx + dy * dy + qz * qz));
     int result = 0;
     // [RE-FALLBACK: a Level bullet (torpedo) runs on the water line, z = 0 in
     // the clone's flat plane, so the height < 1 test is skipped for it.]

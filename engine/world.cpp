@@ -1,4 +1,5 @@
 #include "world.hpp"
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 #include "weapon_unit.hpp"  // Gap fix C
 
 #include <algorithm>
@@ -56,7 +57,7 @@ int seq_frame(const SeqEntry& e, int facing, int phase) {
 // (sx, sy) ~ (dx - dy, dx + dy) with y down.
 int facing_from_delta(double dx, double dy) {
     if (dx == 0.0 && dy == 0.0) return -1;
-    const double ang = std::atan2(dx + dy, dx - dy) * 180.0 / 3.14159265358979323846;
+    const double ang = om::atan2(dx + dy, dx - dy) * 180.0 / 3.14159265358979323846;
     const double ccw = std::fmod(-90.0 - ang + 720.0, 360.0);
     return static_cast<int>(std::lround(ccw / 45.0)) % 8;
 }
@@ -79,7 +80,7 @@ double facing_u16_from_delta(double dx, double dy) {
     constexpr double kPi = 3.14159265358979323846;
     // atan2 in [-pi, pi] -> [-32768, 32768]; the +65536 then fmod normalizes
     // into [0, 65536) without a separate negative-wrap fixup.
-    return std::fmod(std::atan2(dx, -dy) * (65536.0 / (2.0 * kPi)) + 65536.0, 65536.0);
+    return std::fmod(om::atan2(dx, -dy) * (65536.0 / (2.0 * kPi)) + 65536.0, 65536.0);
 }
 
 double turn_toward(double facing, double target, double max_step) {
@@ -365,7 +366,7 @@ ra2assets::Palette pal_for_color(const ra2assets::Palette& unit_pal, int color_i
 // integer HSV2RGB 0x517260; SIN/COS are the game's 8192-step float table
 // (0x84E004, index (n>>1)+(n&1), n = trunc(x * 16384/2pi)).
 namespace {
-float rmp_table(int k) { return std::sin(static_cast<float>(k) * 6.2831855f / 8192.0f); }
+float rmp_table(int k) { return om::sin_table(k); }   // Net L0: the 0x84E004 entry itself
 int rmp_index(float x) {
     const int n = static_cast<int>(x * 2607.594482421875f);
     int idx = n >> 1;
@@ -708,8 +709,8 @@ void World::update_sub_offsets() {
                 const Cellxy t = u.path[pi];
                 const int ns = occ_.spot_of(t.x, t.y, i);
                 if (ns >= 0) {
-                    const double seg = std::hypot(t.x - u.cell_x, t.y - u.cell_y);
-                    const double rem = std::hypot(t.x - u.fx, t.y - u.fy);
+                    const double seg = om::hypot(t.x - u.cell_x, t.y - u.cell_y);
+                    const double rem = om::hypot(t.x - u.fx, t.y - u.fy);
                     double f = seg > 0.0 ? 1.0 - rem / seg : 1.0;
                     if (f < 0.0) f = 0.0;
                     if (f > 1.0) f = 1.0;
@@ -3168,7 +3169,7 @@ void World::step_ai_houses(double dt) {
                 for (int t : cfg.team.inf_factory_types) if (t == b.type) { ++ninf; break; }
                 for (int t : cfg.team.veh_factory_types) if (t == b.type) { ++nveh; break; }
             }
-            auto spd = [&](int n) { return n <= 1 ? 1.0 : std::pow(1.0 / cfg.multiple_factory, n - 1); };
+            auto spd = [&](int n) { return n <= 1 ? 1.0 : om::ipow(1.0 / cfg.multiple_factory, n - 1); };
             sp[0] = sp[1] = spd(ncy);
             sp[2] = spd(ninf);
             sp[3] = spd(nveh);
@@ -5646,7 +5647,7 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
             }
             const double dx = tgt.x - u.fx;
             const double dy = tgt.y - u.fy;
-            const double dist = std::sqrt(dx * dx + dy * dy);
+            const double dist = om::sqrt(dx * dx + dy * dy);
             if (dist <= 1e-9 || budget >= dist) {
                 occ.release(u.cell_x, u.cell_y, self);  // leave the old cell
                 u.fx = tgt.x;
@@ -5789,7 +5790,7 @@ int unit_ly(const Unit& u) { return ftol(u.fy * 256.0 + u.sub_y); }
 int unit_lz(const Unit& u) { return u.is_aircraft ? ftol(u.altitude) : 0; }
 int dist3(int ax, int ay, int az, int bx, int by, int bz) {
     const double dx = ax - bx, dy = ay - by, dz = az - bz;
-    return ftol(std::sqrt(dx * dx + dy * dy + dz * dz));
+    return ftol(om::sqrt(dx * dx + dy * dy + dz * dz));
 }
 }  // namespace
 
@@ -5832,7 +5833,7 @@ void World::launch_projectile(int attacker, int target_unit, int target_building
         int nx = b.cx, ny = b.cy;
         for (const Cellxy& c : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
             const double dx = (c.x - u.fx) * 256.0, dy = (c.y - u.fy) * 256.0;
-            const double d = std::hypot(dx, dy);
+            const double d = om::hypot(dx, dy);
             if (best < 0.0 || d < best) { best = d; nx = c.x; ny = c.y; }
         }
         tgt = Vec3i{nx * 256, ny * 256, 0};
@@ -5848,10 +5849,10 @@ void World::launch_projectile(int attacker, int target_unit, int target_building
     double fwx = 0.0, fwy = 1.0;
     if (u.is_vehicle) {
         const double a = u.turret_facing * (2.0 * kProjPi / 65536.0);
-        fwx = std::sin(a);
-        fwy = -std::cos(a);
+        fwx = om::sin(a);
+        fwy = -om::cos(a);
     } else {
-        const double dx = tgt.x - ux, dy = tgt.y - uy, len = std::hypot(dx, dy);
+        const double dx = tgt.x - ux, dy = tgt.y - uy, len = om::hypot(dx, dy);
         if (len > 0.0) { fwx = dx / len; fwy = dy / len; }
     }
     Vec3i src;
@@ -6104,7 +6105,7 @@ void World::step_projectiles_frame() {
         }
         // §7 out of speed: |V| < 8 (sampled pre-gravity), or |V| < 10 and height <= 9.
         if (!det && p.kind == ProjKind::Ballistic) {
-            const double mag = std::sqrt(p.vx * p.vx + p.vy * p.vy + p.vz * p.vz);
+            const double mag = om::sqrt(p.vx * p.vx + p.vy * p.vy + p.vz * p.vz);
             if (p.slow || (mag < kRestSpeed && p.z <= 9)) det = true;
         }
         // §12.2 IsBlocked: height <= -4*LevelHeight.

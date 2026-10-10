@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "combat.hpp"
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 #include "flight.hpp"
 #include "group_move.hpp"   // nearest_free_cells (W4-SQ-06)
 #include "roster2.hpp"
@@ -26,7 +27,7 @@ constexpr double kRocketDeckZ = 40.0;
 constexpr int kRocketMaxFrames = 1800;
 enum Sortie : int { kDocked = 0, kOutbound = 1, kMoveTo = 2, kReturn = 3, kLanding = 4, kParadrop = 5 };
 bool live(const Unit& u) { return u.alive && u.die_time < 0.0 && u.cargo_of < 0; }
-double cdist(double ax, double ay, double bx, double by) { return std::hypot(ax - bx, ay - by); }
+double cdist(double ax, double ay, double bx, double by) { return om::hypot(ax - bx, ay - by); }
 }  // namespace
 
 // --------------------------------------------------------------- targeting --
@@ -326,7 +327,7 @@ void World::an_step_spawners(double dt) {
                 s.an.rocket.ty = gy * kLept;
                 s.an.rocket.tz = gz;
                 s.altitude = kRocketDeckZ;
-                s.body_facing = facing_u16_from_delta(std::cos(s.an.rocket.yaw), std::sin(s.an.rocket.yaw));
+                s.body_facing = facing_u16_from_delta(om::cos(s.an.rocket.yaw), om::sin(s.an.rocket.yaw));
             }
             --own.an.spawn_ready;
             ++own.an.spawn_out;
@@ -384,7 +385,7 @@ void World::an_step_fixed_wing(double dt) {
             u.altitude = std::max(0.0, f.z);
             u.cell_x = std::max(0, std::min(grid_w_ - 1, static_cast<int>(std::lround(u.fx))));
             u.cell_y = std::max(0, std::min(grid_h_ - 1, static_cast<int>(std::lround(u.fy))));
-            u.body_facing = facing_u16_from_delta(std::cos(f.yaw), std::sin(f.yaw));
+            u.body_facing = facing_u16_from_delta(om::cos(f.yaw), om::sin(f.yaw));
             u.flight_state = f.phase >= kRocketClimb ? FlightState::Cruising : FlightState::TakingOff;
             const bool off_map = grid_w_ > 0 && grid_h_ > 0 &&
                                  (f.x < -kLept || f.y < -kLept || f.x > grid_w_ * kLept || f.y > grid_h_ * kLept);
@@ -636,8 +637,8 @@ void World::an_step_deaths(double dt) {
             u.has_flight_goal = false;
             if (u.an.t.fixed_wing) {   // keeps gliding forward while falling
                 const double a = u.body_facing / 65536.0 * 2.0 * 3.14159265358979;
-                u.fx += std::sin(a) * u.an.t.fly_speed_cps * 0.5 * dt;
-                u.fy -= std::cos(a) * u.an.t.fly_speed_cps * 0.5 * dt;
+                u.fx += om::sin(a) * u.an.t.fly_speed_cps * 0.5 * dt;
+                u.fy -= om::cos(a) * u.an.t.fly_speed_cps * 0.5 * dt;
                 u.cell_x = std::max(0, std::min(grid_w_ - 1, static_cast<int>(std::lround(u.fx))));
                 u.cell_y = std::max(0, std::min(grid_h_ - 1, static_cast<int>(std::lround(u.fy))));
             }

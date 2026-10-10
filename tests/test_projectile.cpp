@@ -41,12 +41,14 @@ TEST_CASE("projectile: lepton_to_cell rounds to the clone's cell-centre conventi
 TEST_CASE("projectile: arc solver flat ground matches sin(2theta) = d*g/v^2 (§12.1)") {
     double th = 0.0;
     REQUIRE(arc_solve_core(false, 102, 1472, 0, 6.0, th));
-    CHECK(std::sin(2.0 * th) == doctest::Approx(1472.0 * 6.0 / (102.0 * 102.0)).epsilon(1e-9));
+    // Net L0: the solver runs on the original's FastMath tables (sqrt/acos), so
+    // the identity holds to table precision, not to libm's last bit.
+    CHECK(std::sin(2.0 * th) == doctest::Approx(1472.0 * 6.0 / (102.0 * 102.0)).epsilon(2e-3));
     CHECK(th < kPi / 4.0);  // the plus root is the LOW arc
     double hi = 0.0;
     REQUIRE(arc_solve_core(true, 102, 1472, 0, 6.0, hi));
     CHECK(hi > kPi / 4.0);  // the minus root is the lofted arc
-    CHECK(th + hi == doctest::Approx(kPi / 2.0).epsilon(1e-9));  // complementary on flat ground
+    CHECK(th + hi == doctest::Approx(kPi / 2.0).epsilon(2e-3));  // complementary on flat ground (FastMath precision)
 }
 
 TEST_CASE("projectile: arc solver - target above the muzzle is a flat 45 degrees") {
@@ -82,7 +84,7 @@ TEST_CASE("projectile: straight_pitch is level within 200 leptons of height") {
     CHECK(straight_pitch(1000, -199) == doctest::Approx(0.0).epsilon(1e-3));
     const double down = straight_pitch(300, -610);  // Kirov over its target
     CHECK(down < -1.0);                              // steeply down
-    CHECK(down == doctest::Approx(-std::atan2(590.0, 300.0)).epsilon(1e-3));
+    CHECK(down == doctest::Approx(-std::atan2(590.0, 300.0)).epsilon(3e-2));   // Net L0: atan2 table (0x860034) step
 }
 
 TEST_CASE("projectile: ProjRng.random reproduces FUN_0065C220's inclusive range mapping") {
@@ -226,7 +228,7 @@ TEST_CASE("projectile: compute_launch - Vertical launches at speed 1 toward the 
     REQUIRE(lr.ok);
     CHECK(lr.speed == 1);
     CHECK(std::sqrt(lr.vx * lr.vx + lr.vy * lr.vy + lr.vz * lr.vz) ==
-          doctest::Approx(1.0).epsilon(1e-9));
+          doctest::Approx(1.0).epsilon(1e-3));   // Net L0: FastSqrt-normalised
     CHECK(lr.vz < -0.9);  // nearly straight down
     CHECK(lr.vx > 0.0);
 }
@@ -667,7 +669,8 @@ TEST_CASE("projectile homing: the MissileROTVar wobble keeps the turn between RO
         integrate_homing(p, Vec3i{-10000, 1, 500}, frame, HomingRules{});
         const double turned = std::fabs(std::atan2(p.vy, p.vx));
         const double u = 2.0 * 3.14159265358979323846 / 65536.0 * 256.0;   // 1/256 circle
-        CHECK(turned >= 20 * u - 1e-9);
-        CHECK(turned <= 30 * u + 1e-9);
+        // Net L0: yaw goes through the original's atan2 table (step ~0.024 rad).
+        CHECK(turned >= 20 * u - 0.03);
+        CHECK(turned <= 30 * u + 0.03);
     }
 }

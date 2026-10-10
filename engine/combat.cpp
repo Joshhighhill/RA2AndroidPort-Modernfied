@@ -1,4 +1,5 @@
 #include "combat.hpp"
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 
 #include <algorithm>
 #include <cctype>
@@ -51,7 +52,7 @@ std::string to_lower(const std::string& s) {
 double dist_leptons(double x1, double y1, double x2, double y2) {
     const double dx = (x2 - x1) * kLeptonsPerCell;
     const double dy = (y2 - y1) * kLeptonsPerCell;
-    return std::hypot(dx, dy);
+    return om::hypot(dx, dy);
 }
 
 // A unit is a legal combat target iff it exists, is alive, isn't mid-death-
@@ -156,15 +157,15 @@ void try_fire(const World& world, std::vector<Unit>& units, std::vector<Building
     // in a random direction (sync RNG). Only with the projectile layer on (the
     // real game); instant-hit gates keep the exact point.
     if (u.w_proj.flak_scatter && u.w_proj.inviso && rng && world.projectiles_enabled()) {
-        const int dist = static_cast<int>(std::sqrt(double(ix - unit_lept_x(u)) * (ix - unit_lept_x(u)) +
+        const int dist = static_cast<int>(om::sqrt(double(ix - unit_lept_x(u)) * (ix - unit_lept_x(u)) +
                                           double(iy - unit_lept_y(u)) * (iy - unit_lept_y(u)) +
                                           double(unit_lept_z(v) - unit_lept_z(u)) *
                                               (unit_lept_z(v) - unit_lept_z(u))));
         const int wr = std::max(1, static_cast<int>(u.w_range * 256.0));
         const int r = rng->random(0, 2 * world.projectile_rules().ballistic_scatter) * dist / wr;
         const double th = rng->angle();
-        ix += static_cast<int>(std::cos(th) * r);
-        iy += static_cast<int>(std::sin(th) * r);
+        ix += static_cast<int>(om::cos(th) * r);
+        iy += static_cast<int>(om::sin(th) * r);
     }
     damage_area(world, units, buildings, occ, u, attacker_idx, -1, ix, iy, unit_lept_z(v));
     // W2-SK-22 Prism split [RE: [Comet] ShrapnelWeapon/ShrapnelCount;
@@ -417,7 +418,7 @@ constexpr int kMaxDamage = 10000;   // rulesmd [CombatDamage] MaxDamage=10000 (R
 int ftol_i(double v) { return static_cast<int>(v); }   // _ftol: truncate toward zero
 
 int dist3_i(int dx, int dy, int dz) {
-    return ftol_i(std::sqrt(static_cast<double>(dx) * dx + static_cast<double>(dy) * dy +
+    return ftol_i(om::sqrt(static_cast<double>(dx) * dx + static_cast<double>(dy) * dy +
                             static_cast<double>(dz) * dz));
 }
 
@@ -518,7 +519,7 @@ int elevation_bonus(const World& world, int diff) {
     if (b > er.cap) b = er.cap;
     const double cells = ftol_i(b) * 256.0;
     const double h = static_cast<double>(kLevelLept) * diff;
-    return ftol_i(std::sqrt(cells * cells + h * h));
+    return ftol_i(om::sqrt(cells * cells + h * h));
 }
 }  // namespace
 
@@ -1273,7 +1274,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                              (world.house_is_computer(u.house) || cr.player_auto_crush || u.auto_crush);
             const int dx = unit_lept_x(v) - unit_lept_x(u), dy = unit_lept_y(v) - unit_lept_y(u),
                       dz = unit_lept_z(v) - unit_lept_z(u);
-            if (may && std::sqrt(double(dx) * dx + double(dy) * dy + double(dz) * dz) <= cr.crush_leptons) {
+            if (may && om::sqrt(double(dx) * dx + double(dy) * dy + double(dz) * dz) <= cr.crush_leptons) {
                 if (!u.crushing || u.path.empty() || u.path.back().x != v.cell_x ||
                     u.path.back().y != v.cell_y)
                     requests.push_back({i, v.cell_x, v.cell_y, /*approach=*/false});

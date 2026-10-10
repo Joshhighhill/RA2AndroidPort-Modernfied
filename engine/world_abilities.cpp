@@ -7,6 +7,7 @@
 #include <cmath>
 
 #include "building.hpp"
+#include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 #include "combat.hpp"      // damage_vs
 #include "group_move.hpp"  // nearest_free_cells
 #include "world.hpp"
@@ -121,7 +122,7 @@ void World::teleport_unit(int idx, int gx, int gy) {
     // (2-D leptons, the combat.md §6 divergence), delay = max(dist/48, 16).
     const double dx = (dest.x - u.cell_x) * kAbilityLeptonsPerCell;
     const double dy = (dest.y - u.cell_y) * kAbilityLeptonsPerCell;
-    const int dist = ability_ftol(std::sqrt(dx * dx + dy * dy));
+    const int dist = ability_ftol(om::sqrt(dx * dx + dy * dy));
     const int delay = teleport_delay_frames(dist, ability_rules_);
     // The parasite is ejected by the teleport (0x7188D9 -> ExitUnit).
     const int old_x = u.cell_x, old_y = u.cell_y;
