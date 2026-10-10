@@ -19,6 +19,7 @@
         p.zero_families = {"units", "buildings", "built", "selected_type", "harv", "harvesters",
                            "harv_bales", "can_build", "cameo", "cameo_tab", "moving"};
         p.set_s("mode", campaign_ ? "campaign" : "skirmish");
+        net_probe(p);   // NET-PLAY keys (net, net_frame, net_stalled, net_end, ...)
         // W5-E: sound / EVA evidence (pres_audio.inc counters): snd(KEY),
         // why(<trigger>), eva(NAME) started, evareq(NAME) requested.
         for (const char* f : {"snd", "why", "eva", "evareq"}) p.zero_families.insert(f);

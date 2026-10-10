@@ -109,6 +109,7 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/mp/mp_socket.cpp
     ${RA2_ROOT}/engine/mp/mini_json.cpp
     ${RA2_ROOT}/engine/mp/lobby_wire.cpp
+    ${RA2_ROOT}/engine/mp/mp_net.cpp
     ${RA2_ROOT}/engine/mp/mp_model.cpp
     ${RA2_ROOT}/engine/mp/mp_lobby.cpp
     ${RA2_ROOT}/engine/mp/lan_discovery.cpp
@@ -176,5 +177,6 @@ set(RA2_NET_SOURCES
     ${RA2_ROOT}/engine/net/event_map.cpp
     ${RA2_ROOT}/engine/net/command_bridge.cpp
     ${RA2_ROOT}/engine/net/global_msg.cpp
+    ${RA2_ROOT}/engine/net/net_game.cpp
 )
 list(APPEND RA2_ENGINE_SOURCES ${RA2_NET_SOURCES})

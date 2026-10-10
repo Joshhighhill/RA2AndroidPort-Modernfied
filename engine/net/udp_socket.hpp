@@ -40,9 +40,10 @@ public:
     UdpSocket& operator=(UdpSocket&& o) noexcept;
 
     // Bind to `port` (0 = ephemeral) on `bind_ip` (host order, 0 = INADDR_ANY)
-    // and switch to non-blocking mode. SO_REUSEADDR is NOT set: two processes
-    // must not silently share the game port.
-    bool open(uint16_t port, uint32_t bind_ip = 0);
+    // and switch to non-blocking mode. SO_REUSEADDR is NOT set by default:
+    // two processes must not silently share the game port. `reuse` sets it
+    // (the LAN beacon listener: several games on one PC share UDP 50010).
+    bool open(uint16_t port, uint32_t bind_ip = 0, bool reuse = false);
     void close();
     bool is_open() const { return fd_ != kInvalid; }
     uint16_t local_port() const;

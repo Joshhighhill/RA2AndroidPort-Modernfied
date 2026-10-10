@@ -14,6 +14,7 @@
     struct HudMsg {
         std::string text;
         double expire = 0.0;   // msg_clock_ seconds
+        SDL_Color col{0, 0, 0, 0};   // NET-PLAY: a chat line in the sender's colour (a == 0: UI colour)
     };
     std::vector<HudMsg> msgs_;
     double msg_clock_ = 0.0;
@@ -24,9 +25,9 @@
         const double m = rules_.general_double("MessageDelay", 0.6);   // minutes
         return std::max(4.0, m * 60.0);
     }
-    void post_message(const std::string& s, double seconds = -1.0) {
+    void post_message(const std::string& s, double seconds = -1.0, SDL_Color col = SDL_Color{0, 0, 0, 0}) {
         if (s.empty()) return;
-        msgs_.push_back({s, msg_clock_ + (seconds > 0 ? seconds : message_seconds())});
+        msgs_.push_back({s, msg_clock_ + (seconds > 0 ? seconds : message_seconds()), col});
         while (msgs_.size() > kMaxMsgs) msgs_.erase(msgs_.begin());
     }
     // The newest live message ("" = none) -- the `banner` probe key.
@@ -72,7 +73,7 @@
         const double sc = hud_touch_scale();   // W6-01-12: 1.5x on a touch canvas
         for (const HudMsg& m : msgs_) {
             if (m.expire <= msg_clock_) continue;
-            hud_text(ren, tc, m.text, 8, y, col, kHudLeft, false, true, sc);
+            hud_text(ren, tc, m.text, 8, y, m.col.a ? m.col : col, kHudLeft, false, true, sc);
             y += static_cast<int>(hud_text_height(m.text) * sc) + 4;
         }
     }

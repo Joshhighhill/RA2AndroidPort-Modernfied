@@ -1,0 +1,70 @@
+# net-lan-host -- HOST half of the two-process NETWORK MATCH test
+# (scripts/play/net-match.ps1 starts this, then net-lan-join.play).
+# Hosts a LAN game, plays America (house 0) against the joiner's Russia
+# (house 1) in a real lockstep match over UDP: deploy, power plant,
+# barracks, soldiers, then the start force attacks the enemy base. Runs
+# NET_FRAMES (default 3000) logic frames; both machines log their sync-hash
+# trail ("net trail f=N crc=X", play.log) which net-match.ps1 compares.
+# Network time is the wall clock: budgets are large.
+set render_every 3000
+set max_frames 6000000
+set on_quit continue
+click button Network
+require scene == mp-lan
+click edit:nick
+key delete
+type "Hosty"
+key enter
+click button "Host Game"
+require scene == mp-lobby
+click combo:country0
+click pick:America
+log waiting for the joiner
+until 3000000 humans == 2
+until 3000000 slot_ready(1) == 1
+until 3000000 can_start == 1
+click button "Start Game"
+until 3000000 scene == game
+require scene == game
+require net == 1
+assert local_house == 0
+assert net_players == 2
+shot net_start
+
+# --- orders (America, house 0) -----------------------------------------------
+until 600000 sim_frame >= 20
+click unit 0:AMCV
+key d
+until 600000 built(0,GACNST) == 1
+click tab:0
+click cameo:GAPOWR
+until 900000 queue_ready(structure) == 1
+click cameo:GAPOWR
+place auto
+until 600000 built(0,GAPOWR) == 1
+click tab:0
+click cameo:GAPILE
+until 900000 queue_ready(structure) == 1
+click cameo:GAPILE
+place auto
+until 600000 built(0,GAPILE) == 1
+click tab:2
+click cameo:E1
+click cameo:E1
+click cameo:E1
+let gi = units(0,E1)
+until 900000 units(0,E1) > $gi
+shot net_base
+# Attack: every soldier of the start force at the enemy's construction yard
+# (under the shroud the order is a move into its base; they engage there).
+click unit 0:E1
+key t
+click building 1:NACNST soft
+click unit 0:* soft
+key t
+click building 1:NACNST soft
+waituntil 6000000 sim_frame >= 3000 or net_end == 1
+shot net_end
+log net match done
+dump
+end

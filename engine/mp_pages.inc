@@ -10,9 +10,9 @@
 // Included by main.cpp right after skirmish_page.inc. The protocol layers
 // are the SDL-free engine/mp/ modules (tested in tests/test_mp.cpp):
 //   LAN:    LanBrowser / LanAnnouncer (UDP 50010) + LobbyHost/LobbyClient
-//           over UdpLobbyTransport (host game port [Net] LanPort = 50020)
+//           over MpNet (direct UDP; host game port [Net] LanPort = 50020)
 //   Online: ServerLink (ra2lobbyd control plane) + the lobby over the
-//           CnCNet V3 tunnel (TunnelLobbyTransport)
+//           CnCNet V3 tunnel (MpNet::open_tunnel)
 //   Start:  mp_start_session() -- THE hand-off to the lockstep layer.
 //
 // --play targets / probe keys: scripts/play/README.md "Multiplayer".
@@ -90,18 +90,11 @@ inline ra2mp::MpIdentity identity(const Prefs& p) {
     id.player_id = p.pid;
     id.rules_crc = rules_crc();
     id.version = RA2_VERSION;
+    id.platform = ra2mp::platform_code();   // NET-PLAY: mixed platforms need the cross-platform option
     return id;
 }
 
-inline int platform_code() {
-#if defined(__ANDROID__) && defined(__aarch64__)
-    return 2;
-#elif defined(__ANDROID__)
-    return 3;
-#else
-    return 1;
-#endif
-}
+inline int platform_code() { return ra2mp::platform_code(); }
 
 inline void init_once() {
     static bool done = false;
@@ -128,18 +121,13 @@ inline void log_line(const std::string& s) {
 }  // namespace mpui
 
 // ---------------------------------------------------------------------------
-// The hand-off to the lockstep layer.
+// The hand-off to the lockstep layer (NET-PLAY): the GameScene is built from
+// session_to_skirmish(s, ctx) with the session seed, the lobby's resolved
+// start positions and the local house, and runs as a lockstep match over the
+// live transport (the lobby's socket / tunnel id) -- see net_play.inc.
 // ---------------------------------------------------------------------------
-// INTERIM / PLACEHOLDER: agent T's scheduler + L1 commands + L2 economy are
-// not merged on this branch. Starting a match therefore ends HERE with the
-// full session (seed, options string, house table, local house, transport +
-// the live transport object so the game keeps the same socket / tunnel id).
-// When the lockstep layer lands, replace the body with: build the GameScene
-// from session_to_skirmish(s, ctx) + the scheduler driving houses by
-// s.players[k].peer, seeded with s.seed.
-class MpStartScene;
 Scene* mp_start_session(const Rules& rules, bool no_audio, const MenuArt& art, const ra2mp::MpSessionConfig& s,
-                        std::shared_ptr<ra2mp::LobbyTransport> transport);
+                        std::shared_ptr<ra2mp::MpNet> transport);
 
 namespace mpui {
 
@@ -407,7 +395,9 @@ public:
         return s;
     }
     ~MpLobbyScene() override {
-        if (host_) host_->close();
+        // NET-PLAY: after the hand-off the peers are in the match on the same
+        // socket -- a SIGN_OFF now would drop them from it.
+        if (host_ && !handed_off_) host_->close();
         if (client_ && client_->state() == ra2mp::LobbyClient::State::Joined) client_->leave();
         if (link_ && role_ == HOST) link_->close_room();
     }
@@ -416,7 +406,8 @@ public:
 private:
     enum Act { A_NONE, A_START, A_MAP, A_BACK, A_READY, A_USEMAP, A_CANCEL };
     enum Combo { CB_NONE, CB_KIND, CB_COUNTRY, CB_COLOR, CB_TEAM, CB_START };
-    enum Check { CK_SHORT, CK_MCV, CK_CRATES, CK_SW, CK_COUNT };
+    // NET-PLAY: CK_AIT (a leaver's house -> AI) and CK_XP (cross-platform, experimental).
+    enum Check { CK_SHORT, CK_MCV, CK_CRATES, CK_SW, CK_AIT, CK_XP, CK_COUNT };
     enum Slider { SL_SPEED, SL_CREDITS, SL_UNITS, SL_COUNT };
     enum Confirm { C_LEAVE = 1, C_INFO };
 
@@ -449,14 +440,14 @@ private:
         m.map = map_info(mi);
         for (int i = std::max(1, m.map.max_players); i < ra2mp::kSlots; ++i) m.slots[i].kind = ra2mp::SlotKind::Closed;
         if (net_ == LAN) {
-            auto t = std::make_shared<ra2mp::UdpLobbyTransport>();
-            if (!t->open(prefs_.lan_port) && !t->open(0)) status_ = "Could not open a network port.";
+            auto t = std::make_shared<ra2mp::MpNet>();
+            if (!t->open_direct(prefs_.lan_port) && !t->open_direct(0)) status_ = "Could not open a network port.";
             port_ = t->port();
             transport_ = t;
         } else {
             my_v3_ = mpui::random_u32();
-            auto t = std::make_shared<ra2mp::TunnelLobbyTransport>();
-            t->open(link_ ? link_->tunnel_addr() : ra2mp::Addr{}, my_v3_);
+            auto t = std::make_shared<ra2mp::MpNet>();
+            t->open_tunnel(link_ ? link_->tunnel_addr() : ra2mp::Addr{}, my_v3_);
             transport_ = t;
         }
         host_ = std::make_unique<ra2mp::LobbyHost>(*transport_, mpui::identity(prefs_), m);
@@ -482,8 +473,8 @@ private:
         map_ix_ = mi;
     }
     void start_client_lan(const ra2mp::Addr& host) {
-        auto t = std::make_shared<ra2mp::UdpLobbyTransport>();
-        t->open(0);
+        auto t = std::make_shared<ra2mp::MpNet>();
+        t->open_direct(0);
         transport_ = t;
         client_ = std::make_unique<ra2mp::LobbyClient>(*transport_, ra2mp::peer_of(host), mpui::identity(prefs_));
         where_ = "Host " + host.str();
@@ -492,8 +483,8 @@ private:
     }
     void start_client_online(std::uint32_t my_v3, std::uint32_t host_v3) {
         my_v3_ = my_v3;
-        auto t = std::make_shared<ra2mp::TunnelLobbyTransport>();
-        t->open(link_ ? link_->tunnel_addr() : ra2mp::Addr{}, my_v3);
+        auto t = std::make_shared<ra2mp::MpNet>();
+        t->open_tunnel(link_ ? link_->tunnel_addr() : ra2mp::Addr{}, my_v3);
         transport_ = t;
         client_ = std::make_unique<ra2mp::LobbyClient>(*transport_, ra2mp::peer_of_v3(host_v3), mpui::identity(prefs_));
         host_v3_ = host_v3;
@@ -597,7 +588,10 @@ private:
     static ra2engine::SbRect team_rect(int k) { return {350, rowY(k), 42, 19}; }
     static ra2engine::SbRect start_rect(int k) { return {398, rowY(k), 42, 19}; }
     static ra2engine::SbRect ready_rect(int k) { return {446, rowY(k) + 1, 18, 18}; }
-    static ra2engine::SbRect check_rect(int c) { return {30, 232 + 20 * c, 150, 16}; }
+    static ra2engine::SbRect check_rect(int c) {
+        return c < CK_AIT ? ra2engine::SbRect{30, 232 + 20 * c, 150, 16}
+                          : ra2engine::SbRect{170, 232 + 20 * (c - CK_AIT), 125, 16};
+    }
     static ra2engine::SbRect slider_rect(int s) { return {300, 230 + 26 * s, 127, 21}; }
     static ra2engine::SbRect slider_label(int s) { return {190, slider_rect(s).y, 105, 16}; }
     static ra2engine::SbRect chat_rect() { return {30, 316, 440, 112}; }
@@ -633,13 +627,16 @@ private:
     }
     bool check_val(int c) const {
         const ra2mp::MpOptions& o = model().opt;
-        return c == CK_SHORT ? o.short_game : c == CK_MCV ? o.mcv_repacks : c == CK_CRATES ? o.crates : o.superweapons;
+        return c == CK_SHORT ? o.short_game : c == CK_MCV ? o.mcv_repacks : c == CK_CRATES ? o.crates
+             : c == CK_AIT ? o.ai_takeover : c == CK_XP ? o.cross_platform : o.superweapons;
     }
     std::string check_label(int c) const {
+        if (c == CK_AIT) return "AI takes over";
+        if (c == CK_XP) return "Cross-platform (exp.)";
         return c == CK_SHORT ? text_.short_game : c == CK_MCV ? text_.mcv : c == CK_CRATES ? text_.crates : text_.sw;
     }
     static const char* check_id(int c) {
-        static const char* k[CK_COUNT] = {"short", "mcv", "crates", "superweapons"};
+        static const char* k[CK_COUNT] = {"short", "mcv", "crates", "superweapons", "aitakeover", "crossplatform"};
         return k[c];
     }
     static const char* slider_id(int s) {
@@ -841,7 +838,8 @@ private:
         for (int c = 0; c < CK_COUNT; ++c)
             if (check_rect(c).contains(lx, ly)) {
                 ra2mp::MpOptions o = model().opt;
-                bool* f = c == CK_SHORT ? &o.short_game : c == CK_MCV ? &o.mcv_repacks : c == CK_CRATES ? &o.crates : &o.superweapons;
+                bool* f = c == CK_SHORT ? &o.short_game : c == CK_MCV ? &o.mcv_repacks : c == CK_CRATES ? &o.crates
+                        : c == CK_AIT ? &o.ai_takeover : c == CK_XP ? &o.cross_platform : &o.superweapons;
                 *f = !*f;
                 host_->set_options(o);
                 play_ui("menu:click");
@@ -958,8 +956,7 @@ private:
             else if (link_) s.host_addr = link_->tunnel_addr().str();
             s.local_v3 = my_v3_;
             s.host_v3 = is_host() ? my_v3_ : host_v3_;
-            for (ra2mp::MpPlayer& p : s.players)
-                p.peer = host_ ? host_->peer_of_slot(p.slot) : (p.slot == 0 ? client_->host() : 0);
+            // (MpPlayer::peer: resolve_session copied GO's peer table.)
             announcer_.close();
             next_ = mp_start_session(rules_, no_audio_, art_, s, transport_);
         }
@@ -1165,7 +1162,7 @@ private:
     std::unique_ptr<ra2engine::MapCatalog> catalog_;
     std::map<std::string, std::string> digest_cache_;
     std::map<std::string, std::pair<int, int>> preview_size_;
-    std::shared_ptr<ra2mp::LobbyTransport> transport_;
+    std::shared_ptr<ra2mp::MpNet> transport_;
     std::unique_ptr<ra2mp::LobbyHost> host_;
     std::unique_ptr<ra2mp::LobbyClient> client_;
     std::unique_ptr<ra2mp::ServerLink> link_;
@@ -1478,87 +1475,48 @@ Scene* MpLobbyScene::make_return_page() {
 }
 
 // ===========================================================================
-// The match hand-off page (placeholder until the lockstep layer is merged).
+// NET-PLAY: the match hand-off (replaces the "Match Ready" placeholder).
 // ===========================================================================
-class MpStartScene : public MpPage {
-public:
-    MpStartScene(const Rules& r, bool na, const MenuArt& a, const ra2mp::MpSessionConfig& s,
-                 std::shared_ptr<ra2mp::LobbyTransport> t)
-        : MpPage(r, na, a), s_(s), transport_(std::move(t)) {
-        status_ = "Network play hand-off: the lockstep layer is not part of this build yet.";
-    }
-    const char* name() const override { return "mp-start"; }
+// The full-state sync hash runs every kNetHashEvery frames (RA2.INI [Net]
+// HashEvery overrides): fnv1a over save_world costs ~1-3 ms on a desktop for
+// a 2-player map and several times that on a phone (README "Networking"), so
+// once a second keeps the CPU cost low while a desync is still caught within
+// ~1-2 s.
+constexpr int kNetHashEvery = 15;
 
-private:
-    enum Act { A_NONE, A_PREVIEW, A_MENU };
-    std::vector<ShellButton> buttons() const override {
-        return {btn(0, "Preview Map", true, A_PREVIEW), btn(5, "Main Menu", true, A_MENU)};
-    }
-    std::string header_text() const override { return "Match Ready"; }
-    int back_action() const override { return A_MENU; }
-    ra2mp::MpConvertCtx ctx() const {
-        ra2mp::MpConvertCtx c;
-        c.countries = gf_lobby_countries();
-        const Rules* r = &rules_;
-        c.side_of = [r](const std::string& k) { return gf_side_of_country(*r, k); };
-        return c;
-    }
-    void press(int act) override {
-        if (act == A_PREVIEW) {
-            // Local single-player preview of the agreed map/houses/options;
-            // remote humans are driven by a Medium AI here.
-            next_ = defer_game_scene(no_audio_, ra2mp::session_to_local_preview(s_, ctx()));
-        } else if (act == A_MENU) {
-            next_ = new ShellScene(rules_, no_audio_, art_, PAGE_MAIN);
-        }
-    }
-    void draw_body(const ShellPainter& p, ra2engine::TextureCache&) override {
-        int y = 30;
-        p.header("Session", 30, y, 440, 19);
-        y += 24;
-        const auto& names = gf_lobby_countries();
-        for (const ra2mp::MpPlayer& pl : s_.players) {
-            const std::string who = pl.is_ai ? "Computer" : pl.name;
-            const std::string c = pl.country >= 0 && pl.country < static_cast<int>(names.size())
-                                      ? names[static_cast<std::size_t>(pl.country)] : "?";
-            std::string line = "House " + std::to_string(pl.house) + ": " + who + (pl.local ? " (you)" : "") + "  " + c +
-                               "  colour " + std::to_string(pl.color) + "  team " +
-                               (pl.team < 0 ? std::string("-") : std::string(1, char('A' + pl.team))) + "  start " +
-                               std::to_string(pl.start + 1);
-            p.label(p.fit(line, 440), 30, y, 440, 16, 0);
-            y += 16;
-        }
-        y += 8;
-        p.label("Map: " + s_.lobby.map.file + "   seed " + std::to_string(s_.seed), 30, y, 440, 16, 0);
-        y += 24;
-        text_block(p, "Every player received the same seed, options and house table. Lockstep play starts here "
-                      "once the network scheduler is merged; until then Preview Map opens the agreed setup locally.",
-                   30, y, 440, 6);
-    }
-    void body_probe(ra2play::Probe& p) override {
-        p.set("session_seed", s_.seed);
-        p.set("session_players", static_cast<double>(s_.players.size()));
-        p.set("local_house", s_.local_house);
-        p.set("local_slot", s_.local_slot);
-        p.set("is_host", s_.is_host ? 1 : 0);
-        p.set_s("session_options", s_.options);
-        p.set_s("session_transport", s_.transport == ra2mp::MpTransportKind::Lan ? "lan" : "tunnel");
-        p.set_s("session_map", s_.lobby.map.file);
-        for (const ra2mp::MpPlayer& pl : s_.players) {
-            const std::string n = "(" + std::to_string(pl.house) + ")";
-            p.set("house_slot" + n, pl.slot);
-            p.set("house_color" + n, pl.color);
-            p.set("house_start" + n, pl.start);
-            p.set("house_country" + n, pl.country);
-            p.set("house_ai" + n, pl.is_ai ? 1 : 0);
-        }
-    }
-    ra2mp::MpSessionConfig s_;
-    std::shared_ptr<ra2mp::LobbyTransport> transport_;   // kept alive for the lockstep layer
-};
+Scene* defer_net_game_scene(bool no_audio, ra2engine::SkirmishConfig cfg, std::shared_ptr<NetPlay> np,
+                            std::uint32_t seed, std::vector<int> starts, int local_house) {
+    auto c = std::make_shared<ra2engine::SkirmishConfig>(std::move(cfg));
+    auto art = std::make_shared<SkirmishLoadArt>();
+    std::function<void(SDL_Renderer*, ra2engine::TextureCache&, double)> backdrop;
+    g_net_local_house = local_house;   // the loading art follows the local player's country
+    art->load(*c);
+    g_net_local_house = -1;
+    backdrop = [art](SDL_Renderer* ren, ra2engine::TextureCache& tc, double frac) { art->draw(ren, tc, frac); };
+    return defer_scene("LOADING", [no_audio, c, np, seed, starts, local_house]() -> Scene* {
+        { int gw = 1280, gh = 720; game_logical_size(gw, gh); GameScene::set_canvas_size(gw, gh); }
+        // Session-wide determinism inputs for the build: the local house
+        // (local_slot_of), the session seed (crates), the lobby's resolved
+        // start waypoints (the real-play start pick), the NetPlay itself.
+        struct Restore {
+            ~Restore() {
+                g_net_local_house = -1;
+                g_crate_seed_override = -1;
+                g_simdiff_starts.clear();
+                g_pending_netplay.reset();
+            }
+        } restore;
+        g_net_local_house = local_house;
+        g_crate_seed_override = seed;
+        g_simdiff_starts = starts;
+        g_pending_netplay = np;
+        return new GameScene(no_audio, *c);
+    }, backdrop);
+}
 
 Scene* mp_start_session(const Rules& rules, bool no_audio, const MenuArt& art, const ra2mp::MpSessionConfig& s,
-                        std::shared_ptr<ra2mp::LobbyTransport> transport) {
+                        std::shared_ptr<ra2mp::MpNet> transport) {
+    (void)art;
     const std::string text = ra2mp::describe_session(s);
     std::size_t a = 0;
     while (a < text.size()) {
@@ -1567,5 +1525,40 @@ Scene* mp_start_session(const Rules& rules, bool no_audio, const MenuArt& art, c
         mpui::log_line(text.substr(a, b - a));
         a = b + 1;
     }
-    return new MpStartScene(rules, no_audio, art, s, std::move(transport));
+    ra2mp::MpConvertCtx ctx;
+    ctx.countries = gf_lobby_countries();
+    const Rules* r = &rules;
+    ctx.side_of = [r](const std::string& k) { return gf_side_of_country(*r, k); };
+    ra2engine::SkirmishConfig cfg = ra2mp::session_to_skirmish(s, ctx);
+
+    auto np = std::make_shared<NetPlay>();
+    np->mpnet = transport;
+    np->session = s;
+    np->ai_takeover = s.lobby.opt.ai_takeover;
+    np->hash_every = net_ini_int("HashEvery", kNetHashEvery);
+    ra2::net::NetGameConfig nc;
+    nc.local_house = s.local_house;
+    std::vector<int> starts;
+    for (const ra2mp::MpPlayer& p : s.players) {
+        starts.push_back(p.start);   // combatant k (slot order) -> the lobby's start waypoint
+        if (p.is_ai) continue;
+        nc.human_houses.push_back(p.house);
+        if (!p.local && p.peer) nc.remotes.emplace_back(p.house, transport->addr_of(p.peer));
+    }
+    nc.master = s.is_host;
+    const bool lan = s.transport == ra2mp::MpTransportKind::Lan;
+    nc.mode = lan ? ra2::net::GameMode::LAN : ra2::net::GameMode::Internet;
+    // Start values (net-protocol.md §8): LAN FSR 5 / MaxAhead 10; Internet
+    // FSR 5 / MaxAhead 15 (3 x FSR, the master's TIMING floor). The host's
+    // TIMING events then size both from the measured round trip.
+    nc.frame_send_rate = static_cast<std::uint32_t>(net_ini_int("FrameSendRate", 5));
+    nc.max_ahead = static_cast<std::uint32_t>(net_ini_int("MaxAhead", lan ? 10 : 15));
+    nc.hash_every = np->hash_every;
+    np->game = std::make_unique<ra2::net::NetGame>(transport->net(), nc);
+    mpui::log_line("lockstep session: local house " + std::to_string(nc.local_house) + ", " +
+                   std::to_string(nc.remotes.size()) + " remote player(s), " + (lan ? "LAN" : "tunnel") +
+                   ", master " + (nc.master ? "yes" : "no"));
+    for (const auto& rm : nc.remotes)
+        mpui::log_line("  house " + std::to_string(rm.first) + " at " + transport->describe(transport->peer_of_addr(rm.second)));
+    return defer_net_game_scene(no_audio, cfg, np, s.seed, starts, s.local_house);
 }

@@ -71,6 +71,10 @@ std::string encode_options(const MpLobbyModel& m) {
     std::string layout;
     for (int i = 0; i < kSlots; ++i) layout += kKindChar[static_cast<int>(m.slots[i].kind) & 3];
     o << "tl=" << p.tech_level << ",max=" << m.map.max_players << ",slots=" << layout;
+    // NET-PLAY extensions: a leaving player's house -> AI ("ait"), mixed
+    // Windows / Android sessions allowed ("xp").
+    if (p.ai_takeover) o << ",ait=1";
+    if (p.cross_platform) o << ",xp=1";
     return o.str();
 }
 
@@ -79,7 +83,7 @@ bool decode_options(const std::string& s, MpLobbyModel& out) {
     if (t.size() < 17) return false;
     // Extensions (key=value) at the end.
     std::string layout;
-    long long tl = 10, maxp = 8;
+    long long tl = 10, maxp = 8, ait = 0, xp = 0;
     while (!t.empty() && t.back().find('=') != std::string::npos) {
         const std::string kv = t.back();
         t.pop_back();
@@ -88,6 +92,8 @@ bool decode_options(const std::string& s, MpLobbyModel& out) {
         if (k == "slots") layout = v;
         else if (k == "tl") to_int(v, tl);
         else if (k == "max") to_int(v, maxp);
+        else if (k == "ait") to_int(v, ait);
+        else if (k == "xp") to_int(v, xp);
     }
     if (!t.empty() && t.back().empty()) t.pop_back();   // trailing comma before the extensions
     if (t.size() < 17 || layout.size() != kSlots) return false;
@@ -113,6 +119,8 @@ bool decode_options(const std::string& s, MpLobbyModel& out) {
     m.map.file = scen.substr(0, colon);
     m.map.digest = scen.substr(colon + 1);
     m.opt.tech_level = static_cast<int>(tl);
+    m.opt.ai_takeover = ait != 0;
+    m.opt.cross_platform = xp != 0;
     m.map.max_players = static_cast<int>(std::max(1LL, std::min(8LL, maxp)));
     int humans = 0, ais = 0;
     for (char c : layout) {
@@ -303,6 +311,8 @@ void resolve_session(MpSessionConfig& s, int country_count) {
             start_used[st] = true;
         }
         if (p.local) s.local_house = p.house;
+        for (const auto& sp : s.slot_peers)
+            if (sp.first == i && !p.local && !p.is_ai) p.peer = sp.second;
         s.players.push_back(p);
     }
 }

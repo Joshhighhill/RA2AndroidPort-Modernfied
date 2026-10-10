@@ -6,14 +6,11 @@
 namespace ra2mp {
 
 namespace {
-constexpr std::uint64_t kResendMs = 250;
-constexpr int kMaxTries = 40;            // 10 s of resends
 constexpr std::uint64_t kPingMs = 2000;
 constexpr std::uint64_t kSilenceMs = 15000;
 constexpr std::uint64_t kQueryMs = 1000;
 constexpr int kMaxQueries = 15;
 constexpr std::uint64_t kGoWaitMs = 3000;
-constexpr std::size_t kSeenRing = 512;
 constexpr std::size_t kChatLines = 50;
 
 std::uint32_t body_cmd(const std::vector<std::uint8_t>& b) {
@@ -29,177 +26,6 @@ std::vector<std::uint8_t> simple(std::uint32_t cmd) {
 }
 }  // namespace
 
-// ------------------------------------------------------------- transports --
-
-std::string LobbyTransport::describe(PeerId p) const {
-    if (p & kTunnelPeerFlag) return "tunnel id " + std::to_string(static_cast<std::uint32_t>(p));
-    return Addr{static_cast<std::uint32_t>(p >> 16), static_cast<std::uint16_t>(p & 0xFFFF)}.str();
-}
-
-bool UdpLobbyTransport::open(std::uint16_t port) { return sock_.open(port, false, false); }
-
-bool UdpLobbyTransport::send(PeerId to, const std::vector<std::uint8_t>& d) {
-    const Addr a{static_cast<std::uint32_t>(to >> 16), static_cast<std::uint16_t>(to & 0xFFFF)};
-    return sock_.send_to(a, d.data(), d.size());
-}
-
-bool UdpLobbyTransport::recv(PeerId& from, std::vector<std::uint8_t>& d) {
-    std::uint8_t buf[2048];
-    Addr a;
-    const int n = sock_.recv_from(a, buf, sizeof buf);
-    if (n <= 0) return false;
-    from = peer_of(a);
-    d.assign(buf, buf + n);
-    return true;
-}
-
-std::string UdpLobbyTransport::describe(PeerId p) const { return LobbyTransport::describe(p); }
-
-bool TunnelLobbyTransport::open(const Addr& tunnel, std::uint32_t my_v3) {
-    tunnel_ = tunnel;
-    me_ = my_v3;
-    last_keep_ = 0;
-    return sock_.open(0, false, false);
-}
-
-bool TunnelLobbyTransport::send(PeerId to, const std::vector<std::uint8_t>& d) {
-    if (!(to & kTunnelPeerFlag)) return false;
-    std::vector<std::uint8_t> out;
-    v3_wrap(me_, static_cast<std::uint32_t>(to), d, out);
-    return sock_.send_to(tunnel_, out.data(), out.size());
-}
-
-bool TunnelLobbyTransport::recv(PeerId& from, std::vector<std::uint8_t>& d) {
-    std::uint8_t buf[2048];
-    for (;;) {
-        Addr a;
-        const int n = sock_.recv_from(a, buf, sizeof buf);
-        if (n <= 0) return false;
-        if (a != tunnel_) continue;   // only the tunnel talks to this socket
-        if (ping_sent_ && v3_is_ping_reply(buf, static_cast<std::size_t>(n), ping_nonce_)) {
-            rtt_ = static_cast<int>(now_ms() - ping_sent_);
-            ping_sent_ = 0;
-            continue;
-        }
-        std::uint32_t s = 0, r = 0;
-        const std::uint8_t* pl = nullptr;
-        std::size_t plen = 0;
-        if (!v3_unwrap(buf, static_cast<std::size_t>(n), s, r, pl, plen) || r != me_ || s == 0) continue;
-        from = peer_of_v3(s);
-        d.assign(pl, pl + plen);
-        return true;
-    }
-}
-
-void TunnelLobbyTransport::tick(std::uint64_t now) {
-    // Register / refresh our id at the tunnel (V3 learns the sender's
-    // endpoint from its first packet; the receiver may not exist yet, the
-    // tunnel then just drops the payload). 0xFFFFFFFE is never a real id.
-    if (last_keep_ == 0 || now - last_keep_ >= 5000) {
-        std::vector<std::uint8_t> out;
-        v3_wrap(me_, 0xFFFFFFFEu, {}, out);
-        sock_.send_to(tunnel_, out.data(), out.size());
-        if (ping_sent_ == 0 || now - ping_sent_ > 4000) {
-            ping_nonce_ = static_cast<std::uint32_t>(now * 2654435761u) | 1u;
-            const std::vector<std::uint8_t> ping = v3_ping_request(ping_nonce_);
-            sock_.send_to(tunnel_, ping.data(), ping.size());
-            ping_sent_ = now_ms();
-        }
-        last_keep_ = now;
-    }
-}
-
-std::string TunnelLobbyTransport::describe(PeerId p) const { return LobbyTransport::describe(p); }
-
-MemoryHub::Endpoint* MemoryHub::add(PeerId id) {
-    auto e = std::make_unique<Endpoint>();
-    e->id = id;
-    e->hub = this;
-    Endpoint* raw = e.get();
-    eps[id] = std::move(e);
-    return raw;
-}
-
-bool MemoryHub::Endpoint::send(PeerId to, const std::vector<std::uint8_t>& d) {
-    ++sent;
-    if (drop_every > 0 && sent % drop_every == 0) return true;   // lost on the "wire"
-    const auto it = hub->eps.find(to);
-    if (it == hub->eps.end()) return false;
-    it->second->inbox.push_back({id, d});
-    return true;
-}
-
-bool MemoryHub::Endpoint::recv(PeerId& from, std::vector<std::uint8_t>& d) {
-    if (inbox.empty()) return false;
-    from = inbox.front().first;
-    d = std::move(inbox.front().second);
-    inbox.pop_front();
-    return true;
-}
-
-// ---------------------------------------------------------- global channel --
-
-void GlobalChannel::send(PeerId to, const std::vector<std::uint8_t>& body, bool reliable, std::uint64_t now) {
-    GlobalPacket g;
-    g.code = reliable ? kDataAck : kDataNoAck;
-    g.packet_id = next_id_++;
-    g.body = body;
-    std::vector<std::uint8_t> d = encode_global(g);
-    t_.send(to, d);
-    if (reliable) pend_.push_back(Pending{to, g.packet_id, std::move(d), now, 1});
-}
-
-void GlobalChannel::poll(std::uint64_t now, std::vector<In>& in, std::vector<PeerId>& lost) {
-    t_.tick(now);
-    PeerId from = 0;
-    std::vector<std::uint8_t> d;
-    while (t_.recv(from, d)) {
-        GlobalPacket g;
-        if (!decode_global(d.data(), d.size(), g)) continue;
-        if (g.code == kAck) {
-            pend_.erase(std::remove_if(pend_.begin(), pend_.end(),
-                                       [&](const Pending& p) { return p.to == from && p.id == g.packet_id; }),
-                        pend_.end());
-            continue;
-        }
-        if (g.code == kDataAck) {
-            GlobalPacket ack;
-            ack.code = kAck;
-            ack.packet_id = g.packet_id;
-            t_.send(from, encode_global(ack));
-            const auto key = std::make_pair(from, g.packet_id);
-            if (std::find(seen_.begin(), seen_.end(), key) != seen_.end()) continue;   // duplicate
-            seen_.push_back(key);
-            if (seen_.size() > kSeenRing) seen_.pop_front();
-        }
-        in.push_back(In{from, std::move(g.body)});
-    }
-    for (std::size_t i = 0; i < pend_.size();) {
-        Pending& p = pend_[i];
-        if (now - p.last >= kResendMs) {
-            if (p.tries >= kMaxTries) {
-                if (std::find(lost.begin(), lost.end(), p.to) == lost.end()) lost.push_back(p.to);
-                pend_.erase(pend_.begin() + static_cast<std::ptrdiff_t>(i));
-                continue;
-            }
-            t_.send(p.to, p.dgram);
-            p.last = now;
-            ++p.tries;
-        }
-        ++i;
-    }
-}
-
-void GlobalChannel::forget(PeerId p) {
-    pend_.erase(std::remove_if(pend_.begin(), pend_.end(), [&](const Pending& x) { return x.to == p; }), pend_.end());
-}
-
-bool GlobalChannel::idle_to(PeerId p) const {
-    for (const Pending& x : pend_)
-        if (x.to == p) return false;
-    return true;
-}
-
 // ------------------------------------------------------------------ shared --
 
 const char* reject_text(RejectReason r) {
@@ -211,6 +37,9 @@ const char* reject_text(RejectReason r) {
         case RejectReason::Kicked: return "You were removed from the game by the host.";
         case RejectReason::HostLeft: return "The host closed the game.";
         case RejectReason::Lost: return "Connection to the host was lost.";
+        case RejectReason::Platform:
+            return "The host plays on another platform (Windows / Android). Mixed-platform games need the "
+                   "host's \"Cross-platform (experimental)\" option.";
         default: return "";
     }
 }
@@ -239,20 +68,21 @@ void LobbyBase::add_chat(const ChatLine& l) {
 
 void LobbyBase::system_line(const std::string& text) { add_chat(ChatLine{"", text, -1}); }
 
-void LobbyBase::build_session(bool is_host) {
+void LobbyBase::build_session(bool is_host, const std::vector<std::pair<int, PeerId>>& slot_peer) {
     session_ = MpSessionConfig{};
     session_.lobby = model_;
     session_.options = encode_options(model_);
     session_.seed = model_.seed;
     session_.is_host = is_host;
     session_.local_slot = local_slot_;
+    session_.slot_peers = slot_peer;
     resolve_session(session_, 9);   // the UI re-resolves with the real country list
     started_ = true;
 }
 
 // -------------------------------------------------------------------- host --
 
-LobbyHost::LobbyHost(LobbyTransport& t, const MpIdentity& me, const MpLobbyModel& initial)
+LobbyHost::LobbyHost(MpNet& t, const MpIdentity& me, const MpLobbyModel& initial)
     : ch_(t), me_(me) {
     model_ = initial;
     MpSlot& h = model_.slots[0];
@@ -369,13 +199,19 @@ StartCheck LobbyHost::start(std::uint32_t seed) {
     ++rev_;
     broadcast_options(now_);
     dirty_ = false;
+    // NET-PLAY: GO carries the peer table (slot -> the peer as the host sees
+    // it), so every client can open a private channel to every other human
+    // (the match is a full mesh like the original's; the lobby is a star).
+    BodyWriter w;
+    w.u32(kCmdGo);
+    w.u32(rev_);
+    w.u32(seed);
+    w.u8(static_cast<std::uint8_t>(peers_.size()));
     for (const auto& kv : peers_) {
-        BodyWriter w;
-        w.u32(kCmdGo);
-        w.u32(rev_);
-        w.u32(seed);
-        ch_.send(kv.first, w.b, true, now_);
+        w.u8(static_cast<std::uint8_t>(kv.second.slot));
+        w.u64(kv.first);
     }
+    for (const auto& kv : peers_) ch_.send(kv.first, w.b, true, now_);
     going_ = true;
     go_at_ = now_;
     return c;
@@ -427,6 +263,8 @@ void LobbyHost::handle(PeerId from, const std::vector<std::uint8_t>& body, std::
             const std::uint32_t rules = r.u32();
             const std::uint64_t pid = r.u64();
             const std::string nick = sanitize_name(r.fixed(20));
+            (void)r.fixed(24);                       // engine version (informational)
+            const std::uint8_t platform = r.u8();
             if (pit != peers_.end()) {   // a repeat (our CONFIRM was lost / slow)
                 BodyWriter w;
                 w.u32(kCmdConfirmJoin);
@@ -439,6 +277,7 @@ void LobbyHost::handle(PeerId from, const std::vector<std::uint8_t>& body, std::
             int slot = -1;
             if (proto != me_.net_proto || sim != me_.sim_ver) why = RejectReason::Version;
             else if (rules != me_.rules_crc) why = RejectReason::Rules;
+            else if (platform != me_.platform && !model_.opt.cross_platform) why = RejectReason::Platform;
             else if (going_ || started_) why = RejectReason::Started;
             else if ((slot = first_open_slot(model_)) < 0) why = RejectReason::Full;
             if (why != RejectReason::None) {
@@ -460,7 +299,7 @@ void LobbyHost::handle(PeerId from, const std::vector<std::uint8_t>& body, std::
             w.u8(static_cast<std::uint8_t>(slot));
             ch_.send(from, w.b, true, now);
             system_line(s.name + " joined the game.");
-            if (on_event) on_event(s.name + " joined from " + ch_.transport().describe(from));
+            if (on_event) on_event(s.name + " joined from " + ch_.net().describe(from));
             changed(false);
             return;
         }
@@ -516,7 +355,7 @@ void LobbyHost::handle(PeerId from, const std::vector<std::uint8_t>& body, std::
 
 void LobbyHost::update(std::uint64_t now) {
     now_ = now;
-    std::vector<GlobalChannel::In> in;
+    std::vector<LobbyChannel::In> in;
     std::vector<PeerId> lost;
     ch_.poll(now, in, lost);
     for (const auto& m : in) handle(m.from, m.body, now);
@@ -537,13 +376,17 @@ void LobbyHost::update(std::uint64_t now) {
     if (going_ && !started_) {
         bool all = true;
         for (const auto& kv : peers_) all = all && ch_.idle_to(kv.first);
-        if (all || now - go_at_ >= kGoWaitMs) build_session(true);
+        if (all || now - go_at_ >= kGoWaitMs) {
+            std::vector<std::pair<int, PeerId>> sp;
+            for (const auto& kv : peers_) sp.emplace_back(kv.second.slot, kv.first);
+            build_session(true, sp);
+        }
     }
 }
 
 // ------------------------------------------------------------------ client --
 
-LobbyClient::LobbyClient(LobbyTransport& t, PeerId host, const MpIdentity& me) : ch_(t), host_(host), me_(me) {}
+LobbyClient::LobbyClient(MpNet& t, PeerId host, const MpIdentity& me) : ch_(t), host_(host), me_(me) {}
 
 void LobbyClient::request_slot(int country, int color, int team, int start) {
     if (state_ != State::Joined) return;
@@ -599,7 +442,20 @@ void LobbyClient::handle(const std::vector<std::uint8_t>& body, std::uint64_t no
         case kCmdConfirmJoin:
             // Joined only once the first GAME_OPTIONS arrived too (the UI
             // must never show a confirmed seat with an empty lobby).
-            if (state_ == State::Joining) local_slot_ = r.u8();
+            if (state_ == State::Joining) {
+                local_slot_ = r.u8();
+                // NET-PLAY fix: the CONFIRM can arrive AFTER the options (it
+                // was lost and resent; the global channel does not order
+                // packets) -- then the options in hand complete the join.
+                if (rev_ > 0 && local_slot_ >= 0 && local_slot_ < kSlots &&
+                    model_.slots[local_slot_].kind == SlotKind::Human) {
+                    state_ = State::Joined;
+                    system_line("Joined the game.");
+                    has_map_ = have_map ? have_map(model_.map) : true;
+                    ready_ = model_.slots[local_slot_].ready;
+                    if (model_.slots[local_slot_].has_map != has_map_) send_ready(now);
+                }
+            }
             return;
         case kCmdRejectJoin:
             reason_ = static_cast<RejectReason>(r.u8());
@@ -644,17 +500,25 @@ void LobbyClient::handle(const std::vector<std::uint8_t>& body, std::uint64_t no
                 model_.seed = go_seed_;
                 go_pending_ = false;
                 state_ = State::Started;
-                build_session(false);
+                build_session(false, go_peers_);
             }
             return;
         }
         case kCmdGo: {
             go_rev_ = r.u32();
             go_seed_ = r.u32();
+            go_peers_.clear();
+            const int n = r.u8();
+            for (int i = 0; i < n && i < kSlots && !r.bad; ++i) {
+                const int slot = r.u8();
+                const PeerId p = r.u64();
+                if (!r.bad && slot != local_slot_) go_peers_.emplace_back(slot, p);
+            }
+            go_peers_.emplace_back(0, host_);   // the host: the peer we already talk to
             if (go_rev_ == rev_ && state_ == State::Joined) {
                 model_.seed = go_seed_;
                 state_ = State::Started;
-                build_session(false);
+                build_session(false, go_peers_);
             } else {
                 go_pending_ = true;
             }
@@ -678,7 +542,7 @@ void LobbyClient::handle(const std::vector<std::uint8_t>& body, std::uint64_t no
 void LobbyClient::update(std::uint64_t now) {
     now_ = now;
     if (heard_ == 0) heard_ = now;
-    std::vector<GlobalChannel::In> in;
+    std::vector<LobbyChannel::In> in;
     std::vector<PeerId> lost;
     ch_.poll(now, in, lost);
     for (const auto& m : in) {
@@ -708,6 +572,7 @@ void LobbyClient::update(std::uint64_t now) {
         w.u64(me_.player_id);
         w.fixed(sanitize_name(me_.nick), 20);
         w.fixed(me_.version, 24);
+        w.u8(me_.platform);
         ch_.send(host_, w.b, false, now);   // repeated until CONFIRM / REJECT
         last_query_ = now;
         ++queries_;

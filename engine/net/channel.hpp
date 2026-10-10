@@ -138,6 +138,11 @@ protected:
     virtual bool dead(const ReceivedPacket& r) const { return r.read; }
     virtual bool deliverable(const ReceivedPacket&) const { return true; }
     virtual void on_delivered(const ReceivedPacket&) {}
+    // An entry ran out of retries / time. true = retire it now (the clone's
+    // global channel: one dead lobby peer must not fill the 160-entry queue);
+    // false = keep it (private channels: the original keeps resending and
+    // reports the bad connection to the scheduler).
+    virtual bool retire_failed(const SendEntry&) { return false; }
 
     uint16_t magic_;
     size_t header_size_;
@@ -203,7 +208,20 @@ public:
 
     uint16_t product() const { return product_; }
 
+    // NET-PLAY (clone): per-destination bookkeeping the lobby needs.
+    // true while a DATA_ACK packet to `to` is still waiting for its ACK.
+    bool pending_to(const PeerAddr& to) const;
+    // Forget every queued packet to `to` (a peer that left).
+    void drop_pending_to(const PeerAddr& to);
+    // Destinations whose DATA_ACK packet failed (ran out of retries / time)
+    // since the last call. Failed entries are retired.
+    std::vector<PeerAddr> take_failed();
+
+protected:
+    bool retire_failed(const SendEntry& e) override;
+
 private:
+    std::vector<PeerAddr> failed_;
     struct RingEntry {
         PeerAddr from;
         uint32_t id = 0xFFFFFFFFu;

@@ -1373,6 +1373,13 @@ public:
     int house_outcome(int h) const {
         return h >= 0 && h < (int)house_outcome_.size() ? house_outcome_[(std::size_t)h] : 0;
     }
+    // NET-PLAY: a player left the match (EXIT) or was dropped (REMOVEPLAYER
+    // executes on every peer at the same frame) [RE: 01-original-protocol.md
+    // §4.6 -- REMOVEPLAYER "defeats that house" (FUN_004FC7A0)]: the house is
+    // flagged defeated (sticky) and everything it still owns blows up (the
+    // TS/RA2 defeated-player Blowup_All). Deterministic; a no-op for an
+    // out-of-range house.
+    void resign_house(int h);
 
     // --- AI-3 AITriggerTypes phase [RE: ai-trigger.md] ---
     // Read-only trigger state (nullptr when `house` is not AI-flagged). NOT

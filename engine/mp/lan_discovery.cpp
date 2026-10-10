@@ -122,7 +122,8 @@ bool LanAnnouncer::open(const LanBeacon& b) {
     set(b);
     // Shared 50010: also receives queries; falls back to an ephemeral
     // socket (beacons still go out, queries go unanswered) if it is busy.
-    if (!sock_.open(kLanBeaconPort, true, true) && !sock_.open(0, false, true)) return false;
+    if (!sock_.open(kLanBeaconPort, 0, /*reuse=*/true) && !sock_.open(0)) return false;
+    sock_.set_broadcast(true);
     lan_multicast_acquire();
     locked_ = true;
     last_ = 0;
@@ -161,8 +162,8 @@ void LanAnnouncer::update(std::uint64_t now) {
 
 bool LanBrowser::open() {
     close();
-    const bool l = listen_.open(kLanBeaconPort, true, true);
-    const bool q = query_.open(0, false, true);
+    const bool l = listen_.open(kLanBeaconPort, 0, /*reuse=*/true) && listen_.set_broadcast(true);
+    const bool q = query_.open(0) && query_.set_broadcast(true);
     if (!l && !q) return false;
     lan_multicast_acquire();
     locked_ = true;

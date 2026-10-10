@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "skirmish.hpp"
@@ -32,7 +33,7 @@ constexpr int kSlots = 8;
 constexpr int kRandom = -2;        // country / colour "Random"
 constexpr int kNoTeam = -1;
 constexpr int kRandomStart = -1;
-constexpr std::uint16_t kNetProto = 1;   // bump on any lobby/session wire change
+constexpr std::uint16_t kNetProto = 2;   // bump on any lobby/session wire change (2: NET-PLAY platform tag, GO peer table)
 constexpr std::uint32_t kSimVersion = 1; // bump on any sim change affecting determinism
 
 enum class SlotKind : std::uint8_t { Open = 0, Closed = 1, Human = 2, AI = 3 };
@@ -62,7 +63,22 @@ struct MpOptions {
     bool mcv_repacks = true;
     bool crates = true;
     int tech_level = 10;
+    // NET-PLAY (clone extensions, 05-transport-infra.md §6.3 / §7):
+    bool ai_takeover = false;      // a player who leaves / drops: an AI takes the house over (else defeated)
+    bool cross_platform = false;   // "Cross-platform (experimental)": admit Windows + Android peers
 };
+
+// NET-PLAY: this build's platform tag for the lobby handshake
+// (1 Windows / desktop, 2 Android arm64, 3 Android x86_64).
+inline std::uint8_t platform_code() {
+#if defined(__ANDROID__) && defined(__aarch64__)
+    return 2;
+#elif defined(__ANDROID__)
+    return 3;
+#else
+    return 1;
+#endif
+}
 
 struct MpMap {
     std::string file;              // multimd.mix entry, e.g. "xmp01t4.map"
@@ -133,6 +149,10 @@ struct MpSessionConfig {
     MpTransportKind transport = MpTransportKind::Lan;
     std::string host_addr;         // LAN: host ip:port; tunnel: server ip:v3port
     std::uint32_t local_v3 = 0, host_v3 = 0;
+    // NET-PLAY: transport peer of every remote human slot (GO's peer table;
+    // the host fills it from its own view). resolve_session copies it into
+    // MpPlayer::peer.
+    std::vector<std::pair<int, std::uint64_t>> slot_peers;
     std::vector<MpPlayer> players; // occupied slots in slot order
 };
 

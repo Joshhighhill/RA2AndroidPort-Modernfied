@@ -256,6 +256,35 @@ A screenshot with the overlay on (three-finger tap) is just as good.
 Optional system-side numbers: `adb shell dumpsys gfxinfo org.ra2.engine`
 (frame times) and `adb shell dumpsys meminfo org.ra2.engine` (memory).
 
+## 5b. Network play (LAN and Internet)
+
+**LAN.** All machines on the same network. Host: *Network* -> *Host Game*
+(the lobby shows the address others can type, e.g. `192.168.1.20:50020`).
+Others: *Network*, pick the game from the list, or *Join by IP*. Choose
+country / colour / team / start, joiners press *Ready*, the host presses
+*Start Game*. Ports: UDP 50010 (LAN game list, broadcast) and UDP 50020
+(the game; `RA2.INI [Net] LanPort=`). Allow `ra2engine.exe` / `ra2game.exe`
+through the Windows firewall for private networks when Windows asks.
+
+**Internet.** One person runs `ra2lobbyd` on a server ([SERVER.md](SERVER.md)).
+Everyone types its address under *Internet* -> *Connect*; the host creates a
+room (public, or private with a code), the others join from the list or with
+the code. Game traffic is relayed by the server's CnCNet-V3 tunnel (UDP 50001
+on the server), so nobody needs port forwarding.
+
+**In the game.** Enter (desktop) or the *Chat* button (touch) opens the chat
+line. The options menu does not pause the game; saving / loading is disabled.
+*Abort* leaves cleanly (the others see "has left the game"). If a player's
+connection stops, everyone waits; a dialog names the player with a countdown
+and offers *Drop player* / *Quit game*. A dropped or leaving player's base is
+destroyed, or taken over by the computer when the host ticked *AI takes over*.
+
+**Limits.** Windows and Android cannot play the same match yet (they would go
+out of sync until the deterministic-maths work, net L0, is merged); the host
+refuses a player on the other platform unless *Cross-platform (exp.)* is on.
+A player whose app was closed or whose network changed cannot rejoin a running
+match yet. Every player needs the same game files and engine version.
+
 ## 6. Troubleshooting
 
 | Symptom | Fix |
@@ -266,6 +295,13 @@ Optional system-side numbers: `adb shell dumpsys gfxinfo org.ra2.engine`
 | The window is 1280x720 although `RA2.INI` asked for more | `ScreenWidth` / `ScreenHeight` did not fit the display (or the graphics driver's limit); the engine fell back and rewrote `[Video]`. Pick a size in Options. |
 | A save shows "Older version" / "Newer version" | It was written by another engine version and cannot be loaded (saves do not carry over between versions yet). |
 | Android: logs | `adb logcat -s SDL SDL/APP RA2Setup` shows the asset folder, `[load]` timings and `[lifecycle]` events. |
+| Network: the game is not in the LAN list | Use *Join by IP* with the host's address. Check that both are on the same network and the firewall allows the game (UDP 50010 / 50020). Guest / hotel Wi-Fi often blocks devices from seeing each other. |
+| Network: "Your game version / game data differs from the host's" | Everyone needs the same engine version and the same `rulesmd.ini` (the same game files). |
+| Network: "The host plays on another platform" | Windows and Android cannot play together yet; the host can tick *Cross-platform (exp.)* to try anyway (expect "Out of sync"). |
+| Network: "Scenarios do not match" at the start | The players' game files (rules / maps) differ. |
+| Network: "Out of sync!" | The games stopped agreeing. `Saved Games/DESYNC_F<frame>_H<house>.SAV` and `.TXT` were written on every machine; please send all of them (the TXT files name the part of the game that differed). |
+| Network: "Waiting for players..." for long | That player's connection stopped (or the phone app is in the background: then a 90 s countdown shows). After the countdown use *Drop player*, or wait for the automatic drop. |
+| Internet: cannot connect to the server | Check the address and that the server's TCP 50000 / UDP 50001 are open ([SERVER.md](SERVER.md)). |
 | Windows: logs of `ra2game.exe` | `%APPDATA%\ra2engine\RA2\ra2engine.log` (rewritten on each start). |
 | "COULD NOT LOAD THAT SAVED GAME" / "Error loading game" | The save is from another engine version, or its contents point outside the game (the loader range-checks every unit and building reference). |
 

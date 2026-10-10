@@ -23,21 +23,17 @@
 // The options string inside GAME_OPTIONS / GO is the original comma layout
 // starting with the seed (mp_options.hpp).
 //
-// INTERIM: agent T owns the canonical 0x1236 framing in engine/net/; this
-// file mirrors §2.1/§2.3 byte for byte so the swap is a rename. SDL-free.
+// NET-PLAY: the datagram CRC, the 0x1236 header, ACK / resend / dedupe and
+// the chat packet layout are engine/net's (wire.hpp, channel.hpp,
+// global_msg.hpp; mp_net.hpp wires the lobby onto them). This file keeps the
+// lobby's command bodies. SDL-free.
 #include <cstdint>
 #include <string>
 #include <vector>
 
 namespace ra2mp {
 
-constexpr std::uint16_t kGlobalMagic = 0x1236;
-constexpr std::uint16_t kProductYR = 0xAA04;
-constexpr std::size_t kGlobalHeader = 16;
-constexpr std::size_t kGlobalBody = 0x1C7;   // 455
-constexpr std::size_t kMaxDatagram = 0x280;  // receive buffer; len >= 0x280 is dropped
-
-enum GlobalCode : std::uint8_t { kDataAck = 0, kDataNoAck = 1, kAck = 2 };
+constexpr std::size_t kGlobalBody = 0x1C7;   // 455: GlobalPacketType (engine/net kGlobalMaxPayload)
 
 enum LobbyCmd : std::uint32_t {
     kCmdQueryJoin = 0x06,
@@ -51,21 +47,6 @@ enum LobbyCmd : std::uint32_t {
     kCmdReadyToGo = 0x13,
     kCmdSlotRequest = 0x40,   // clone extension
 };
-
-// Add_CRC (FUN_0064D8C0) over a byte buffer.
-std::uint32_t add_crc(const std::uint8_t* p, std::size_t n);
-
-struct GlobalPacket {
-    std::uint8_t code = kDataAck;
-    std::uint32_t packet_id = 0;
-    std::uint16_t product = kProductYR;
-    std::vector<std::uint8_t> body;   // kGlobalBody bytes for DATA_*, empty for ACK
-};
-
-// Full datagram (CRC + header + body). The body is zero-padded / cut to 455.
-std::vector<std::uint8_t> encode_global(const GlobalPacket& g);
-// Validates CRC, length, magic and product; false = drop.
-bool decode_global(const std::uint8_t* p, std::size_t n, GlobalPacket& out);
 
 // --- body helpers (little-endian, bounds-checked) ---------------------------
 struct BodyWriter {
@@ -106,22 +87,8 @@ struct ChatPacket {
 };
 std::vector<std::uint8_t> encode_chat(const ChatPacket& c);
 bool decode_chat(const std::vector<std::uint8_t>& body, ChatPacket& out);
-// Add_CRC over a session (room) name: the chat packet's game-name hash.
+// Add_CRC (engine/net packet_crc) over a session (room) name: the chat
+// packet's game-name hash.
 std::uint32_t game_name_hash(const std::string& name);
-
-// UTF-8 <-> UTF-16LE (BMP; other code points become '?').
-std::vector<std::uint16_t> utf8_to_utf16(const std::string& s);
-std::string utf16_to_utf8(const std::uint16_t* p, std::size_t n);
-
-// --- CnCNet tunnel V3 header (02-cncnet.md §3.2) ----------------------------
-// INTERIM stand-in for agent T's tunnel header wrapper.
-constexpr std::size_t kV3Header = 8;
-void v3_wrap(std::uint32_t sender, std::uint32_t receiver, const std::vector<std::uint8_t>& payload,
-             std::vector<std::uint8_t>& out);
-bool v3_unwrap(const std::uint8_t* p, std::size_t n, std::uint32_t& sender, std::uint32_t& receiver,
-               const std::uint8_t*& payload, std::size_t& plen);
-// The 50-byte tunnel ping (ids 0/0) and its 12-byte reply.
-std::vector<std::uint8_t> v3_ping_request(std::uint32_t nonce);
-bool v3_is_ping_reply(const std::uint8_t* p, std::size_t n, std::uint32_t nonce);
 
 }  // namespace ra2mp
