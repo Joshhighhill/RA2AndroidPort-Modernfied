@@ -29,8 +29,12 @@ struct SkirmishLoadArt {
         return soviet ? "russia" : "ustates";   // Random: the side's first country until resolved
     }
     void load(const ra2engine::SkirmishConfig& cfg) {
-        const bool soviet = !cfg.slots.empty() && cfg.slots[0].side == ra2engine::World::Side::Soviet;
-        const std::string country = cfg.slots.empty() ? std::string() : cfg.slots[0].country;
+        // L2: the loading screen shows the LOCAL player's country.
+        ra2engine::SkirmishConfig c2 = cfg;
+        apply_debug_humans(c2);
+        const std::size_t ls = static_cast<std::size_t>(local_slot_of(c2));
+        const bool soviet = ls < cfg.slots.size() && cfg.slots[ls].side == ra2engine::World::Side::Soviet;
+        const std::string country = ls < cfg.slots.size() ? cfg.slots[ls].country : std::string();
         art_name = "ls800" + country_art(country, soviet) + ".shp";
         static const std::pair<const char*, const char*> kPal[] = {
             {"ustates", "mplsu.pal"}, {"ukingdom", "mplsuk.pal"}, {"russia", "mplsr.pal"}, {"libya", "mplsl.pal"},
