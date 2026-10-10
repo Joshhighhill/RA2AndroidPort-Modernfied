@@ -411,7 +411,7 @@ TEST_CASE("projectile world: firewall CLOSED -> the instant hit lands the same s
     Rig r;
     r.world.add_combat_unit(0, 0, 0, cannon_stats());
     r.world.add_combat_unit(5, 0, 1, soft_target_stats());
-    r.world.step(1.0 / 15.0);  // auto-acquire + fire (rof_cool starts 0)
+    r.world.step(1.0 / 15.0);  // auto-acquire + fire (rearm_frames starts 0)
     CHECK(r.world.units()[1].hp == 1000 - 90);
     CHECK(r.world.take_projectile_events().empty());
     CHECK(r.world.projectiles().empty());

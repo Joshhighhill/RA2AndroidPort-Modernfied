@@ -151,7 +151,7 @@ struct Unit {
                                     // setting one clears the other (Buildings
                                     // & Construction Task 4).
     bool attack_order = false;     // explicit order (pursues) vs auto-acquire
-    double rof_cool = 0.0;         // seconds until the weapon may fire again
+    int rearm_frames = 0;          // whole frames until the weapon may fire again (Net L0; the original's frame RearmTimer)
     double fire_flash = 0.0;       // seconds of fire-anim left (renderer)
     // W3-B: the active weapon's warhead InfDeath= / ProneDamage= (set with the
     // other w_* fields) and the infantry sequence state. Inert unless

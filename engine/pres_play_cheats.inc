@@ -73,7 +73,7 @@ auto pres_find_unit = [&](const std::string& spec) -> int {
 if (args.size() == 2 && args[0] == "pres_iron") {
     const int i = pres_find_unit(args[1]);
     if (i < 0) return false;
-    world_.units()[static_cast<std::size_t>(i)].an.iron_left = std::max(1, world_.sw_params().iron_frames) / 15.0;
+    world_.units()[static_cast<std::size_t>(i)].an.iron_left_frames = std::max(1, world_.sw_params().iron_frames);
     return true;
 }
 if (args.size() == 3 && args[0] == "pres_vet") {

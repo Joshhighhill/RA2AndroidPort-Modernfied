@@ -265,7 +265,7 @@ void World::an_damage_unit(int idx, int dmg, int attacker) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     Unit& v = units_[idx];
     if (!v.alive || v.die_time >= 0.0 || dmg <= 0) return;
-    if (v.an.iron_left > 0.0) return;   // W2-AN-04 Iron Curtain
+    if (v.an.iron_left_frames > 0.0) return;   // W2-AN-04 Iron Curtain
     v.hp -= dmg;
     if (v.hp <= 0) {
         v.die_time = 0.0;
@@ -282,7 +282,7 @@ void World::an_damage_building(int b, int dmg) {
     if (b < 0 || b >= static_cast<int>(buildings_.size())) return;
     Building& B = buildings_[b];
     if (!B.alive || B.state == Building::State::Dead || dmg <= 0) return;
-    if (B.iron_left > 0.0) return;
+    if (B.iron_left_frames > 0.0) return;
     B.hp -= dmg;
     if (B.hp <= 0) kill_building(B);
 }
@@ -387,7 +387,7 @@ void World::an_nuke_detonate(const SwStrike& s) {
 
 void World::an_iron_curtain(int house, int cx, int cy) {
     (void)house;
-    const double secs = an_.sw.iron_frames / 15.0;
+    const int secs = an_.sw.iron_frames;   // Net L0: whole frames
     for (const auto& o : kArea3x3) {
         const int x = cx + o[0], y = cy + o[1];
         for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
@@ -397,20 +397,20 @@ void World::an_iron_curtain(int house, int cx, int cy) {
             if (u.an.t.organic) {
                 // [RE-FALLBACK: the IronCurtain virtual (+0x154) body was not
                 // decompiled; classic RA2 kills infantry caught in the curtain.]
-                u.an.iron_left = 0.0;
+                u.an.iron_left_frames = 0;
                 an_damage_unit(i, u.hp, -1);
                 continue;
             }
-            u.an.iron_left = secs;
+            u.an.iron_left_frames = secs;
         }
         const int b = building_at_cell(x, y);
-        if (b >= 0) buildings_[b].iron_left = secs;
+        if (b >= 0) buildings_[b].iron_left_frames = secs;
     }
 }
 
 void World::an_chrono(int house, int sx, int sy, int tx, int ty) {
     (void)house;
-    const double freeze = an_.sw.chrono_delay_frames / 15.0;
+    const int freeze = an_.sw.chrono_delay_frames;   // Net L0: whole frames
     // Collect first (a teleported unit must not be picked up again at its
     // destination when the two areas overlap).
     std::vector<std::pair<int, int>> movers;   // unit, offset index
@@ -428,7 +428,7 @@ void World::an_chrono(int house, int sx, int sy, int tx, int ty) {
         Unit& u = units_[i];
         // The chrono-kill branch: Organic && !Teleporter -> full-Strength damage.
         if (u.an.t.organic && !u.an.t.teleporter) {
-            u.an.iron_left = 0.0;
+            u.an.iron_left_frames = 0;
             an_damage_unit(i, u.hp, -1);
             continue;
         }
@@ -451,7 +451,7 @@ void World::an_chrono(int house, int sx, int sy, int tx, int ty) {
                     }
         }
         if (fx < 0) {
-            u.an.iron_left = 0.0;
+            u.an.iron_left_frames = 0;
             an_damage_unit(i, u.hp, -1);
             continue;
         }
@@ -469,7 +469,7 @@ void World::an_chrono(int house, int sx, int sy, int tx, int ty) {
         u.guard_y = fy;
         if (!u.is_aircraft) occ_.set(fx, fy, i);
         if (const ra2assets::MapCell* mc = map_ ? map_->at(fx, fy) : nullptr) u.level = mc->level;
-        u.an.chrono_left = freeze;
+        u.an.chrono_left_frames = freeze;
         u.frozen = true;
     }
 }

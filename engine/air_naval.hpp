@@ -77,12 +77,12 @@ struct AnUnit {
     // --- naval ---
     bool in_water = false;            // stands on a water cell (ships always)
     bool submerged = false;           // cloaked sub (Underwater+Cloakable)
-    double surface_left = 0.0;        // seconds left surfaced after firing (CloakDelay)
+    int surface_left_frames = 0;      // whole frames left surfaced after firing (CloakDelay; Net L0)
     std::uint8_t detected_mask = 0;   // bit h: house h's sonar sees this sub
     bool sinking = false;             // ShipSinkingWeight death (renderer)
     // --- superweapons ---
-    double iron_left = 0.0;           // Iron Curtain invulnerability left (seconds)
-    double chrono_left = 0.0;         // frozen after a Chrono Warp (seconds)
+    int iron_left_frames = 0;         // Iron Curtain invulnerability left (whole frames; Net L0)
+    int chrono_left_frames = 0;       // frozen after a Chrono Warp (whole frames; Net L0)
     // --- aircraft ---
     bool crashing = false;            // Crashable death: falling (renderer tilts)
     int ammo = 0;                     // fixed-wing ammo left

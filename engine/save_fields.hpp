@@ -383,8 +383,8 @@ template <class Ar> void fields(Ar& ar, AnType& v) {   // W2-AN (save v9)
     io(ar, v.rocket_kind); io(ar, v.rocket_speed); io(ar, v.no_shadow);   // W4 (v15)
 }
 template <class Ar> void fields(Ar& ar, AnUnit& v) {   // W2-AN (save v9)
-    io(ar, v.t); io(ar, v.in_water); io(ar, v.submerged); io(ar, v.surface_left);
-    io(ar, v.detected_mask); io(ar, v.sinking); io(ar, v.iron_left); io(ar, v.chrono_left);
+    io(ar, v.t); io(ar, v.in_water); io(ar, v.submerged); io(ar, v.surface_left_frames);
+    io(ar, v.detected_mask); io(ar, v.sinking); io(ar, v.iron_left_frames); io(ar, v.chrono_left_frames);
     io(ar, v.crashing); io(ar, v.ammo); io(ar, v.sortie); io(ar, v.home); io(ar, v.pad);
     io(ar, v.reload_timer); io(ar, v.attack_unit); io(ar, v.attack_building);
     io(ar, v.attack_x); io(ar, v.attack_y); io(ar, v.pass_cool); io(ar, v.spawn_ready);
@@ -973,7 +973,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.target);
     io(ar, v.target_building);
     io(ar, v.attack_order);
-    io(ar, v.rof_cool);
+    io(ar, v.rearm_frames);
     io(ar, v.fire_flash);
     io(ar, v.w_inf_death); io(ar, v.w_prone_damage); io(ar, v.ia);   // W3-B
     io(ar, v.guard_x); io(ar, v.guard_y);
@@ -1138,7 +1138,7 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.ability_death_done);
     // Gap fix C: defense combat state
     io(ar, v.def_target);
-    io(ar, v.def_rof_cool);
+    io(ar, v.def_rearm_frames);
     io(ar, v.def_turret_facing);
     io(ar, v.def_slot);
     io(ar, v.def_fire_flash);
@@ -1146,9 +1146,9 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     // G16 garrison
     io(ar, v.occupants);
     io(ar, v.firing_occupant);
-    io(ar, v.garrison_rof_cool);
+    io(ar, v.garrison_rearm_frames);
     io(ar, v.garrison_target);
-    io(ar, v.iron_left);   // W2-AN-04 (save v9)
+    io(ar, v.iron_left_frames);   // W2-AN-04 (save v9)
     io(ar, v.w5);          // wave-5 abilities (agent C)
     io(ar, v.power_off);   // W5-E2 power-down (save v21)
     io(ar, v.w6);          // v25: wave-6 #4

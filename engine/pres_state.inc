@@ -47,7 +47,7 @@ inline void pres_tint_brightness(ra2engine::ObjTint& t, int b) {
 }
 
 inline bool pres_unit_warping(const ra2engine::World& w, const ra2engine::Unit& u) {
-    return u.an.chrono_left > 0.0 || u.warp_remaining > 0 ||
+    return u.an.chrono_left_frames > 0.0 || u.warp_remaining > 0 ||
            (u.warp_until >= 0 && static_cast<std::int64_t>(w.ability_frame()) < u.warp_until);
 }
 
@@ -63,8 +63,8 @@ inline bool pres_unit_tint(const ra2engine::World& w, int idx, ra2engine::ObjTin
         const double rel = g_light->object_rel(u.level + pres_unit_lift_levels(w, u));
         if (std::abs(rel - 1.0) > 1e-3) { b = static_cast<int>(std::lround(b * rel)); any = true; }
     }
-    if (u.an.iron_left > 0.0) {   // [RE: 0x70D7B0] brightness * f / 256
-        const long L = std::lround(u.an.iron_left * 15.0);
+    if (u.an.iron_left_frames > 0.0) {   // [RE: 0x70D7B0] brightness * f / 256
+        const long L = u.an.iron_left_frames;
         const long t = std::max(0L, static_cast<long>(g_iron_frames) - L);
         b = std::min(2000, b * pres_iron_f256(t, L) / 256);
         any = true;
@@ -93,8 +93,8 @@ inline bool pres_building_tint(const ra2engine::World& w, const ra2engine::Build
         const double rel = g_light->object_rel(mc ? mc->level : 0);
         if (std::abs(rel - 1.0) > 1e-3) { br = static_cast<int>(std::lround(br * rel)); any = true; }
     }
-    if (b.iron_left > 0.0) {
-        const long L = std::lround(b.iron_left * 15.0);
+    if (b.iron_left_frames > 0.0) {
+        const long L = b.iron_left_frames;
         const long t = std::max(0L, static_cast<long>(g_iron_frames) - L);
         br = std::min(2000, br * pres_iron_f256(t, L) / 256);
         any = true;

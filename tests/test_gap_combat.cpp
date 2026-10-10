@@ -214,8 +214,7 @@ TEST_CASE("gapC G-50: min-1 damage after Verses, 0 % stays 0; ROF rearm jitter i
     ProjRng rng;
     int seen[3] = {0, 0, 0};
     for (int i = 0; i < 300; ++i) {
-        const double s = rearm_secs(20, &rng);
-        const int extra = static_cast<int>(std::lround(s * 15.0)) - 20;
+        const int extra = rearm_frames_for(20, &rng) - 20;   // Net L0: whole frames
         REQUIRE(extra >= 0);
         REQUIRE(extra <= 2);
         ++seen[extra];
@@ -223,7 +222,7 @@ TEST_CASE("gapC G-50: min-1 damage after Verses, 0 % stays 0; ROF rearm jitter i
     CHECK(seen[0] > 0);
     CHECK(seen[1] > 0);
     CHECK(seen[2] > 0);
-    CHECK(rearm_secs(20, nullptr) == 20.0 / 15.0);
+    CHECK(rearm_frames_for(20, nullptr) == 20);
 }
 
 TEST_CASE("gapC crush + stop/scatter on the real map (G-47)") {
@@ -323,4 +322,16 @@ TEST_CASE("gapC G-46: an idle unit engages an enemy base defense in range, not a
     for (int f = 0; f < 30; ++f) w.step(1.0 / 15.0);
     CHECK(w.buildings()[1].hp < 400);
     CHECK(w.buildings()[0].hp == 750);
+}
+
+// Net L0 (docs/gap/net/03-sim-bitexact.md D3): the rearm timer is a whole-frame
+// countdown, so a k-frame ROF fires exactly every k ticks -- the old seconds
+// timer ((k)/15 minus 1/15 per tick) slipped to k+1 for most k.
+TEST_CASE("netL0: a k-frame rearm expires after exactly k decrements, for every k") {
+    for (int k = 1; k <= 300; ++k) {
+        int t = ra2engine::rearm_frames_for(k, nullptr);
+        int ticks = 0;
+        while (t > 0) { --t; ++ticks; }
+        CHECK(ticks == k);
+    }
 }

@@ -174,7 +174,7 @@ struct Building {
     // --- Gap fix C: base-defense combat state (World::step_building_combat).
     // Inert for unarmed types; NOT read by world_hash.
     int def_target = -1;             // unit index being engaged, -1 none
-    double def_rof_cool = 0.0;       // seconds until the weapon may fire again
+    int def_rearm_frames = 0;        // whole frames until the weapon may fire again (Net L0)
     double def_turret_facing = 32768.0;  // u16 turret facing (Turret=yes types)
     int def_slot = 0;                // weapon slot of the last shot
     double def_fire_flash = 0.0;     // seconds of muzzle flash left (renderer)
@@ -183,10 +183,10 @@ struct Building {
     // (+0x688) / FiringOccupantIndex (+0x69C). Inert; NOT read by world_hash.
     std::vector<int> occupants;      // unit indices, in entry order
     int firing_occupant = 0;
-    double garrison_rof_cool = 0.0;
+    int garrison_rearm_frames = 0;   // whole frames (Net L0)
     int garrison_target = -1;
     // W2-AN-04: Iron Curtain invulnerability left (seconds); 0 = none.
-    double iron_left = 0.0;
+    int iron_left_frames = 0;        // Iron Curtain frames left (Net L0)
     // W5-E2 [RE: BuildingClass +0x660 HasPower; GoOffline FUN_00452350 /
     // GoOnline FUN_00452250]: powered down by the owner (TS-era power-toggle
     // mode, trigger TurnOff/TurnOn). A powered-down building draws no power

@@ -131,20 +131,20 @@ void World::an_step_naval(double dt) {
             } else {
                 // W6-04-25: a DecloakToFire=no weapon fires without surfacing.
                 if (u.fire_flash >= 0.4 - 1e-9 && u.w6.t.decloak_to_fire)
-                    u.an.surface_left = P.cloak_delay_frames / 15.0;
-                u.an.surface_left = std::max(0.0, u.an.surface_left - dt);
-                u.an.submerged = u.an.surface_left <= 0.0;
+                    u.an.surface_left_frames = P.cloak_delay_frames;
+                if (u.an.surface_left_frames > 0) --u.an.surface_left_frames;   // Net L0: whole frames
+                u.an.submerged = u.an.surface_left_frames <= 0;
             }
         }
         // Iron Curtain / Chrono freeze countdowns.
-        if (u.an.iron_left > 0.0) u.an.iron_left = std::max(0.0, u.an.iron_left - dt);
-        if (u.an.chrono_left > 0.0) {
-            u.an.chrono_left = std::max(0.0, u.an.chrono_left - dt);
-            if (u.an.chrono_left <= 0.0 && !u.abil_bound) u.frozen = false;
+        if (u.an.iron_left_frames > 0) --u.an.iron_left_frames;   // Net L0: whole frames
+        if (u.an.chrono_left_frames > 0) {
+            --u.an.chrono_left_frames;
+            if (u.an.chrono_left_frames <= 0 && !u.abil_bound) u.frozen = false;
         }
     }
     for (Building& b : buildings_)
-        if (b.iron_left > 0.0) b.iron_left = std::max(0.0, b.iron_left - dt);
+        if (b.iron_left_frames > 0) --b.iron_left_frames;
     // Sonar [RE: naval.md Deferred, FUN_00740780; rules Sensors=yes
     // SensorsSight=]: a submerged sub is visible (and so targetable) to a house
     // that has a live Sensors unit within SensorsSight cells of it.
@@ -350,7 +350,7 @@ void World::an_step_fixed_wing(double dt) {
             const int tu = u.target, tb = u.target_building;
             order_fixed_wing(i, tu, tb, -1, -1);
         }
-        u.rof_cool = std::max(0.0, u.rof_cool - dt);
+        if (u.rearm_frames > 0) --u.rearm_frames;   // Net L0: whole frames
         u.fire_flash = std::max(0.0, u.fire_flash - dt);
         // --- where to fly ---
         double gx = u.fx, gy = u.fy;
@@ -452,7 +452,7 @@ void World::an_step_fixed_wing(double dt) {
                 if (!target_alive || u.an.ammo <= 0) { u.an.sortie = kReturn; break; }
                 goal_x = gx; goal_y = gy; fly = true;
                 // Attack pass: in weapon range -> fire one ammo point.
-                if (cdist(u.fx, u.fy, gx, gy) <= std::max(1.0, u.w_range) && u.rof_cool <= 0.0 &&
+                if (cdist(u.fx, u.fy, gx, gy) <= std::max(1.0, u.w_range) && u.rearm_frames <= 0.0 &&
                     u.altitude >= P.flight_level * 0.5) {
                     // W4: a flying projectile (the Harrier / Black Eagle
                     // Maverick, the Hornet / Osprey bombs: ROT>0 homing) is
@@ -480,13 +480,13 @@ void World::an_step_fixed_wing(double dt) {
                             for (int k = 0; k < std::max(1, u.w6.burst); ++k) {
                                 if (k > 0 && (!buildings_[tb].alive || buildings_[tb].hp <= 0)) break;
                                 if (projectiles_enabled_ && u.w_proj.flies()) launch_projectile(i, -1, tb);
-                                else if (buildings_[tb].iron_left <= 0.0 &&
+                                else if (buildings_[tb].iron_left_frames <= 0.0 &&
                                          !w6_wall_building_hit(*this, units_, buildings_, tb, u.w6.wall_flags, u.w_damage))   // W6-04-04
                                     deliver_building_hit(units_, buildings_, i, tb);
                             }
                         }
                     }
-                    u.rof_cool = std::max(1, u.w_rof) / 15.0;
+                    u.rearm_frames = std::max(1, u.w_rof);
                     u.fire_flash = 0.4;
                     fire_events_.push_back({i, -1, tu, tb, u.w_active, ""});
                     --u.an.ammo;
@@ -899,7 +899,7 @@ void World::step_air_naval(double dt) {
         // Open the firewall lazily: any unit carrying W2-AN type data.
         for (const Unit& u : units_)
             if (u.an.t.underwater || u.an.t.sensors || u.an.t.spawner_slot >= 0 || u.an.t.fixed_wing ||
-                u.an.t.crashable || (u.is_naval && u.an.t.weight > 1.0) || u.an.iron_left > 0.0 ||
+                u.an.t.crashable || (u.is_naval && u.an.t.weight > 1.0) || u.an.iron_left_frames > 0.0 ||
                 u.movement_domain == MovementDomain::Amphibious) {
                 an_.any = true;
                 break;

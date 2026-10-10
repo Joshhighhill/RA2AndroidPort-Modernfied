@@ -1209,7 +1209,7 @@ TEST_CASE("World::step anim-override: firing unit faces its target (docs/re/infa
     world.add_combat_unit(1, 0, 1, cons_stats());  // index 1: victim (CONS, house 1), due east
 
     // Idle proximity: step_combat auto-acquires the nearest hostile in range
-    // and fires immediately (rof_cool starts at 0) -- no explicit order needed.
+    // and fires immediately (rearm_frames starts at 0) -- no explicit order needed.
     world.step(1.0 / 60.0);
 
     const ra2engine::Unit& attacker = world.units()[0];

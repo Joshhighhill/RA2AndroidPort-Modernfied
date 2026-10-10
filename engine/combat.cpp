@@ -120,7 +120,7 @@ const VeterancyRules* vet_rules_of(const World& world) {
 void try_fire(const World& world, std::vector<Unit>& units, std::vector<Building>& buildings,
               Unit& u, Unit& v, int attacker_idx, int victim_idx, Occupancy& occ,
               std::vector<ProjectileLaunch>* launches, ProjRng* rng) {
-    u.rof_cool = unit_rearm_secs(u, rng);   // W6-04-01 Burst
+    u.rearm_frames = unit_rearm_frames(u, rng);   // W6-04-01 Burst
     u.fire_flash = kFireFlashSecs;
     // W2-AN-12 [rules Spawner=yes: HornetLauncher/ASWLauncher/DredLauncher/
     // V3Launcher]: the "shot" launches a spawned aircraft/missile at the
@@ -197,23 +197,26 @@ void try_fire(const World& world, std::vector<Unit>& units, std::vector<Building
 // supersedes combat.md §5]: RearmTimer = ftol(ROF * houseROF + Random(0,2)),
 // drawn from the sync RNG at EVERY rearm. houseROF = 1.0 ([Normal] ROF=1.0).
 // `rng` null (direct pure-test callers) -> no jitter.
-double rearm_secs(int rof_frames, ProjRng* rng) {
+// Net L0: a WHOLE-FRAME count, like the original's frame CDTimerClass. The old
+// seconds value ((ROF + j) / 15, minus 1/15 per tick) expired one frame late
+// for 247 of 300 lengths (docs/gap/net/03-sim-bitexact.md D3, timer_drift.py).
+int rearm_frames_for(int rof_frames, ProjRng* rng) {
     const int jitter = rng ? rng->random(0, 2) : 0;
-    return (rof_frames + jitter) / kLogicFps;
+    return rof_frames + jitter;
 }
 
-double burst_rearm_secs(int& burst_index, int burst, int rof_frames, ProjRng* rng) {
+int burst_rearm_frames(int& burst_index, int burst, int rof_frames, ProjRng* rng) {
     burst = std::max(1, burst);
     ++burst_index;
-    double secs;
-    if (burst_index < burst) secs = (rng ? rng->random(3, 5) : 3) / kLogicFps;
-    else secs = rearm_secs(rof_frames, rng);
+    int frames;
+    if (burst_index < burst) frames = rng ? rng->random(3, 5) : 3;
+    else frames = rearm_frames_for(rof_frames, rng);
     burst_index %= burst;
-    return secs;
+    return frames;
 }
 
-double unit_rearm_secs(Unit& u, ProjRng* rng) {
-    return burst_rearm_secs(u.w6.burst_index, u.w6.burst, u.w_rof, rng);
+int unit_rearm_frames(Unit& u, ProjRng* rng) {
+    return burst_rearm_frames(u.w6.burst_index, u.w6.burst, u.w_rof, rng);
 }
 
 // P2: the single-target damage tail extracted VERBATIM from try_fire's old
@@ -242,7 +245,7 @@ void deliver_hit_from(std::vector<Unit>& units, Occupancy& occ, const Unit& u, i
     if (v.vet.recv) raw = vet_receive(raw, v.vet);
     raw = inf_prone_damage(v.ia, raw, u.w_prone_damage);   // W3-B ProneDamage (armed infantry only)
     // W2-AN-04: an Iron-Curtained unit takes no damage.
-    const int dmg = v.an.iron_left > 0.0 ? 0 : damage_vs(raw, u.w_verses, v.armor_ix);
+    const int dmg = v.an.iron_left_frames > 0.0 ? 0 : damage_vs(raw, u.w_verses, v.armor_ix);
     v.hp -= dmg;
     feed_damage(false, victim_idx, u.house, dmg);   // W6-03-04 anger
     if (dmg > 0)   // W3-B fear (FUN_00517db5; inert unless armed)
@@ -293,7 +296,7 @@ void deliver_building_hit(std::vector<Unit>& units, std::vector<Building>& build
     // (ArmorMultiplier, max 1, then Verses); false in every legacy World.
     int raw = u.w_damage;
     if (b->vet_recv) raw = receive_damage(raw, b->armor_mult, false, 1.0);
-    const int dmg = b->iron_left > 0.0 ? 0 : damage_vs(raw, u.w_verses, b->armor_ix);   // W2-AN-04
+    const int dmg = b->iron_left_frames > 0.0 ? 0 : damage_vs(raw, u.w_verses, b->armor_ix);   // W2-AN-04
     b->hp -= dmg;
     feed_damage(true, b_idx, u.house, dmg);   // W6-03-04 anger
     if (b->hp <= 0) {
@@ -338,7 +341,7 @@ void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ, const Unit& a
         // (the original's 3-D distance; the clone has no shared Z scale).
         if (unit_airborne(w) != unit_airborne(center)) continue;
         if (w.house == attacker.house) continue;                     // enemies only
-        if (w.an.iron_left > 0.0) continue;                          // W2-AN-04 Iron Curtain
+        if (w.an.iron_left_frames > 0.0) continue;                          // W2-AN-04 Iron Curtain
         const double d = dist_leptons(center.fx, center.fy, w.fx, w.fy);
         if (d > radius_lept) continue;                               // outside the splash
         const double frac = radius_lept > 0.0 ? d / radius_lept : 0.0;
@@ -633,7 +636,7 @@ bool w6_wall_building_hit(const World& world, std::vector<Unit>& units, std::vec
     if (b.type < 0 || b.type >= static_cast<int>(world.btypes().size()) ||
         world.btypes()[static_cast<std::size_t>(b.type)].w6.wall_levels <= 0)
         return false;
-    if (b.iron_left > 0.0) return true;
+    if (b.iron_left_frames > 0.0) return true;
     wall_building_reduce(world, units, buildings, bi,
                          wall_hit_damage(wall_flags, b.armor_ix == kWoodArmor, damage));
     return true;
@@ -690,7 +693,7 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
         if (!w.alive || w.die_time >= 0.0) continue;
         if (spared(w.house)) continue;
         if (shooter.w6.sonic && w.parasite_on_me >= 0) w.w6.sonic_hit = true;   // W6-04-09
-        if (w.an.iron_left > 0.0) continue;                          // W2-AN-04 Iron Curtain
+        if (w.an.iron_left_frames > 0.0) continue;                          // W2-AN-04 Iron Curtain
         // TechnoClass::ReceiveDamage: the house/veterancy armour multipliers on
         // the raw damage, floor 1 (P5 vet_receive; W3-B ProneDamage first).
         int raw = shooter.w_damage;
@@ -760,7 +763,7 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
                 }
                 if (d > radius) continue;
                 if (spared(b.house)) continue;
-                if (b.iron_left > 0.0) continue;                     // W2-AN-04
+                if (b.iron_left_frames > 0.0) continue;                     // W2-AN-04
                 int raw = shooter.w_damage;
                 if (b.vet_recv) raw = receive_damage(raw, b.armor_mult, false, 1.0);
                 if (raw < 1) raw = 1;
@@ -874,8 +877,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         // (c) ROF cooldown + fire-flash decay -- every living, non-dying
         // unit, every call, regardless of target state. docs/re/combat.md
         // §5: deterministic frame countdown, no jitter.
-        u.rof_cool -= dt;
-        if (u.rof_cool < 0.0) u.rof_cool = 0.0;
+        if (u.rearm_frames > 0) --u.rearm_frames;   // Net L0: one whole frame per tick
         u.fire_flash -= dt;
         if (u.fire_flash < 0.0) u.fire_flash = 0.0;
 
@@ -948,20 +950,20 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                                                   : weapon_in_range(world, u, bax, bay, baz,
                                                                     (b->fw + b->fh) * 64);
                 if (b_in_range) {
-                    if (u.rof_cool <= 0.0) {
+                    if (u.rearm_frames <= 0) {
                         // Aim gate, mirroring the unit path exactly
                         // (combat.cpp ~L276-278): a vehicle holds fire until
                         // its turret has slewed onto the nearest foundation
                         // cell (step_turrets ran this frame, before
                         // step_combat, using this same facing). Infantry are
-                        // exempt -- zero behavior change. rof_cool untouched
+                        // exempt -- zero behavior change. rearm_frames untouched
                         // while unaimed.
                         if (u.is_vehicle && !u.omni_fire && !u.w6.omni_fire &&
                             !vehicle_aimed(u, facing_u16_from_delta(
                                                   static_cast<double>(nx) - u.fx,
                                                   static_cast<double>(ny) - u.fy)))
-                            continue;  // hold fire this frame; rof_cool untouched
-                        u.rof_cool = unit_rearm_secs(u, rof_rng);   // G-50 jitter, W6-04-01 Burst
+                            continue;  // hold fire this frame; rearm_frames untouched
+                        u.rearm_frames = unit_rearm_frames(u, rof_rng);   // G-50 jitter, W6-04-01 Burst
                         u.fire_flash = kFireFlashSecs;
                         // P4 [RE: abilities.md §C2/§D/§E/§F]: an ability weapon
                         // (or a C4 infantry) hands the building shot to
@@ -1066,13 +1068,13 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
             // W5-B R-063: 3-D range to the cell centre (+ elevation / cliffs).
             if (weapon_in_range(world, u, u.attack_cell_x * 256, u.attack_cell_y * 256,
                                 world.cell_level(u.attack_cell_x, u.attack_cell_y) * 104)) {
-                if (u.rof_cool <= 0.0) {
+                if (u.rearm_frames <= 0) {
                     if (u.is_vehicle && !u.omni_fire && !u.w6.omni_fire &&
                         !vehicle_aimed(u, facing_u16_from_delta(
                                               static_cast<double>(u.attack_cell_x) - u.fx,
                                               static_cast<double>(u.attack_cell_y) - u.fy)))
                         continue;
-                    u.rof_cool = unit_rearm_secs(u, rof_rng);   // W6-04-01 Burst
+                    u.rearm_frames = unit_rearm_frames(u, rof_rng);   // W6-04-01 Burst
                     u.fire_flash = kFireFlashSecs;
                     u.cell_shot = true;
                 }
@@ -1286,7 +1288,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
 
         if (unit_in_weapon_range(world, u, v)) {   // W5-B R-063: 3-D + elevation + cliffs
             if (too_close) continue;
-            if (u.rof_cool <= 0.0) {
+            if (u.rearm_frames <= 0) {
                 // Aim gate (docs/re/voxel-render.md §5, FireError::FACING): a
                 // vehicle holds fire until its turret has finished slewing onto
                 // the target (step_turrets ran this frame, before step_combat,
@@ -1298,7 +1300,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                 // fires without the hull or turret facing the target.
                 if (u.is_vehicle && !u.omni_fire && !u.w6.omni_fire &&
                     !vehicle_aimed(u, facing_u16_from_delta(v.fx - u.fx, v.fy - u.fy)))
-                    continue;  // hold fire this frame; rof_cool untouched
+                    continue;  // hold fire this frame; rearm_frames untouched
                 try_fire(world, units, buildings, u, v, i, u.target, occ, launches, rof_rng);
             }
         } else if (u.attack_order && !(u.deploy_fire && u.deployed)) {

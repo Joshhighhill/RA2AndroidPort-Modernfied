@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include "combat.hpp"   // deliver_hit_from, rearm_secs
+#include "combat.hpp"   // deliver_hit_from, rearm_frames_for
 #include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 #include "group_move.hpp"   // nearest_free_cells
 #include "veterancy.hpp"    // has_ability (SCATTER)
@@ -226,7 +226,7 @@ void World::step_w5(double dt) {
                 if (pi < 0 || pi >= nu) continue;
                 Unit& p = units_[(std::size_t)pi];
                 if (!p.alive || p.die_time >= 0.0) continue;
-                p.rof_cool = std::max(0.0, p.rof_cool - dt);
+                if (p.rearm_frames > 0) --p.rearm_frames;   // Net L0: whole frames
                 // W6-04-15 [rules OpenTransportWeapon=, abilities-w5.md §6]: a
                 // passenger fires that slot out of the transport (a GI's Para,
                 // not its M60); -1 keeps the current weapon.
@@ -255,14 +255,14 @@ void World::step_w5(double dt) {
                     }
                 }
                 p.target = tgt;
-                if (tgt < 0 || p.rof_cool > 0.0) continue;
+                if (tgt < 0 || p.rearm_frames > 0.0) continue;
                 Unit shooter = p;
                 shooter.fx = t.fx;
                 shooter.fy = t.fy;
                 shooter.cell_x = t.cell_x;
                 shooter.cell_y = t.cell_y;
                 shooter.w_damage = om::ftol(p.w_damage * R.open_topped_damage_mult);
-                p.rof_cool = unit_rearm_secs(p, &combat_rng_);   // W6-04-01 Burst
+                p.rearm_frames = unit_rearm_frames(p, &combat_rng_);   // W6-04-01 Burst
                 fire_events_.push_back({ti, -1, tgt, -1, 0, "OpenTopped"});
                 deliver_hit_from(units_, occ_, shooter, pi, -1, tgt);
                 ++w5_.passenger_shots;
@@ -437,15 +437,15 @@ void World::w5_step_repair_ifv(double dt) {
             }
         }
         u.w5.heal_target = t;
-        u.rof_cool = std::max(0.0, u.rof_cool - dt);
+        if (u.rearm_frames > 0) --u.rearm_frames;   // Net L0: whole frames
         if (t < 0) continue;
         Unit& v = units_[(std::size_t)t];
         if (om::hypot(v.fx - u.fx, v.fy - u.fy) <= u.w_range + 1e-9) {
-            if (u.rof_cool > 0.0) continue;
+            if (u.rearm_frames > 0.0) continue;
             const int heal = damage_vs(-u.w_damage, u.w_verses, v.armor_ix);
             v.hp += std::min(heal, v.max_hp - v.hp);
             if (v.parasite_on_me >= 0) v.w6.heal_hit = true;   // W6-04-09: a healing hit ejects
-            u.rof_cool = unit_rearm_secs(u, &combat_rng_);   // W6-04-01 Burst
+            u.rearm_frames = unit_rearm_frames(u, &combat_rng_);   // W6-04-01 Burst
             u.fire_flash = 0.4;
             fire_events_.push_back({i, -1, t, -1, 0, "RepairBullet"});
             ++w5_.repairs;

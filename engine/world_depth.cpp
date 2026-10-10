@@ -7,7 +7,7 @@
 
 #include "bridges.hpp"
 #include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
-#include "combat.hpp"       // deliver_hit_from, deliver_unit_hit, deliver_building_hit, rearm_secs
+#include "combat.hpp"       // deliver_hit_from, deliver_unit_hit, deliver_building_hit, rearm_frames_for
 #include "group_move.hpp"   // nearest_free_cells
 #include "veterancy.hpp"    // is_elite
 #include "world.hpp"
@@ -220,7 +220,7 @@ void World::step_garrison_combat(double dt) {
     for (int bi = 0; bi < nb; ++bi) {
         Building& b = buildings_[bi];
         if (!b.alive || b.state != Building::State::Idle || !garrison_firing(bi)) continue;
-        b.garrison_rof_cool = std::max(0.0, b.garrison_rof_cool - dt);
+        if (b.garrison_rearm_frames > 0) --b.garrison_rearm_frames;   // Net L0: whole frames
         b.def_fire_flash = std::max(0.0, b.def_fire_flash - dt);
         if (b.firing_occupant < 0 || b.firing_occupant >= static_cast<int>(b.occupants.size()))
             b.firing_occupant = 0;
@@ -250,12 +250,12 @@ void World::step_garrison_combat(double dt) {
                 if (b.garrison_target < 0 || d < best) { b.garrison_target = j; best = d; }
             }
         }
-        if (b.garrison_target < 0 || b.garrison_rof_cool > 0.0) continue;
+        if (b.garrison_target < 0 || b.garrison_rearm_frames > 0.0) continue;
         // TechnoClass::GetROF (FUN_006FC460): ROF / OccupantCount, then
         // ftol(ROF / OccupyROFMultiplier) when the multiplier is > 1.0.
         int rof = w.rof / static_cast<int>(b.occupants.size());
         if (depth_rules_.occupy_rof_mult > 1.0) rof = ftol(rof / depth_rules_.occupy_rof_mult);
-        b.garrison_rof_cool = rearm_secs(rof, &combat_rng_);
+        b.garrison_rearm_frames = rearm_frames_for(rof, &combat_rng_);
         b.def_fire_flash = kFireFlashSecs;
         // TechnoClass::Fire (FUN_006FD210): damage x OccupyDamageMultiplier.
         Unit shooter;
