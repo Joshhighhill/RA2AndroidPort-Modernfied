@@ -6205,6 +6205,12 @@ public:
     GameScene(bool no_audio, const ra2engine::save::SaveFile& f)
         : GameScene(no_audio, config_of(f)) {
         apply_loaded(f);
+        // NET L1: a command log replays from the map's start; a game resumed
+        // from a save is not recorded (its log could not be replayed).
+        if (cmd_rec_) {
+            SDL_Log("[record] a loaded game is not recorded (replays start from the map)");
+            cmd_rec_.reset();
+        }
     }
     ~GameScene() override {
         if (cmd_rec_) {   // NET L1 --record: the end state the replay must reach
