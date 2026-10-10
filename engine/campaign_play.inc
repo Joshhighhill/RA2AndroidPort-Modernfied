@@ -58,7 +58,7 @@ private:
             for (int i = 0; i < (int)world_.buildings().size(); ++i) {
                 const ra2engine::Building& b = world_.buildings()[(std::size_t)i];
                 if (!b.alive || b.state == ra2engine::Building::State::Dead || b.type < 0) continue;
-                if (!world_.is_enemy(0, b.house) || !world_.btypes()[(std::size_t)b.type].armed) continue;
+                if (!world_.is_enemy(local_house_, b.house) || !world_.btypes()[(std::size_t)b.type].armed) continue;
                 world_.campaign_damage_building(i, b.hp + 1);
             }
             return true;

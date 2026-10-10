@@ -73,6 +73,7 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/iso_project.cpp
     ${RA2_ROOT}/engine/iso_renderer.cpp
     ${RA2_ROOT}/engine/world.cpp
+    ${RA2_ROOT}/engine/world_econ.cpp   # L2 per-house economy
     ${RA2_ROOT}/engine/world_veterancy.cpp
     ${RA2_ROOT}/engine/pathfind.cpp
     ${RA2_ROOT}/engine/orig_math.cpp
@@ -104,6 +105,15 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/visibility.cpp
     ${RA2_ROOT}/engine/skirmish.cpp
     ${RA2_ROOT}/engine/skirmish_lobby.cpp
+    # Multiplayer shell (agent S): LAN discovery, the 0x1236 lobby, the
+    # ra2lobbyd client. engine/mp/ is SDL-free (also in ra2assets_tests).
+    ${RA2_ROOT}/engine/mp/mp_socket.cpp
+    ${RA2_ROOT}/engine/mp/mini_json.cpp
+    ${RA2_ROOT}/engine/mp/lobby_wire.cpp
+    ${RA2_ROOT}/engine/mp/mp_model.cpp
+    ${RA2_ROOT}/engine/mp/mp_lobby.cpp
+    ${RA2_ROOT}/engine/mp/lan_discovery.cpp
+    ${RA2_ROOT}/engine/mp/server_link.cpp
     ${RA2_ROOT}/engine/rectfont.cpp
     ${RA2_ROOT}/engine/maplist.cpp
     ${RA2_ROOT}/engine/repair_sell.cpp
@@ -151,3 +161,19 @@ file(WRITE "${RA2_GENERATED_DIR}/ra2_notices.inc.tmp"
 configure_file("${RA2_GENERATED_DIR}/ra2_notices.inc.tmp" "${RA2_GENERATED_DIR}/ra2_notices.inc" COPYONLY)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
              "${RA2_ROOT}/THIRD_PARTY_NOTICES.md" "${RA2_ROOT}/LICENSE")
+
+# engine/net: original-format network layer (UDP + 0xAA04/0x1236 channels,
+# EventClass codec, lockstep scheduler). SDL-free; part of the engine (so the
+# Android libmain.so carries it) and of ra2assets_tests. Windows links ws2_32.
+set(RA2_NET_SOURCES
+    ${RA2_ROOT}/engine/net/udp_socket.cpp
+    ${RA2_ROOT}/engine/net/wire.cpp
+    ${RA2_ROOT}/engine/net/channel.cpp
+    ${RA2_ROOT}/engine/net/net_manager.cpp
+    ${RA2_ROOT}/engine/net/event.cpp
+    ${RA2_ROOT}/engine/net/event_codec.cpp
+    ${RA2_ROOT}/engine/net/lockstep.cpp
+    ${RA2_ROOT}/engine/net/event_map.cpp
+    ${RA2_ROOT}/engine/net/global_msg.cpp
+)
+list(APPEND RA2_ENGINE_SOURCES ${RA2_NET_SOURCES})

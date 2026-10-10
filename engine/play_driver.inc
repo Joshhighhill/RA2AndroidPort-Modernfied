@@ -314,6 +314,7 @@ private:
             else if (k == "cycle_max") cycle_max_ = std::max(1, std::atoi(v.c_str()));
             else if (k == "campaign") {}   // W2-CA-19: consumed by run_play (start scene)
             else if (k == "movie_dir") {}  // consumed by run_play (RA2_MOVIE_DIR before the shell starts)
+            else if (k == "humans" || k == "local_house") {}   // L2: consumed by run_play (before the game starts)
             else if (k == "canvas") {   // W6-01-15: `set canvas WxH` (or W H) -- before the game starts
                 int w = 0, h = 0;
                 if (c.args.size() > 2) { w = std::atoi(v.c_str()); h = std::atoi(c.args[2].c_str()); }
@@ -1018,6 +1019,26 @@ int run_play(const std::string& script_path, const std::string& out_dir_in) {
 #endif
         }
 
+    // L2 debug: `set humans 0,1` (these skirmish slots are human houses) and
+    // `set local_house N` (the scene plays house N).
+    for (const ra2play::Cmd& c : s.cmds) {
+        if (c.op != "set" || c.args.size() < 2) continue;
+        const std::string k = ra2play_drv::lower(c.args[0]);
+        if (k == "local_house") g_debug_local_house = std::atoi(c.args[1].c_str());
+        if (k == "humans") {
+            g_debug_humans.clear();
+            std::string v = c.args[1];
+            for (std::size_t i = 2; i < c.args.size(); ++i) v += "," + c.args[i];
+            std::size_t p = 0;
+            while (p <= v.size()) {
+                const std::size_t q = v.find(',', p);
+                const std::string t = v.substr(p, q == std::string::npos ? std::string::npos : q - p);
+                if (!t.empty()) g_debug_humans.push_back(std::atoi(t.c_str()));
+                if (q == std::string::npos) break;
+                p = q + 1;
+            }
+        }
+    }
     g_pres_play_log = true;   // W5-E: <out>/pres.log + the snd()/eva() probe counters
     g_pres_log.clear();
     g_pres_audio_counts.clear();

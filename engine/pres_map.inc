@@ -362,7 +362,7 @@ public:
                          const ra2assets::Palette* pals[3], const ra2engine::Camera& cam, int W, int H) {
         if (!g_fx) return;
         for (const TileAnimObj& o : tile_anims_) {
-            if (!w.explored_at(0, o.x, o.y)) continue;
+            if (!w.explored_at(g_local_house, o.x, o.y)) continue;
             const FxAnimType* t = g_fx->theater_type(o.anim);
             if (!t) continue;
             const int fr = bld_run_frame(*t, 0, g_pres_tick);
@@ -375,7 +375,7 @@ public:
     // One depth-sorted object (render_world merges these with buildings/units).
     void draw(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& w, const Obj& o,
               const ra2assets::Palette* pals[3], const ra2engine::Camera& cam, int W, int H) {
-        if (!w.explored_at(0, o.x, o.y)) return;
+        if (!w.explored_at(g_local_house, o.x, o.y)) return;
         // G16: a low bridge section shows its LIVE overlay (damaged / destroyed /
         // repaired) -- World::bridge_overlay_at.
         if (o.ovl_id >= 0 && w.bridges_enabled()) {

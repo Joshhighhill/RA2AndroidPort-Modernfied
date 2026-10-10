@@ -196,7 +196,7 @@ struct AiSoakProbe {
                         }
                         for (const ra2engine::Building& b : w.buildings())
                             if (b.alive && b.house == h && b.state != ra2engine::Building::State::Dead) ++bld_h;
-                        std::cout << " h" << h << "{u=" << alive_h << " b=" << bld_h << " cr=" << (long long)(w.ai_enabled(h) ? w.ai_credits(h) : g.player_credits_)
+                        std::cout << " h" << h << "{u=" << alive_h << " b=" << bld_h << " cr=" << (long long)w.credits(h)
                                   << " harv=" << st[1] << "/" << st[2] << "/" << st[3] << "/" << st[4] << "/"
                                   << st[5] << "/" << st[6] << "}";
                     }

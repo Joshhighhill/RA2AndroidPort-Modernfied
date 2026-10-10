@@ -256,3 +256,25 @@ Scripts: `m-all02`, `m-all04`, `m-all08`, `m-sov03`, `m-sov05`, `m-sov06`,
 `m-sov09` (one per fixed W2-CA blocker class). Real-order (cheat-free) proofs include
 `m-sov01-real`, `m-all03-real`, `m-sov07-real` (WON, about 3 min) and `m-sov09-real` (opening + the
 first power-plant blackout); their generators live in `scripts/play/gen/` (edit those, not the `.play`).
+
+## Multiplayer (agent S, engine/mp_pages.inc)
+
+Pages: `shell:Main Menu` -> `button:Network` (scene `mp-lan`) /
+`button:Internet` (scene `mp-online`) -> `mp-lobby` -> `mp-start` (the
+lockstep hand-off placeholder). Edits on every page: `edit:<id>`; while an
+edit has focus `type "..."` appends, `key delete` clears it, `key enter`
+commits (chat: sends). Probe `edit(<id>)`, `focus`, `status`.
+
+| Scene | Targets | Probe keys |
+|---|---|---|
+| `mp-lan` | `button:Host Game`, `button:Join Game`, `button:Join by IP`, `button:Back`, `edit:nick`, `edit:ip`, `game:<i>` | `lan_games`, `lan_listening`, `lan_sel`, `lan_game_host(i)`, `lan_game_room(i)`, `nick` |
+| `mp-online` | `button:Connect`, `button:Host Game`, `button:Host Private`, `button:Join Game`, `button:Join Code`, `button:Back`, `edit:server`, `edit:nick`, `edit:code`, `room:<i>` | `online_state` (`idle/connecting/hello/ready/failed`), `rooms`, `room_code(i)`, `server_name`, `motd`, `online_error` |
+| `mp-lobby` | `button:Start Game` / `button:Customize Battle` (host), `button:Ready` / `button:Not Ready` (client), `button:Back`, `edit:chat`, `combo:kind<N>` (host, rows 1-7), `combo:country<N>` / `combo:color<N>` / `combo:team<N>` / `combo:start<N>` (rows you may edit), with a list open `pick:<label>` / `item:<i>` / `list:up` / `list:down`, `check:short|mcv|crates|superweapons`, `slider:speed|credits|units=<v>` (host), `map:<file>` + `button:Use Map` / `button:Cancel` while choosing | `mp_role` (`host/client`), `mp_net` (`lan/online`), `mp_state` (`joining/joined/rejected/lost/started`), `reject_reason`, `local_slot`, `members`, `rev`, `players`, `humans`, `max_players`, `map`, `map_digest`, `room_code`, `where`, `lan_port`, `credits`, `unit_count`, `game_speed`, `check(<id>)`, `can_start`, `choosing`, `combo_open`, per slot N `slot_kind(N)` (`Open/Closed/Human/AI`), `slot_name(N)`, `slot_ready(N)`, `slot_has_map(N)`, `country(N)`, `color(N)`, `team(N)`, `start(N)`, `ai(N)`; `chat_count`, `chat_last` (`"Name: text"`), `ready` (client) |
+| `mp-start` | `button:Preview Map`, `button:Main Menu` | `session_seed`, `session_players`, `local_house`, `local_slot`, `is_host`, `session_options` (the original options string), `session_transport` (`lan/tunnel`), `session_map`, per house h `house_slot(h)`, `house_color(h)`, `house_start(h)`, `house_country(h)`, `house_ai(h)` |
+
+Network is real time (wall clock), not the harness's virtual clock: wait
+with large `until` budgets (`until 2000000 humans == 2`). Two-process tests:
+`scripts/play/mp-lan-loopback.ps1` (host + joiner over UDP, LAN discovery on
+50010) and `scripts/play/mp-online-loopback.ps1` (also starts `ra2lobbyd
+--allow-loopback`; the join goes through the room list and the CnCNet V3
+tunnel). Both check that the two games agree on the seed and options string.

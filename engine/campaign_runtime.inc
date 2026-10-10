@@ -882,7 +882,7 @@ private:
     // no base of its own.
     void arm_production_houses() {
         for (std::size_t i = 1; i < house_names_.size(); ++i) {
-            if (!w_.house_combatant((int)i) || w_.controllable((int)i)) continue;
+            if (!w_.house_combatant((int)i) || w_.human_commanded((int)i)) continue;
             const ra2engine::World::Side side = w_.house_side((int)i);
             if (side == ra2engine::World::Side::Neutral) continue;
             const unsigned fl = sys_->house_flags(house_type((int)i));
@@ -1916,7 +1916,7 @@ private:
         if (std::getenv("RA2_CAMP_DEBUG"))
             std::cerr << "[camp-debug] f" << frame_ << " leave? " << m << " " << u.image << " air=" << u.is_aircraft
                       << " fw=" << u.an.t.fixed_wing << " home=" << u.an.home << "\n";
-        if (!live(u) || !u.is_aircraft || !u.an.t.fixed_wing || w_.controllable(u.house)) return;
+        if (!live(u) || !u.is_aircraft || !u.an.t.fixed_wing || w_.human_commanded(u.house)) return;
         const int hb = u.an.home;
         if (hb >= 0 && hb < (int)w_.buildings().size() && live(w_.buildings()[(std::size_t)hb]) &&
             w_.buildings()[(std::size_t)hb].house == u.house)
@@ -2225,7 +2225,7 @@ private:
         std::vector<std::map<std::string, int>> want(house_names_.size());
         for (const Team& tm : teams_) {
             if (tm.st.done || !tm.recruiting || tm.house <= 0 || tm.house >= (int)want.size()) continue;
-            if (w_.controllable(tm.house) || !w_.ai_enabled(tm.house)) continue;
+            if (w_.human_commanded(tm.house) || !w_.ai_enabled(tm.house)) continue;
             std::vector<std::string> types;
             std::vector<int> need = taskforce_counts(tm, types);
             for (int m : tm.members)
@@ -2890,7 +2890,11 @@ private:
         }
         long house_credits(int ht) const override {
             const int eh = rt.engine_house(ht);
-            return eh == 0 ? (long)rt.player_credits_ : (long)std::llround(rt.w_.house_credits(eh));
+            // L2: the house's real wallet (HouseEcon for the player / AI houses,
+            // else the pool). Was the player's START credits (a stale copy)
+            // for house 0 and the per-frame income pool for the computer
+            // houses [RE: TEvent Credits reads the house's money].
+            return (long)std::llround(rt.w_.credits(eh));
         }
         double house_power_ratio(int ht) const override {
             const int eh = rt.engine_house(ht);
@@ -3057,7 +3061,7 @@ private:
                     r.country = map_.get(house_names_[(std::size_t)h], "Country", "");
                     r.combatant = true;
                     r.alliance_team = 200 + h;
-                    r.player_control = w_.controllable(h) && h != 0;
+                    r.player_control = w_.human_commanded(h) && h != 0;
                     w_.set_house(h, r);
                 }
             w_.set_pair_alliance(a, b, e.action == 37);

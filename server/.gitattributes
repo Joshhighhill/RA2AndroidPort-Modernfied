@@ -1,0 +1,4 @@
+# Files that end up on Linux servers must keep LF line endings even when
+# checked out on Windows (scp of a CRLF systemd unit breaks ExecStart=).
+* text=auto eol=lf
+*.ps1 text eol=crlf

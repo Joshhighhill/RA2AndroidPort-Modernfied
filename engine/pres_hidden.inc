@@ -50,7 +50,7 @@ struct HiddenMarkers {
         for (const ra2engine::Unit& u : w.units()) {
             if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.is_aircraft) continue;
             if (!can_be_hidden(u.image)) continue;
-            if (u.house != 0 && !w.object_visible_at(0, u.cell_x, u.cell_y)) continue;
+            if (u.house != g_local_house && !w.object_visible_at(0, u.cell_x, u.cell_y)) continue;
             // W5-B: infantry stand at sub-cell offsets (fx*256 + sub_x leptons).
             const double ux = u.fx + u.sub_x / 256.0, uy = u.fy + u.sub_y / 256.0;
             const int sx = static_cast<int>((ux - uy) * 30.0) + cam.x + 30;

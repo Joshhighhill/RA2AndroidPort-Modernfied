@@ -114,7 +114,7 @@ private:
     // Per frame, after world_.step: deploy feedback + (skirmish) game over.
     void gf_update(double dt) {
         for (const ra2engine::World::DeployEvent& e : world_.take_deploy_events()) {
-            if (e.house != 0) continue;
+            if (e.house != local_house_) continue;
             if (e.kind == ra2engine::World::DeployEvent::Kind::CannotDeploy) {
                 gf_eva("EVA_CannotDeployHere");
             } else if (e.kind == ra2engine::World::DeployEvent::Kind::Deployed && e.unit >= 0 &&
@@ -132,10 +132,10 @@ private:
         if (!world_.victory_enabled()) return;
         const int n = world_.house_count();
         if ((int)gf_defeated_seen_.size() != n) gf_defeated_seen_.assign((std::size_t)n, 0);
-        for (int h = 1; h < n; ++h)   // an opponent eliminated (FUN_004FBED0)
-            if (world_.house_defeated(h) && !gf_defeated_seen_[(std::size_t)h]) {
+        for (int h = 0; h < n; ++h)   // another player eliminated (FUN_004FBED0)
+            if (h != local_house_ && world_.house_defeated(h) && !gf_defeated_seen_[(std::size_t)h]) {
                 gf_defeated_seen_[(std::size_t)h] = 1;
-                if (gf_outcome_ == 0 && !world_.house_defeated(0)) {
+                if (gf_outcome_ == 0 && !world_.house_defeated(local_house_)) {
                     gf_eva("EVA_PlayerDefeated");
                     // TXT_PLAYER_DEFEATED is "%s has been defeated"; the original
                     // fills the player's name -- the clone names the slot's
@@ -152,10 +152,10 @@ private:
                 }
             }
         if (gf_outcome_ == 0) {
-            int outcome = 0;
-            if (world_.house_defeated(0)) outcome = -1;
-            else if (world_.winning_team() >= 0 && world_.winning_team() == world_.house_team(0))
-                outcome = 1;
+            // L2: the outcome is per house in the sim (World::house_outcome,
+            // latched by step_house_outcomes); the result screen reads the
+            // local house's.
+            const int outcome = world_.house_outcome(local_house_);
             if (outcome != 0) {
                 gf_outcome_ = outcome;
                 gf_borrowed_ = ra2engine::borrowed_time_frames(
@@ -175,17 +175,18 @@ private:
 
     GfSkirmishStats gf_stats() const {
         GfSkirmishStats s;
+        s.local_house = local_house_;   // L2
         for (const ra2engine::Unit& u : world_.units()) {
             if (u.deployed_away) continue;
             if (u.vet.dont_score) continue;   // W4: DontScore=yes (spent V3/DMisl rockets)
             const bool dead = !u.alive || u.die_time >= 0.0;
             if (!dead) continue;
-            if (u.house == 0) ++s.units_lost; else ++s.units_killed;
+            if (u.house == local_house_) ++s.units_lost; else ++s.units_killed;
         }
         for (const ra2engine::Building& b : world_.buildings()) {
             if (b.alive && b.state != ra2engine::Building::State::Dead) continue;
             if (b.sold) continue;
-            if (b.house == 0) ++s.buildings_lost; else ++s.buildings_killed;
+            if (b.house == local_house_) ++s.buildings_lost; else ++s.buildings_killed;
         }
         // W2-UI-20: the per-house score rows.
         // Only the lobby's players (the neutral / civilian houses are not listed).
@@ -210,7 +211,7 @@ private:
                                               : sd == Sd::Soviet ? gf_csf("GUI:Soviets", "Soviets")
                                               : sd == Sd::Yuri   ? std::string("Yuri")
                                                                  : std::string("Neutral");
-                s.rows[(std::size_t)h].rival = h != 0 && sd != Sd::Neutral && !world_.are_allied(h, 0);
+                s.rows[(std::size_t)h].rival = h != local_house_ && sd != Sd::Neutral && !world_.are_allied(h, local_house_);
             }
             // Only the lobby's playing slots are listed (not the neutral house).
             s.rows[(std::size_t)h].listed = cfg_.slots.empty() || cfg_.slots[(std::size_t)h].combatant;
@@ -287,7 +288,7 @@ public:
     // centre set by FUN_0050DE20 in FUN_006880F0).
     void gf_center_on_player() {
         for (const ra2engine::Unit& u : world_.units())
-            if (u.alive && u.house == 0) { gf_center_cell(u.cell_x, u.cell_y); return; }
+            if (u.alive && u.house == local_house_) { gf_center_cell(u.cell_x, u.cell_y); return; }
     }
     // --- gF real-play driver seams (run_gf_play; read-only or input-shaped) ---
     ra2engine::World& gf_world() { return world_; }
@@ -296,7 +297,7 @@ public:
         if (campaign_) return campaign_->outcome() == 0 ? 0 : (campaign_->outcome() == 1 ? 1 : -1);
         return gf_outcome_;
     }
-    double gf_credits() const { return player_credits_; }
+    double gf_credits() const { return lcredits(); }
     // Click the sidebar cameo of building `id` (structures tab) with a real
     // PointerDown/Up through handle(). false = not on the strip.
     bool gf_click_building_cameo(const std::string& id) {
@@ -314,8 +315,7 @@ public:
         return false;
     }
     bool gf_structure_ready() const {
-        const ra2engine::ProductionState& q =
-            const_cast<GameScene*>(this)->queues_.state(ra2engine::QueueCat::Structure);
+        const ra2engine::ProductionState& q = lq().state(ra2engine::QueueCat::Structure);
         return q.slot.type >= 0 && q.slot.ready;
     }
     // Centre the camera on cell (x, y) and left-click it (placement confirm).

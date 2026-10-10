@@ -96,8 +96,8 @@ inline SDL_Texture* diamond_tex(ra2engine::TextureCache& tc, bool fog) {
 void draw_shroud_pass(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2assets::MapFile& map,
                       const ra2engine::World& world, const ra2engine::Camera& cam, int W, int H) {
     if (!world.shroud_enabled()) return;
-    auto explored = [&](int x, int y) { return world.explored_at(0, x, y); };
-    auto visible = [&](int x, int y) { return world.visible_at(0, x, y); };
+    auto explored = [&](int x, int y) { return world.explored_at(g_local_house, x, y); };
+    auto visible = [&](int x, int y) { return world.visible_at(g_local_house, x, y); };
     // [RE: presentation.md §4, FUN_00480100] FOG.SHP is drawn only when the
     // scenario's FogOfWar flag is set; RA2 skirmish defaults it off.
     const int passes = world.fog_of_war() ? 2 : 1;
@@ -131,9 +131,9 @@ void draw_shroud_pass(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2a
 // G-84: an enemy/neutral building is drawn once any foundation cell has been
 // explored by house 0 (it then stays visible under fog, as in the original).
 inline bool pres_building_seen(const ra2engine::World& world, const ra2engine::Building& b) {
-    if (b.house == 0 || !world.shroud_enabled()) return true;
+    if (b.house == g_local_house || !world.shroud_enabled()) return true;
     for (int j = 0; j < b.fh; ++j)
         for (int i = 0; i < b.fw; ++i)
-            if (world.explored_at(0, b.cx + i, b.cy + j)) return true;
+            if (world.explored_at(g_local_house, b.cx + i, b.cy + j)) return true;
     return false;
 }

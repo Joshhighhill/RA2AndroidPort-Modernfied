@@ -277,14 +277,11 @@ struct PresHarness {
         static const char* kOrder[] = {"GAPOWR", "GAPILE", "GAREFN", "GAWEAP", "GAAIRC"};
         static int step = 0;
         if (step >= 5) return;
-        ra2engine::ProductionState& bq = g.queues_.state(ra2engine::QueueCat::Structure);
+        const ra2engine::ProductionState& bq = g.lq().state(ra2engine::QueueCat::Structure);
         const int type = roster_index(g.ba_, kOrder[step]);
         if (type < 0) { ++step; return; }
-        if (bq.slot.type < 0) {
-            g.queues_.set_credits(g.player_credits_);
-            if (ra2engine::can_start(bq, type, g.ba_.roster, g.world_.buildings(), 0, g.ba_.groups,
-                                     conyard_alive(g.world_, g.ba_, 0)))
-                ra2engine::start(bq, type, g.ba_.roster, g.build_speed_);
+        if (bq.slot.type < 0) {   // L2: PRODUCE through the World
+            g.world_.econ_produce(g.local_house_, ra2engine::QueueCat::Structure, type);
             return;
         }
         if (bq.slot.type == type && bq.slot.ready) {
@@ -300,10 +297,9 @@ struct PresHarness {
                             g.world_.grid_w(), g.world_.grid_h(), g.world_.occupancy(),
                             g.world_.buildings(), false);
                         if (!chk.ok) continue;
-                        g.world_.add_building(type, yx + dx, yy + dy, d.fw, d.fh, 0, d.strength,
-                                              d.armor_ix, g.ba_.art[type].buildup_total, false,
-                                              d.sight, d.grants_map_reveal);
-                        g.queues_.placed(ra2engine::QueueCat::Structure);
+                        if (g.world_.econ_place(g.local_house_, ra2engine::QueueCat::Structure, yx + dx,
+                                                yy + dy) != ra2engine::ProdResult::Placed)
+                            continue;
                         ++step;
                         return;
                     }
