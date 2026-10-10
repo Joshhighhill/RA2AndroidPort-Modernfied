@@ -15,6 +15,8 @@
 //                       [--cash N]   (W2-AN: lobby money, e.g. to reach tech)
 // ============================================================================
 
+#include "simdiff_dump.inc"   // --diff-dump (tools/simdiff harness)
+
 namespace {
 struct AiSoakProbe {
     static ra2engine::World& world(GameScene& g) { return g.world_; }
@@ -26,6 +28,18 @@ struct AiSoakProbe {
         ra2engine::AiDifficulty diff = ra2engine::AiDifficulty::Normal;
         bool ai_allied = false, ai_vs_ai = false;
         std::string map_file = "xmp31s2.map", png;   // the --probe-realplay menu map
+        // simdiff harness (docs/re/simdiff-harness.md): --diff-dump writes one
+        // record per frame; the other switches only shape the scenario so it
+        // matches the original run (idle human, countries, start waypoints).
+        std::string diff_dump, human_country, ai_country;
+        long long diff_frames = -1;
+        bool no_human_deploy = false, long_game = false, ai_passive = false;
+        auto side_of = [](const std::string& c) {
+            if (c == "YuriCountry") return ra2engine::World::Side::Yuri;
+            if (c == "Russians" || c == "Confederation" || c == "Africans" || c == "Arabs")
+                return ra2engine::World::Side::Soviet;
+            return ra2engine::World::Side::Allied;
+        };
         for (int i = 2; i < argc; ++i) {
             const std::string a = argv[i];
             auto next = [&]() -> std::string { return i + 1 < argc ? std::string(argv[++i]) : ""; };
@@ -43,6 +57,22 @@ struct AiSoakProbe {
             else if (a == "--kill-ai-conyard-at") kill_cy_at = std::atoi(next().c_str());   // W2-SK-07 probe
             else if (a == "--cash") cash = std::atof(next().c_str());
             else if (a == "--ruin-ai-at") ruin_at = std::atoi(next().c_str());   // W6-03-08 probe
+            else if (a == "--diff-dump") diff_dump = next();
+            else if (a == "--frames") diff_frames = std::atoll(next().c_str());
+            else if (a == "--no-human-deploy") no_human_deploy = true;
+            else if (a == "--long-game") long_game = true;   // lobby ShortGame=no
+            else if (a == "--ai-passive") ai_passive = true;   // slot 1 idle (no AI): "map ticking" rung
+            else if (a == "--human-country") human_country = next();
+            else if (a == "--ai-country") ai_country = next();
+            else if (a == "--starts") {   // comma list of [Waypoints] indices, one per combatant
+                std::string v = next(); std::size_t p = 0;
+                while (p <= v.size()) {
+                    const std::size_t q = v.find(',', p);
+                    g_simdiff_starts.push_back(std::atoi(v.substr(p, q - p).c_str()));
+                    if (q == std::string::npos) break;
+                    p = q + 1;
+                }
+            }
         }
         const std::string dir = env_install_dir();
         Ini rules_ini = load_ini_from_ra2md(dir, "rulesmd.ini");
@@ -56,14 +86,20 @@ struct AiSoakProbe {
             cfg.slots[1].side = ra2engine::World::Side::Allied;  cfg.slots[1].country = "Americans";
         }
         if (ai_vs_ai) cfg.slots[0].is_ai = true;
+        if (long_game) cfg.short_game = false;
+        if (ai_passive) cfg.slots[1].is_ai = false;
+        if (!human_country.empty()) { cfg.slots[0].country = human_country; cfg.slots[0].side = side_of(human_country); }
+        if (!ai_country.empty()) { cfg.slots[1].country = ai_country; cfg.slots[1].side = side_of(ai_country); }
         GameScene g(/*no_audio=*/true, cfg);
         ra2engine::World& w = world(g);
         const BuildingAssets& b_a = ba(g);
         const int ai = 1, human = 0;
         // gF G-23: the skirmish starts from an MCV; the passive human still
         // unfolds it (its one action) so the AI has a base to attack.
-        for (int i = 0; i < (int)w.units().size(); ++i)
+        for (int i = 0; i < (int)w.units().size() && !no_human_deploy; ++i)
             if (w.units()[(std::size_t)i].house == human && w.is_mcv(i)) { w.order_deploy_mcv(i); break; }
+        std::FILE* ddump = diff_dump.empty() ? nullptr : std::fopen(diff_dump.c_str(), "w");
+        if (ddump) simdiff::write_header(ddump, cfg.map_file, 0);
         auto base_hp = [&](int h) {
             long long hp = 0, mx = 0;
             for (const ra2engine::Building& b : w.buildings())
@@ -80,7 +116,7 @@ struct AiSoakProbe {
         std::cout << "[ai-soak] map=" << (cfg.map_file.empty() ? "<default>" : cfg.map_file)
                   << " ai_side=" << (ai_allied ? "Allied" : "Soviet") << " diff=" << (int)diff
                   << " minutes=" << minutes << "\n";
-        const long long frames = (long long)minutes * 900;
+        const long long frames = diff_frames > 0 ? diff_frames : (long long)minutes * 900;
         for (long long f = 1; f <= frames; ++f) {
             if (damage_ai_at >= 0 && f == (long long)damage_ai_at * 900) {
                 long long t = 0;
@@ -127,6 +163,7 @@ struct AiSoakProbe {
             for (ra2engine::SuperweaponType t : w.sw_types(ai)) ready_before |= w.sw_ready(ai, t);
             const int seq0 = w.sw_events().empty() ? 0 : w.sw_events().back().seq;
             g.update(1.0 / 15.0);
+            if (ddump) simdiff::write_frame(ddump, w, (int)(f - 1));   // frame 0 = state after the first logic step
             // W2-AN-21: every AI superweapon launch/activation (any type).
             for (const ra2engine::SwEvent& e : w.sw_events())
                 if (e.seq > seq0 && e.house == ai &&
@@ -309,6 +346,7 @@ struct AiSoakProbe {
                 SDL_Quit();
             }
         }
+        if (ddump) std::fclose(ddump);
         return 0;
     }
 };

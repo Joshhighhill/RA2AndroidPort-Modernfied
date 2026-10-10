@@ -123,6 +123,9 @@ namespace {
 // loading screen, so the gates are unaffected.
 void load_progress(const char* stage);
 
+// simdiff harness: start-waypoint override for --ai-soak --starts (empty = off).
+static std::vector<int> g_simdiff_starts;
+
 // Everything the renderer needs, loaded once from the mix chain.
 struct Assets {
     MapFile map;
@@ -13779,7 +13782,11 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
         std::vector<ra2assets::MapWaypoint> real_starts = a.map.start_waypoints();
         int ncomb = 0;
         for (const ra2engine::SkirmishSlot& s : cfg.slots) ncomb += s.combatant ? 1 : 0;
-        const std::vector<int> picks = gf_pick_starts(real_starts, ncomb, rng);
+        std::vector<int> picks = gf_pick_starts(real_starts, ncomb, rng);
+        // simdiff harness (--ai-soak --starts): pin the start waypoints the
+        // original picked. The pick above still runs, so the RNG stream is
+        // unchanged; empty (every normal path) = no effect.
+        if (!g_simdiff_starts.empty()) picks = g_simdiff_starts;
         gf_arm_mcv(world, ba, rules, /*skirmish_session=*/true);
         // [SK-25] The lobby's MCV Repacks checkbox overrides the rules default.
         if (cfg.mcv_redeploys >= 0) world.set_mcv_redeploys(cfg.mcv_redeploys != 0);

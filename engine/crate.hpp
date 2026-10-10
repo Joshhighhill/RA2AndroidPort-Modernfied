@@ -18,6 +18,8 @@ public:
     std::uint32_t next();                 // FUN_0065C1C0
     int ranged(int lo, int hi);           // FUN_0065C220 (inclusive, either order)
     std::uint32_t table_word(int i) const { return table_[i]; }  // test seam
+    int idx1() const { return idx1_; }    // simdiff dump seam (read-only)
+    int idx2() const { return idx2_; }
 private:
     std::array<std::uint32_t, 250> table_{};
     int idx1_ = 0, idx2_ = 103;

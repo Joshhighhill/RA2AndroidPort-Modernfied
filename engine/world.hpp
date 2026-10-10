@@ -792,6 +792,7 @@ public:
 
     std::vector<Unit>& units() { return units_; }
     const std::vector<Unit>& units() const { return units_; }
+    const GameRandom& crate_rng() const { return crate_rng_; }   // simdiff dump seam (read-only)
 
     // Append a unit at iso cell (cell_x, cell_y) with SHP image name + frame;
     // seeds its level from the map and claims its cell in the occupancy grid.
