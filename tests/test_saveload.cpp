@@ -155,6 +155,7 @@ TEST_CASE("saveload: every serialized aggregate's visitor covers all its members
     CHECK_ARITY(CampaignHostSave);   // P10
     CHECK_ARITY(QueueSlot);
     CHECK_ARITY(ProductionState);
+    CHECK_ARITY(HouseEcon);   // L2 (v32)
     CHECK_ARITY(DifficultyMods);
     CHECK_ARITY(AiRules);
     CHECK_ARITY(PlannedNode);
@@ -213,7 +214,7 @@ TEST_CASE("saveload: private-state classes' sizeof is pinned (World et al.)") {
 #if defined(__MINGW64__) && defined(__GLIBCXX__) && defined(__x86_64__)
     INFO("a class with private save-state changed size: add the member to "
          "SaveAccess in engine/save_fields.hpp, bump kFormatVersion, re-pin");
-    CHECK(sizeof(World) == 7072);   // R-210 deck_land_/deck_amph_/deck_ver_ derived deck grids (+56), save v30; W6 fix #2 usable area playfield_ + per-house handicap vectors (+96), save v29; wave-6 #4: map wall overlay types/stages/kill list (+96) and SwParams storm/nuke wall keys (+8), WeaponSpec Burst/OmniFire/AffectsAllies/ProneDamage/InfDeath/wall keys in the ability rules (+24), save v25; P4 crushable walls crush_wall_ + derived crush grids (+72) and WeaponSpec delay-kill fields in the ability rules (+16), save v23; W5-A wall leak mask + AI SW quarry (+48), save v22; W5-B sub-cells/land speed/crush/elevation rules (+600), save v20; wave-5 abilities: w5_ (stolen tech, rules, unit profiles, witnesses) + gap scratch (+344), save v17; W4-SQ player-order queue + passive houses + high-bridge state + scripted-team AI demand (+128), save v16; W4 per-type RocketParams in SwParams (+824) + ProjectileRules homing keys + proj_seq_ (+24), save v15; W3-B infantry anim switches + tables (+64), save v14; gap C + gF MCV deploy (3744) + G16 garrison/bridge state (+128), save v7; W2-AN air/naval/SW (+648) + W2-GA-03 fog flag (in padding), save v10; w2fix-campaign entered events + pair alliances (+56), save v12; W2-SK harvest scan/income, wallet hints, depot/AI state (+96), save v13
+    CHECK(sizeof(World) == 7208);   // L2 per-house economy econ_/econ_rules_/econ_rules_set_/human_mask_/victory_cheered_/house_outcome_/order_issuer_/econ_launches_ (+160) minus wallet_hint_ (-24), save v32; R-210 deck_land_/deck_amph_/deck_ver_ derived deck grids (+56), save v30; W6 fix #2 usable area playfield_ + per-house handicap vectors (+96), save v29; wave-6 #4: map wall overlay types/stages/kill list (+96) and SwParams storm/nuke wall keys (+8), WeaponSpec Burst/OmniFire/AffectsAllies/ProneDamage/InfDeath/wall keys in the ability rules (+24), save v25; P4 crushable walls crush_wall_ + derived crush grids (+72) and WeaponSpec delay-kill fields in the ability rules (+16), save v23; W5-A wall leak mask + AI SW quarry (+48), save v22; W5-B sub-cells/land speed/crush/elevation rules (+600), save v20; wave-5 abilities: w5_ (stolen tech, rules, unit profiles, witnesses) + gap scratch (+344), save v17; W4-SQ player-order queue + passive houses + high-bridge state + scripted-team AI demand (+128), save v16; W4 per-type RocketParams in SwParams (+824) + ProjectileRules homing keys + proj_seq_ (+24), save v15; W3-B infantry anim switches + tables (+64), save v14; gap C + gF MCV deploy (3744) + G16 garrison/bridge state (+128), save v7; W2-AN air/naval/SW (+648) + W2-GA-03 fog flag (in padding), save v10; w2fix-campaign entered events + pair alliances (+56), save v12; W2-SK harvest scan/income, wallet hints, depot/AI state (+96), save v13
     CHECK(sizeof(MapTriggerSystem) == 408);   // W6-05-04 +timer_text_ (save v25); P10: +campaign_mode_/semi_detached_
     CHECK(sizeof(OreField) == 128);   // W2-SK-01 +mines_ (v10)
     CHECK(sizeof(Occupancy) == 80);   // W5-B +spots_ +inf_ (v20)
@@ -260,7 +261,11 @@ TEST_CASE("saveload: every World / MapTriggerSystem data member is visited (sour
     REQUIRE(!fields.empty());
     struct Case { const char* header; const char* head; const char* obj; std::set<std::string> skip; };
     const Case cases[] = {
-        {"/engine/world.hpp", "class World {", "w.", {"map_"}},
+        // L2: the per-house production rules are asset-derived (re-installed
+        // by the host after a load), the order issuer and the launch events
+        // are transient -- deliberately NOT saved.
+        {"/engine/world.hpp", "class World {", "w.",
+         {"map_", "econ_rules_", "econ_rules_set_", "order_issuer_", "econ_launches_"}},
         {"/engine/map_trigger.hpp", "class MapTriggerSystem {", "s.", {"d_"}},
     };
     for (const Case& c : cases) {

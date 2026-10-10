@@ -30,4 +30,13 @@ std::vector<NetCommand> to_net(const ra2engine::Command& c);
 // house must keep their send order). Non-sim records are skipped.
 std::vector<ra2engine::Command> from_net(const std::vector<NetCommand>& records);
 
+// The wire-record forms event_map.hpp proposed. to_events() gives every
+// EventClass record of a Command (a Whom run is one record per object);
+// to_event() succeeds only for a Command that is exactly one record.
+// from_event() decodes ONE record (a single-object Command; use from_net on a
+// frame's records to re-group runs).
+std::vector<Event> to_events(const ra2engine::Command& c);
+bool to_event(const ra2engine::Command& c, Event& out);
+bool from_event(const Event& e, ra2engine::Command& out);
+
 }  // namespace ra2::net

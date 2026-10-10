@@ -69,7 +69,7 @@ bool Input::cell_walkable(int cx, int cy) const {
     if (cx < 0 || cy < 0 || cx >= world_.grid_w() || cy >= world_.grid_h()) return false;
     // W2-AN-09: walkable for the SELECTION's movement domains (a ship moves on
     // the water grid, a landing craft on either, an aircraft anywhere).
-    return world_.group_can_enter(sel_.ids(), house_, cx, cy);
+    return world_.group_can_enter(sel_.ids(), world_.order_issuer(), cx, cy);
 }
 
 const char* Input::action_name(Action a) {
@@ -110,7 +110,7 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
     if (placement_active()) return Action::Place;
     if (mode_ != BaseMode::None) {
         const int b = building_under(px, py);
-        const bool own = b >= 0 && world_.buildings()[b].house == 0;
+        const bool own = b >= 0 && world_.buildings()[b].house == world_.order_issuer();
         if (mode_ == BaseMode::Repair) return own ? Action::Repair : Action::NoRepair;
         if (mode_ == BaseMode::PowerToggle) return own ? Action::Repair : Action::NoRepair;   // [RE-FALLBACK: power cursor]
         return own ? Action::Sell : Action::NoSell;
@@ -138,7 +138,7 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
 
     if (!units_sel) {
         if (idx >= 0 && world_.controllable(us[idx].house)) return shift ? Action::ToggleSelect : Action::Select;
-        if (b >= 0 && world_.buildings()[b].house == 0) {
+        if (b >= 0 && world_.buildings()[b].house == world_.order_issuer()) {
             if (selected_building_valid() && b == selected_building_ &&
                 is_unit_factory_type(world_.buildings()[b].type))
                 return Action::SetPrimary;
@@ -152,7 +152,7 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
     // Force-fire (Ctrl) on any object that is not part of the selection.
     if (ctrl) {
         if (idx >= 0 && !sel_.has(idx) && !world_.controllable(us[idx].house)) return Action::Attack;
-        if (b >= 0 && world_.buildings()[b].house != 0) return Action::Attack;
+        if (b >= 0 && world_.buildings()[b].house != world_.order_issuer()) return Action::Attack;
         if (idx < 0 && b < 0) return Action::Attack;   // G16: force-fire the ground cell
     }
     if (alt) return cell_walkable(cx, cy) ? Action::Move : Action::NoMove;   // force-move
@@ -160,10 +160,10 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
         const Unit& u = us[idx];
         // Wave-5 (R-046): a lone engineer on a bombed unit -> disarm.
         if (u.bomb_frame >= 0 && !sel_.has(idx) && lone_selected_with_image(world_, sel_, "ENGINEER") >= 0 &&
-            !world_.is_enemy(0, u.house))
+            !world_.is_enemy(world_.order_issuer(), u.house))
             return Action::Capture;
         // Wave-5 (R-052): an ALLIED transport takes the selected infantry.
-        if (!world_.controllable(u.house) && world_.are_allied(0, u.house) && u.passengers_max > 0) {
+        if (!world_.controllable(u.house) && world_.are_allied(world_.order_issuer(), u.house) && u.passengers_max > 0) {
             for (int si : sel_.ids()) {
                 if (si >= static_cast<int>(us.size())) break;
                 const Unit& su = us[si];
@@ -205,7 +205,7 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
             }
             return Action::Select;
         }
-        if (world_.is_enemy(0, u.house)) return Action::Attack;
+        if (world_.is_enemy(world_.order_issuer(), u.house)) return Action::Attack;
         // An ally / neutral unit: the click resolves to its ground cell.
     }
     bool harv = false;
@@ -220,20 +220,20 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
     if (harv && world_.ore().has_ore(cx, cy)) return Action::Harvest;
     if (b >= 0) {
         const Building& B = world_.buildings()[b];
-        if (harv && B.house == 0 && is_refinery_type(B.type)) return Action::Dock;
+        if (harv && B.house == world_.order_issuer() && is_refinery_type(B.type)) return Action::Dock;
         // G16 (agent G) [RE: world-depth.md §A2]: selected Occupier infantry on
         // a building they may garrison (CanBeOccupiedBy) -> the enter cursor.
         for (int si : sel_.ids())
             if (si < static_cast<int>(us.size()) && world_.controllable(us[si].house) && world_.can_occupy(si, b))
                 return Action::Enter;
-        if (lone_selected_with_image(world_, sel_, "SPY") >= 0 && B.house != 0) return Action::Infiltrate;
+        if (lone_selected_with_image(world_, sel_, "SPY") >= 0 && B.house != world_.order_issuer()) return Action::Infiltrate;
         if (lone_selected_with_image(world_, sel_, "ENGINEER") >= 0) {
-            if (B.bomb_frame >= 0 && world_.are_allied(0, B.house)) return Action::Capture;   // wave-5 R-046
-            if (B.house != 0) return Action::Capture;
+            if (B.bomb_frame >= 0 && world_.are_allied(world_.order_issuer(), B.house)) return Action::Capture;   // wave-5 R-046
+            if (B.house != world_.order_issuer()) return Action::Capture;
             if (B.hp < B.max_hp) return Action::EngineerRepair;
         }
-        if (B.house == 0) return shift ? Action::None : Action::SelectBuilding;
-        if (world_.is_enemy(0, B.house)) return Action::Attack;
+        if (B.house == world_.order_issuer()) return shift ? Action::None : Action::SelectBuilding;
+        if (world_.is_enemy(world_.order_issuer(), B.house)) return Action::Attack;
     }
     return cell_walkable(cx, cy) ? Action::Move : Action::NoMove;
 }
@@ -454,7 +454,7 @@ void Input::handle_original(const InputEvent& ev) {
                 }
             } else if (mode_ != BaseMode::None) {
                 const int bi = building_under(ev.x, ev.y);
-                if (!dragging_ && bi >= 0 && world_.buildings()[bi].house == 0) {
+                if (!dragging_ && bi >= 0 && world_.buildings()[bi].house == world_.order_issuer()) {
                     if (mode_ == BaseMode::Repair) {
                         actions_.repair_clicked = true;
                         actions_.repair_building = bi;

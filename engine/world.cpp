@@ -1978,9 +1978,16 @@ void World::enable_ai_house(int house, AiHouseConfig cfg) {
                                     // weights seeded from starting_weight
                                     // (NB reads rec.cfg — cfg was moved from)
     rec.state.difficulty = rec.cfg.difficulty;
-    rec.queues = ProductionQueues{};
-    rec.credits = rec.cfg.start_credits;
-    rec.queues.set_credits(rec.credits);
+    // L2: the AI wallet and queues live in the house's HouseEcon. A human
+    // house handed to the AI (a dropped player) keeps its wallet and queues.
+    HouseEcon& ec = econ_slot(house);
+    if (!ec.player) {
+        ec.queues = ProductionQueues{};
+        ec.credits = rec.cfg.start_credits;
+        ec.backlog = {};
+        ec.held = 0;
+    }
+    ec.queues.set_credits(ec.credits);
     ai_any_ = true;
 }
 
@@ -2029,7 +2036,7 @@ const AiBaseState* World::ai_state(int house) const {
 }
 
 double World::ai_credits(int house) const {
-    return ai_enabled(house) ? ai_houses_[house].credits : 0.0;
+    return ai_enabled(house) ? econ_[(std::size_t)house].credits : 0.0;
 }
 
 // --- CB-4 Superweapons: moved to world_sw.cpp (W2-AN-04 multi-SW v2) ---
@@ -2072,7 +2079,7 @@ bool World::capture_building(int b_idx, int new_house, int startup) {
     const int nh = neutral_house();
     const bool from_neutral = nh >= 0 ? old_house == nh : grants_startup_from_neutral(old_house);
     if (from_neutral && startup > 0 && new_house >= 0 && new_house < house_count()) {
-        if (ai_enabled(new_house)) ai_houses_[(std::size_t)new_house].credits += (double)startup;
+        if (ai_enabled(new_house)) econ_[(std::size_t)new_house].credits += (double)startup;
         else house_credits_[new_house] += (double)startup;
     }
     return true;
@@ -2093,13 +2100,16 @@ bool World::infiltrate_building(int b_idx, int spy_house, InfiltratePurpose purp
             // frame through set_wallet_hint). The old code took half of the
             // per-frame income pool -- ~0 -- and only for houses 0/1.
             if (victim >= 0 && victim < house_count() && spy_house >= 0 && spy_house < house_count()) {
+                // L2: a human victim's wallet is its HouseEcon (was the
+                // scene's set_wallet_hint copy); the steal still lands in the
+                // income pool, which the player economy drains after production.
                 const double bal = ai_enabled(victim)
-                                       ? ai_houses_[(std::size_t)victim].credits
-                                       : house_credits_[(std::size_t)victim] + wallet_hint(victim);
+                                       ? econ_[(std::size_t)victim].credits
+                                       : house_credits_[(std::size_t)victim] + player_wallet(victim);
                 const int steal = cash_steal_amount(std::max(0.0, bal), steal_pct);
-                if (ai_enabled(victim)) ai_houses_[(std::size_t)victim].credits -= (double)steal;
+                if (ai_enabled(victim)) econ_[(std::size_t)victim].credits -= (double)steal;
                 else house_credits_[(std::size_t)victim] -= (double)steal;
-                if (ai_enabled(spy_house)) ai_houses_[(std::size_t)spy_house].credits += (double)steal;
+                if (ai_enabled(spy_house)) econ_[(std::size_t)spy_house].credits += (double)steal;
                 else house_credits_[(std::size_t)spy_house] += (double)steal;
             }
             break;
@@ -2363,7 +2373,10 @@ void World::step_repair_sell(double dt) {
         // EVA line. The player must click the wrench again after refilling.
         // [G-65] an AI house spends from its own AI-1 purse (house_credits_
         // is drained into it every frame by take_income).
-        double& pool = ai_enabled(b.house) ? ai_houses_[b.house].credits : house_credits_[b.house];
+        // L2: a player house spends from its HouseEcon wallet too (the old
+        // GameScene "repair wallet bridge" deposited the wallet into the
+        // income pool around the step; HouseClass has ONE Balance).
+        double& pool = econ_active(b.house) ? econ_[(std::size_t)b.house].credits : house_credits_[b.house];
         if (pool < static_cast<double>(cost)) {
             b.being_repaired = false;
             continue;
@@ -2422,7 +2435,7 @@ void World::step_service_depots() {
         if (h < 0 || h >= house_count()) continue;
         const int cost = repair_step_cost(u.vet.cost > 0 ? u.vet.cost : u.max_hp, u.max_hp,
                                           repair_rules_.repair_step, repair_rules_.repair_percent);
-        double& pool = ai_enabled(h) ? ai_houses_[(std::size_t)h].credits : house_credits_[(std::size_t)h];
+        double& pool = econ_active(h) ? econ_[(std::size_t)h].credits : house_credits_[(std::size_t)h];
         if (pool < (double)cost) continue;   // broke: no partial step, no free repair
         pool -= (double)cost;
         u.hp = std::min(u.max_hp, u.hp + repair_rules_.repair_step);
@@ -2888,7 +2901,7 @@ void World::ai_resync_captured_building(int b_idx, int old_house, int new_house)
 int World::ai_producing(int house, int cat01) const {
     if (!ai_enabled(house) || cat01 < 0 || cat01 > 1) return -1;
     const QueueCat c = cat01 == 0 ? QueueCat::Structure : QueueCat::Defense;
-    return ai_houses_[house].queues.producing(c);
+    return econ_[(std::size_t)house].queues.producing(c);
 }
 
 BaseView World::make_ai_base_view(int house, const HouseAiRec& rec) const {
@@ -2931,7 +2944,7 @@ BaseView World::make_ai_base_view(int house, const HouseAiRec& rec) const {
     }
     if (tn > 0) { v.threat_x = (int)(tx / tn); v.threat_y = (int)(ty / tn); }
     else { v.threat_x = grid_w_ / 2; v.threat_y = grid_h_ / 2; }
-    v.credits = rec.credits;
+    v.credits = ai_econ(rec).credits;
     // Engineer/Spy Capture [RE: capture.md §B2]: a spied enemy power plant forces
     // THIS house's power OUTPUT to 0 while its blackout timer runs, so the AI's
     // own low-power view / build clamp go offline too. apply_blackout is IDENTITY
@@ -2952,7 +2965,7 @@ BaseView World::make_ai_base_view(int house, const HouseAiRec& rec) const {
 // if the slot was consumed (placed); false = HOLD (retry next frame).
 bool World::ai_place_ready(int house, HouseAiRec& rec, QueueCat cat) {
     const int q = cat == QueueCat::Structure ? 0 : 1;
-    if (!rec.queues.ready(cat)) return false;
+    if (!ai_econ(rec).queues.ready(cat)) return false;
     // pending[q] is the node's STABLE id, not a raw index: resolve it by
     // scanning the plan so a power-preemption insert that shifted vector
     // indices since production started can never place the wrong node
@@ -2964,7 +2977,7 @@ bool World::ai_place_ready(int house, HouseAiRec& rec, QueueCat cat) {
         for (int i = 0; i < (int)rec.state.plan.size(); ++i)
             if (rec.state.plan[i].id == pid) { node_i = i; break; }
     if (node_i < 0) {
-        rec.queues.placed(cat);  // defensive: orphaned ready slot
+        ai_econ(rec).queues.placed(cat);  // defensive: orphaned ready slot
         rec.state.pending[q] = -1;
         return true;
     }
@@ -3003,7 +3016,7 @@ bool World::ai_place_ready(int house, HouseAiRec& rec, QueueCat cat) {
     if (node.type == rec.cfg.catalog.naval_yard) block_water_footprint(px, py, t.fw, t.fh);   // W2-AN-16
     node.building = idx;
     node.dead = false;
-    rec.queues.placed(cat);
+    ai_econ(rec).queues.placed(cat);
     rec.state.pending[q] = -1;
     return true;
 }
@@ -3059,7 +3072,7 @@ void World::step_ai_houses(double dt) {
         }
 
         // 1) Income (the economy phase accumulates per-house unload income).
-        rec.credits += take_income(h);
+        ai_econ(rec).credits += take_income(h);
         ai_pick_enemy_house(h, rec);   // W2-SK-08
         // W2-SK-10 base defence [RE-FALLBACK: the IsBaseDefense teams and
         // [AI] ComputerBaseDefenseResponse were not decoded]: every ~7 s, idle
@@ -3099,7 +3112,7 @@ void World::step_ai_houses(double dt) {
         //     the lowest-index damaged Idle building is picked.]
         rec.state.repair_clock += dt;
         if (rec.state.repair_clock >= cfg.mods.repair_delay_min * 60.0 &&
-            rec.credits >= cfg.ai.credit_reserve) {
+            ai_econ(rec).credits >= cfg.ai.credit_reserve) {
             for (int bi = 0; bi < (int)buildings_.size(); ++bi) {
                 const Building& b = buildings_[bi];
                 if (!b.alive || b.house != h || b.state != Building::State::Idle ||
@@ -3150,7 +3163,7 @@ void World::step_ai_houses(double dt) {
         if (!conyard) {
             for (QueueCat c : {QueueCat::Structure, QueueCat::Defense}) {
                 const int q = c == QueueCat::Structure ? 0 : 1;
-                if (rec.queues.producing(c) != -1) rec.queues.cancel(c);
+                if (ai_econ(rec).queues.producing(c) != -1) ai_econ(rec).queues.cancel(c);
                 // Clear the pending node id too [fix wave — MINOR-2]:
                 // ai_place_ready can't (ready() is false after a cancel), so an
                 // un-cleared pending[q] would leave the queue permanently gated
@@ -3169,7 +3182,7 @@ void World::step_ai_houses(double dt) {
         const PowerTotals pt =
             apply_blackout(power_totals(buildings_, cfg.roster, h), house_blacked_out(h));
         const double pmul = build_speed_multiplier(pt, cfg.low_power_penalty);
-        rec.queues.set_credits(rec.credits);
+        ai_econ(rec).queues.set_credits(ai_econ(rec).credits);
         // W2-SK-06: MultipleFactory for the AI too (it was pinned to x1.0).
         double sp[4] = {1.0, 1.0, 1.0, 1.0};
         if (cfg.multiple_factory > 0.0 && cfg.multiple_factory < 1.0) {
@@ -3185,8 +3198,8 @@ void World::step_ai_houses(double dt) {
             sp[2] = spd(ninf);
             sp[3] = spd(nveh);
         }
-        rec.queues.tick(dt, pmul, sp, cfg.roster);
-        rec.credits = rec.queues.credits();
+        ai_econ(rec).queues.tick(dt, pmul, sp, cfg.roster);
+        ai_econ(rec).credits = ai_econ(rec).queues.credits();
 
         // 5) Place READY slots (Structure then Defense — deterministic order).
         ai_place_ready(h, rec, QueueCat::Structure);
@@ -3210,7 +3223,7 @@ void World::step_ai_houses(double dt) {
         //     house+0x1d4 (the house TechLevel, ai-trigger.md; 10 in skirmish)
         //     -> Sell. Evaluated on the house AI tick; the conyard is never
         //     sold (the ConYard-loss path would end the house).]
-        if (rec.credits < cfg.ai.credit_reserve) {
+        if (ai_econ(rec).credits < cfg.ai.credit_reserve) {
             for (int bi = 0; bi < (int)buildings_.size(); ++bi) {
                 const Building& b = buildings_[bi];
                 if (!b.alive || b.house != h || b.state != Building::State::Idle || b.selling ||
@@ -3275,14 +3288,14 @@ void World::step_ai_houses(double dt) {
                                       d.type) != cfg.catalog.defenses.end();
         const QueueCat cat = is_def ? QueueCat::Defense : QueueCat::Structure;
         const int q = is_def ? 1 : 0;
-        if (rec.queues.producing(cat) != -1 || rec.state.pending[q] != -1)
+        if (ai_econ(rec).queues.producing(cat) != -1 || rec.state.pending[q] != -1)
             continue;  // slot busy — the single-slot queue IS the recovered
                        // one-AI-structure-at-a-time gate (house+0x564c stays
                        // set until placement) [RE-GATE APPLIED: ai-base.md §1]
 
         // 9) Same prereq/tech/factory gate as the player (can_start —
         //    EXISTING function) [RE: ai-base.md §6].
-        if (!can_start(rec.queues.state(cat), d.type, cfg.roster, buildings_, h,
+        if (!can_start(ai_econ(rec).queues.state(cat), d.type, cfg.roster, buildings_, h,
                        cfg.groups, conyard))
             continue;
 
@@ -3349,11 +3362,11 @@ void World::step_ai_houses(double dt) {
         const int basis = t.charge > 0 ? t.charge : t.cost;
         const int ai_charge =
             std::max(1, (int)(basis * cfg.mods.cost_mul));
-        rec.queues.set_credits(rec.credits);
-        start(rec.queues.state(cat), t.cost, ai_charge,
+        ai_econ(rec).queues.set_credits(ai_econ(rec).credits);
+        start(ai_econ(rec).queues.state(cat), t.cost, ai_charge,
               cfg.build_speed * cfg.mods.build_time_mul);
-        rec.queues.state(cat).slot.type = d.type;
-        rec.credits = rec.queues.credits();
+        ai_econ(rec).queues.state(cat).slot.type = d.type;
+        ai_econ(rec).credits = ai_econ(rec).queues.credits();
         // Store the node's STABLE id (resolved back to an index in
         // ai_place_ready), NOT the raw vector index — a later preemption
         // insert can shift this node without corrupting the pending slot
@@ -3424,14 +3437,14 @@ void World::ai_raise_money(int h, HouseAiRec& rec) {
     int nb = -1, nu = -1;
     if (refineries < 1) {
         const int t = cfg.catalog.refinery >= 0 ? cfg.catalog.refinery : cfg.catalog.war_factory;
-        if (t >= 0 && t < (int)cfg.roster.size() && rec.queues.producing(QueueCat::Structure) != t) {
+        if (t >= 0 && t < (int)cfg.roster.size() && ai_econ(rec).queues.producing(QueueCat::Structure) != t) {
             nb = t;
             need = cfg.roster[(std::size_t)t].cost * cfg.mods.cost_mul;
         }
     } else if (miners < 1) {
         for (int k = 0; k < (int)tc.unit_roster.size(); ++k)
             if (tc.unit_roster[(std::size_t)k].harvester) {
-                if (rec.queues.producing(QueueCat::Vehicle) != k) {
+                if (ai_econ(rec).queues.producing(QueueCat::Vehicle) != k) {
                     nu = k;
                     need = tc.unit_roster[(std::size_t)k].cost * cfg.mods.cost_mul;
                 }
@@ -3439,7 +3452,7 @@ void World::ai_raise_money(int h, HouseAiRec& rec) {
             }
     }
     // FUN_004fd7c0: urgent only when the house cannot afford it.
-    if (need <= 0.0 || rec.credits >= need) return;
+    if (need <= 0.0 || ai_econ(rec).credits >= need) return;
     if (nb >= 0) rec.state.raise_building = nb;
     if (nu >= 0) rec.state.raise_unit = nu;
     const std::vector<BuildingTypeDef>& bts = btypes();
@@ -3447,7 +3460,7 @@ void World::ai_raise_money(int h, HouseAiRec& rec) {
     for (const Building& b : buildings_)
         if (b.alive && b.house == h && b.selling && b.type >= 0 && b.type < (int)bts.size())
             raised += sell_refund(bts[(std::size_t)b.type].cost, bts[(std::size_t)b.type].soylent, 0.5, false);
-    if (rec.credits + raised > need) return;
+    if (ai_econ(rec).credits + raised > need) return;
     for (int i = (int)rec.state.plan.size() - 1; i >= 0; --i) {
         const int bi = rec.state.plan[(std::size_t)i].building;
         if (bi < 0 || bi >= (int)buildings_.size()) continue;
@@ -3458,7 +3471,7 @@ void World::ai_raise_money(int h, HouseAiRec& rec) {
         const BuildingTypeDef& t = bts[(std::size_t)b.type];
         if (!begin_sell(bi, h)) continue;
         raised += sell_refund(t.cost, t.soylent, 0.5, /*owner_is_human=*/false);
-        if (rec.credits + raised > need) break;
+        if (ai_econ(rec).credits + raised > need) break;
     }
 }
 
@@ -3742,7 +3755,7 @@ const AiTeamState* World::ai_team_state(int house) const {
 int World::ai_unit_producing(int house, int iv01) const {
     if (!ai_enabled(house) || iv01 < 0 || iv01 > 1) return -1;
     const QueueCat c = iv01 == 0 ? QueueCat::Infantry : QueueCat::Vehicle;
-    return ai_houses_[house].queues.producing(c);
+    return econ_[(std::size_t)house].queues.producing(c);
 }
 
 int World::ai_unit_type_of(const HouseAiRec& rec, const Unit& u) const {
@@ -4280,10 +4293,10 @@ bool World::ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat) {
     // Exit handoff via the EXISTING primary_factory + launch_unit path (the
     // player's run_interactive twin) [RE: ai-team.md §6]. Returns true if the
     // ready slot was consumed.
-    if (!rec.queues.ready(cat)) return false;
+    if (!ai_econ(rec).queues.ready(cat)) return false;
     const AiTeamConfig& tc = rec.cfg.team;
     // W2-AN-16: a ship (naval or amphibious) leaves the house's Naval Yard.
-    const int pslot = rec.queues.producing(cat);
+    const int pslot = ai_econ(rec).queues.producing(cat);
     const bool naval_unit = cat == QueueCat::Vehicle && pslot >= 0 &&
                             pslot < (int)tc.unit_roster.size() &&
                             (tc.unit_roster[pslot].combat.is_naval ||
@@ -4301,9 +4314,9 @@ bool World::ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat) {
                                  : cat == QueueCat::Infantry ? tc.inf_factory_types : tc.veh_factory_types;
     const int fi = primary_factory(buildings_, ft, house);
     if (fi < 0) return false;  // no factory: the lost-check cancels the queue
-    const int uslot = rec.queues.producing(cat);
+    const int uslot = ai_econ(rec).queues.producing(cat);
     if (uslot < 0 || uslot >= (int)tc.unit_roster.size()) {
-        rec.queues.placed(cat);  // defensive: orphaned ready slot
+        ai_econ(rec).queues.placed(cat);  // defensive: orphaned ready slot
         return true;
     }
     const BuildingTypeDef& fdef = rec.cfg.roster[buildings_[fi].type];
@@ -4320,13 +4333,13 @@ bool World::ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat) {
     }
     if (!tc.unit_roster[uslot].combat.deploys_into.empty()) {   // W2-SK-07: unfold it
         order_deploy_mcv(uidx);
-        rec.queues.placed(cat);
+        ai_econ(rec).queues.placed(cat);
         return true;
     }
     if (tc.unit_roster[uslot].harvester) {   // [G-68] a bought miner goes to work
         const UnitTypeDef& d = tc.unit_roster[uslot];
         make_harvester(uidx, d.chrono_miner, d.storage > 0 ? d.storage : 20);
-        rec.queues.placed(cat);
+        ai_econ(rec).queues.placed(cat);
         return true;
     }
     // Claim into the FIRST (oldest) team owing this type -- deterministic; an
@@ -4355,7 +4368,7 @@ bool World::ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat) {
         }
         break;
     }
-    rec.queues.placed(cat);
+    ai_econ(rec).queues.placed(cat);
     return true;
 }
 
@@ -4381,15 +4394,15 @@ void World::step_ai_teams(double dt) {
         }
 
         // 2) Factory-lost cancel for the unit queues (the queues themselves
-        //    already TICKED inside step_ai_houses's rec.queues.tick — no new
+        //    already TICKED inside step_ai_houses's ai_econ(rec).queues.tick — no new
         //    production code) [RE: ai-team.md §6].
-        if (rec.queues.producing(QueueCat::Infantry) != -1 &&
+        if (ai_econ(rec).queues.producing(QueueCat::Infantry) != -1 &&
             factory_category_lost(tc.inf_factory_types, h))
-            rec.queues.cancel(QueueCat::Infantry);
-        if (rec.queues.producing(QueueCat::Vehicle) != -1 &&
+            ai_econ(rec).queues.cancel(QueueCat::Infantry);
+        if (ai_econ(rec).queues.producing(QueueCat::Vehicle) != -1 &&
             factory_category_lost(tc.veh_factory_types, h))
-            rec.queues.cancel(QueueCat::Vehicle);
-        rec.credits = rec.queues.credits();
+            ai_econ(rec).queues.cancel(QueueCat::Vehicle);
+        ai_econ(rec).credits = ai_econ(rec).queues.credits();
 
         // 3) Launch READY unit slots (Infantry then Vehicle — deterministic).
         ai_launch_unit_ready(h, rec, QueueCat::Infantry);
@@ -4431,7 +4444,7 @@ void World::step_ai_teams(double dt) {
                 // CONTRACT F: select_autocreate_team takes a trailing seeded rng
                 // (the house's AiTeamState::rng — deterministic, never wall-clock).
                 const int pick = select_autocreate_team(tc.aimd, tc.house_name,
-                                                        st.teams, rec.credits,
+                                                        st.teams, ai_econ(rec).credits,
                                                         tc.rules, st.rng, &team_ok);
                 if (pick >= 0) {
                     TeamInstance t;
@@ -4528,7 +4541,7 @@ void World::step_ai_teams(double dt) {
             const bool core = ht == ct.power || ht == ct.refinery || ht == ct.barracks ||
                               ht == ct.war_factory || ht == ct.radar;
             if (cy && core && ht >= 0 && ht < (int)rec.cfg.roster.size() &&
-                rec.queues.producing(QueueCat::Structure) == -1)
+                ai_econ(rec).queues.producing(QueueCat::Structure) == -1)
                 base_hold = rec.cfg.roster[ht].cost * rec.cfg.mods.cost_mul;
         }
         {
@@ -4552,13 +4565,13 @@ void World::step_ai_teams(double dt) {
                 const UnitTypeDef& d = tc.unit_roster[ut];
                 const bool veh = d.is_vehicle;
                 const QueueCat cat = veh ? QueueCat::Vehicle : QueueCat::Infantry;
-                const bool free_inf = !veh && rec.credits > tc.rules.infantry_reserve;
+                const bool free_inf = !veh && ai_econ(rec).credits > tc.rules.infantry_reserve;
                 if (!free_inf &&
-                    rec.credits < d.cost * rec.cfg.mods.cost_mul + tc.rules.credit_reserve + base_hold)
+                    ai_econ(rec).credits < d.cost * rec.cfg.mods.cost_mul + tc.rules.credit_reserve + base_hold)
                     continue;
                 const std::vector<int>& ft = veh ? tc.veh_factory_types : tc.inf_factory_types;
                 if (factory_category_lost(ft, h) ||
-                    !can_start_unit(rec.queues.state(cat), ut, tc.unit_roster, buildings_,
+                    !can_start_unit(ai_econ(rec).queues.state(cat), ut, tc.unit_roster, buildings_,
                                     rec.cfg.roster, h, rec.cfg.groups, true))
                     continue;
                 if (veh ? need[ut] > best_veh : need[ut] > best_inf) {
@@ -4583,15 +4596,15 @@ void World::step_ai_teams(double dt) {
                     b.type < (int)rec.cfg.roster.size() && rec.cfg.roster[b.type].conyard) { cy = true; break; }
             for (const Unit& u : units_)
                 if (u.alive && u.die_time < 0.0 && u.house == h && u.deploys_into >= 0) { mcv = true; break; }
-            const int vp = rec.queues.producing(QueueCat::Vehicle);
+            const int vp = ai_econ(rec).queues.producing(QueueCat::Vehicle);
             if (vp >= 0 && vp < (int)tc.unit_roster.size() && !tc.unit_roster[vp].combat.deploys_into.empty())
                 mcv = true;
             if (!cy && !mcv && !factory_category_lost(tc.veh_factory_types, h))
                 for (int ut = 0; ut < (int)tc.unit_roster.size(); ++ut) {
                     const UnitTypeDef& d = tc.unit_roster[ut];
                     if (d.combat.deploys_into.empty()) continue;
-                    if (rec.credits < d.cost * rec.cfg.mods.cost_mul + tc.rules.credit_reserve) break;
-                    if (!can_start_unit(rec.queues.state(QueueCat::Vehicle), ut, tc.unit_roster, buildings_,
+                    if (ai_econ(rec).credits < d.cost * rec.cfg.mods.cost_mul + tc.rules.credit_reserve) break;
+                    if (!can_start_unit(ai_econ(rec).queues.state(QueueCat::Vehicle), ut, tc.unit_roster, buildings_,
                                         rec.cfg.roster, h, rec.cfg.groups, true))
                         continue;
                     want_veh = ut;
@@ -4617,7 +4630,7 @@ void World::step_ai_teams(double dt) {
             if (miners < refineries * tc.harvesters_per_refinery)
                 for (int t = 0; t < (int)tc.unit_roster.size(); ++t)
                     if (tc.unit_roster[t].harvester &&
-                        rec.credits >= tc.unit_roster[t].cost * rec.cfg.mods.cost_mul +
+                        ai_econ(rec).credits >= tc.unit_roster[t].cost * rec.cfg.mods.cost_mul +
                                            tc.rules.credit_reserve &&
                         prerequisites_met(tc.unit_roster[t].prerequisite, buildings_,
                                           rec.cfg.roster, h, rec.cfg.groups)) {
@@ -4659,9 +4672,9 @@ void World::step_ai_teams(double dt) {
                 }
                 if (!in_team) onhand_of_type = true;
             }
-            if (rec.queues.producing(cat) == -1 && factory &&
+            if (ai_econ(rec).queues.producing(cat) == -1 && factory &&
                 !build_slowdown_blocks(tc.rules, onhand_of_type) &&
-                can_start_unit(rec.queues.state(cat), want, tc.unit_roster,
+                can_start_unit(ai_econ(rec).queues.state(cat), want, tc.unit_roster,
                                buildings_, rec.cfg.roster, h, rec.cfg.groups,
                                factory)) {
                 // Scalar start + slot restamp — the AI-1 building idiom: the
@@ -4669,11 +4682,11 @@ void World::step_ai_teams(double dt) {
                 // handicap on the speed. No BuildSlowdown time-mul.
                 const int cost = tc.unit_roster[want].cost;
                 const int charge = std::max(1, (int)(cost * rec.cfg.mods.cost_mul));
-                rec.queues.set_credits(rec.credits);
-                start(rec.queues.state(cat), cost, charge,
+                ai_econ(rec).queues.set_credits(ai_econ(rec).credits);
+                start(ai_econ(rec).queues.state(cat), cost, charge,
                       rec.cfg.build_speed * rec.cfg.mods.build_time_mul);
-                rec.queues.state(cat).slot.type = want;
-                rec.credits = rec.queues.credits();
+                ai_econ(rec).queues.state(cat).slot.type = want;
+                ai_econ(rec).credits = ai_econ(rec).queues.credits();
             }
         }
         }   // W2-SK-06 per-category pass
@@ -4854,7 +4867,7 @@ void World::ai_fill_trigger_view(int house, const HouseAiRec& rec,
         else if (neutral >= 0 && b.house == neutral) ++v.neutral_buildings[b.type];
         else if (is_foe(b.house)) ++v.enemy_buildings[b.type];   // [G-67]
     }
-    v.credits = rec.credits;  // OWNER house credits — ct=4 HouseCredits reads
+    v.credits = ai_econ(rec).credits;  // OWNER house credits — ct=4 HouseCredits reads
                               // the CALLING house's money scalar [RE-GATE
                               // APPLIED: ai-trigger.md §2 — NOT enemy credits]
     // Convert the engine's AiDifficulty enum (Easy=0/Normal=1/Difficult=2, i.e.
@@ -5344,7 +5357,7 @@ void World::step(double dt) {
                 InfTickCtx c;
                 c.moving = u.moving();
                 c.has_destination = !u.path.empty();
-                c.human = u.house == inf_human_;
+                c.human = u.house == inf_human_ || is_human(u.house);   // L2: every human house
                 const std::size_t ci = static_cast<std::size_t>(u.cell_y) * grid_w_ + u.cell_x;
                 c.in_water = u.cell_x >= 0 && u.cell_y >= 0 && ci < water_passable_.size() && water_passable_[ci];
                 c.has_target = u.target >= 0 || u.target_building >= 0;
@@ -5429,6 +5442,12 @@ void World::step(double dt) {
     step_abilities(dt);
     step_victory();
     update_sub_offsets();   // W5-B R-061: derive the infantry sub-cell offsets
+    // L2: every human house's production (was GameScene's per-tick glue,
+    // house 0 only), then the per-house outcome + win-time cheer. Both are
+    // strict no-ops in a World with no player economy / victory disabled
+    // (every byte-identity gate).
+    if (!econ_.empty()) step_player_economies(dt);
+    step_house_outcomes();
 }
 
 std::vector<int> unit_draw_order(const std::vector<Unit>& units) {

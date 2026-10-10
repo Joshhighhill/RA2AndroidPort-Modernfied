@@ -575,3 +575,32 @@ TEST_CASE("command bridge: the Chronosphere's two picks pair up; SW index is the
     sel.type = EventType::SelectNotify;
     CHECK(ra2::net::to_net(sel).empty());   // clone-local, never on the wire
 }
+
+TEST_CASE("command bridge: to_event / from_event round-trip through the EventClass codec record") {
+    Command c;
+    c.type = EventType::Sell;
+    c.house = 2;
+    c.frame = 99;
+    c.whom = {Target::building(17)};
+    ra2::net::Event e;
+    REQUIRE(ra2::net::to_event(c, e));
+    CHECK(e.type == static_cast<std::uint8_t>(EventType::Sell));
+    Command back;
+    REQUIRE(ra2::net::from_event(e, back));
+    CHECK(back.type == EventType::Sell);
+    CHECK(back.house == 2);
+    CHECK(back.frame == 99);
+    REQUIRE(back.whom.size() == 1);
+    CHECK(back.whom[0] == Target::building(17));
+    Command p = make_type_event(EventType::Produce, Rtti::InfantryType, 5, false);
+    p.house = 1;
+    REQUIRE(ra2::net::to_event(p, e));
+    REQUIRE(ra2::net::from_event(e, back));
+    CHECK(back.heap_id == 5);
+    CHECK(back.rtti_type == static_cast<int>(Rtti::InfantryType));
+    Command run = c;
+    run.type = EventType::Idle;
+    run.whom = {{Rtti::Infantry, 1}, {Rtti::Infantry, 2}};
+    CHECK_FALSE(ra2::net::to_event(run, e));       // two records
+    CHECK(ra2::net::to_events(run).size() == 2);
+}

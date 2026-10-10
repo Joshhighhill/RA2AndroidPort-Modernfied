@@ -112,7 +112,7 @@ bool touch_confirm_tap(ra2engine::InputEvent& ev) {
     }
     if (bmode) {
         const int bi = input_.pick_building(ev.x, ev.y, true);
-        const bool own = bi >= 0 && world_.buildings()[static_cast<std::size_t>(bi)].house == 0;
+        const bool own = bi >= 0 && world_.buildings()[static_cast<std::size_t>(bi)].house == local_house_;
         if (own && bi == touch_aim_bld_) {   // the confirming tap: Input commits it
             touch_aim_bld_ = -1;
             return false;
@@ -353,16 +353,16 @@ void cameo_menu_state(int type, bool& current, bool& held, bool& ready, int& cou
     count = 0;
     if (active_tab_ >= 2) {
         const ra2engine::QueueCat cat = rp_cat_of_unit(type);
-        current = queues_.producing(cat) == type;
-        held = held_.count(static_cast<int>(cat)) != 0;
-        ready = current && queues_.ready(cat);
+        current = lq().producing(cat) == type;
+        held = world_.econ_held(local_house_, cat);
+        ready = current && lq().ready(cat);
         count = queued_count(type, cat);
     } else {
         const ra2engine::QueueCat bcat =
             (active_tab_ == 1) ? ra2engine::QueueCat::Defense : ra2engine::QueueCat::Structure;
-        const ra2engine::ProductionState& bq = queues_.state(bcat);
+        const ra2engine::ProductionState& bq = lq().state(bcat);
         current = bq.slot.type == type;
-        held = current && held_.count(static_cast<int>(bcat)) != 0;
+        held = current && world_.econ_held(local_house_, bcat);
         ready = current && bq.slot.ready;
         count = current ? 1 : 0;
     }
@@ -403,16 +403,12 @@ void cameo_menu_do(int id) {
         case CM_RESUME: cameo_click(type, /*right=*/false, false); return;  // PRODUCE = resume
         case CM_ALL: cameo_click(type, /*right=*/true, /*shift=*/true); return;
         case CM_CANCEL:
-            if (active_tab_ >= 2) {   // a queued copy first, else the current one
-                const ra2engine::QueueCat cat = rp_cat_of_unit(type);
-                std::vector<int>& bl = backlog_[static_cast<int>(cat)];
-                const auto last = std::find(bl.rbegin(), bl.rend(), type);
-                if (last != bl.rend()) bl.erase(std::next(last).base());
-                else if (queues_.producing(cat) == type) refund_cancel(cat);
+            if (active_tab_ >= 2) {   // a queued copy first, else the current one (ABANDON)
+                world_.econ_abandon(local_house_, rp_cat_of_unit(type), type, /*all=*/false);
             } else {
                 const ra2engine::QueueCat bcat =
                     (active_tab_ == 1) ? ra2engine::QueueCat::Defense : ra2engine::QueueCat::Structure;
-                if (queues_.state(bcat).slot.type == type) refund_cancel(bcat);
+                world_.econ_abandon(local_house_, bcat, type, /*all=*/false);
             }
             return;
         default: return;

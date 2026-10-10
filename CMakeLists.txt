@@ -104,6 +104,8 @@ target_sources(ra2assets_tests PRIVATE tests/test_pathfind.cpp tests/test_bridge
 # it must agree with. Compiled from the same single source of truth as the
 # ra2engine executable below (same pattern as iso_project.cpp / pathfind.cpp).
 target_sources(ra2assets_tests PRIVATE tests/test_world.cpp engine/world.cpp
+                                       engine/world_econ.cpp  # L2 per-house economy
+                                       tests/test_house_econ.cpp
                                        engine/world_veterancy.cpp  # P5 World members
                                        tests/test_world_veterancy.cpp)
 # input.cpp is SDL-free (only InputEvent, screen_to_cell, World -- see
@@ -343,6 +345,8 @@ target_include_directories(ra2extract PRIVATE third_party)
 target_link_libraries(ra2extract PRIVATE ra2assets)
 # W3-FIX-A: the art-resolution census (developer tool, not built by default).
 add_executable(art_census EXCLUDE_FROM_ALL tools/art_census.cpp)
+# simdiff harness, L0 rung (docs/re/simdiff-harness.md): GameRandom draw stream.
+add_executable(simdiff_l0 EXCLUDE_FROM_ALL tools/simdiff/l0_clone.cpp engine/crate.cpp)
 target_link_libraries(art_census PRIVATE ra2assets)
 
 option(RA2_BUILD_ENGINE "Build the SDL2 engine/app (needs SDL2)" ON)

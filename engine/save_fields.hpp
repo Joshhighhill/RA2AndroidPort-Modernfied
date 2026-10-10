@@ -65,8 +65,6 @@ struct SaveAccess {
         save::io(ar, r.is_ai);
         save::io(ar, r.cfg);
         save::io(ar, r.state);
-        save::io(ar, r.queues);
-        save::io(ar, r.credits);
         save::io(ar, r.team_state);
         save::io(ar, r.trigger_state);
         save::io(ar, r.enemy_house);   // W2-SK-08 (v13)
@@ -132,6 +130,12 @@ struct SaveAccess {
         // AI-1/2/3
         save::io(ar, w.ai_houses_);
         save::io(ar, w.ai_any_);
+        // L2 per-house economy (save v32): wallets + queues of every player
+        // and AI house, the human mask, the latched outcomes, the cheer flags.
+        save::io(ar, w.econ_);
+        save::io(ar, w.human_mask_);
+        save::io(ar, w.house_outcome_);
+        save::io(ar, w.victory_cheered_);
         // CB-4 superweapons
         save::io(ar, w.sw_houses_);
         save::io(ar, w.sw_any_);
@@ -143,7 +147,6 @@ struct SaveAccess {
         save::io(ar, w.tech_income_);
         save::io(ar, w.blackout_frames_);
         save::io(ar, w.produced_veteran_);
-        save::io(ar, w.wallet_hint_);   // W2-SK-20 (v13)
         // Shroud
         save::io(ar, w.explored_);
         save::io(ar, w.visible_);
@@ -1166,6 +1169,14 @@ template <class Ar> void fields(Ar& ar, QueueSlot& v) {
     io(ar, v.charge_basis);
 }
 template <class Ar> void fields(Ar& ar, ProductionState& v) { io(ar, v.credits); io(ar, v.slot); }
+// L2 per-house economy (save v32).
+template <class Ar> void fields(Ar& ar, HouseEcon& v) {
+    io(ar, v.player);
+    io(ar, v.credits);
+    io(ar, v.queues);
+    io(ar, v.backlog);
+    io(ar, v.held);
+}
 
 // --- AI-1 ---
 template <class Ar> void fields(Ar& ar, DifficultyMods& v) {
@@ -1391,8 +1402,7 @@ template <class Ar> void fields(Ar& ar, CampaignHostSave& v) {
 struct SceneSave {
     int cam_x = 0, cam_y = 0;          // Camera
     int active_tab = 0;                // sidebar tab (0..3)
-    ProductionQueues queues;           // the player's four queues
-    double player_credits = 0.0;       // the wallet (outside the World)
+    // (L2, save v32: the wallet + queues moved into the World's HouseEcon.)
     double credits_shown = 0.0;        // the rolling credits display
     QueueCat place_cat = QueueCat::Structure;  // queue a pending placement drains
     std::vector<int> bstates;          // FreeUnit grand-opening tracker
@@ -1400,8 +1410,6 @@ struct SceneSave {
 template <class Ar> void fields(Ar& ar, SceneSave& v) {
     io(ar, v.cam_x); io(ar, v.cam_y);
     io(ar, v.active_tab);
-    io(ar, v.queues);
-    io(ar, v.player_credits);
     io(ar, v.credits_shown);
     io(ar, v.place_cat);
     io(ar, v.bstates);

@@ -723,6 +723,73 @@ struct AiHouseConfig {
     int hate_delay_frames = -1;
 };
 
+// --- L2 per-house economy [RE: HouseClass / FactoryClass; docs/re/production.md
+// §1.1-§1.5, construction.md §7-§10, economy.md; network events PRODUCE 0x0E
+// (HouseClass::BeginProduction FUN_004FA170), SUSPEND 0x0F (FUN_004FA730 ->
+// FactoryClass::Suspend FUN_004C9D80), ABANDON 0x10 / ABANDON_ALL 0x2E
+// (FUN_004FA830 -> FactoryClass::Abandon FUN_004C9F10), PLACE 0x0B
+// (FUN_004FAF00), executed by EventClass::Execute FUN_004C6BD0] ------------
+//
+// One record per house, for EVERY house that keeps its money in the sim: the
+// human houses (player=true, stepped by World::step_player_economies) and the
+// AI houses (the AI-1/2/3 planner drives the same queues). The original keeps
+// the wallet (Balance) and the six per-category FactoryClass pointers on the
+// HouseClass itself (+0x53AC..+0x53CC), so a human and a computer house share
+// one record shape; only the decision layer (sidebar events vs the AI) differs.
+struct HouseEcon {
+    bool player = false;              // World steps this house's player production (human house)
+    double credits = 0.0;             // the house wallet (HouseClass Balance)
+    ProductionQueues queues;          // the six FactoryClass queues (QueueCat order)
+    // FactoryClass queued objects behind the current one (+0x44 array / +0x50
+    // count), FIFO, unit categories only (a BuildingType Set abandons instead
+    // of queueing, FUN_004C9B90).
+    std::array<std::vector<int>, kQueueCats> backlog;
+    std::uint8_t held = 0;            // bit c: queue c suspended (FactoryClass +0x70 IsSuspended)
+};
+
+// Asset-derived rules for one human house's production (unit roster, factory
+// types per category, placement extras, rules scalars). NOT serialized: the
+// host rebuilds it from the same assets after construction and after a load,
+// exactly like set_economy's roster (set_player_econ_rules).
+struct PlayerEconRules {
+    std::vector<UnitTypeDef> units;                  // producible unit roster (stolen-tech gated per step)
+    std::vector<UnitAnimSeq> unit_anims;             // per unit def: the anim a launched unit registers
+    std::vector<char> unit_has_anim;                 //   (0 -> default_anim())
+    std::array<std::vector<int>, kQueueCats> factory_types;   // BuildingType factories per category
+    std::vector<std::pair<std::string, std::vector<std::string>>> groups;   // prerequisite groups
+    // Per building-roster index (may be shorter than the roster; missing = default).
+    std::vector<char> water_bound;      // WaterBound=yes (every foundation cell on water)
+    std::vector<char> wall;             // Wall=yes (line fill + WallBuildSpeedCoefficient)
+    std::vector<int>  wall_fill_range;  // GuardRange cells for the free wall line
+    std::vector<int>  buildup_total;    // buildup frames for add_building
+    std::vector<char> base_normal;      // BaseNormal (default yes)
+    // The house's buildable mask per roster building (country Owner= /
+    // RequiredHouses / ForbiddenHouses, lobby TechLevel and Superweapons;
+    // empty = every building) and BuildLimit= per unit def (0 = none).
+    std::vector<char> bld_allowed;
+    std::vector<int>  unit_build_limit;
+    double build_speed = 0.7;           // [General] BuildSpeed
+    double low_power_mod = 1.0;         // [General] LowPowerPenaltyModifier
+    double multiple_factory = 0.8;      // [General] MultipleFactory
+    double wall_coefficient = 3.0;      // [General] WallBuildSpeedCoefficient
+    int    max_queued = 29;             // [General] MaximumQueuedObjects (Rules+0xF0)
+    bool   wall_rules = true;           // the wall line fill / build-time rules (real play)
+};
+
+// Result of a production event (the original's BeginProduction etc. return 0
+// on success and 3 on refusal; the clone also says why).
+enum class ProdResult {
+    Started,     // a new object entered the factory
+    Queued,      // appended behind the current one (unit factories)
+    Resumed,     // a suspended factory restarted
+    Suspended,   // SUSPEND took effect
+    Abandoned,   // the current object was abandoned (full refund)
+    Dequeued,    // a queued copy was removed
+    Placed,      // PLACE put the finished structure down
+    Busy,        // a building factory already holds another type (EVA_UnableToComply)
+    Refused,     // not buildable / not owned / nothing to act on
+};
+
 // Holds a reference to the (caller-owned, long-lived) MapFile plus the placed
 // Units, the passability grid, and a cell-occupancy grid derived from the
 // map's cells. Does not copy the map's cell data -- the caller must keep the
@@ -798,6 +865,7 @@ public:
 
     std::vector<Unit>& units() { return units_; }
     const std::vector<Unit>& units() const { return units_; }
+    const GameRandom& crate_rng() const { return crate_rng_; }   // simdiff dump seam (read-only)
 
     // Append a unit at iso cell (cell_x, cell_y) with SHP image name + frame;
     // seeds its level from the map and claims its cell in the occupancy grid.
@@ -1202,6 +1270,110 @@ public:
     // queue; -1 = idle.
     int ai_unit_producing(int house, int iv01) const;
 
+    // --- L2 per-house economy (HouseEcon / PlayerEconRules above) ----------
+    // Make `house` a human house whose production the World steps
+    // (step_player_economies, end of step()): the wallet is seeded with
+    // `start_credits`, the queues start empty, and the house is marked human.
+    // An AI house keeps its own decision layer but the SAME HouseEcon record.
+    void enable_player_economy(int house, double start_credits);
+    // Install / replace the asset-derived rules of a player house (after the
+    // World is built AND after every load -- they are not saved).
+    void set_player_econ_rules(int house, PlayerEconRules rules);
+    const PlayerEconRules* player_econ_rules(int house) const;
+    // True for a stepped human economy (enable_player_economy, not AI-driven).
+    bool player_economy(int house) const;
+    // The house's economy record (nullptr when the house keeps no wallet in
+    // the sim -- every gate World that never enabled an AI / player economy).
+    const HouseEcon* econ(int house) const;
+    // The spendable wallet: HouseEcon::credits for a player or AI house, the
+    // world-side income pool otherwise. Every presentation read goes here.
+    double credits(int house) const;
+    // Human player houses (bit mask; house 0 unless changed). Used for the
+    // fear-drop exemption, PlayerControl, and the win-time cheer.
+    bool is_human(int house) const {
+        return house >= 0 && house < 64 && ((human_mask_ >> house) & 1u) != 0;
+    }
+    void set_human(int house, bool human) {
+        if (house < 0 || house >= 64) return;
+        if (human) human_mask_ |= (std::uint64_t{1} << house);
+        else human_mask_ &= ~(std::uint64_t{1} << house);
+    }
+    // A house a human commands: a human house or a PlayerControl=yes house.
+    bool human_commanded(int h) const {
+        return is_human(h) || (h > 0 && h < (int)houses_.size() && houses_[h].player_control);
+    }
+
+    // Production commands = the original's sidebar events, validated when they
+    // execute (EventClass::Execute FUN_004C6BD0). `house` is the issuer.
+    //  PRODUCE 0x0E [HouseClass::BeginProduction FUN_004FA170]: refused unless
+    //    the type is buildable now (vtbl+0x94 CanBuild); a building factory
+    //    that holds a running object refuses (Busy); the suspended current
+    //    object of the same type resumes (FUN_004C9DC0); an idle factory starts
+    //    it (FactoryClass::Set FUN_004C9B90; a building Set abandons a
+    //    suspended other building first); a busy UNIT factory queues one more,
+    //    up to [General] MaximumQueuedObjects queued (Rules+0xF0).
+    ProdResult econ_produce(int house, QueueCat cat, int type);
+    //  SUSPEND 0x0F [FUN_004FA730 -> FactoryClass::Suspend FUN_004C9D80].
+    ProdResult econ_suspend(int house, QueueCat cat);
+    //  ABANDON 0x10 / ABANDON_ALL 0x2E [FUN_004FA830]: a queued copy of `type`
+    //    goes first (ALL: every queued copy); otherwise / then the current
+    //    object of that type is abandoned with a full refund (FactoryClass::
+    //    Abandon FUN_004C9F10: Cost_Of - balance back), and the next queued
+    //    object starts at once (FUN_004CA4C0).
+    ProdResult econ_abandon(int house, QueueCat cat, int type, bool all);
+    //  PLACE 0x0B [FUN_004FAF00]: the category's finished structure goes down
+    //    at (cx, cy) if econ_placement accepts it; nothing happens otherwise.
+    ProdResult econ_place(int house, QueueCat cat, int cx, int cy);
+    // Put a `type` building down for `house` at (cx, cy) when econ_placement
+    // accepts it (plus the free wall line), WITHOUT a finished queue slot --
+    // PLACE uses it after its checks; probes / cheats call it directly.
+    bool econ_place_building(int house, int type, int cx, int cy);
+    // The ONE placement predicate (cursor and PLACE) [RE: construction.md §9].
+    PlacementCheck econ_placement(int house, int type, int cx, int cy) const;
+    // Buildability of `type` in `cat` right now (prereqs, tech, factory).
+    bool econ_can_build(int house, QueueCat cat, int type) const;
+    // Current + queued copies of `type` in `cat`.
+    int econ_queued_count(int house, QueueCat cat, int type) const;
+    bool econ_held(int house, QueueCat cat) const;
+    // PRIMARY 0x11 / rally (BuildingClass right-click): owner-checked.
+    bool econ_set_primary(int house, int b_idx);
+    bool econ_set_rally(int house, int b_idx, int x, int y);
+    // POWERON/POWEROFF 0x01/0x02: owner-checked set_building_power.
+    bool econ_power(int house, int b_idx, int control);
+    // (house, unit index) of every unit a player economy launched since the
+    // last call (UnitReady EVA, probes, the saveload gate tally). Transient.
+    std::vector<std::pair<int, int>> take_econ_launches() {
+        std::vector<std::pair<int, int>> v;
+        v.swap(econ_launches_);
+        return v;
+    }
+    // Steps every player economy (called at the end of step()).
+    void step_player_economies(double dt);
+    // Set a house wallet (player or AI econ, else the pool): campaign start
+    // credits, cheats, tests.
+    void set_wallet(int house, double amount);
+
+    // --- L2 issuing house --------------------------------------------------
+    // Who may order units of house h on behalf of `issuer`: its own units,
+    // and a PlayerControl=yes house's for a human issuer (W2-CA-02).
+    // NET L1: kAnyHouse is the non-interactive demos' omnipotent issuer.
+    bool can_command(int issuer, int h) const {
+        if (h == issuer || issuer == kAnyHouse) return true;
+        return h > 0 && h < (int)houses_.size() && houses_[h].player_control && is_human(issuer);
+    }
+    // The house issuing the orders that follow (the scene's local house; the
+    // command layer sets each command's house before applying it). Transient,
+    // not saved. controllable() below answers for this issuer.
+    void set_order_issuer(int house) { order_issuer_ = house; }
+    int order_issuer() const { return order_issuer_; }
+
+    // --- L2 per-house outcome ----------------------------------------------
+    // 0 playing, 1 won (its team is the last standing), -1 lost (defeated);
+    // latched once set. Updated in step() while victory is enabled.
+    int house_outcome(int h) const {
+        return h >= 0 && h < (int)house_outcome_.size() ? house_outcome_[(std::size_t)h] : 0;
+    }
+
     // --- AI-3 AITriggerTypes phase [RE: ai-trigger.md] ---
     // Read-only trigger state (nullptr when `house` is not AI-flagged). NOT
     // read by world_hash — the 8th gate hashes it separately (ai_trigger_hash).
@@ -1355,16 +1527,9 @@ public:
         // orders this house's units as its own.
         bool        player_control = false;
     };
-    // True for house 0 and every PlayerControl house (W2-CA-02).
-    bool controllable(int h) const {
-        return h == 0 || (h > 0 && h < (int)houses_.size() && houses_[h].player_control);
-    }
-    // NET L1: may house `issuer` order an object of house `h`? Its own, plus
-    // the PlayerControl houses for the campaign player (house 0) -- the
-    // generalisation of controllable() a command's apply checks.
-    bool can_command(int issuer, int h) const {
-        return issuer == kAnyHouse || h == issuer || (issuer == 0 && controllable(h));
-    }
+    // True for the issuing house (set_order_issuer; house 0 by default) and,
+    // for a human issuer, every PlayerControl house (W2-CA-02).
+    bool controllable(int h) const { return can_command(order_issuer_, h); }
     // Number of houses (default 3). The six per-house vectors + house_defeated_
     // are sized to this. Grows via set_house.
     int  house_count() const { return houses_.empty() ? 3 : (int)houses_.size(); }
@@ -1691,16 +1856,8 @@ public:
         const std::uint8_t m = produced_veteran_[house];
         return kind > 0 ? (m & (1u << kind)) != 0 : m != 0;
     }
-    // W2-SK-20: the GameScene publishes the human wallet so a refinery spy
-    // steals the real balance (the World only sees the per-frame income pool).
-    void set_wallet_hint(int house, double credits) {
-        if (house < 0) return;
-        if ((int)wallet_hint_.size() <= house) wallet_hint_.resize((std::size_t)house + 1, 0.0);
-        wallet_hint_[(std::size_t)house] = credits;
-    }
-    double wallet_hint(int house) const {
-        return house >= 0 && house < (int)wallet_hint_.size() ? wallet_hint_[(std::size_t)house] : 0.0;
-    }
+    // (L2: the W2-SK-20 set_wallet_hint/wallet_hint scene bridge is gone -- a
+    // human house's wallet is its HouseEcon, read in the sim directly.)
 
     // --- Shroud/Fog phase [RE: shroud.md] ---------------------------------
     // Enable the per-house visibility layer: opens shroud_any_ and allocates
@@ -1802,7 +1959,7 @@ public:
     }
     // W6-03-08 probe: set a computer house's AI wallet (harness only).
     void ai_set_credits_for_test(int house, double amount) {
-        if (ai_enabled(house)) ai_houses_[(std::size_t)house].credits = amount;
+        if (ai_enabled(house)) econ_[(std::size_t)house].credits = amount;
     }
 
     // --- P5 Veterancy + Crates [RE: docs/re/veterancy.md] --------------------
@@ -2178,8 +2335,9 @@ private:
         bool is_ai = false;
         AiHouseConfig cfg;
         AiBaseState state;
-        ProductionQueues queues;  // ONLY the Structure/Defense slots are used
-        double credits = 0.0;
+        // L2: the wallet and the production queues moved to the per-house
+        // HouseEcon (econ_[house], shared with the human houses); ai_econ(rec)
+        // reaches them from a record.
         AiTeamState team_state;  // AI-2 [RE: ai-team.md]
         AiTriggerState trigger_state;  // AI-3 [RE: ai-trigger.md]
         int enemy_house = -1;  // W2-SK-08: the ONE current enemy (house+0x5600), v9
@@ -2191,6 +2349,31 @@ private:
         int hate_frames = 0;
     };
     std::vector<HouseAiRec> ai_houses_;  // index = house id (grown on demand)
+    // --- L2 per-house economy (save v32) ---
+    std::vector<HouseEcon> econ_;               // index = house id (grown on demand)
+    std::vector<PlayerEconRules> econ_rules_;   // NOT saved: re-installed by the host
+    std::vector<char> econ_rules_set_;          // NOT saved
+    std::uint64_t human_mask_ = 1u;             // bit h: a human player's house (house 0 by default)
+    std::vector<char> victory_cheered_;         // per house: the win-time cheer played
+    std::vector<int> house_outcome_;            // per house: 0 playing, 1 won, -1 lost (latched)
+    int order_issuer_ = 0;                      // NOT saved: the house issuing the current order
+    std::vector<std::pair<int, int>> econ_launches_;   // NOT saved: (house, unit) launched this step
+    HouseEcon& econ_slot(int house);            // grows econ_
+    // The record's house wallet / queues (rec is always an element of ai_houses_).
+    HouseEcon& ai_econ(const HouseAiRec& rec) {
+        return econ_slot(static_cast<int>(&rec - ai_houses_.data()));
+    }
+    const HouseEcon& ai_econ(const HouseAiRec& rec) const {
+        return econ_[static_cast<std::size_t>(&rec - ai_houses_.data())];
+    }
+    bool econ_active(int house) const;          // the wallet lives in econ_ (player or AI house)
+    double player_wallet(int house) const;      // a stepped human house's wallet, else 0
+    void step_player_econ(int house, double dt);
+    void econ_launch_ready_units(int house);
+    void econ_refill(int house, int only_cat = -1);
+    double econ_factory_speedup(int house, const std::vector<int>& ftypes, double mf) const;
+    bool econ_conyard_alive(int house) const;
+    void step_house_outcomes();
     bool ai_any_ = false;                // the step() firewall bool
     void step_ai_houses(double dt);
     void ai_pick_enemy_house(int house, HouseAiRec& rec);   // W2-SK-08 / W6-03-04
@@ -2374,7 +2557,6 @@ private:
     // T3 [RE: multihouse.md §D2]: bool[3] -> std::vector<uint8_t> sized
     // house_count(). NOT hashed. Sized in ensure_houses_default/grow_house_arrays.
     std::vector<std::uint8_t> produced_veteran_;   // W2-SK-20: bit (1 << factory_kind)
-    std::vector<double> wallet_hint_;              // W2-SK-20 (v13)
     // The single firewalled Capture per-frame pass: tech-structure income +
     // blackout decay (+ disguise detection, added in Task 7). First line is
     // `if (!capture_any_) return;` -> a strict no-op in every existing demo.

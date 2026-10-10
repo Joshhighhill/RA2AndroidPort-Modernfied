@@ -5,81 +5,129 @@
 public:
     friend struct RealPlayProbe;   // --probe-realplay drives the real scene
 
-    // Is a building of roster type 	ype placeable with its origin at
-    // (cx, cy) for the human? The one rule set the placement cursor and the
-    // confirm share [RE: construction.md §9]. Gap owner A: a WaterBound type
-    // (Naval Yard) needs every foundation cell on WATER (roster2.md TL;DR 6),
-    // and BaseNormal=no neighbours do not extend the base (G-28).
+    // Is a building of roster type `type` placeable with its origin at
+    // (cx, cy) for the local house? L2: the ONE rule set lives in the World
+    // (World::econ_placement: WaterBound, BaseNormal G-28, LocalSize W4-MC-04
+    // [RE: construction.md §9]); the cursor and the PLACE command share it.
     ra2engine::PlacementCheck placement_eval(int type, int cx, int cy) const {
-        if (type < 0 || type >= static_cast<int>(ba_.roster.size())) return {};
-        const ra2engine::BuildingTypeDef& d = ba_.roster[type];
-        const bool water = type < static_cast<int>(ba_.water_bound.size()) && ba_.water_bound[type];
-        const std::vector<std::uint8_t>& grid =
-            water ? world_.grid_for(ra2engine::MovementDomain::Water) : world_.passable();
-        if (water && grid.empty()) return {};
-        ra2engine::PlacementCheck r =
-            ra2engine::placement_check(cx, cy, d.fw, d.fh, 0, d.adjacent, grid, world_.grid_w(),
-                                       world_.grid_h(), world_.occupancy(), world_.buildings(),
-                                       /*bypass_adjacency=*/false,
-                                       rp_on_ ? &rp_base_normal_ : nullptr);
-        // W4-MC-04 [RE: FUN_00577e90]: never build in the off-board strip
-        // outside [Map] LocalSize (campaign maps; a skirmish has no limits).
-        if (local_.valid)
-            for (int y = cy; y < cy + d.fh; ++y)
-                for (int x = cx; x < cx + d.fw; ++x)
-                    if (!on_board(x, y)) {
-                        r.ok = false;
-                        const std::size_t k = static_cast<std::size_t>((y - cy) * d.fw + (x - cx));
-                        if (k < r.cell_ok.size()) r.cell_ok[k] = false;
-                    }
-        return r;
+        return world_.econ_placement(local_house_, type, cx, cy);
     }
     bool placement_ok(int type, int cx, int cy) const { return placement_eval(type, cx, cy).ok; }
+    // Direct placement for the local house (probes / cheats; real play goes
+    // through the PLACE command, World::econ_place).
+    bool place_building(int type, int cx, int cy) { return world_.econ_place_building(local_house_, type, cx, cy); }
 
-    // Place a finished-in-the-queue building at (cx, cy): validity, then
-    // add_building in Buildup (instant=false). Returns false (nothing placed)
-    // when the cell is illegal. A wall closes the line to the next own wall
-    // within GuardRange for free (G-30, roster2.md TL;DR 4).
-    bool place_building(int type, int cx, int cy) {
-        if (!placement_ok(type, cx, cy)) return false;
-        auto add = [&](int x, int y) {
-            const ra2engine::BuildingTypeDef& d = ba_.roster[type];
-            world_.add_building(type, x, y, d.fw, d.fh, 0, d.strength, d.armor_ix,
-                                ba_.art[type].buildup_total, /*instant=*/false, d.sight,
-                                d.grants_map_reveal);
-            if (type < static_cast<int>(ba_.water_bound.size()) && ba_.water_bound[type])
-                world_.block_water_footprint(x, y, d.fw, d.fh);   // ships path around the yard
-        };
-        add(cx, cy);
-        if (rp_on_ && type < static_cast<int>(ba_.wall.size()) && ba_.wall[type]) {
-            auto own_wall = [&](int x, int y) {
-                const int bi = world_.building_at_cell(x, y);
-                return bi >= 0 && world_.buildings()[bi].type == type &&
-                       world_.buildings()[bi].house == 0;
-            };
-            auto can_place = [&](int x, int y) {
-                const ra2engine::PlacementCheck c = ra2engine::placement_check(
-                    x, y, 1, 1, 0, 0, world_.passable(), world_.grid_w(), world_.grid_h(),
-                    world_.occupancy(), world_.buildings(), /*bypass_adjacency=*/true);
-                return c.ok;
-            };
-            for (const ra2engine::Cellxy& c :
-                 ra2engine::wall_line_fill(cx, cy, ba_.wall_fill_range[type], own_wall, can_place))
-                add(c.x, c.y);
-        }
-        return true;
+    // L2: the local house's queues (read-only) and wallet -- the sidebar,
+    // credits tally, EVA and probes read these; changes go through the
+    // World's production commands (econ_produce/suspend/abandon/place).
+    const ra2engine::ProductionQueues& lq() const {
+        static const ra2engine::ProductionQueues kEmpty;
+        const ra2engine::HouseEcon* e = world_.econ(local_house_);
+        return e ? e->queues : kEmpty;
     }
+    double lcredits() const { return world_.credits(local_house_); }
+    int local_house() const { return local_house_; }
 
-    // After a Structure/Defense start: a wall builds WallBuildSpeedCoefficient
-    // (rulesmd 3.0) times slower [RE: roster2.md TL;DR 5] (G-30).
-    void rp_after_building_start(ra2engine::ProductionState& ps, int type) {
-        if (!rp_on_ || type < 0 || type >= static_cast<int>(ba_.wall.size()) || !ba_.wall[type])
-            return;
-        const int wf = ra2engine::wall_build_frames(
-            ba_.roster[type].cost, build_speed_,
-            rules_.general_double("WallBuildSpeedCoefficient", ra2engine::kWallBuildSpeedCoefficient));
-        ps.slot.total_frames = std::max(1, wf);
-        ps.slot.step_ticks = std::clamp(ps.slot.total_frames / ra2engine::kProductionSteps, 1, 255);
+    // L2: every human house gets a World player economy; its wallet takes the
+    // lobby Money launch_skirmish put in its pool (G-21). The scene issues
+    // its orders as local_house_.
+    void setup_player_economies() {
+        for (int h : human_slots_of(cfg_)) {
+            if (h >= world_.house_count() || world_.ai_enabled(h)) continue;
+            world_.enable_player_economy(h, world_.take_income(h));
+        }
+        world_.set_order_issuer(local_house_);
+    }
+    // The production rules of human house h (asset-derived; re-installed
+    // after a load and whenever the building roster grows).
+    ra2engine::PlayerEconRules make_econ_rules(int h) const {
+        ra2engine::PlayerEconRules r;
+        const UnitRoster& ur = house_roster(h);
+        r.units = ur.defs;
+        r.unit_anims.resize(r.units.size());
+        r.unit_has_anim.assign(r.units.size(), 0);
+        for (std::size_t i = 0; i < r.units.size(); ++i) {
+            const auto it = ua_.anims.find(r.units[i].combat.image);
+            if (it == ua_.anims.end()) continue;
+            r.unit_anims[i] = it->second;
+            r.unit_has_anim[i] = 1;
+        }
+        r.factory_types[static_cast<int>(ra2engine::QueueCat::Structure)] = bld_ft_;
+        r.factory_types[static_cast<int>(ra2engine::QueueCat::Defense)] = bld_ft_;
+        r.factory_types[static_cast<int>(ra2engine::QueueCat::Infantry)] = inf_ft_;
+        r.factory_types[static_cast<int>(ra2engine::QueueCat::Vehicle)] = veh_ft_;
+        r.factory_types[static_cast<int>(ra2engine::QueueCat::Naval)] = nav_ft_;
+        r.factory_types[static_cast<int>(ra2engine::QueueCat::Aircraft)] = air_ft_;
+        r.groups = ba_.groups;
+        r.water_bound = ba_.water_bound;
+        r.wall = ba_.wall;
+        r.wall_fill_range = ba_.wall_fill_range;
+        r.buildup_total.resize(ba_.art.size());
+        for (std::size_t i = 0; i < ba_.art.size(); ++i) r.buildup_total[i] = ba_.art[i].buildup_total;
+        r.base_normal = rp_on_ ? rp_base_normal_ : std::vector<char>{};
+        r.build_speed = build_speed_;
+        r.low_power_mod = low_mod_;
+        r.multiple_factory = mf_;
+        r.wall_coefficient =
+            rules_.general_double("WallBuildSpeedCoefficient", ra2engine::kWallBuildSpeedCoefficient);
+        r.max_queued = max_queued();
+        r.wall_rules = rp_on_;
+        r.bld_allowed = bld_allowed_for(h);
+        r.unit_build_limit.assign(r.units.size(), 0);
+        for (std::size_t i = 0; i < r.units.size(); ++i)
+            r.unit_build_limit[i] = static_cast<int>(rules_.section_double(r.units[i].id, "BuildLimit", 0.0));
+        return r;
+    }
+    // House h's buildable building mask (the sidebar's rp_bld_allowed_ rule
+    // for that house's country; the local house's is rp_bld_allowed_).
+    std::vector<char> bld_allowed_for(int h) const {
+        if (h == local_house_ || !cfg_.campaign_map.empty() || h < 0 ||
+            h >= static_cast<int>(cfg_.slots.size()))
+            return rp_bld_allowed_;
+        const std::string country = rp_player_country(rules_, cfg_.slots[(std::size_t)h]);
+        const camp::PlayerRules pr;
+        std::vector<char> m(ba_.roster.size(), 0);
+        for (std::size_t i = 0; i < ba_.roster.size(); ++i) {
+            const ra2engine::BuildingTypeDef& d = ba_.roster[i];
+            m[i] = d.tech_level > 0 && d.tech_level <= cfg_.tech_level &&
+                   rp_country_allows(rules_, d.id, country) && camp::allowed_type(pr, d.id);
+            if (!cfg_.superweapons && m[i] && rp_is_lobby_sw_building(rules_, d.id)) m[i] = 0;
+        }
+        return m;
+    }
+    void install_econ_rules() {
+        for (int h = 0; h < world_.house_count(); ++h)
+            if (world_.player_economy(h)) world_.set_player_econ_rules(h, make_econ_rules(h));
+    }
+    // House h's unit roster: the scene's ur_ is the LOCAL house's; another
+    // human house of a different country gets its own (loaded on demand,
+    // with its art registered so its units render).
+    const UnitRoster& house_roster(int h) const {
+        if (h == local_house_) return ur_;
+        for (const auto& [hh, r] : extra_ur_)
+            if (hh == h) return r;
+        return const_cast<GameScene*>(this)->load_extra_roster(h);
+    }
+    UnitRoster& load_extra_roster(int h) {
+        ra2engine::SkirmishConfig c = cfg_;
+        if (!c.campaign_map.empty() || h < 0 || h >= static_cast<int>(c.slots.size()))
+            return const_cast<UnitRoster&>(ur_);   // the campaign has one human house
+        extra_ur_.emplace_back(h, load_player_unit_roster(dir_, ra2_, ua_, rules_, art_, rules_ini_,
+                                                          rp_player_country(rules_, c.slots[(std::size_t)h]),
+                                                          c.tech_level, /*with_aircraft=*/true));
+        UnitRoster& r = extra_ur_.back().second;
+        for (const VehicleAssets& v : r.vehicles) vlist_.push_back(&v);
+        try {
+            MixFile conquer = ra2_.open_nested("conquer.mix");
+            for (const ra2engine::UnitTypeDef& d : r.defs) {
+                if ((d.is_vehicle && d.combat.is_vehicle) || ua_.shps.count(d.combat.image)) continue;
+                try {
+                    ua_.shps.emplace(d.combat.image, load_unit_shp(conquer, d.combat.image));
+                    ua_.anims.emplace(d.combat.image, anim_from_art(art_, d.combat.image));
+                } catch (const std::exception&) {}
+            }
+        } catch (const std::exception&) {}
+        return r;
     }
 private:
     // --- gap owner A state (skirmish real play; empty/false in a campaign) ---
@@ -93,6 +141,7 @@ private:
     SuperweaponParams    rp_nuke_;
     std::vector<char>    rp_base_normal_;
     std::vector<int>     rp_build_limit_;    // per unit def: rules BuildLimit= (0 = none)    // per roster building: rules BaseNormal (default yes)
+    std::deque<std::pair<int, UnitRoster>> extra_ur_;   // L2: other human houses' rosters (stable)
 
     // The roster the ctor init list loads for the human: the full side/country/
     // tech-level roster in skirmish (G-22), the historical tables in a campaign.
@@ -110,7 +159,7 @@ private:
                                            pr.tech_level, /*with_aircraft=*/true, &pr.allowed);
         }
         const ra2engine::SkirmishSlot s0 =
-            cfg.slots.empty() ? ra2engine::SkirmishSlot{} : cfg.slots.front();
+            cfg.slots.empty() ? ra2engine::SkirmishSlot{} : cfg.slots[(std::size_t)local_slot_of(cfg)];
         return load_player_unit_roster(dir, ra2, ua, rules, art, rules_ini,
                                        rp_player_country(rules, s0), cfg.tech_level,
                                        /*with_aircraft=*/true);   // W2-AN-01: fixed-wing in World
@@ -122,7 +171,7 @@ private:
         load_progress("SIDEBAR");   // W2-AR-02 loading-screen checkpoint
         rp_on_ = true;
         const ra2engine::SkirmishSlot s0 =
-            cfg_.slots.empty() ? ra2engine::SkirmishSlot{} : cfg_.slots.front();
+            cfg_.slots.empty() ? ra2engine::SkirmishSlot{} : cfg_.slots[(std::size_t)local_house_];
         int tech = cfg_.tech_level;
         bool sw = cfg_.superweapons;
         camp::PlayerRules pr;   // W2-CA-03: campaign = the mission's player house
@@ -217,9 +266,9 @@ private:
                 if (i >= static_cast<int>(rp_bld_allowed_.size()) || !rp_bld_allowed_[i]) continue;
                 const bool def = i < static_cast<int>(ba_.defense.size()) && ba_.defense[i] != 0;
                 if (def != (tab == 1)) continue;
-                const bool queued = queues_.producing(bc) == i;
+                const bool queued = lq().producing(bc) == i;
                 if (!queued &&
-                    !ra2engine::prerequisites_met(d.prerequisite, bs, ba_.roster, 0, ba_.groups))
+                    !ra2engine::prerequisites_met(d.prerequisite, bs, ba_.roster, local_house_, ba_.groups))
                     continue;
                 v.push_back(i);
             }
@@ -232,17 +281,17 @@ private:
             const ra2engine::UnitTypeDef& d = ur_.defs[i];
             const ra2engine::QueueCat c = rp_unit_cat(d);
             if ((c == ra2engine::QueueCat::Infantry) != (tab == 2)) continue;
-            const bool queued = queues_.producing(c) == i;
+            const bool queued = lq().producing(c) == i;
             if (!queued && d.tech_level <= 0) continue;   // wave-5 R-042: tech not (yet) stolen
             if (!queued &&
-                !ra2engine::prerequisites_met(d.prerequisite, bs, ba_.roster, 0, ba_.groups))
+                !ra2engine::prerequisites_met(d.prerequisite, bs, ba_.roster, local_house_, ba_.groups))
                 continue;
             // BuildLimit= (Tanya, Boris: 1): no new one while the limit is on
             // the field [RE-FALLBACK: counted by the unit's art image].
             if (!queued && i < static_cast<int>(rp_build_limit_.size()) && rp_build_limit_[i] > 0) {
                 int alive = 0;
                 for (const ra2engine::Unit& u : world_.units())
-                    alive += u.alive && u.house == 0 && u.image == d.combat.image;
+                    alive += u.alive && u.house == local_house_ && u.image == d.combat.image;
                 if (alive >= rp_build_limit_[i]) continue;
             }
             v.push_back(i);
@@ -265,6 +314,7 @@ private:
             world_.set_sw_building_types(swb);
             w5_arm_building_art(ba_, art_ini_);           // wave-5: art keys of the new types
             world_.refresh_building_types(ba_.roster);
+            install_econ_rules();   // L2: the per-type placement extras follow the roster
         }
         if (rp_on_ && !rp_sw_table_.empty()) rp_sync_superweapons(world_, rp_sw_table_, rp_nuke_);
     }
@@ -285,35 +335,8 @@ private:
         if (active_tab_ == 2) return ra2engine::QueueCat::Infantry;
         for (ra2engine::QueueCat c : {ra2engine::QueueCat::Vehicle, ra2engine::QueueCat::Naval,
                                       ra2engine::QueueCat::Aircraft})
-            if (queues_.producing(c) >= 0) return c;
+            if (lq().producing(c) >= 0) return c;
         return ra2engine::QueueCat::Vehicle;
     }
 
-    // Exit handoff: each READY unit queue launches from its category's primary
-    // factory [RE: production.md §1.3]; a HARV/CMIN becomes a working miner.
-    void rp_launch_ready_units() {
-        for (ra2engine::QueueCat cat :
-             {ra2engine::QueueCat::Infantry, ra2engine::QueueCat::Vehicle,
-              ra2engine::QueueCat::Naval, ra2engine::QueueCat::Aircraft}) {
-            if (!queues_.ready(cat)) continue;
-            const std::vector<int>& ft = rp_ft_of(cat);
-            const int fi = ra2engine::primary_factory(world_.buildings(), ft, 0);
-            if (fi < 0) continue;
-            const int uslot = queues_.producing(cat);
-            if (uslot < 0 || uslot >= static_cast<int>(ur_.defs.size())) {
-                queues_.placed(cat);
-                continue;
-            }
-            const ra2engine::UnitTypeDef& ud = ur_.defs[uslot];
-            const ra2engine::BuildingTypeDef& fdef = ba_.roster[world_.buildings()[fi].type];
-            const int uidx = world_.launch_unit(fi, fdef, ud.combat);
-            if (uidx >= 0) {
-                if (ud.harvester)   // [RE: economy.md §1] a built miner starts hunting ore
-                    world_.make_harvester(uidx, ud.chrono_miner, ud.storage > 0 ? ud.storage : 20);
-                world_.set_anim(ud.combat.image, ua_.anims.count(ud.combat.image)
-                                                     ? ua_.anims.at(ud.combat.image)
-                                                     : ra2engine::default_anim());
-                queues_.placed(cat);
-            }
-        }
-    }
+    // (L2: the unit exit handoff moved into the World -- World::econ_launch_ready_units.)

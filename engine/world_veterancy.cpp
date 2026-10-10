@@ -328,7 +328,7 @@ void World::collect_crate(int slot, int unit_idx) {
         bool any_mcv = false;
         for (int i = 0; i < static_cast<int>(units_.size()); ++i)
             any_mcv |= units_[i].alive && units_[i].die_time < 0.0 && units_[i].house == h && is_mcv(i);
-        const double cash = ai_enabled(h) ? ai_houses_[h].credits : house_credits_[h] + wallet_hint(h);
+        const double cash = ai_enabled(h) ? econ_[(std::size_t)h].credits : house_credits_[h] + player_wallet(h);
         if (!any_bld && !any_mcv && cash > 1500.0) {
             const bool soviet = house_side(h) == Side::Soviet;
             for (int k = 0; k < static_cast<int>(undeploy_units_.size()) && forced_mcv < 0; ++k) {

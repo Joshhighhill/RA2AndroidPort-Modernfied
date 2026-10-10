@@ -32,7 +32,7 @@
         p.set_s("music_track", pres_.sound().current_track());
         p.set_s("loaded_track", loaded_track_);
         p.set("loaded_audio", loaded_audio_ ? 1 : 0);
-        p.set("credits", player_credits_);
+        p.set("credits", lcredits());
         p.set("credits_shown", credits_shown_);
         p.set_s("tooltip", tooltip_now());   // W2-UI-07
         p.set("playfield_w", playfield_w_);
@@ -240,14 +240,14 @@
             for (const ra2engine::Unit& u : world_.units()) {
                 if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
                 const bool usable = seen(u.cell_x, u.cell_y);
-                if (u.house == 0 && usable && vis(u.fx, u.fy)) ++on;
+                if (u.house == local_house_ && usable && vis(u.fx, u.fy)) ++on;
                 if (world_.controllable(u.house) && usable) {
                     ++ctl;
                     if (vis(u.fx, u.fy)) ++ctl_on;
                 }
             }
             for (const ra2engine::Building& b : world_.buildings())
-                if (b.house == 0 && b.alive && seen(b.cx, b.cy) && vis(b.cx + b.fw / 2.0, b.cy + b.fh / 2.0)) ++on;
+                if (b.house == local_house_ && b.alive && seen(b.cx, b.cy) && vis(b.cx + b.fw / 2.0, b.cy + b.fh / 2.0)) ++on;
             p.set("own_on_screen", on);
             p.set("ctl_units", ctl);         // controllable (house 0 + PlayerControl) usable units
             p.set("ctl_on_screen", ctl_on);  // ... of which inside the view
@@ -277,8 +277,8 @@
         p.set_s("outcome", outcome);
         std::string wo = "RUNNING";
         if (world_.victory_enabled()) {
-            if (world_.house_defeated(0)) wo = "LOST";
-            else if (world_.winning_team() >= 0 && world_.winning_team() == world_.house_team(0)) wo = "WON";
+            if (world_.house_defeated(local_house_)) wo = "LOST";
+            else if (world_.winning_team() >= 0 && world_.winning_team() == world_.house_team(local_house_)) wo = "WON";
         }
         p.set_s("world_outcome", wo);
         p.set("victory_enabled", world_.victory_enabled() ? 1 : 0);
@@ -298,7 +298,7 @@
         p.set("unit_count_cfg", cfg_.unit_count);
         p.set("start_cash", cfg_.starting_cash);
         // Power (house 0).
-        const ra2engine::PowerTotals pt = ra2engine::power_totals(world_.buildings(), ba_.roster, 0);
+        const ra2engine::PowerTotals pt = ra2engine::power_totals(world_.buildings(), ba_.roster, local_house_);
         p.set("power_out", pt.output);
         p.set("power_drain", pt.drain);
         // P2: every house's power (campaign proofs that black out an AI base).
@@ -323,7 +323,7 @@
             p.targets["sw"] = ra2play::Rect{lay_.bar.x + ra2engine::kCameoX, lay_.radar.y + 2,
                                             ra2engine::kCameoW, ra2engine::kCameoH};
         {   // W2-AN-04: one target per granted SW, `sw:<TYPE>` (Nuke, IronCurtain, ...)
-            const std::vector<ra2engine::SuperweaponType> swt = world_.sw_types(0);
+            const std::vector<ra2engine::SuperweaponType> swt = world_.sw_types(local_house_);
             for (int k = 0; k < static_cast<int>(swt.size()); ++k) {
                 const ra2engine::SbRect r = sw_slot_rect(lay_, k);
                 p.targets[std::string("sw:") + ra2engine::superweapon_type_name(swt[k])] =
@@ -351,7 +351,7 @@
         if (ba_.ok) {
             for (int bi = 0; bi < static_cast<int>(world_.buildings().size()); ++bi) {
                 const ra2engine::Building& b = world_.buildings()[static_cast<std::size_t>(bi)];
-                if (b.house != 0 || !b.alive || b.state == ra2engine::Building::State::Dead) continue;
+                if (b.house != local_house_ || !b.alive || b.state == ra2engine::Building::State::Dead) continue;
                 if (b.type < 0 || b.type >= static_cast<int>(ba_.roster.size())) continue;
                 const std::string key = "art:" + ba_.roster[static_cast<std::size_t>(b.type)].id;
                 if (p.targets.count(key)) continue;
@@ -394,7 +394,7 @@
             {ra2engine::QueueCat::Infantry, "infantry"}, {ra2engine::QueueCat::Vehicle, "vehicle"},
             {ra2engine::QueueCat::Naval, "naval"}, {ra2engine::QueueCat::Aircraft, "aircraft"}};
         for (const auto& [cat, nm] : kCats) {
-            const ra2engine::QueueSlot& sl = queues_.state(cat).slot;
+            const ra2engine::QueueSlot& sl = lq().state(cat).slot;
             const int t = (cat == ra2engine::QueueCat::Structure) ? 0 : (cat == ra2engine::QueueCat::Defense) ? 1
                         : (cat == ra2engine::QueueCat::Infantry) ? 2 : 3;   // 2/3 = unit roster
             p.set_s(std::string("queue(") + nm + ")", sl.type >= 0 ? play_entry_id(t, sl.type) : "");
@@ -423,7 +423,7 @@
                              : bm == ra2engine::Input::BaseMode::PowerToggle ? "power" : "none");
         {   // W5-E2: the player's powered-down buildings
             int off = 0;
-            for (const ra2engine::Building& b : world_.buildings()) off += (b.alive && b.house == 0 && b.power_off);
+            for (const ra2engine::Building& b : world_.buildings()) off += (b.alive && b.house == local_house_ && b.power_off);
             p.set("powered_down(0)", off);
         }
         p.set("sw_targeting", input_.sw_targeting() ? 1 : 0);
@@ -589,8 +589,8 @@
         p.set("prism_supports", static_cast<double>(world_.w5_state().prism_supports));
         {
             int bombs = 0;
-            for (const ra2engine::Unit& u : world_.units()) bombs += u.alive && u.house == 0 && u.bomb_frame >= 0;
-            for (const ra2engine::Building& b : world_.buildings()) bombs += b.alive && b.house == 0 && b.bomb_frame >= 0;
+            for (const ra2engine::Unit& u : world_.units()) bombs += u.alive && u.house == local_house_ && u.bomb_frame >= 0;
+            for (const ra2engine::Building& b : world_.buildings()) bombs += b.alive && b.house == local_house_ && b.bomb_frame >= 0;
             p.set("bombs", static_cast<double>(bombs));
         }
         {
@@ -613,19 +613,19 @@
         p.set("ifv_repairs", static_cast<double>(world_.w5_state().repairs));
         p.set("defusals", static_cast<double>(world_.w5_state().defusals));
         p.set("passenger_shots", static_cast<double>(world_.w5_state().passenger_shots));
-        p.set("stolen_tech", static_cast<double>(world_.stolen_tech(0)));
+        p.set("stolen_tech", static_cast<double>(world_.stolen_tech(local_house_)));
         p.set("gap_hidden", static_cast<double>(world_.w5_gap_hidden(0)));
         {
             int carried = 0;
             for (const ra2engine::Unit& u : world_.units())
-                carried += u.alive && u.house == 0 && u.cargo_of >= 0 && u.cargo_of != ra2engine::kGarrisonCargo;
+                carried += u.alive && u.house == local_house_ && u.cargo_of >= 0 && u.cargo_of != ra2engine::kGarrisonCargo;
             p.set("in_cargo", static_cast<double>(carried));
         }
         {
             int ov = 0, opw = 0;
             for (const ra2engine::Building& b : world_.buildings()) {
-                ov += b.alive && b.house == 0 && b.w5.overpowered;
-                opw += b.alive && b.house == 0 ? (int)b.w5.overpowerers.size() : 0;
+                ov += b.alive && b.house == local_house_ && b.w5.overpowered;
+                opw += b.alive && b.house == local_house_ ? (int)b.w5.overpowerers.size() : 0;
             }
             p.set("overpowered", static_cast<double>(ov));
             p.set("overpowerers", static_cast<double>(opw));
@@ -670,7 +670,7 @@
             double nx = 0, ny = 0;
             if (play_sel_centre(nx, ny)) {
                 for (const ra2engine::Unit& u : world_.units()) {
-                    if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house == 0) continue;
+                    if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house == local_house_) continue;
                     const std::string k = "sel_near(" + std::to_string(u.house) + "," + play_unit_id(u) + ")";
                     const double d = std::floor(std::hypot(u.fx - nx, u.fy - ny));
                     auto it = p.n.find(k);
@@ -688,7 +688,7 @@
             const ra2engine::BuildingTypeDef& d = ba_.roster[type];
             if (ax < 0) {   // default anchor: the player's first live building
                 for (const ra2engine::Building& b : world_.buildings())
-                    if (b.alive && b.house == 0 && b.state != ra2engine::Building::State::Dead) {
+                    if (b.alive && b.house == local_house_ && b.state != ra2engine::Building::State::Dead) {
                         ax = b.cx + b.fw / 2;
                         ay = b.cy + b.fh / 2;
                         break;
@@ -785,7 +785,7 @@
                 return "";
             }
             if (c == "credits" && a.size() >= 2) {
-                player_credits_ += std::atof(a[1].c_str());
+                world_.set_wallet(local_house_, lcredits() + std::atof(a[1].c_str()));
                 return "";
             }
             // W2-SK probes: damage_unit H:TYPE[:n] DMG ; place TYPE H building H:T +DX +DY

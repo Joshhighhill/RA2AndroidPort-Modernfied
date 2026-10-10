@@ -122,9 +122,9 @@ public:
     // game's scheduler) it is handed over; without one it is applied to the
     // World immediately (unit tests, tools) -- same result, no tick boundary.
     void set_command_sink(std::function<void(Command)> sink) { sink_ = std::move(sink); }
-    // The issuing house of this Input's commands (the local player).
-    void set_local_house(int h) { house_ = h; }
-    int local_house() const { return house_; }
+    // The issuing house of this Input's commands: the local player, i.e. the
+    // World's order issuer (L2 set_order_issuer).
+    int local_house() const { return world_.order_issuer(); }
     // The gesture tables an apply needs too (refineries, factory groups, spy).
     const OrderRules& order_rules() const { return rules_; }
 
@@ -484,7 +484,6 @@ private:
     // NET L1.
     Selection sel_;
     OrderRules rules_;
-    int house_ = 0;
     std::function<void(Command)> sink_;
     void emit(Command c);
 

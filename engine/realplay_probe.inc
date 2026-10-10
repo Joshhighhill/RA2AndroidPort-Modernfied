@@ -22,7 +22,7 @@ struct RealPlayProbe {
         return cfg;
     }
     static ra2engine::World& world(GameScene& g) { return g.world_; }
-    static double credits(GameScene& g) { return g.player_credits_; }
+    static double credits(GameScene& g) { return g.lcredits(); }
     static const BuildingAssets& ba(GameScene& g) { return g.ba_; }
     static const UnitRoster& ur(GameScene& g) { return g.ur_; }
     static int own_index(GameScene& g, const char* id) {
@@ -87,7 +87,7 @@ struct RealPlayProbe {
         return std::find(v.begin(), v.end(), std::string(id)) != v.end();
     }
     static const ra2engine::QueueSlot& qslot(GameScene& g, ra2engine::QueueCat c) {
-        return g.queues_.state(c).slot;
+        return g.lq().state(c).slot;
     }
     static void run(GameScene& g, int frames) {
         for (int f = 0; f < frames; ++f) g.update(1.0 / 15.0);

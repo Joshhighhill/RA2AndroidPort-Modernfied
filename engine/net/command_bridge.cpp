@@ -124,4 +124,29 @@ std::vector<Command> from_net(const std::vector<NetCommand>& recs) {
     return out;
 }
 
+std::vector<Event> to_events(const ra2engine::Command& c) {
+    std::vector<Event> out;
+    for (const NetCommand& n : to_net(c)) {
+        Event e;
+        if (command_to_event(n, e)) out.push_back(e);
+    }
+    return out;
+}
+
+bool to_event(const ra2engine::Command& c, Event& out) {
+    const std::vector<Event> v = to_events(c);
+    if (v.size() != 1) return false;
+    out = v[0];
+    return true;
+}
+
+bool from_event(const Event& e, ra2engine::Command& out) {
+    NetCommand n;
+    if (!event_to_command(e, n)) return false;
+    const std::vector<ra2engine::Command> v = from_net({n});
+    if (v.size() != 1) return false;
+    out = v[0];
+    return true;
+}
+
 }  // namespace ra2::net
