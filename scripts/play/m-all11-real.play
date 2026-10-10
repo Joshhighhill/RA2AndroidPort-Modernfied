@@ -105,6 +105,48 @@ place auto
 until 900 buildings(0,GACSPH) >= 1
 dump
 shot csph
+let n_GAWEAP = built(0,GAWEAP)
+until 900 can_build(GAWEAP) == 1
+click tab:0
+click cameo:GAWEAP
+until 2400 queue_ready(structure) == 1
+click cameo:GAWEAP
+place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+until 600 built(0,GAWEAP) > $n_GAWEAP
+click building 0:GAWEAP:1
+wait 2
+click cell 112 106
+wait 2
+click xy 900 650 right nopark
+let n_GAWEAP = built(0,GAWEAP)
+until 900 can_build(GAWEAP) == 1
+click tab:0
+click cameo:GAWEAP
+until 2400 queue_ready(structure) == 1
+click cameo:GAWEAP
+place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+until 600 built(0,GAWEAP) > $n_GAWEAP
+click building 0:GAWEAP:2
+wait 2
+click cell 112 106
+wait 2
+click xy 900 650 right nopark
 until 900 cameo(GHOST) == 1
 click tab:2
 click cameo:GHOST
@@ -277,6 +319,29 @@ if placing == 1 then place auto
 wait 1
 if placing == 1 then place auto
 until 600 built(0,ATESLA) > $n_ATESLA
+until 6000 evareq(EVA_NuclearMissileLaunched) >= 1 or outcome != RUNNING
+click xy 900 650 right nopark
+if units(0,FV) > 0 then click unit 0:FV:0
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 shift
+key t
+key t
+if outcome == RUNNING then click cell 112 92 alt
+wait 330
+click xy 900 650 right nopark
+if units(0,FV) > 0 then click unit 0:FV:0
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 shift
+key t
+key t
+if outcome == RUNNING then click cell 112 106 alt
+wait 60
+click xy 900 650 right nopark
+if outcome == RUNNING and cameo(FV) == 1 then click tab:3
+if outcome == RUNNING and cameo(FV) == 1 then click cameo:FV
+if outcome == RUNNING and cameo(FV) == 1 then click cameo:FV
+if outcome == RUNNING and cameo(FV) == 1 then click cameo:FV
+if outcome == RUNNING and cameo(FV) == 1 then click cameo:FV
 until 3000 units(0,FV) >= 9 and units(0,GHOST) >= 9
 dump
 if outcome == RUNNING and cameo(GHOST) == 1 then click tab:2
@@ -2158,6 +2223,7 @@ if outcome == RUNNING and buildings(2,NAMISL) > 0 and free(0,GHOST) > 15 and ucx
 if outcome == RUNNING and buildings(2,NAMISL) > 0 and free(0,GHOST) > 15 and ucx(0,GHOST,15) > 150 and buildings(2,NAMISL) <= 1 then click building 2:NAMISL:0
 if outcome == RUNNING then wait 30
 if outcome == RUNNING then dump
+if outcome == WON then end expect WON
 if outcome == RUNNING and cameo(FV) == 1 then click tab:3
 if outcome == RUNNING and cameo(FV) == 1 then click cameo:FV
 if outcome == RUNNING and cameo(FV) == 1 then click cameo:FV
@@ -2179,7 +2245,25 @@ if outcome == RUNNING and cameo(GHOST) == 1 then click cameo:GHOST
 if outcome == RUNNING and cameo(GHOST) == 1 then click cameo:GHOST
 if outcome == RUNNING and cameo(GHOST) == 1 then click cameo:GHOST
 if outcome == RUNNING and cameo(GHOST) == 1 then click cameo:GHOST
-if outcome == RUNNING and buildings(2,NAMISL) > 0 then wait 2700
+until 6000 evareq(EVA_NuclearMissileLaunched) >= 2 or outcome != RUNNING
+click xy 900 650 right nopark
+if units(0,FV) > 0 then click unit 0:FV:0
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 shift
+key t
+key t
+if outcome == RUNNING then click cell 112 92 alt
+wait 330
+click xy 900 650 right nopark
+if units(0,FV) > 0 then click unit 0:FV:0
+if units(0,GHOST) > 0 then click unit 0:GHOST:0 shift
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 shift
+key t
+key t
+if outcome == RUNNING then click cell 112 106 alt
+wait 60
+click xy 900 650 right nopark
+if outcome == RUNNING and buildings(2,NAMISL) > 0 then wait 900
 let cz = carried(0)
 click xy 900 650 right nopark
 if outcome == RUNNING and units(0,FV) > $cz+9 then click unit 0:FV~:9
