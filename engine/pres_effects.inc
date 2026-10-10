@@ -544,7 +544,7 @@ public:
             if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
             // Ship wake: every 8 frames while moving on water.
             if (!wake_.empty() && u.is_naval && u.moving() && frame_ % 8 == 0 &&
-                on_water(w, u.cell_x, u.cell_y) && w.object_visible_at(0, u.cell_x, u.cell_y)) {
+                on_water(w, u.cell_x, u.cell_y) && w.object_visible_at(g_local_house, u.cell_x, u.cell_y)) {
                 // WAKE1 is Flat / Layer=ground: PresFx draws it in its ground
                 // pass under the ships (agent B's shared anim drawing).
                 if (fx_->spawn(wake_, u.fx, u.fy, u.level, 0.0)) ++wakes_;
@@ -1012,7 +1012,7 @@ private:
             if (kv.second < now || kv.first < 0 || kv.first >= static_cast<int>(world_->units().size())) continue;
             const ra2engine::Unit& u = world_->units()[static_cast<std::size_t>(kv.first)];
             if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
-            if (!world_->object_visible_at(0, u.cell_x, u.cell_y)) continue;
+            if (!world_->object_visible_at(g_local_house, u.cell_x, u.cell_y)) continue;
             diamond(u.fx * 256.0, u.fy * 256.0, u.level * 104.0 + (u.is_vehicle ? 60.0 : 90.0),
                     u.is_vehicle ? 20 : 9, u.is_vehicle ? 12 : 14);
         }

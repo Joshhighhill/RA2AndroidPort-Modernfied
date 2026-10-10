@@ -436,7 +436,7 @@ void prewarm_terrain(TextureCache& tc, const ra2assets::MapFile& map, Theater& t
 int draw_terrain(void* sdl_renderer, TextureCache& tc,
                  const ra2assets::MapFile& map, Theater& theater,
                  const ra2assets::Palette& pal, const Camera& cam, int view_w,
-                 int view_h, const World* vis) {
+                 int view_h, const World* vis, int viewer) {
     SDL_Renderer* renderer = static_cast<SDL_Renderer*>(sdl_renderer);
     const uint64_t built_before = g_terrain_builds;
     TerrainDrawList& L = terrain_list(tc, map, theater, pal);
@@ -447,7 +447,7 @@ int draw_terrain(void* sdl_renderer, TextureCache& tc,
     const MapIndex& idx = map_index(map);
     if (L.items.empty()) return 0;
     // Shroud [RE: presentation.md §4, W2-GA-02]: with a World whose shroud is
-    // on, a cell house 0 has never explored is not drawn at all -- neither its
+    // on, a cell the viewing house has never explored is not drawn at all -- neither its
     // diamond nor its cliff/slope extra -- so the black map hides the layout
     // (the SHROUD.SHP post-pass then softens the edges). FogOfWar (W2-GA-03,
     // off by default as in the original) dims explored-but-not-visible cells.
@@ -463,7 +463,7 @@ int draw_terrain(void* sdl_renderer, TextureCache& tc,
             SDL_Rect dst{it.px + cam.x, it.py + cam.y, it.w, it.h};
             // Cull tiles fully off-screen (the base rect decides, as before).
             if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= view_w || dst.y >= view_h) continue;
-            if (shroud && !vis->explored_at(0, it.cx, it.cy)) continue;
+            if (shroud && !vis->explored_at(viewer, it.cx, it.cy)) continue;
             TerrainSlot& s = L.slots[static_cast<size_t>(it.slot)];
             SDL_Texture* tex = slot_texture(tc, theater, pal, s);
             if (!tex) continue;
@@ -475,7 +475,7 @@ int draw_terrain(void* sdl_renderer, TextureCache& tc,
                     if (SDL_Texture* et = extra_texture(tc, theater, pal, s))
                         SDL_RenderCopy(renderer, et, nullptr, &edst);
             }
-            if (fog && !vis->visible_at(0, it.cx, it.cy)) {
+            if (fog && !vis->visible_at(viewer, it.cx, it.cy)) {
                 SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
                 SDL_SetRenderDrawColor(renderer, 0, 0, 0, 128);
                 SDL_RenderFillRect(renderer, &dst);

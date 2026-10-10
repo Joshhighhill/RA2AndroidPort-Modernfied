@@ -223,7 +223,7 @@ private:
             snd_.ensure_sound(s);
         for (const std::string& s : w5_crate_) snd_.ensure_sound(s);
         // Type=SHROUD events are silent over unrevealed cells (local player).
-        snd_.set_reveal_fn([this](int x, int y) { return !world_ || world_->object_visible_at(0, x, y); });
+        snd_.set_reveal_fn([this](int x, int y) { return !world_ || world_->object_visible_at(g_local_house, x, y); });
     }
 
     // [RE: FUN_006FF0A0] the acknowledgement voice of the click's mission.

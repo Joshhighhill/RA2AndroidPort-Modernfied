@@ -143,6 +143,7 @@ namespace {
 // sidebar draw, EVA, cursor, power bar). GameScene sets it to its
 // local_house_ and resets it to 0 when it ends; every gate keeps 0.
 int g_local_house = 0;
+int g_terrain_drawn = 0;   // fix-black: terrain tiles the last frame drew (probe terrain_drawn)
 
 // W2-AR-03/-05/-22: data-dir discovery + the required-file preflight.
 #include "data_dir.inc"
@@ -3752,7 +3753,7 @@ void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
         const ra2assets::MapCell* mc =
             map.at(ra2engine::lepton_to_cell(p.x), ra2engine::lepton_to_cell(p.y));
         // G-84: a shell over a cell house 0 cannot currently see is not drawn.
-        if (!world.object_visible_at(0, ra2engine::lepton_to_cell(p.x), ra2engine::lepton_to_cell(p.y)))
+        if (!world.object_visible_at(g_local_house, ra2engine::lepton_to_cell(p.x), ra2engine::lepton_to_cell(p.y)))
             continue;
         const int level = mc ? mc->level : 0;
         const int gx = static_cast<int>(std::lround((x - y) * 30.0)) + cam.x + 30;
@@ -3859,7 +3860,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // W2-GA-02: never-explored cells are not drawn at all (their cliff/slope
     // extras no longer leak through the shroud); the SHROUD.SHP post-pass
     // (draw_shroud_pass below) softens the edges over every object.
-    ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H, &world);   // W2-GA-02
+    g_terrain_drawn = ra2engine::draw_terrain(ren, tc, a.map, a.theater, a.pal, cam, W, H, &world, g_local_house);   // W2-GA-02 (net: the local house's shroud)
     // Ore/overlay layer: above terrain tiles, below every object [economy.md §5].
     if (ore_art) draw_ore(ren, tc, *ore_art, world.ore(), a.map, a.pal, cam, W, H, &world);
     // G-87: map smudges + non-ore overlays (walls/fences/bridges), live game only.
@@ -3918,7 +3919,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         // house 0 cannot see (object_visible_at: explored, or visible with FogOfWar). Inert with shroud
         // off (visible_at returns true on empty grids) -> every existing render
         // is pixel-identical. Own units (u.house == 0) are always drawn.
-        if (u.house != g_local_house && !world.object_visible_at(0, u.cell_x, u.cell_y)) return;
+        if (u.house != g_local_house && !world.object_visible_at(g_local_house, u.cell_x, u.cell_y)) return;
         // W2-AN-13: a submerged enemy sub without our sonar contact is unseen.
         if (world.unit_hidden_from(0, u)) return;
         if (u.ia.vanish) return;   // W3-B: a death anim replaced the body
@@ -4739,7 +4740,7 @@ void draw_sw_slot(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
     const std::vector<ra2engine::SuperweaponType> types = world.sw_types(g_local_house);
     for (int k = 0; k < static_cast<int>(types.size()); ++k) {
     const ra2engine::SuperweaponType ty = types[k];
-    const ra2engine::Superweapon* sw = world.sw_state(0, ty);
+    const ra2engine::Superweapon* sw = world.sw_state(g_local_house, ty);
     if (!sw) continue;
     const ra2engine::SbRect slot{slot0.x + (k % 2) * ra2engine::kCameoW,
                                  slot0.y + (k / 2) * ra2engine::kCameoH, slot0.w, slot0.h};
@@ -4826,7 +4827,7 @@ void draw_radar_minimap(SDL_Renderer* ren, const ra2engine::SbRect& radar_rect,
     // the building/unit sprites use.
     for (const ra2engine::Unit& u : world.units()) {
         if (!u.alive) continue;
-        if (u.house != g_local_house && !world.object_visible_at(0, u.cell_x, u.cell_y)) continue;
+        if (u.house != g_local_house && !world.object_visible_at(g_local_house, u.cell_x, u.cell_y)) continue;
         SDL_Rect bp{radar_rect.x + static_cast<int>(u.cell_x * sx),
                     radar_rect.y + static_cast<int>(u.cell_y * sy), 2, 2};
         const ra2assets::Rgba col = world.house_palette(ba.unit_pal, u.house)[24];

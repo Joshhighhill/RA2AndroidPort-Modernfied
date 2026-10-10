@@ -1,0 +1,37 @@
+# FIX-BLACK regression: a client whose LOCAL house is not 0 (a network joiner,
+# or the L2 debug switch `set local_house 1`) must see its own base: terrain
+# drawn under the local house's shroud (not house 0's), the camera opening on
+# its start, its own units on screen. (User report: "the second player has a
+# black map" -- iso_renderer drew terrain through house 0's explored mask.)
+set render_every 60
+set on_quit continue
+set humans 0,1
+set local_house 1
+
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:country1
+click list:down
+click list:down
+click list:down
+click pick:Russia
+click start
+until 90 scene == game
+require scene == game
+assert local_house == 1
+wait 60
+shot local1_f60
+dump
+assert local_explored > 100
+assert local_explored_on_screen > 100
+assert terrain_drawn > 200
+assert own_on_screen >= 1
+assert cam_own_dist < 15
+wait 240
+shot local1_f300
+dump
+assert local_explored_on_screen > 100
+assert terrain_drawn > 200
+assert own_on_screen >= 1
+end
