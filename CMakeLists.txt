@@ -330,7 +330,11 @@ if (WIN32)
   target_link_libraries(ra2assets_tests PRIVATE ws2_32)
 endif()
 # Two-process LAN test driver: two peers + a tiny deterministic model.
-add_executable(ra2netpeer tools/ra2netpeer.cpp ${RA2_NET_SOURCES})
+# command_bridge.cpp needs the engine's Command/World headers; the stub-model
+# driver uses only the SDL-free transport, codec and lockstep layers.
+set(RA2_NETPEER_SOURCES ${RA2_NET_SOURCES})
+list(FILTER RA2_NETPEER_SOURCES EXCLUDE REGEX "command_bridge\\.cpp$")
+add_executable(ra2netpeer tools/ra2netpeer.cpp ${RA2_NETPEER_SOURCES})
 target_include_directories(ra2netpeer PRIVATE engine)
 if (WIN32)
   target_link_libraries(ra2netpeer PRIVATE ws2_32 winmm)
