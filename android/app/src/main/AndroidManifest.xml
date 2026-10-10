@@ -28,9 +28,18 @@
         android:name="android.hardware.type.pc"
         android:required="false" />
 
-    <!-- No permissions: the game files come in through the Storage Access
-         Framework picker (SetupActivity) or MTP into the app's own external
-         files dir; saves and RA2.INI live in internal storage. -->
+    <!-- Storage needs no permission: the game files come in through the
+         Storage Access Framework picker (SetupActivity) or MTP into the app's
+         own external files dir; saves and RA2.INI live in internal storage.
+         Multiplayer (docs/gap/net/05-transport-infra.md §3.2) needs only
+         normal, install-time permissions (no runtime prompt): sockets, the
+         network/Wi-Fi state for the LAN browser, and the MulticastLock that
+         lets LAN discovery broadcasts through Wi-Fi power-save.
+         NOTE for merges: agent T (engine/net) may add INTERNET too; keep one. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <!-- W2-AR-12: backups keep RA2.INI + saves only (never the user's ~750 MB
          of game files). -->

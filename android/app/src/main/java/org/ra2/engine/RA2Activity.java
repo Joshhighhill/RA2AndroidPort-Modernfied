@@ -6,6 +6,7 @@ import android.graphics.Rect;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -89,10 +90,49 @@ public class RA2Activity extends SDLActivity implements AudioManager.OnAudioFocu
         v.setSystemGestureExclusionRects(rects);
     }
 
+    /*
+     * Multiplayer LAN discovery (engine/mp/lan_discovery.cpp, docs/gap/net/
+     * 05-transport-infra.md §3.2): many Wi-Fi drivers drop broadcast frames
+     * in power-save unless a MulticastLock is held. The engine holds it only
+     * while the LAN browser or a LAN lobby is open (it costs battery) and
+     * releases it on leave; onPause also drops it, onResume restores it.
+     */
+    private WifiManager.MulticastLock multicastLock;
+    private boolean multicastWanted = false;
+
+    /** Called from native code (platform_os.cpp os_android_multicast_lock). */
+    public void netMulticastLock(boolean on) {
+        multicastWanted = on;
+        applyMulticastLock(on);
+    }
+
+    private void applyMulticastLock(boolean on) {
+        try {
+            if (multicastLock == null) {
+                WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+                if (wm == null) return;
+                multicastLock = wm.createMulticastLock("ra2-lan-discovery");
+                multicastLock.setReferenceCounted(false);
+            }
+            if (on && !multicastLock.isHeld()) multicastLock.acquire();
+            if (!on && multicastLock.isHeld()) multicastLock.release();
+            Log.i(TAG, "multicast lock " + (on ? "acquired" : "released"));
+        } catch (RuntimeException e) {
+            Log.w(TAG, "multicast lock: " + e);
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        if (multicastWanted) applyMulticastLock(false);
+        super.onPause();
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
         requestFocus();
+        if (multicastWanted) applyMulticastLock(true);
     }
 
     /** engine/platform_os.cpp: keep AUTOSAVE.SAV through the scene teardown. */

@@ -597,11 +597,9 @@ void LobbyClient::handle(const std::vector<std::uint8_t>& body, std::uint64_t no
     r.u32();
     switch (cmd) {
         case kCmdConfirmJoin:
-            if (state_ == State::Joining) {
-                local_slot_ = r.u8();
-                state_ = State::Joined;
-                system_line("Joined the game.");
-            }
+            // Joined only once the first GAME_OPTIONS arrived too (the UI
+            // must never show a confirmed seat with an empty lobby).
+            if (state_ == State::Joining) local_slot_ = r.u8();
             return;
         case kCmdRejectJoin:
             reason_ = static_cast<RejectReason>(r.u8());
@@ -632,6 +630,10 @@ void LobbyClient::handle(const std::vector<std::uint8_t>& body, std::uint64_t no
             if (!decode_options(all, m)) return;
             model_ = m;
             rev_ = rev;
+            if (state_ == State::Joining && local_slot_ >= 0) {
+                state_ = State::Joined;
+                system_line("Joined the game.");
+            }
             if (local_slot_ >= 0) {
                 const MpSlot& me = model_.slots[local_slot_];
                 has_map_ = have_map ? have_map(model_.map) : true;
@@ -685,7 +687,13 @@ void LobbyClient::update(std::uint64_t now) {
         if (state_ == State::Rejected || state_ == State::Lost) continue;
         handle(m.body, now);
     }
-    if (state_ == State::Joining && (last_query_ == 0 || now - last_query_ >= kQueryMs)) {
+    if (state_ == State::Joining && local_slot_ >= 0 && now - heard_ > kSilenceMs) {
+        state_ = State::Lost;
+        reason_ = RejectReason::Lost;
+        system_line(reject_text(reason_));
+        return;
+    }
+    if (state_ == State::Joining && local_slot_ < 0 && (last_query_ == 0 || now - last_query_ >= kQueryMs)) {
         if (queries_ >= kMaxQueries) {
             state_ = State::Lost;
             reason_ = RejectReason::Lost;
