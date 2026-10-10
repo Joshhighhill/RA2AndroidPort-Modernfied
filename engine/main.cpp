@@ -5513,6 +5513,20 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
 // existing CRATES toggle (cfg.crates). launch_skirmish (shared with
 // --demo-skirmish) is deliberately NOT touched, so that gate's World never
 // opens either firewall.
+// Net L0: the session seed a game runs on. The launcher's choice when it made
+// one (lobby Start, a network host); else a campaign mission's name hash (so a
+// mission replays identically -- the old W5-A crate seed) or, for a quick-start
+// skirmish, the map's. Never the wall clock: the sim must be a pure function of
+// (map, rules, session seed, commands).
+std::uint32_t session_seed_for(const ra2engine::SkirmishConfig& cfg) {
+    if (cfg.session_seed) return cfg.session_seed;
+    const std::string& key = cfg.campaign_map.empty() ? (cfg.map_file.empty() ? cfg.map_id : cfg.map_file)
+                                                      : cfg.campaign_map;
+    std::uint32_t h = 2166136261u;
+    for (char ch : key) h = (h ^ static_cast<unsigned char>(std::toupper(static_cast<unsigned char>(ch)))) * 16777619u;
+    return h ? h : 1u;
+}
+
 void enable_p5_features(ra2engine::World& world, const Rules& rules, const BuildingAssets& ba,
                         const ra2engine::SkirmishConfig& cfg,
                         const std::vector<const std::vector<ra2engine::UnitTypeDef>*>& rosters) {
@@ -5525,17 +5539,10 @@ void enable_p5_features(ra2engine::World& world, const Rules& rules, const Build
     if (!cfg.crates && !campaign) return;
     ra2engine::World::CrateConfig cc;
     cc.rules = resolve_crate_rules(rules);
-    // ScenarioClass::Random is seeded per game in the original; the clone uses
-    // the wall clock (the interactive game is not a gate).
-    cc.seed = static_cast<std::uint32_t>(SDL_GetTicks()) ^ 0x52413252u;
-    // W5-A: a campaign seeds its crate RNG from the mission name, so a mission
-    // replays identically (the --play proofs) [RE-FALLBACK: the original's
-    // per-game ScenarioClass::Random seed is not modelled for campaigns].
-    if (campaign) {
-        std::uint32_t h = 2166136261u;
-        for (char ch : cfg.campaign_map) h = (h ^ static_cast<unsigned char>(std::toupper(static_cast<unsigned char>(ch)))) * 16777619u;
-        cc.seed = h;
-    }
+    // Net L0 [RE: InitRandom FUN_0052F960]: ScenarioClass::Random is seeded
+    // with the session Seed itself. The session seed was chosen by the
+    // launcher (session_seed_for) -- no wall clock -- and is in the save.
+    cc.seed = world.session_seed() ? world.session_seed() : 0x52413252u;
     int humans = 0;
     for (const ra2engine::SkirmishSlot& sl : cfg.slots)
         if (sl.combatant && !sl.is_ai) ++humans;
@@ -6009,6 +6016,7 @@ public:
         // the only two enable_projectiles call sites (the other is
         // --demo-projectile) -- every byte-identity gate keeps the instant path.
         cfg_ = cfg;   // P7: the save's 'CONF' section rebuilds this scene's assets
+        world_.set_session_seed(session_seed_for(cfg));   // Net L0: before anything draws
         world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
         depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
         w5_arm_combat(world_, rules_, &a_.map, &a_.theater);   // W5-B: sub-cells, land speed, crush
@@ -6988,6 +6996,7 @@ private:
             if (cfg_.campaign_map.empty())   // [G-60] same real-play AI as the ctor
                 arm_skirmish_ai(world_, cfg_, ba_, rules_, rules_ini_, ur_ai_,
                                 load_aimd_or_empty(dir_), &a_.map, ua_);
+            world_.set_session_seed(session_seed_for(cfg_));   // Net L0
             if (!cfg_.campaign_map.empty()) setup_campaign(cfg_);
             world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
         depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
@@ -13776,7 +13785,8 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
     // UnitCount force at a start chosen by the recovered spread rule -- no
     // pre-built base. The gates pass nothing and keep the historical setup.
     if (gf_rules_ini) {
-        GfRng rng(gf_seed_of(cfg.map_file.empty() ? cfg.map_id : cfg.map_file));
+        GfRng rng(cfg.session_seed ? cfg.session_seed   // Net L0: the session seed when the launcher chose one
+                                     : gf_seed_of(cfg.map_file.empty() ? cfg.map_id : cfg.map_file));
         std::vector<ra2assets::MapWaypoint> real_starts = a.map.start_waypoints();
         int ncomb = 0;
         for (const ra2engine::SkirmishSlot& s : cfg.slots) ncomb += s.combatant ? 1 : 0;

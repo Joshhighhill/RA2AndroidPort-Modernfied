@@ -53,6 +53,12 @@ struct SkirmishConfig {
     // NOT hashed and NOT saved (a loaded game reads [Options] GameSpeed,
     // which the page also writes, 0x6829F0: OptionsClass+0 = GameSpeed).
     int                       game_speed    = -1;      // 0 fastest .. 6 slowest
+    // Net L0: the session seed (the original's Seed, DAT_00A8DCFC), chosen ONCE
+    // by the launcher -- the lobby host's Start click, a campaign mission's
+    // name -- and handed to World::set_session_seed; every sim RNG stream
+    // derives from it. 0 = none chosen (gates, quick start): GameScene derives
+    // a deterministic one from the map. Never the wall clock inside the sim.
+    std::uint32_t             session_seed  = 0;
     int                       mcv_redeploys = -1;      // MCV Repacks: 1 / 0
 
     // P10 Campaign [RE: campaign.md §3]: a NON-EMPTY campaign_map turns the

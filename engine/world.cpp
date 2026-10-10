@@ -1955,6 +1955,35 @@ void World::step_flight(double dt) {
 
 // --- AI-1 base-planning phase [RE: ai-base.md] ------------------------------
 
+namespace {
+// splitmix32-style finaliser (Net L0 stream derivation).
+std::uint32_t seed_mix(std::uint32_t x) {
+    x ^= x >> 16; x *= 0x7FEB352Du;
+    x ^= x >> 15; x *= 0x846CA68Bu;
+    x ^= x >> 16;
+    return x;
+}
+}  // namespace
+
+std::uint32_t World::session_stream_seed(std::uint32_t base, std::uint32_t salt) const {
+    if (session_seed_ == 0) return base;
+    const std::uint32_t h = seed_mix(session_seed_ ^ seed_mix(base + 0x9E3779B9u * (salt + 1u)));
+    return h ? h : base;
+}
+
+void World::set_session_seed(std::uint32_t seed) {
+    session_seed_ = seed;
+    proj_rng_.s = session_stream_seed(ProjRng{}.s);
+    combat_rng_.s = session_stream_seed(0x2545F491u);
+    ore_rng_.s = session_stream_seed(OreRng{}.s);
+    bridge_rng_.s = session_stream_seed(0x42524447u);
+    // Houses already enabled (a launcher that enables AI first) re-derive too.
+    for (std::size_t h = 0; h < ai_houses_.size(); ++h) {
+        ai_houses_[h].state.rng = session_stream_seed(AiBaseState{}.rng, 1u + static_cast<std::uint32_t>(h));
+        ai_houses_[h].team_state.rng = session_stream_seed(AiTeamState{}.rng, 101u + static_cast<std::uint32_t>(h));
+    }
+}
+
 void World::enable_ai_house(int house, AiHouseConfig cfg) {
     if (house < 0) return;
     if ((int)ai_houses_.size() <= house) ai_houses_.resize(house + 1);
@@ -1963,6 +1992,9 @@ void World::enable_ai_house(int house, AiHouseConfig cfg) {
     rec.cfg = std::move(cfg);
     rec.state = AiBaseState{};
     rec.team_state = AiTeamState{};  // AI-2: fresh team state per enable
+    // Net L0: the house streams come from the session seed (fixed when none).
+    rec.state.rng = session_stream_seed(rec.state.rng, 1u + static_cast<std::uint32_t>(house));
+    rec.team_state.rng = session_stream_seed(rec.team_state.rng, 101u + static_cast<std::uint32_t>(house));
     rec.trigger_state = make_trigger_state(rec.cfg.team.aimd);  // AI-3: current
                                     // weights seeded from starting_weight
                                     // (NB reads rec.cfg — cfg was moved from)

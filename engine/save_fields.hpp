@@ -235,6 +235,7 @@ struct SaveAccess {
         save::io(ar, w.undeploy_units_);
         save::io(ar, w.mcv_redeploys_);
         save::io(ar, w.skirmish_session_);
+        save::io(ar, w.session_seed_);   // Net L0 (v32)
         // G16 world depth (agent G)
         save::io(ar, w.depth_rules_);
         save::io(ar, w.garrison_any_);
@@ -1363,6 +1364,7 @@ template <class Ar> void fields(Ar& ar, SkirmishConfig& v) {
     io(ar, v.campaign_difficulty);
     io(ar, v.game_speed);            // skirmish page: lobby Game Speed (-1 = unset)
     io(ar, v.mcv_redeploys);         // skirmish page: MCV Repacks (-1 = unset)
+    io(ar, v.session_seed);          // Net L0 (v32): the launcher's session seed
 }
 
 // --- P10 campaign runtime state (the 'HOST' section of a campaign save) ---

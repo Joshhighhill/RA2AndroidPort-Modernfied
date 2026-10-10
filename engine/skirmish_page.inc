@@ -529,6 +529,7 @@ private:
                 // deterministic under --play) mixed with the map.
                 const std::uint32_t seed = gf_seed_of(map_file()) ^ (ev.t_ms * 2654435761u) ^ 0x9E3779B9u;
                 ra2engine::SkirmishConfig cfg = build_config(seed);
+                cfg.session_seed = seed ? seed : 1u;   // Net L0: the host's session seed
                 std::cerr << "[lobby] start map=" << cfg.map_file << " slots=" << cfg.slots.size()
                           << " speed=" << cfg.game_speed << " units=" << cfg.unit_count
                           << " cash=" << cfg.starting_cash << "\n";

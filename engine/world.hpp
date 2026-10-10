@@ -1957,6 +1957,19 @@ public:
     void set_mcv_redeploys(bool on) { mcv_redeploys_ = on; }
     bool mcv_redeploys() const { return mcv_redeploys_; }
     void set_skirmish_session(bool on) { skirmish_session_ = on; }
+    // Net L0 session seed [RE: InitRandom FUN_0052F960 seeds Scenario->Random
+    // (+0x218) and the global randomizer 0x885B08 from the session Seed
+    // DAT_00A8DCFC; docs/gap/net/01-original-protocol.md "Seed"]. Every sim RNG
+    // stream is derived from this ONE value, chosen once by the launcher (lobby
+    // host, campaign mission) and recorded in saves -- never the wall clock.
+    // 0 = "no session seed": every stream keeps its historical fixed seed, so
+    // the byte-identity gates (which never set one) are unchanged.
+    // Call right after construction, before anything draws.
+    void set_session_seed(std::uint32_t seed);
+    std::uint32_t session_seed() const { return session_seed_; }
+    // The seed of one stream: `base` when no session seed, else a mix of the
+    // session seed, `base` and `salt` (never 0, for the xorshift streams).
+    std::uint32_t session_stream_seed(std::uint32_t base, std::uint32_t salt = 0) const;
     std::vector<DeployEvent> take_deploy_events();
     void step_deploy(double dt);
     // gF G-75: trigger action 101 ReshroudMapAtWaypoint (TAction FUN_006E0FE0
@@ -2575,6 +2588,7 @@ private:
     std::vector<UnitCombat> undeploy_units_;   // parallel: the unit to spawn
     bool mcv_redeploys_ = false;
     bool skirmish_session_ = false;
+    std::uint32_t session_seed_ = 0;           // Net L0: the one session seed (saved, v32)
     bool try_undeploy(int b_idx);              // called by complete_sell
     void finish_deploy(int idx);
 

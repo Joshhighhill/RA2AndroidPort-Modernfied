@@ -344,7 +344,8 @@ public:
         sync_tracks();       // W6 fix #2: the placed buildings' Insignificant/LegalTarget flags
         apply_playfield();   // W6-02-08: IsInPlayfield of every placed object (Unlimbo)
 
-        sys_ = std::make_unique<ra2engine::MapTriggerSystem>(data_, launch.difficulty, 0x5EEDu);
+        sys_ = std::make_unique<ra2engine::MapTriggerSystem>(data_, launch.difficulty,
+                                                              w_.session_stream_seed(0x5EEDu, 7u));   // Net L0
         sys_->set_campaign_mode(true);
         // Objects were placed (and attached) before scenario start [RE
         // map-triggers.md §1.8]: attach their tags now that the system exists.
