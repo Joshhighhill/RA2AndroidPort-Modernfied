@@ -114,7 +114,10 @@ $outSame = $ho.Count -gt 0 -and $ho.Count -eq $jo.Count -and @($ho.Keys | Where-
 Write-Host ("outcomes host {0} / join {1}: {2}" -f (($ho.GetEnumerator() | Sort-Object Name | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ","),
             (($jo.GetEnumerator() | Sort-Object Name | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ","),
             $(if ($outSame) { "SAME" } else { "DIFFERENT / missing" }))
-$pass = $h.ExitCode -eq 0 -and $j.ExitCode -eq 0 -and $diff.Count -eq 0 -and $maxf -ge 2985 -and $outSame -and $chat
+$away = (Select-String -Path $hostErr -Pattern "\[net\] away house 1" -Quiet -ErrorAction SilentlyContinue) -and
+        (Select-String -Path $hostErr -Pattern "\[net\] back house 1" -Quiet -ErrorAction SilentlyContinue)
+Write-Host ("Android away / back notices joiner -> host: " + $(if ($away) { "received" } else { "MISSING" }))
+$pass = $h.ExitCode -eq 0 -and $j.ExitCode -eq 0 -and $diff.Count -eq 0 -and $maxf -ge 2985 -and $outSame -and $chat -and $away
 if ($Online -and $fwd -le 0) { $pass = $false }
 Write-Host ("network match: " + $(if ($pass) { "PASS" } else { "FAIL" }))
 if (-not $pass) { exit 1 }

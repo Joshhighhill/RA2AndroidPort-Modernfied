@@ -278,6 +278,7 @@
             post_message(net_->name_of(a.house) + (a.back ? " is back." : " paused the game (app in the background)."),
                          8.0, net_color(a.house));
             pres_log(0, std::string("net away ") + (a.back ? "back " : "away ") + std::to_string(a.house));
+            std::cerr << "[net] " << (a.back ? "back" : "away") << " house " << a.house << " (" << a.seconds << " s)" << std::endl;
         }
         // An away player's countdown holds the stall timers (no dialog, no kick).
         net_away_.erase(std::remove_if(net_away_.begin(), net_away_.end(),

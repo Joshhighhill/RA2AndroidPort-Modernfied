@@ -399,3 +399,21 @@ TEST_CASE("net play: chat and away notices travel on the global channel") {
     CHECK_FALSE(away[0].back);
     CHECK(away[0].seconds == 90u);
 }
+
+TEST_CASE("net play: resign_house defeats a leaver and blows up what it owns") {
+    if (!ra2fixture::mapsmd03_available()) { MESSAGE("skipped: real map assets not found"); return; }
+    Match m;
+    ra2engine::World& w = *m.p[0].w;
+    w.add_combat_unit(m.p[1].base_x + 2, m.p[1].base_y, 1, ra2engine::UnitCombat{});
+    w.resign_house(1);
+    CHECK(w.house_defeated(1));
+    CHECK_FALSE(w.house_defeated(0));
+    for (const ra2engine::Building& b : w.buildings())
+        if (b.house == 1) CHECK(b.state == ra2engine::Building::State::Dead);
+    for (const ra2engine::Unit& u : w.units())
+        if (u.house == 1) CHECK(u.die_time >= 0.0);
+    for (int f = 0; f < 60; ++f) w.step(kDt);
+    CHECK(w.house_outcome(1) == -1);
+    CHECK(w.house_outcome(0) == 1);   // the last team standing
+    w.resign_house(99);                // out of range: no-op
+}
