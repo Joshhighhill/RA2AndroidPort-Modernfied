@@ -6363,8 +6363,8 @@ public:
 
         now_ = SDL_GetTicks();   // frame clock for draw_sidebar's animation timing
         // G-13: the simulation advances in FIXED logic ticks (accumulator over the
-        // wall-clock dt; at most kMaxLogicSteps per frame, the rest dropped so a
-        // stall never spirals). Input, scrolling, rendering and the per-frame
+        // wall-clock dt; at most kMaxLogicSteps per frame, the rest carried to
+        // the next frames -- Net L0: ticks are never dropped). Input, scrolling, rendering and the per-frame
         // tail below stay per-frame. The tick length is kLogicDt (see the
         // RE-FALLBACK note at its definition).
         // RE-T1 (gap fix C) [RE: docs/re/gamespeed.md]: the user's GameSpeed
@@ -6374,14 +6374,22 @@ public:
         // [SK-20] A skirmish started from the lobby runs at the page's Game
         // Speed slider (0x6829F0 stores it as the session speed); other paths
         // keep [Options] GameSpeed.
-        logic_acc_ += dt * (cfg_.game_speed >= 0
+        // Net L0: a frame that took longer than 1 s (a debugger, an OS suspend)
+        // counts as 1 s of game time -- like the original, which never catches
+        // up wall time at all -- so the carried backlog stays bounded.
+        logic_acc_ += std::min(dt, 1.0) * (cfg_.game_speed >= 0
                                 ? ra2engine::game_speed_multiplier(cfg_.game_speed)
                                 : g_user_settings
                                 ? ra2engine::game_speed_multiplier(g_user_settings->game_speed)
                                 : 1.0);
         int logic_steps = 0;
         while (logic_acc_ + 1e-9 >= kLogicDt) {
-            if (logic_steps == kMaxLogicSteps) { logic_acc_ = 0.0; break; }
+            // Net L0 (N4-07): never DROP a tick -- the remainder stays in the
+            // accumulator and is caught up over the following frames (at most
+            // kMaxLogicSteps per frame, so rendering keeps going). A lockstep
+            // peer must run every tick; a slow device runs the game slower
+            // rather than skipping simulation.
+            if (logic_steps == kMaxLogicSteps) break;
             logic_acc_ -= kLogicDt;
             ++logic_steps;
             ++g_perf_logic_ticks;   // R-170 perf overlay
