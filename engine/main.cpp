@@ -83,6 +83,7 @@
 #include "mp/lan_discovery.hpp"   // multiplayer shell (mp_pages.inc)
 #include "mp/mp_lobby.hpp"
 #include "mp/server_link.hpp"
+#include "net/net_game.hpp"     // NET-PLAY: the lockstep driver (net_play.inc)
 #include "maplist.hpp"
 #include "map_trigger.hpp" // MapTriggerSystem (P9 Map triggers; --demo-triggers only)
 #include "campaign.hpp"    // P10 campaign core [RE: campaign.md]
@@ -5388,6 +5389,7 @@ int g_play_canvas_w = 0, g_play_canvas_h = 0;
 // scripted events); `fixed_dt > 0` steps update(fixed_dt) once per iteration
 // with no wall clock and no frame delay (deterministic); `hooks` observes
 // every frame. The defaults are exactly the interactive behaviour.
+void net_linger_pump();   // NET-PLAY (net_play.inc): finished matches flush their EXIT
 int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Scene* initial,
                      ra2engine::EventSource* src = nullptr, double fixed_dt = 0.0,
                      DriverHooks* hooks = nullptr) {
@@ -5469,6 +5471,7 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
         prev = now;
         if (rec) rec->frame(frame, dt);
         const Uint64 pc1 = SDL_GetPerformanceCounter();
+        net_linger_pump();   // NET-PLAY
         scene->update(dt);
         const Uint64 pc2 = SDL_GetPerformanceCounter();
         Uint64 pc3 = pc2;
@@ -5976,6 +5979,8 @@ bool g_resumed_from_autosave_take() {
 void campaign_checkpoint_set(const std::string& map, const std::string& side, int difficulty);
 void campaign_checkpoint_clear();
 
+#include "net_play.inc"   // NET-PLAY: one networked match (NetPlay, linger pump)
+
 class GameScene : public Scene {
     friend struct PresHarness;   // --scene-shot acceptance harness (pres_harness.inc)
 public:
@@ -6206,7 +6211,11 @@ public:
         }
         p5_art_ = load_p5_art(dir_, ra2_);
         g_p5_art = &p5_art_;
-        enable_p5_features(world_, rules_, ba_, cfg, {&ur_.defs, &ur_ai_.defs});
+        // NET-PLAY: the crate unit pool must not depend on which house this
+        // machine plays (ur_ is the local country's roster): a match uses the
+        // side-independent AI roster only.
+        if (g_pending_netplay) enable_p5_features(world_, rules_, ba_, cfg, {&ur_ai_.defs});
+        else enable_p5_features(world_, rules_, ba_, cfg, {&ur_.defs, &ur_ai_.defs});
         rp_setup();   // gap owner A: side-correct factories + sidebar (skirmish)
         install_econ_rules();   // L2: every human house's production rules -> the World
         init_presentation();   // G-80..G-91 (pres_game.inc)
@@ -6220,6 +6229,7 @@ public:
             else SDL_Log("[record] command log -> %s", g_cmd_record_path.c_str());
             g_cmd_record_path.clear();   // one game per recording
         }
+        net_attach();   // NET-PLAY: a lobby hand-off makes this a lockstep match
     }
     // P7 [RE: saveload.md §1]: the LOAD path -- rebuild the scene's assets from
     // the save's skirmish config, then overwrite the World and the scene
@@ -6236,6 +6246,7 @@ public:
         }
     }
     ~GameScene() override {
+        net_teardown();   // NET-PLAY: a live session keeps flushing its EXIT
         if (cmd_rec_) {   // NET L1 --record: the end state the replay must reach
             const std::uint64_t h = sim_state_hash();
             cmd_rec_->end(sim_frame_, h);
@@ -6271,10 +6282,12 @@ public:
     // then Input. G-01: Esc never reaches here as a quit -- ui_handle maps it to
     // the options dialog (KeyboardMD.ini Options=27); right-click cancels modes.
     void handle(const ra2engine::InputEvent& ev_in) override {
+        if (net_lifecycle(ev_in)) return;     // NET-PLAY: AWAY / BACK instead of pause + autosave
         if (lifecycle_event(ev_in)) return;   // W2-AR-09 (game_scene_lifecycle.inc)
         ra2engine::InputEvent ev = ev_in;     // W2-AR-08: the touch bar may add modifiers
         track_pointer(ev);           // G0/G-71: pointer position from events, not SDL state
         if (ev.touch) touch_ui_ = true;   // W4-AM: the touch column / banner appear (also while locked)
+        if (net_handle(ev)) return;  // NET-PLAY: end / stall dialogs, the chat line
         if (ui_handle(ev)) return;   // P7: options menu / save-load dialog first
         // W4-MC-02 [RE: TAction 0x2E LockInput -> FUN_00683c80 sets
         // DAT_00a8dd04; while set the tactical WndProc FUN_00692ab0, edge
@@ -6356,7 +6369,9 @@ public:
             now_ = SDL_GetTicks();
             return;
         }
-        if (menu_.open_ || sld_.is_open() || show_briefing_) {   // W5-E: the briefing is modal too
+        // NET-PLAY: a network match never pauses locally (the original's MP
+        // options dialog runs over the live game).
+        if (!net_ && (menu_.open_ || sld_.is_open() || show_briefing_)) {   // W5-E: the briefing is modal too
             now_ = SDL_GetTicks();
             return;
         }
@@ -6422,7 +6437,8 @@ public:
         // [SK-20] A skirmish started from the lobby runs at the page's Game
         // Speed slider (0x6829F0 stores it as the session speed); other paths
         // keep [Options] GameSpeed.
-        logic_acc_ += dt * (cfg_.game_speed >= 0
+        logic_acc_ += dt * (net_ ? 1.0   // NET-PLAY: fixed 15 Hz logic
+                            : cfg_.game_speed >= 0
                                 ? ra2engine::game_speed_multiplier(cfg_.game_speed)
                                 : g_user_settings
                                 ? ra2engine::game_speed_multiplier(g_user_settings->game_speed)
@@ -6431,7 +6447,14 @@ public:
         select_notify_tick();   // NET L1: event 33 sees the selection via the command log
         int logic_steps = 0;
         while (logic_acc_ + 1e-9 >= kLogicDt) {
-            if (logic_steps == kMaxLogicSteps) { logic_acc_ = 0.0; break; }
+            if (logic_steps == kMaxLogicSteps) {
+                // NET-PLAY: a lockstep match never drops ticks -- the backlog
+                // runs in the next frames (bounded to 2 s of catch-up).
+                if (net_) logic_acc_ = std::min(logic_acc_, 30 * kLogicDt);
+                else logic_acc_ = 0.0;
+                break;
+            }
+            if (net_ && !net_gate()) break;   // NET-PLAY: the session decides (stall / end)
             logic_acc_ -= kLogicDt;
             ++logic_steps;
             ++g_perf_logic_ticks;   // R-170 perf overlay
@@ -6501,8 +6524,13 @@ public:
             const std::vector<ra2engine::CargoEvent> cev = world_.take_cargo_events();
             pres_.w6_cargo_events(world_, cev);   // W6-04-27: the transport type's sound, positional
         }
+        if (net_) net_drain_tick_events();   // NET-PLAY: frame-time events leave the World per tick
         ++sim_frame_;   // NET L1: the command clock
         }   // G-13 fixed logic tick
+        if (net_) {   // NET-PLAY: no burst after a stall; chat / away / leaving
+            if (net_stalled_) logic_acc_ = std::min(logic_acc_, kLogicDt);
+            net_frame();
+        }
         input_.selection().prune(world_);   // NET L1: units the tick boarded / consumed
         // Rolling credits tally (display-only).
         // W5-PRES R-142 [RE: CreditClass::AI 0x4A2510]: per logic frame the
@@ -6569,26 +6597,26 @@ public:
         // observation pass over this frame's state (pres_game.inc). Logs even
         // when there is no audio device; pumps the sink when there is one.
         pres_.update(dt, world_, lq(), ba_, lcredits(), act, cam_, playfield_w_, kWinH,
-                     pres_vet_, world_.take_projectile_events());   // (W3-B: drained per tick; normally empty)
+                     pres_vet_, net_ ? net_take(net_proj_buf_) : world_.take_projectile_events());   // (W3-B: drained per tick; normally empty)
         pres_vet_.clear();
         // (L2: the win-time cheer is a sim rule now -- World::step_house_outcomes
         // cheers every human house of the winning team once.)
         // Drain gap fix C's fire events every frame (unbounded otherwise);
         // base-defense shots get their sound + muzzle flash here.
-        pres_.defense_fire(world_, world_.take_fire_events());
+        pres_.defense_fire(world_, net_ ? net_take(net_fire_buf_) : world_.take_fire_events());
         // W2-SK-14: the ability (rad ticks, drone ticks, blasts...) and
         // garrison event queues grew without bound in real play -- nothing
         // in GameScene ever took them. Drain both every frame.
         // W5-E: deploy / garrison / crate sounds and EVA (pres_audio_events.inc).
-        pres_.on_world_events(world_, ba_, pres_crates_, world_.take_ability_events(),
-                              world_.take_garrison_events());
+        pres_.on_world_events(world_, ba_, pres_crates_, net_ ? net_take(net_ability_buf_) : world_.take_ability_events(),
+                              net_ ? net_take(net_garrison_buf_) : world_.take_garrison_events());
         pres_crates_.clear();
         // NET L1: single player applies this frame's late commands (deploy /
         // repair / sell / place / SW, issued after the ticks above) now -- the
         // same World mutation order as applying them at the next tick's start,
         // since nothing touches the World in between. A lockstep session must
         // leave them for the tick (remote commands may still be in flight).
-        apply_due_commands();
+        if (!net_) apply_due_commands();
     }
     // G-87: the map's own dressing in the real game (trees, overlays, smudges,
     // neutral structures). Never in a gate (GameScene-only).
@@ -6820,18 +6848,22 @@ public:
             SDL_ShowCursor(SDL_ENABLE);
             os_cursor_hidden_ = false;
         }
+        net_render(ren, tc);   // NET-PLAY: chat line, waiting / reconnect / out-of-sync dialogs
         screencap_tick(ren);   // W5-E ScreenCapture hotkey
     }
 
 #include "gf_scene.inc"
     bool wants_quit() const override { return input_.wants_quit() || abort_; }
-    Scene* next() override { Scene* n = next_scene_; next_scene_ = nullptr; return n; }
+    // NET-PLAY: leaving a match first schedules EXIT (net_filter_next holds
+    // the scene until it executed on every machine).
+    Scene* next() override { Scene* n = net_filter_next(next_scene_); next_scene_ = nullptr; return n; }
 
     // G0 --play harness surface (name/locate/probe/cheat) + pointer tracking.
 #include "game_scene_play.inc"
     // Agent B controls/UI members (cursor state, building selection, hotkeys).
 #include "game_scene_controls.inc"
 #include "game_scene_commands.inc"   // NET L1: command queue / host / record
+#include "game_scene_net.inc"        // NET-PLAY: lockstep mode (tick gate, sync hash, chat, leave)
 
 #include "hud_tooltip.inc"   // W2-UI-07 cameo / sidebar tooltips
 #include "hud_messages.inc"  // W2-UI-12/21 message list / timer / banners
@@ -7099,7 +7131,13 @@ private:
             return true;
         }
         if (menu_.open_) {
-            switch (menu_.handle(ev)) {
+            const auto menu_act = menu_.handle(ev);
+            if (net_ && (menu_act == InGameMenu::Load || menu_act == InGameMenu::Save ||
+                         menu_act == InGameMenu::Delete)) {   // NET-PLAY: a shared match is not saved / loaded
+                show_banner("Not available in a network game.");
+                return true;
+            }
+            switch (menu_act) {
                 case InGameMenu::Load: sld_.open(SaveLoadDialog::Load, ""); break;
                 case InGameMenu::Save:
                     // "%sSav" default = the scenario's display name (saveload.md §3).

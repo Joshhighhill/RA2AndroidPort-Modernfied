@@ -66,7 +66,20 @@ NetGame::Step NetGame::step(const std::function<uint32_t()>& state_hash, std::ve
         begun_ = true;
     }
     switch (session_.poll()) {
-        case FrameStatus::Stall: return Step::Stall;
+        case FrameStatus::Stall:
+            // Frame 0 waits for every player to finish LOADING (a phone can take
+            // a minute): the original's loading-progress barrier holds the
+            // initial-sync timeout (2400 ticks LAN) meanwhile; we hold it for
+            // init_patience_ms, then the session's own timeout applies.
+            if (session_.frame() == 0) {
+                const uint32_t now = net_.now_ms();
+                if (!init_wait_started_) {
+                    init_wait_started_ = true;
+                    init_wait_since_ = now;
+                }
+                if (now - init_wait_since_ < cfg_.init_patience_ms) session_.hold_wait();
+            }
+            return Step::Stall;
         case FrameStatus::OutOfSync: return Step::OutOfSync;
         case FrameStatus::ScenarioMismatch: return Step::ScenarioMismatch;
         case FrameStatus::Timeout: return Step::Timeout;

@@ -40,6 +40,10 @@
     // The UI's way in: stamp (house, frame = next tick + delay, sequence), queue.
     void issue(ra2engine::Command c) {
         if (replaying_) return;   // a replay takes its commands from the log only
+        if (net_) {   // NET-PLAY: through the session (frame now + MaxAhead), back via net_gate()
+            if (!net_local_left_ && !net_end_dialog_) net_->game->issue(c);
+            return;
+        }
         sched_.set_house(local_house_);
         sched_.set_now(sim_frame_);
         sched_.schedule(std::move(c));
@@ -51,6 +55,7 @@
         for (ra2engine::Command& c : due) {
             c.frame = sim_frame_;   // the tick it took effect on (= its stamp with delay 0)
             if (cmd_rec_) cmd_rec_->command(c);
+            net_on_command(c);   // NET-PLAY: EXIT / REMOVEPLAYER -> the leaver's house
             world_.set_order_issuer(c.house);   // L2: the issuer the World's checks answer for
             ra2engine::apply_command(world_, c, &cmd_host_);
             world_.set_order_issuer(local_house_);
@@ -95,23 +100,32 @@
     }
     // L2: the economy lives in the World (HouseEcon); each apply is the
     // World's command API, which re-validates the event (EventClass::Execute).
-    ra2engine::QueueCat type_cat(int rtti, int type) const {
-        return is_building_rtti(rtti) ? building_cat(type) : rp_cat_of_unit(type);
+    // NET-PLAY: a unit type index is the ISSUING house's roster index (each
+    // human house builds from its own country's roster -- house_roster), so a
+    // remote player's PRODUCE resolves its queue from that house's roster.
+    ra2engine::QueueCat type_cat(int rtti, int type, int house) const {
+        if (is_building_rtti(rtti)) return building_cat(type);
+        if (house == local_house_) return rp_cat_of_unit(type);
+        const UnitRoster& r = house_roster(house);
+        if (type < 0 || type >= static_cast<int>(r.defs.size())) return ra2engine::QueueCat::Infantry;
+        return rp_unit_cat(r.defs[static_cast<std::size_t>(type)]);
     }
-    bool type_ok(int rtti, int type) const {
-        return type >= 0 && type < static_cast<int>(is_building_rtti(rtti) ? ba_.roster.size() : ur_.defs.size());
+    bool type_ok(int rtti, int type, int house) const {
+        if (is_building_rtti(rtti)) return type >= 0 && type < static_cast<int>(ba_.roster.size());
+        const std::size_t n = house == local_house_ ? ur_.defs.size() : house_roster(house).defs.size();
+        return type >= 0 && type < static_cast<int>(n);
     }
     void cmd_produce(int house, int rtti, int type) {
-        if (type_ok(rtti, type)) world_.econ_produce(house, type_cat(rtti, type), type);
+        if (type_ok(rtti, type, house)) world_.econ_produce(house, type_cat(rtti, type, house), type);
     }
     void cmd_suspend(int house, int rtti, int type) {
-        if (!type_ok(rtti, type)) return;
-        const ra2engine::QueueCat cat = type_cat(rtti, type);
+        if (!type_ok(rtti, type, house)) return;
+        const ra2engine::QueueCat cat = type_cat(rtti, type, house);
         const ra2engine::HouseEcon* e = world_.econ(house);
         if (e && e->queues.producing(cat) == type) world_.econ_suspend(house, cat);
     }
     void cmd_abandon(int house, int rtti, int type, bool all) {
-        if (type_ok(rtti, type)) world_.econ_abandon(house, type_cat(rtti, type), type, all);
+        if (type_ok(rtti, type, house)) world_.econ_abandon(house, type_cat(rtti, type, house), type, all);
     }
     void cmd_place(int house, int type, int cx, int cy) {
         if (type < 0 || type >= static_cast<int>(ba_.roster.size())) return;

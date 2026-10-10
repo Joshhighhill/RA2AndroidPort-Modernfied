@@ -51,6 +51,7 @@ struct NetGameConfig {
     int game_speed = 4;
     int hash_every = 1;                                // full-state hash period (frames)
     int crc_check_from_frame = -1;                     // -1: the original 256-frame grace
+    uint32_t init_patience_ms = 180000;                // frame 0: how long to wait for slow loaders
 };
 
 struct NetChat {
@@ -115,6 +116,8 @@ private:
     uint32_t last_hash_ = 0;
     uint32_t hashes_ = 0;
     bool exiting_ = false;
+    bool init_wait_started_ = false;
+    uint32_t init_wait_since_ = 0;
     std::vector<std::pair<int, int>> removed_;
 };
 
