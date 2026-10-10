@@ -183,6 +183,39 @@ TEST_CASE("house econ: two human houses build, place and fight in one World") {
     CHECK(hit);   // both houses' soldiers took fire from the other's
 }
 
+TEST_CASE("house econ: PLACE keeps the fractional buildup time (seconds, not truncated)") {
+    // MR2: PlayerEconRules::buildup_total held ints, so a 2.6 s buildup became
+    // 2 s -- every structure a human placed finished its Buildup early (the
+    // pre-L2 scene passed ba_.art[t].buildup_total, a double, to add_building).
+    if (!ra2fixture::mapsmd03_available()) { MESSAGE("skipped: real map assets not found"); return; }
+    ra2assets::MapFile map = ra2fixture::mapsmd03_map();
+    ra2engine::World w(map);
+    w.set_economy(econ_roster(), {}, ra2engine::OreValues{}, 600.0, 0.0, 0.0);
+    const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
+    REQUIRE(c != nullptr);
+    int cx = 0, cy = 0;
+    REQUIRE(open_cell(w, c->x, c->y, 0, cx, cy));
+    w.add_building(0, cx, cy, 1, 1, 0, 1000, 0, 0.0, /*instant=*/true);
+    w.enable_player_economy(0, 5000.0);
+    ra2engine::PlayerEconRules r = econ_rules();
+    r.buildup_total = {0.0, 2.6, 0.0};
+    w.set_player_econ_rules(0, r);
+    REQUIRE(w.econ_produce(0, QueueCat::Structure, 1) == ProdResult::Started);
+    for (int f = 0; f < 3000 && !w.econ(0)->queues.ready(QueueCat::Structure); ++f) w.step(kDt);
+    REQUIRE(w.econ(0)->queues.ready(QueueCat::Structure));
+    REQUIRE(place_near(w, 0, QueueCat::Structure, cx, cy));
+    int bi = -1;
+    for (int i = 0; i < static_cast<int>(w.buildings().size()); ++i)
+        if (w.buildings()[(std::size_t)i].type == 1) bi = i;
+    REQUIRE(bi >= 0);
+    CHECK(w.buildings()[(std::size_t)bi].buildup_total == doctest::Approx(2.6));
+    // Still building up after 2 s (30 frames); Idle after 2.6 s (39 frames).
+    for (int f = 0; f < 32; ++f) w.step(kDt);
+    CHECK(w.buildings()[(std::size_t)bi].state != ra2engine::Building::State::Idle);
+    for (int f = 0; f < 10; ++f) w.step(kDt);
+    CHECK(w.buildings()[(std::size_t)bi].state == ra2engine::Building::State::Idle);
+}
+
 TEST_CASE("house econ: SUSPEND holds, ABANDON refunds, save/load continues identically") {
     if (!ra2fixture::mapsmd03_available()) { MESSAGE("skipped: real map assets not found"); return; }
     ra2assets::MapFile map = ra2fixture::mapsmd03_map();
