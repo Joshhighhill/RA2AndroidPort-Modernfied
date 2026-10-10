@@ -32,7 +32,7 @@
         p.set_s("music_track", pres_.sound().current_track());
         p.set_s("loaded_track", loaded_track_);
         p.set("loaded_audio", loaded_audio_ ? 1 : 0);
-        p.set("credits", player_credits_);
+        p.set("credits", lcredits());
         p.set("credits_shown", credits_shown_);
         p.set_s("tooltip", tooltip_now());   // W2-UI-07
         p.set("playfield_w", playfield_w_);
@@ -394,7 +394,7 @@
             {ra2engine::QueueCat::Infantry, "infantry"}, {ra2engine::QueueCat::Vehicle, "vehicle"},
             {ra2engine::QueueCat::Naval, "naval"}, {ra2engine::QueueCat::Aircraft, "aircraft"}};
         for (const auto& [cat, nm] : kCats) {
-            const ra2engine::QueueSlot& sl = queues_.state(cat).slot;
+            const ra2engine::QueueSlot& sl = lq().state(cat).slot;
             const int t = (cat == ra2engine::QueueCat::Structure) ? 0 : (cat == ra2engine::QueueCat::Defense) ? 1
                         : (cat == ra2engine::QueueCat::Infantry) ? 2 : 3;   // 2/3 = unit roster
             p.set_s(std::string("queue(") + nm + ")", sl.type >= 0 ? play_entry_id(t, sl.type) : "");
@@ -785,7 +785,7 @@
                 return "";
             }
             if (c == "credits" && a.size() >= 2) {
-                player_credits_ += std::atof(a[1].c_str());
+                world_.set_wallet(local_house_, lcredits() + std::atof(a[1].c_str()));
                 return "";
             }
             // W2-SK probes: damage_unit H:TYPE[:n] DMG ; place TYPE H building H:T +DX +DY

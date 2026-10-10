@@ -142,7 +142,8 @@
 
     void probe(std::map<std::string, long long>& out) const override {
         out["scene.game"] = 1;
-        out["credits"] = std::llround(player_credits_);
+        out["credits"] = std::llround(lcredits());
+        out["local_house"] = local_house_;   // L2
         out["tab"] = active_tab_;
         out["mode"] = static_cast<int>(input_.base_mode());
         out["placing"] = input_.placement_active() ? 1 : 0;
@@ -185,18 +186,27 @@
         for (int h = 0; h < world_.house_count(); ++h)
             if (world_.house_defeated(h)) out["defeated." + std::to_string(h)] = 1;
         out["win_team"] = world_.winning_team();
-        out["q.structure"] = queues_.state(ra2engine::QueueCat::Structure).slot.type;
-        out["q.structure.ready"] = queues_.state(ra2engine::QueueCat::Structure).slot.ready ? 1 : 0;
-        out["q.infantry"] = queues_.producing(ra2engine::QueueCat::Infantry);
-        out["q.vehicle"] = queues_.producing(ra2engine::QueueCat::Vehicle);
-        out["q.structure.stage"] = queues_.state(ra2engine::QueueCat::Structure).slot.stage;
-        out["q.infantry.stage"] = queues_.state(ra2engine::QueueCat::Infantry).slot.stage;
-        int held_mask = 0;
-        for (int c : held_) held_mask |= 1 << c;
-        out["held"] = held_mask;
-        for (const auto& [c, bl] : backlog_) out["backlog." + std::to_string(c)] = static_cast<long long>(bl.size());
+        out["q.structure"] = lq().state(ra2engine::QueueCat::Structure).slot.type;
+        out["q.structure.ready"] = lq().state(ra2engine::QueueCat::Structure).slot.ready ? 1 : 0;
+        out["q.infantry"] = lq().producing(ra2engine::QueueCat::Infantry);
+        out["q.vehicle"] = lq().producing(ra2engine::QueueCat::Vehicle);
+        out["q.structure.stage"] = lq().state(ra2engine::QueueCat::Structure).slot.stage;
+        out["q.infantry.stage"] = lq().state(ra2engine::QueueCat::Infantry).slot.stage;
+        // L2: hold / backlog are the local house's HouseEcon (World state).
+        if (const ra2engine::HouseEcon* e = world_.econ(local_house_)) {
+            out["held"] = e->held;
+            for (int c = 0; c < ra2engine::kQueueCats; ++c)
+                out["backlog." + std::to_string(c)] = static_cast<long long>(e->backlog[(std::size_t)c].size());
+        } else {
+            out["held"] = 0;
+        }
+        // L2: every house's wallet + outcome (multi-human probes).
+        for (int h = 0; h < world_.house_count(); ++h) {
+            out["credits." + std::to_string(h)] = std::llround(world_.credits(h));
+            if (world_.house_outcome(h) != 0) out["outcome." + std::to_string(h)] = world_.house_outcome(h);
+        }
         for (const ra2engine::Building& b : world_.buildings())   // first own building
-            if (b.alive && b.house == 0) { out["bld0.cx"] = b.cx; out["bld0.cy"] = b.cy; break; }
+            if (b.alive && b.house == local_house_) { out["bld0.cx"] = b.cx; out["bld0.cy"] = b.cy; break; }
         if (campaign_) out["campaign.outcome"] = campaign_->outcome();
         // W3-FIX-A: live buildings drawn without art / hidden by InvisibleInGame.
         for (const ra2engine::Building& b : world_.buildings()) {
@@ -247,7 +257,7 @@
             return input_.base_mode() == ra2engine::Input::BaseMode::PowerToggle;
         }
         if (args.size() == 2 && args[0] == "credits") {
-            player_credits_ = std::atof(args[1].c_str());
+            world_.set_wallet(local_house_, std::atof(args[1].c_str()));
             return true;
         }
         // W5-E: `crate NAME DX DY` -- a typed crate (FUN_0056B9F0 PlaceCrate)

@@ -228,7 +228,8 @@ public:
         fire_seen_ = fe.size();
         defense_fire_tick(w, fresh);   // muzzle / beam / report on the tick of the shot
         pres_bld_anim_tick(w, ba, fx_, g_pres_tick, fresh, units_seen_, bld_seen_,
-                           [&](int h) { return h == 0 ? player_credits : w.house_credits(h); });
+                           [&](int h) { return w.credits(h); });   // L2: every house's wallet
+        (void)player_credits;
         building_anim_events(w, ba);   // W2-GA-14 SW charge edges, per tick
         building_events(w, ba);        // damage EVA, death explosion + DestroyAnim, per tick (W3-B)
         w5_tick(w, ba);                // W5-E sounds observed per logic tick (pres_audio_events.inc)

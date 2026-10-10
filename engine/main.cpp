@@ -5951,7 +5951,7 @@ class GameScene : public Scene {
     friend struct PresHarness;   // --scene-shot acceptance harness (pres_harness.inc)
 public:
     GameScene(bool no_audio, ra2engine::SkirmishConfig cfg)
-        : no_audio_(no_audio),
+        : no_audio_((apply_debug_humans(cfg), no_audio)),   // L2 debug: extra human slots
           dir_(env_install_dir()),
           ra2_(ra2assets::MixFile::open_path(dir_ + "ra2.mix")),
           // [RE: maps.md §2/§7 rule 2] Load the config's chosen multiplayer map
@@ -5966,7 +5966,7 @@ public:
           // G-86: the art loaders below follow this map's theater.
           ua_((g_art_chain = a_.chain,
                g_sidebar_mix = (soviet_campaign(cfg) || (cfg.campaign_map.empty() && !cfg.slots.empty() &&
-                                                         cfg.slots[0].side == ra2engine::World::Side::Soviet))
+                                                         cfg.slots[(std::size_t)local_slot_of(cfg)].side == ra2engine::World::Side::Soviet))
                                    ? "sidec02.mix" : "sidec01.mix",
                ra2engine::set_sidebar_style(std::string(g_sidebar_mix) == "sidec02.mix" ? 1 : 0),   // W2-UI-08
                load_unit_assets(dir_, ra2_))),
@@ -6008,6 +6008,7 @@ public:
         // the only two enable_projectiles call sites (the other is
         // --demo-projectile) -- every byte-identity gate keeps the instant path.
         cfg_ = cfg;   // P7: the save's 'CONF' section rebuilds this scene's assets
+        local_house_ = local_slot_of(cfg);   // L2: the house this client plays
         world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
         depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
         w5_arm_combat(world_, rules_, &a_.map, &a_.theater);   // W5-B: sub-cells, land speed, crush
@@ -6103,12 +6104,12 @@ public:
 
         // Production queues + rolling credits display.
         // G-21 [RE: skirmish.md §1]: ONE wallet seeded ONCE with the lobby
-        // Money. launch_skirmish seeded house 0's World pool with
-        // cfg.starting_cash; move it here (was mp_money() PLUS that seed = 2x,
-        // and the slider only moved the bonus). Campaign overrides below.
-        player_credits_ = world_.take_income(0);
-        queues_.set_credits(player_credits_);
-        credits_shown_ = player_credits_;
+        // Money. launch_skirmish seeded each house's World pool with
+        // cfg.starting_cash; L2: every human house's HouseEcon wallet takes it
+        // (was the scene's player_credits_, house 0 only). Campaign overrides
+        // below.
+        setup_player_economies();
+        credits_shown_ = world_.credits(local_house_);
 
         // Audio (--no-audio skips init_audio entirely; rules_ reused for voices).
         if (!no_audio_) init_audio(audio_, dir_, rules_);
@@ -6177,6 +6178,7 @@ public:
         g_p5_art = &p5_art_;
         enable_p5_features(world_, rules_, ba_, cfg, {&ur_.defs, &ur_ai_.defs});
         rp_setup();   // gap owner A: side-correct factories + sidebar (skirmish)
+        install_econ_rules();   // L2: every human house's production rules -> the World
         init_presentation();   // G-80..G-91 (pres_game.inc)
         campaign_audio_init();   // W2-CA-12 (campaign only)
     }
@@ -6377,19 +6379,9 @@ public:
             ++logic_steps;
             ++g_perf_logic_ticks;   // R-170 perf overlay
             const double dt = kLogicDt;   // the logic body below steps exactly one tick
-        // Repair wallet bridge [RE: repair-sell.md §A2/§A3]: the wrench charges
-        // the World's house pool, but the player's money lives HERE
-        // (player_credits_) and that pool is drained by take_income every
-        // frame. While any own building is being repaired, deposit the wallet
-        // into the pool for the step and take it all back straight after, so
-        // the tick sees (and charges) the real balance and the out-of-credits
-        // stop (§A3) fires on the real balance. Inert otherwise.
-        world_.set_wallet_hint(0, player_credits_);   // W2-SK-20 spy cash theft
-        const bool repair_bridge = world_.house_repairing(0);
-        if (repair_bridge) {
-            world_.deposit_credits(0, player_credits_);
-            player_credits_ = 0.0;
-        }
+        // (L2: the repair wallet bridge and the spy wallet hint are gone -- the
+        // human wallet is the World's HouseEcon, charged and stolen from in
+        // the sim [RE: repair-sell.md §A2/§A3; HouseClass has one Balance].)
         if (campaign_) campaign_->update(dt);   // P10: triggers / teams at 15 Hz
         // W5-A: map action 40 ResizeView (or a load) changed the usable area.
         if (campaign_ && campaign_->local_version() != local_seen_) {
@@ -6399,13 +6391,15 @@ public:
         }
         campaign_audio_pump();   // W2-CA-12: trigger speech/sound/music
         campaign_visuals_pump();   // W3-FX: trigger anims/camera/radar/particles/flashes
-        world_.step(dt);
+        world_.step(dt);   // L2: every human house's production runs inside the step
+        (void)world_.take_econ_launches();   // L2: drained per tick (UnitReady is observed from the slots)
         r210_track_steps();   // R-210 --play probes (scene-side, never saved)
-        world_.apply_stolen_tech_gate(ur_.defs, 0);   // wave-5 (R-042): spy-stolen tech unlocks
-        pres_.logic_tick(world_, ba_, player_credits_, world_.take_projectile_events());   // W3-B: anim clock, building slots, effects per logic tick
+        // wave-5 (R-042): spy-stolen tech unlocks -- the sidebar's copy of the
+        // local roster (the World gates each house's own copy in its step).
+        world_.apply_stolen_tech_gate(ur_.defs, local_house_);
+        pres_.logic_tick(world_, ba_, lcredits(), world_.take_projectile_events());   // W3-B: anim clock, building slots, effects per logic tick
         rp_after_world_step();   // gap owner A: SW grant/revoke by building (G-25)
         gf_update(dt);   // gF: deploy EVA + skirmish game over
-        if (repair_bridge) player_credits_ += world_.take_income(0);
         // P10: the mission ended (BorrowedTime ran out) -> the result screen.
         if (campaign_ && campaign_->finished() && !campaign_done_ && !next_scene_) {
             campaign_done_ = true;
@@ -6430,20 +6424,10 @@ public:
             const std::vector<ra2engine::World::CrateEvent> ce = world_.take_crate_events();
             pres_crates_.insert(pres_crates_.end(), ce.begin(), ce.end());
         }
-        // Advance all four queues from the shared pool, then read the pool back.
-        queues_.set_credits(player_credits_);
-        hold_begin();   // G-07: held queues do not advance (game_scene_controls.inc)
-        prod_tick(queues_, world_, ba_, dt, low_mod_, mf_, inf_ft_, veh_ft_, nav_ft_, air_ft_,
-                  rp_on_ ? &bld_ft_ : nullptr);
-        hold_end();
-        player_credits_ = queues_.structure().credits;
-        player_credits_ += world_.take_income(0);   // harvest income drain
-
-        // Exit handoff (gap owner A: all four unit queues, miners) + the
-        // sidebar strip following the buildable set.
-        rp_launch_ready_units();
+        // L2: production, the income drain, the exit handoff and the queued
+        // refill ran in world_.step (World::step_player_economies); the
+        // sidebar strip follows the buildable set.
         rp_refresh_sidebar();
-        refill_unit_queues();   // G-07: the next queued unit starts
         // FreeUnit grand-opening spawns (a just-built refinery drops its miner).
         if (ba_.ok) spawn_free_units_on_open(world_, ba_, rules_, miners_, bstates_);
         // Chrono Miner teleport sounds.
@@ -6461,7 +6445,7 @@ public:
         // W5-PRES R-142 [RE: CreditClass::AI 0x4A2510]: per logic frame the
         // shown value moves clamp(|d| >> 3, 1, 143) toward the wallet.
         for (int k = 0; k < logic_steps; ++k) {
-            const long long target = std::max(0LL, static_cast<long long>(std::floor(player_credits_)));
+            const long long target = std::max(0LL, static_cast<long long>(std::floor(lcredits())));
             const long long cur = std::llround(credits_shown_);
             if (cur == target) break;
             const long long d = target - cur;
@@ -6479,7 +6463,7 @@ public:
         {
             int owned = 0;
             for (const ra2engine::Building& b : world_.buildings())
-                if (b.alive && b.house == 0 && b.state != ra2engine::Building::State::Dead) ++owned;
+                if (b.alive && b.house == local_house_ && b.state != ra2engine::Building::State::Dead) ++owned;
             input_.set_owned_buildings(owned);
             if (owned == 0) {
                 input_.set_repair_mode(0);
@@ -6489,16 +6473,17 @@ public:
         // Repair / Sell clicks [RE: repair-sell.md §A4/§B2]. The mode STAYS
         // armed (it is not one-shot), so the player can work through a base.
         if (act.deploy_clicked) deploy_selected();   // ACTION_SELF (click the selected unit)
-        if (act.repair_clicked) world_.toggle_repair(act.repair_building, 0);
-        if (act.power_clicked) world_.set_building_power(act.power_building, -1);   // W5-E2 (EVA: pres edge)
-        if (act.sell_clicked) world_.begin_sell(act.sell_building, 0);
-        // Placement confirm.
+        // L2: REPAIR 0x15 / POWERON-OFF / SELL 0x16 as the local house.
+        if (act.repair_clicked) world_.toggle_repair(act.repair_building, local_house_);
+        if (act.power_clicked) world_.econ_power(local_house_, act.power_building, -1);   // W5-E2 (EVA: pres edge)
+        if (act.sell_clicked) world_.begin_sell(act.sell_building, local_house_);
+        // Placement confirm: PLACE 0x0B [FUN_004FAF00] -- the World validates
+        // and puts the category's finished structure down.
         if (act.place_confirmed && input_.placement_active()) {
             const int type = input_.placement_type();
-            if (type >= 0 && type < static_cast<int>(ba_.roster.size())) {
-                // Gap owner A: validity + add live in realplay_scene.inc.
-                if (place_building(type, act.place_cx, act.place_cy)) {
-                    queues_.placed(place_cat_);
+            if (type >= 0 && type < static_cast<int>(ba_.roster.size()) && lq().producing(place_cat_) == type) {
+                if (world_.econ_place(local_house_, place_cat_, act.place_cx, act.place_cy) ==
+                    ra2engine::ProdResult::Placed) {
                     input_.cancel_placement();
                     if (audio_.enabled) audio_.mixer->play("PlaceBuilding");
                 }
@@ -6510,15 +6495,11 @@ public:
         // G-80/G-81/G-82: voices, reports, deaths, EVA, music, effects -- one
         // observation pass over this frame's state (pres_game.inc). Logs even
         // when there is no audio device; pumps the sink when there is one.
-        pres_.update(dt, world_, queues_, ba_, player_credits_, act, cam_, playfield_w_, kWinH,
+        pres_.update(dt, world_, lq(), ba_, lcredits(), act, cam_, playfield_w_, kWinH,
                      pres_vet_, world_.take_projectile_events());   // (W3-B: drained per tick; normally empty)
         pres_vet_.clear();
-        // W3-B: the player's infantry cheer once on victory [RE-FALLBACK: the
-        // original's win-time cheer call site was not traced].
-        if (!victory_cheered_ && world_.winning_team() >= 0 && world_.winning_team() == world_.house_team(0)) {
-            world_.make_house_cheer(0);
-            victory_cheered_ = true;
-        }
+        // (L2: the win-time cheer is a sim rule now -- World::step_house_outcomes
+        // cheers every human house of the winning team once.)
         // Drain gap fix C's fire events every frame (unbounded otherwise);
         // base-defense shots get their sound + muzzle flash here.
         pres_.defense_fire(world_, world_.take_fire_events());
@@ -6698,17 +6679,17 @@ public:
         }
         if (ba_.ok && ba_.sidebar_ok) {
             for (int t = 0; t < 4; ++t) g_tab_has[t] = tab_buildable(t).empty() ? 0 : 1;   // W2-UI-06
-            g_tab_flash[0] = queues_.state(ra2engine::QueueCat::Structure).slot.ready ? 1 : 0;   // W5-PRES R-142
-            g_tab_flash[1] = queues_.state(ra2engine::QueueCat::Defense).slot.ready ? 1 : 0;
+            g_tab_flash[0] = lq().state(ra2engine::QueueCat::Structure).slot.ready ? 1 : 0;   // W5-PRES R-142
+            g_tab_flash[1] = lq().state(ra2engine::QueueCat::Defense).slot.ready ? 1 : 0;
             const ra2engine::QueueCat vis_cat =
                 (active_tab_ == 1) ? ra2engine::QueueCat::Defense
                 : (active_tab_ >= 2) ? rp_vis_unit_cat()   // gap owner A: veh/naval/air
                                      : ra2engine::QueueCat::Structure;
             const bool unit_fac_alive =
-                (active_tab_ >= 2) ? !world_.factory_category_lost(rp_ft_of(vis_cat), 0)
+                (active_tab_ >= 2) ? !world_.factory_category_lost(rp_ft_of(vis_cat), local_house_)
                                    : true;
             const ra2engine::Input::BaseMode bm = input_.base_mode();
-            draw_sidebar(ren, tc, ba_, lay_, queues_.state(vis_cat), world_,
+            draw_sidebar(ren, tc, ba_, lay_, lq().state(vis_cat), world_,
                          static_cast<int>(std::llround(credits_shown_)), now_ / 1000.0,
                          active_tab_, &ur_, unit_fac_alive,
                          bm == ra2engine::Input::BaseMode::Repair ? 1
@@ -6790,8 +6771,6 @@ public:
         s.cam_x = cam_.x;
         s.cam_y = cam_.y;
         s.active_tab = active_tab_;
-        s.queues = queues_;
-        s.player_credits = player_credits_;
         s.credits_shown = credits_shown_;
         s.place_cat = place_cat_;
         s.bstates = bstates_;
@@ -6803,8 +6782,6 @@ public:
         active_tab_ = (s.active_tab >= 0 && s.active_tab <= 3) ? s.active_tab : 0;
         buildable_ = tab_buildable(active_tab_);
         lay_ = ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_);
-        queues_ = s.queues;
-        player_credits_ = s.player_credits;
         credits_shown_ = s.credits_shown;
         place_cat_ = s.place_cat;
         bstates_ = s.bstates;
@@ -6839,12 +6816,7 @@ public:
         f.sections[ra2engine::save::kTagConfig] = ra2engine::save::to_bytes(cfg);
         f.sections[ra2engine::save::kTagWorld] = ra2engine::save::save_world(world_);
         f.sections[ra2engine::save::kTagScene] = ra2engine::save::to_bytes(sc);
-        {   // R-180: the waiting unit copies + the queues on hold
-            ra2engine::save::QueueBacklogSave q;
-            q.backlog = backlog_;
-            q.held.assign(held_.begin(), held_.end());
-            f.sections[ra2engine::save::kTagBacklog] = ra2engine::save::to_bytes(q);
-        }
+        // (L2: the R-180 backlog / hold section is World state now -- HouseEcon.)
         {   // W5-E: the music state (the playing theme resumes after a load)
             PresAudio& pa = const_cast<Presentation&>(pres_).sound();
             const std::string a = pa.current_track() + "\n" + (pa.music_on() ? "1" : "0") + "\n";
@@ -6946,17 +6918,10 @@ private:
                 if (map_dressing_.is_crushable_wall(bx, by)) world_.mark_crushable_wall(bx, by);   // P4
             }
             apply_save(sc);
-            // R-180: the backlog / hold state (absent in a file without it).
-            backlog_.clear();
-            held_.clear();
-            ra2engine::save::QueueBacklogSave q;
-            if (const std::vector<uint8_t>* qb = f.section(ra2engine::save::kTagBacklog))
-                if (ra2engine::save::from_bytes(*qb, q)) {
-                    for (const auto& [c, types] : q.backlog)
-                        if (c >= 0 && c < ra2engine::kQueueCats && !types.empty()) backlog_[c] = types;
-                    for (int c : q.held)
-                        if (c >= 0 && c < ra2engine::kQueueCats) held_.insert(c);
-                }
+            // L2: the wallets / queues / backlog / hold came back with the
+            // World; its production rules are asset-derived (not saved).
+            install_econ_rules();
+            world_.set_order_issuer(local_house_);
             if (const std::vector<uint8_t>* au = f.section(ra2engine::save::kTagAudio)) {   // W5-E
                 const std::string a(au->begin(), au->end());
                 const std::size_t nl = a.find('\n');
@@ -6987,6 +6952,7 @@ private:
             if (cfg_.campaign_map.empty())   // [G-60] same real-play AI as the ctor
                 arm_skirmish_ai(world_, cfg_, ba_, rules_, rules_ini_, ur_ai_,
                                 load_aimd_or_empty(dir_), &a_.map, ua_);
+            setup_player_economies();   // L2: fresh wallets + queues for every human house
             if (!cfg_.campaign_map.empty()) setup_campaign(cfg_);
             world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
         depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
@@ -6995,6 +6961,7 @@ private:
             wire_w5(world_, ba_, rules_, rules_ini_, art_ini_);   // wave-5 (agent C)
             enable_p5_features(world_, rules_, ba_, cfg_, {&ur_.defs, &ur_ai_.defs});
             init_map_dressing();   // G-87: the fresh world gets its map dressing again
+            install_econ_rules();   // L2
             show_banner(camp::csf_text(dir_, "TXT_ERROR_LOADING_GAME"));
         }
         std::cerr << "[saveload] load " << (ok ? "ok" : "FAILED") << " frame=" << f.header.frame
@@ -7285,12 +7252,13 @@ private:
         if (tab >= 2) {
             const ra2engine::QueueCat cat = rp_cat_of_unit(e);   // same queue handle() uses
             const std::vector<int>& ft = rp_ft_of(cat);
-            return ra2engine::can_start_unit(queues_.state(cat), e, ur_.defs, world_.buildings(), ba_.roster, 0,
-                                             ba_.groups, !world_.factory_category_lost(ft, 0));
+            return ra2engine::can_start_unit(lq().state(cat), e, ur_.defs, world_.buildings(), ba_.roster,
+                                             local_house_, ba_.groups,
+                                             !world_.factory_category_lost(ft, local_house_));
         }
         const ra2engine::QueueCat bcat = (tab == 1) ? ra2engine::QueueCat::Defense : ra2engine::QueueCat::Structure;
-        return ra2engine::can_start(queues_.state(bcat), e, ba_.roster, world_.buildings(), 0, ba_.groups,
-                                    conyard_alive(world_, ba_, 0));
+        return ra2engine::can_start(lq().state(bcat), e, ba_.roster, world_.buildings(), local_house_, ba_.groups,
+                                    conyard_alive(world_, ba_, local_house_));
     }
     // "H:TYPE[:n]" (TYPE may be *).
     static bool play_parse_spec(const std::string& spec, int& h, std::string& type, int& n) {
@@ -7408,10 +7376,11 @@ private:
     ArtMaskCache art_masks_;   // W6-01-01 touch art pick
     ra2engine::Input         input_;
     // --- production / economy ---
-    ra2engine::ProductionQueues queues_;
-    double               player_credits_ = 0.0;
+    // L2: the wallet and the six queues live in the World (HouseEcon, one per
+    // house); the scene shows local_house_'s and issues production commands.
+    int                  local_house_ = 0;   // the house this client plays (debug: --local-house)
     double               credits_shown_  = 0.0;
-    ra2engine::QueueCat  place_cat_ = ra2engine::QueueCat::Structure;
+    ra2engine::QueueCat  place_cat_ = ra2engine::QueueCat::Structure;   // UI: queue a pending placement drains
     std::vector<int>     inf_ft_;
     std::vector<int>     veh_ft_;
     double               build_speed_ = 0.7;
@@ -7494,7 +7463,6 @@ private:
     static constexpr double kScrollTick = 0.016;   // timeGetTime()>>4 tick
     double               scroll_mult_ = 0.07;      // [General] ScrollMultiplier
     double               scroll_tick_accum_ = 0.0;
-    bool                 victory_cheered_ = false;   // W3-B
     int                  scroll_accel_ = 0;
 
     // --- P7 Save / Load ---
@@ -7537,9 +7505,8 @@ private:
         for (const VehicleAssets* v : campaign_->vehicle_assets()) vlist_.push_back(v);
         load_unloading_classes();   // W3-B
         for (const auto& [image, seq] : ua_.anims) world_.set_anim(image, seq);
-        player_credits_ = campaign_->player_credits();
-        queues_.set_credits(player_credits_);
-        credits_shown_ = player_credits_;
+        world_.set_wallet(0, campaign_->player_credits());   // L2: the mission's player house
+        credits_shown_ = world_.credits(local_house_);
         if (soviet_campaign(cfg)) {
             inf_ft_ = factory_types_for(ba_, "NAHAND");
             veh_ft_ = factory_types_for(ba_, "NAWEAP");
@@ -17662,6 +17629,26 @@ ra2engine::World sl_build_skirmish(SlSkirmishEnv& e) {
             ++ab;
             dx += 1;
         }
+    // L2: the player's economy lives in the World (was the gate's SceneSave
+    // queues + wallet, stepped beside w.step). Same seed as before: the
+    // wallet starts at the lobby cash and the pool launch_skirmish seeded
+    // drains into it on the first tick (the old gate's double count, kept).
+    w.enable_player_economy(0, e.cfg.starting_cash);
+    {
+        ra2engine::PlayerEconRules r;
+        r.units = e.ur.defs;
+        const std::vector<int> cy = factory_types_for(e.ba, "GACNST");   // the gate's ConYard list
+        r.factory_types[static_cast<int>(ra2engine::QueueCat::Structure)] = cy;
+        r.factory_types[static_cast<int>(ra2engine::QueueCat::Defense)] = cy;
+        r.factory_types[static_cast<int>(ra2engine::QueueCat::Infantry)] = e.inf_ft;
+        r.factory_types[static_cast<int>(ra2engine::QueueCat::Vehicle)] = e.veh_ft;
+        r.groups = e.ba.groups;
+        r.build_speed = e.build_speed;
+        r.low_power_mod = e.low_mod;
+        r.multiple_factory = e.mf;
+        r.wall_rules = false;
+        w.set_player_econ_rules(0, std::move(r));
+    }
     return w;
 }
 
@@ -17669,35 +17656,12 @@ ra2engine::World sl_build_skirmish(SlSkirmishEnv& e) {
 // player's production pool + exit handoff, FreeUnit spawns, event drains).
 void sl_skirmish_frame(SlSkirmishEnv& e, ra2engine::World& w, ra2engine::save::SceneSave& sc,
                        SlTally& t) {
-    w.step(kSlDt);
-    sc.queues.set_credits(sc.player_credits);
-    prod_tick(sc.queues, w, e.ba, kSlDt, e.low_mod, e.mf, e.inf_ft, e.veh_ft);
-    sc.player_credits = sc.queues.structure().credits;
-    sc.player_credits += w.take_income(0);
-    for (ra2engine::QueueCat cat : {ra2engine::QueueCat::Infantry, ra2engine::QueueCat::Vehicle}) {
-        if (!sc.queues.ready(cat)) continue;
-        const std::vector<int>& ft = (cat == ra2engine::QueueCat::Infantry) ? e.inf_ft : e.veh_ft;
-        const int fi = ra2engine::primary_factory(w.buildings(), ft, 0);
-        if (fi < 0) continue;
-        const int uslot = sc.queues.producing(cat);
-        if (uslot < 0 || uslot >= static_cast<int>(e.ur.defs.size())) {
-            sc.queues.placed(cat);
-            continue;
-        }
-        const ra2engine::BuildingTypeDef& fdef = e.ba.roster[w.buildings()[fi].type];
-        if (w.launch_unit(fi, fdef, e.ur.defs[uslot].combat) >= 0) {
-            sc.queues.placed(cat);
-            ++t.produced;
-        }
-    }
-    // Keep the player's barracks busy (the player clicking E1 again).
-    if (e.e1 >= 0 && sc.queues.producing(ra2engine::QueueCat::Infantry) < 0 &&
-        ra2engine::can_start_unit(sc.queues.state(ra2engine::QueueCat::Infantry), e.e1, e.ur.defs,
-                                  w.buildings(), e.ba.roster, 0, e.ba.groups,
-                                  !w.factory_category_lost(e.inf_ft, 0))) {
-        sc.queues.set_credits(sc.player_credits);
-        sc.queues.start_unit(ra2engine::QueueCat::Infantry, e.e1, e.ur.defs, e.build_speed);
-    }
+    w.step(kSlDt);   // L2: the player's production + exit handoff run inside
+    t.produced += static_cast<int>(w.take_econ_launches().size());
+    // Keep the player's barracks busy (the player clicking E1 again): PRODUCE.
+    const ra2engine::HouseEcon* ec = w.econ(0);
+    if (e.e1 >= 0 && ec && ec->queues.producing(ra2engine::QueueCat::Infantry) < 0)
+        w.econ_produce(0, ra2engine::QueueCat::Infantry, e.e1);
     if (e.ba.ok) spawn_free_units_on_open(w, e.ba, e.rules, e.miners, sc.bstates);
     for (const ra2engine::ProjectileEvent& pe : w.take_projectile_events())
         if (pe.kind == ra2engine::ProjectileEvent::Launch) ++t.launches;
@@ -17735,9 +17699,7 @@ SlResult sl_run_skirmish(SlSkirmishEnv& e, int N, int M) {
     // --- run A: N frames, save, continue to M.
     ra2engine::World wa = sl_build_skirmish(e);
     ra2engine::save::SceneSave sa;
-    sa.player_credits = e.cfg.starting_cash;
-    sa.queues.set_credits(sa.player_credits);
-    sa.credits_shown = sa.player_credits;
+    sa.credits_shown = e.cfg.starting_cash;
     for (int f = 0; f < N; ++f) sl_skirmish_frame(e, wa, sa, t);
     // Save with a shell IN FLIGHT: advance (deterministically) to the first
     // frame >= N that has one, bounded; the loaded run starts from that frame.

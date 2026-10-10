@@ -262,3 +262,36 @@ void rp_sync_superweapons(ra2engine::World& w, const std::vector<RpSwGrant>& tab
                                      nuke.cell_spread, nuke.percent_at_max, nuke.verses);
     }
 }
+
+// --- L2 multi-human debug switch -------------------------------------------
+// `--local-house N` / `--humans 0,1` on the command line, or `set local_house
+// N` / `set humans 0,1` in a --play script: the listed skirmish slots become
+// human houses (is_ai=false -> a World player economy each), and the scene
+// plays house N (sidebar, radar, shroud, EVA, orders). Default: nothing
+// changes (slot 0 is the one human, the scene plays house 0).
+std::vector<int> g_debug_humans;
+int g_debug_local_house = -1;
+void apply_debug_humans(ra2engine::SkirmishConfig& cfg) {
+    if (!cfg.campaign_map.empty()) return;
+    for (int sl : g_debug_humans)
+        if (sl >= 0 && sl < static_cast<int>(cfg.slots.size()) && cfg.slots[(std::size_t)sl].combatant)
+            cfg.slots[(std::size_t)sl].is_ai = false;
+}
+// The house this client plays: the debug override when it names a human
+// combatant slot, else house 0 (the campaign player is always house 0).
+int local_slot_of(const ra2engine::SkirmishConfig& cfg) {
+    if (!cfg.campaign_map.empty() || cfg.slots.empty()) return 0;
+    const int l = g_debug_local_house;
+    if (l >= 0 && l < static_cast<int>(cfg.slots.size()) && cfg.slots[(std::size_t)l].combatant &&
+        !cfg.slots[(std::size_t)l].is_ai)
+        return l;
+    return 0;
+}
+// Human houses of a config: every combatant non-AI slot (the campaign: 0).
+std::vector<int> human_slots_of(const ra2engine::SkirmishConfig& cfg) {
+    if (!cfg.campaign_map.empty() || cfg.slots.empty()) return {0};
+    std::vector<int> v;
+    for (int i = 0; i < static_cast<int>(cfg.slots.size()); ++i)
+        if (cfg.slots[(std::size_t)i].combatant && !cfg.slots[(std::size_t)i].is_ai) v.push_back(i);
+    return v;
+}
