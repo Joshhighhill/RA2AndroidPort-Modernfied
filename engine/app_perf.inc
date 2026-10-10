@@ -285,6 +285,13 @@ struct CmdRecorder {
         return true;
     }
     void command(const ra2engine::Command& c) { out << ra2engine::command_to_line(c) << "\n"; }
+    // MR2 (RA2_REC_CHECK=N): a state-hash checkpoint every N ticks, so a
+    // replay that diverges names the first differing tick ("H <tick> <hash>").
+    void check(std::uint32_t tick, std::uint64_t hash) {
+        char b[64];
+        std::snprintf(b, sizeof b, "H %u %016llx\n", tick, static_cast<unsigned long long>(hash));
+        out << b;
+    }
     void end(std::uint32_t tick, std::uint64_t hash) {
         char b[64];
         std::snprintf(b, sizeof b, "END %u %016llx\n", tick, static_cast<unsigned long long>(hash));
@@ -300,6 +307,7 @@ struct CmdLog {
     std::vector<ra2engine::Command> cmds;
     std::uint32_t end_tick = 0;
     std::string end_hash;
+    std::vector<std::pair<std::uint32_t, std::string>> checks;   // MR2: H lines
     bool load(const std::string& path) {
         std::ifstream in(path, std::ios::binary);
         if (!in) return false;
@@ -322,6 +330,11 @@ struct CmdLog {
             } else if (line.rfind("END ", 0) == 0) {
                 std::istringstream ls(line.substr(4));
                 ls >> end_tick >> end_hash;
+            } else if (line.rfind("H ", 0) == 0) {
+                std::istringstream ls(line.substr(2));
+                std::uint32_t t = 0;
+                std::string hh;
+                if (ls >> t >> hh) checks.emplace_back(t, hh);
             } else if (line[0] == 'C') {
                 ra2engine::Command c;
                 if (!ra2engine::command_from_line(line, c)) return false;
