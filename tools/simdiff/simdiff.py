@@ -274,21 +274,55 @@ def markers(path):
     meta, fr = parse(path)
     prev = None
     out = OrderedDict([("first_move", None), ("first_new_object", None), ("first_damage", None)])
+
+    def keyed(objs):
+        # UniqueID when the producer has one; else (rtti,type,owner,k-th) --
+        # stable until the first death (the clone has no ids).
+        seen, d = Counter(), {}
+        for o in objs:
+            if o[1] != "-":
+                d[o[1]] = o
+            else:
+                k = (o[0], o[2], o[3]); seen[k] += 1
+                d[k + (seen[k],)] = o
+        return d
     for n, f in fr.items():
+        cur = keyed(f.objs)
         if prev is not None:
-            pa = {(o[1], o[2]): o for o in prev.objs if o[1] != "-"}
-            for o in f.objs:
-                q = pa.get((o[1], o[2]))
+            pa = prev
+            for key, o in cur.items():
+                q = pa.get(key)
                 if q is None:
-                    if out["first_new_object"] is None and o[1] != "-":
+                    if out["first_new_object"] is None:
                         out["first_new_object"] = (n, " ".join(o[:4]))
                     continue
                 if out["first_move"] is None and q[4:7] != o[4:7]:
                     out["first_move"] = (n, " ".join(o[:4]))
                 if out["first_damage"] is None and q[9] != "-" and int(o[9]) < int(q[9]):
                     out["first_damage"] = (n, " ".join(o[:4]))
-        prev = f
+        prev = cur
     return out
+
+
+def build_order(a_path, b_path, owner="1"):
+    """First frame each type appears for one house in A and B (AI economy
+    rung): same sequence + timing deltas, even while every frame diverges."""
+    def firsts(p):
+        _, fr = parse(p)
+        d = OrderedDict()
+        for n, f in fr.items():
+            for o in f.objs:
+                if o[3] == owner and o[2] not in d:
+                    d[o[2]] = n
+        return d
+    fa, fb = firsts(a_path), firsts(b_path)
+    rows = []
+    for t, n in fa.items():
+        rows.append((t, n, fb.get(t)))
+    for t, n in fb.items():
+        if t not in fa:
+            rows.append((t, None, n))
+    return rows
 
 
 def ladder(manifest):
@@ -302,6 +336,11 @@ def ladder(manifest):
             rows.append((r["name"], "PASS" if o["pass"] else "FAIL",
                          "%d raw + %d ranged draws; first mismatch raw=%s ranged=%s" % (
                              o["raw_compared"], o["ranged_compared"], o["raw_first_mismatch"], o["ranged_first_mismatch"])))
+        elif r["kind"] == "buildorder":
+            bo = build_order(r["a"], r["b"], str(r.get("owner", 1)))
+            both = [x for x in bo if x[1] is not None and x[2] is not None]
+            txt = " ".join("%s:%s/%s" % (t, a, b) for t, a, b in bo)
+            rows.append((r["name"], "%d/%d types" % (len(both), len(bo)), "type:orig/clone first frame  " + txt))
         elif r["kind"] == "markers":
             rows.append((r["name"], "info", json.dumps(markers(r["a"]))))
         else:
@@ -326,6 +365,7 @@ def main():
     s = sub.add_parser("summary"); s.add_argument("a"); s.add_argument("--step", type=int, default=100)
     g = sub.add_parser("ladder"); g.add_argument("manifest")
     mk = sub.add_parser("markers"); mk.add_argument("a")
+    bo = sub.add_parser("buildorder"); bo.add_argument("a"); bo.add_argument("b"); bo.add_argument("--owner", default="1")
     args = ap.parse_args()
     if args.cmd == "diff":
         r = diff(args.a, args.b, set(x for x in args.ignore.split(",") if x), args.frames)
@@ -340,6 +380,10 @@ def main():
         return 0 if o["pass"] else 1
     if args.cmd == "summary":
         summary(args.a, args.step)
+        return 0
+    if args.cmd == "buildorder":
+        for t, a, b in build_order(args.a, args.b, args.owner):
+            print("%-12s orig %-8s clone %-8s %s" % (t, a, b, "" if a is None or b is None else "delta %+d" % (b - a)))
         return 0
     if args.cmd == "markers":
         print(json.dumps(markers(args.a), indent=1))
