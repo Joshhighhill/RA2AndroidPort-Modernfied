@@ -313,11 +313,20 @@ target_sources(ra2assets_tests PRIVATE tests/test_saveload.cpp engine/savegame.c
 target_compile_definitions(ra2assets_tests PRIVATE RA2_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 # engine/net (original-format networking) [RE: docs/re/net-protocol.md].
 target_sources(ra2assets_tests PRIVATE ${RA2_NET_SOURCES}
-    tests/test_net_wire.cpp tests/test_net_event.cpp)
+    tests/test_net_wire.cpp tests/test_net_event.cpp tests/test_net_lockstep.cpp)
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 if (WIN32)
   target_link_libraries(ra2assets_tests PRIVATE ws2_32)
+endif()
+# Two-process LAN test driver: two peers + a tiny deterministic model.
+add_executable(ra2netpeer tools/ra2netpeer.cpp ${RA2_NET_SOURCES})
+target_include_directories(ra2netpeer PRIVATE engine)
+if (WIN32)
+  target_link_libraries(ra2netpeer PRIVATE ws2_32 winmm)
+  if (MINGW)
+    target_link_options(ra2netpeer PRIVATE -static -static-libgcc -static-libstdc++)
+  endif()
 endif()
 add_test(NAME ra2assets_tests COMMAND ra2assets_tests)
 
