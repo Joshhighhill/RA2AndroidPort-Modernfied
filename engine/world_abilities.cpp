@@ -271,7 +271,7 @@ void World::ability_delay_kill(int b_idx, const WeaponSpec& w, double dist_lepto
     Building& b = buildings_[static_cast<std::size_t>(b_idx)];
     const double f = static_cast<double>(w.delay_kill_frames);
     const int spread = ability_ftol(w.cell_spread) * 256;
-    const double span = (f * w.delay_kill_at_max - f) * static_cast<int>(dist_leptons);
+    const double span = (f * w.delay_kill_at_max - f) * om::ftol(dist_leptons);
     const int delay = ability_ftol(spread > 0 ? f + span / spread : f);
     const std::int64_t F = static_cast<std::int64_t>(ability_frame_);
     bool set = true;

@@ -825,7 +825,7 @@ void World::an_step_parachutes(double dt) {
             const InfSeqEntry& e = it->e[kSqParadrop];
             if (e.has) {
                 const int n = std::max(1, e.count);
-                const int stage = static_cast<int>((u.an.para_alt / std::max(1.0, fall)) / 2.0) % n;
+                const int stage = om::ftol((u.an.para_alt / std::max(1.0, fall)) / 2.0) % n;
                 u.frame = e.first + (e.fmult ? ((u.facing % 8 + 8) % 8) * e.fmult : 0) + (n - 1 - stage);
             }
         }

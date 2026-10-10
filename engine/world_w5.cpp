@@ -261,7 +261,7 @@ void World::step_w5(double dt) {
                 shooter.fy = t.fy;
                 shooter.cell_x = t.cell_x;
                 shooter.cell_y = t.cell_y;
-                shooter.w_damage = static_cast<int>(p.w_damage * R.open_topped_damage_mult);
+                shooter.w_damage = om::ftol(p.w_damage * R.open_topped_damage_mult);
                 p.rof_cool = unit_rearm_secs(p, &combat_rng_);   // W6-04-01 Burst
                 fire_events_.push_back({ti, -1, tgt, -1, 0, "OpenTopped"});
                 deliver_hit_from(units_, occ_, shooter, pi, -1, tgt);

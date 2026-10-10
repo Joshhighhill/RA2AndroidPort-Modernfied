@@ -29,10 +29,10 @@ double quantise_pitch(double theta) {
 
 }  // namespace
 
-int ftol(double v) { return static_cast<int>(std::trunc(v)); }
+int ftol(double v) { return om::ftol(v); }   // Net L0: the original _ftol (FUN_007C4D00)
 
 int lepton_to_cell(int l) {
-    return static_cast<int>(std::floor((static_cast<double>(l) + 128.0) / 256.0));
+    return om::ftol(std::floor((static_cast<double>(l) + 128.0) / 256.0));
 }
 
 int weapon_speed_leptons(int ini_speed) {
@@ -379,19 +379,19 @@ ProjectileSpec resolve_projectile_spec(const ra2assets::Rules& rules, const std:
     spec.flak_scatter = flag("FlakScatter");
     spec.floater = flag("Floater");
     const bool vertical = flag("Vertical");
-    spec.rot = static_cast<int>(rules.section_double(proj, "ROT", 0.0));
+    spec.rot = om::ftol(rules.section_double(proj, "ROT", 0.0));
     // W4: BulletTypeClass ctor default Acceleration = 3 (gamemd 0x46BB2D:
     // mov eax,3 / mov [esi+2D0h],eax).
-    spec.acceleration = static_cast<int>(rules.section_double(proj, "Acceleration", 3.0));
+    spec.acceleration = om::ftol(rules.section_double(proj, "Acceleration", 3.0));
     spec.level = flag("Level");
     spec.airburst = flag("Airburst");
     spec.very_high = flag("VeryHigh");
     spec.subject_to_cliffs = flag("SubjectToCliffs");         // W5-B
     spec.subject_to_elevation = flag("SubjectToElevation");
     spec.subject_to_walls = flag("SubjectToWalls");
-    spec.course_lock = static_cast<int>(rules.section_double(proj, "CourseLockDuration", 0.0));
+    spec.course_lock = om::ftol(rules.section_double(proj, "CourseLockDuration", 0.0));
     spec.detonation_altitude =
-        static_cast<int>(rules.section_double(proj, "DetonationAltitude", 0.0));
+        om::ftol(rules.section_double(proj, "DetonationAltitude", 0.0));
     spec.speed_cap = weapon_speed_leptons(rules.weapon_speed(weapon));
     spec.weapon_range = ftol(rules.weapon_range(weapon) * 256.0);
     if (spec.inviso)
@@ -414,7 +414,7 @@ ProjectileRules resolve_projectile_rules(const ra2assets::Rules& rules) {
     // W4: the homing wobble amplitude and the air-target safety climb
     // (Rules+0x598 / +0x5A0, string-anchored at 0x66E66C / 0x66E68C).
     r.rot_var = rules.general_double("MissileROTVar", 0.25);
-    r.safety_altitude = static_cast<int>(rules.general_double("MissileSafetyAltitude", 750.0));
+    r.safety_altitude = om::ftol(rules.general_double("MissileSafetyAltitude", 750.0));
     return r;
 }
 

@@ -368,7 +368,7 @@ ra2assets::Palette pal_for_color(const ra2assets::Palette& unit_pal, int color_i
 namespace {
 float rmp_table(int k) { return om::sin_table(k); }   // Net L0: the 0x84E004 entry itself
 int rmp_index(float x) {
-    const int n = static_cast<int>(x * 2607.594482421875f);
+    const int n = om::ftol(x * 2607.594482421875f);
     int idx = n >> 1;
     if ((n & 1) && idx < 0x1FFF) ++idx;
     return idx & 0x1FFF;
@@ -400,8 +400,8 @@ ra2assets::Palette pal_for_hsv(const ra2assets::Palette& unit_pal, int h, int s,
         double ang_a = i * 0.08144869842640204 + 0.3490658503988659;
         if (i == 0) ang_a = 0.19634954084936207;
         const double ang_b = i * 0.046542113386515455 + 0.8726646259971648;
-        const int s2 = static_cast<int>(rmp_sin(static_cast<float>(ang_b)) * static_cast<float>(s));
-        const int v2 = static_cast<int>(rmp_cos(static_cast<float>(ang_a)) * static_cast<float>(v));
+        const int s2 = om::ftol(rmp_sin(static_cast<float>(ang_b)) * static_cast<float>(s));
+        const int v2 = om::ftol(rmp_cos(static_cast<float>(ang_a)) * static_cast<float>(v));
         out[16 + i] = rmp_hsv2rgb(static_cast<unsigned>(std::clamp(h, 0, 255)), static_cast<unsigned>(std::clamp(s2, 0, 255)),
                                   static_cast<unsigned>(std::clamp(v2, 0, 255)), unit_pal[16 + i].a);
     }
@@ -3337,7 +3337,7 @@ void World::step_ai_houses(double dt) {
         const BuildingTypeDef& t = cfg.roster[d.type];
         const int basis = t.charge > 0 ? t.charge : t.cost;
         const int ai_charge =
-            std::max(1, (int)(basis * cfg.mods.cost_mul));
+            std::max(1, om::ftol((basis * cfg.mods.cost_mul)));
         rec.queues.set_credits(rec.credits);
         start(rec.queues.state(cat), t.cost, ai_charge,
               cfg.build_speed * cfg.mods.build_time_mul);
@@ -3516,7 +3516,7 @@ void World::ai_note_damage(bool building, int victim, int attacker_house, int dm
         cost = (t >= 0) ? rec.cfg.team.unit_roster[(std::size_t)t].cost : u.max_hp;
     }
     if (strength <= 0) strength = 1;
-    const int delta = (int)((double)cost * ((double)dmg / (double)strength));
+    const int delta = om::ftol(((double)cost * ((double)dmg / (double)strength)));
     if (delta != 0) ai_add_anger(vh, attacker_house, delta);
 }
 
@@ -4657,7 +4657,7 @@ void World::step_ai_teams(double dt) {
                 // difficulty cost handicap on the charge and the BuildTime
                 // handicap on the speed. No BuildSlowdown time-mul.
                 const int cost = tc.unit_roster[want].cost;
-                const int charge = std::max(1, (int)(cost * rec.cfg.mods.cost_mul));
+                const int charge = std::max(1, om::ftol((cost * rec.cfg.mods.cost_mul)));
                 rec.queues.set_credits(rec.credits);
                 start(rec.queues.state(cat), cost, charge,
                       rec.cfg.build_speed * rec.cfg.mods.build_time_mul);
@@ -5251,8 +5251,8 @@ void World::step(double dt) {
         // W5-B R-063: the same 3-D / elevation / cliff test step_combat fires
         // on, measured from the committed cell (Finding-1 semantics above).
         if (!u.path.empty() &&
-            weapon_in_range_from(*this, u, u.cell_x * 256 + static_cast<int>(u.sub_x),
-                                 u.cell_y * 256 + static_cast<int>(u.sub_y), unit_lept_z(u),
+            weapon_in_range_from(*this, u, u.cell_x * 256 + om::ftol(u.sub_x),
+                                 u.cell_y * 256 + om::ftol(u.sub_y), unit_lept_z(u),
                                  unit_lept_x(t), unit_lept_y(t), unit_lept_z(t))) {
             // In range with a live pursue-path -> stop and hold (snap onto the
             // committed cell so we don't strand mid-segment; Finding-1 semantics).
@@ -5279,8 +5279,8 @@ void World::step(double dt) {
         if (!b.alive || b.state == Building::State::Dead) continue;
         int bax = 0, bay = 0, baz = 0;
         building_aim_lept(b, cell_level(b.cx, b.cy), bax, bay, baz);
-        if (weapon_in_range_from(*this, u, u.cell_x * 256 + static_cast<int>(u.sub_x),
-                                 u.cell_y * 256 + static_cast<int>(u.sub_y), unit_lept_z(u), bax, bay, baz,
+        if (weapon_in_range_from(*this, u, u.cell_x * 256 + om::ftol(u.sub_x),
+                                 u.cell_y * 256 + om::ftol(u.sub_y), unit_lept_z(u), bax, bay, baz,
                                  (b.fw + b.fh) * 64)) {
             u.path.clear();
             u.path_idx = 0;
@@ -5367,7 +5367,7 @@ void World::step(double dt) {
             // just a defensive backstop, not a pacing choice (contrast the
             // Task 7 table this replaced, which capped die_count to force
             // reachability -- see docs/re/infantry-anim.md §2/§3).
-            const int adv = static_cast<int>(u.die_time * kDieAnimFps);
+            const int adv = om::ftol(u.die_time * kDieAnimFps);
             u.frame = seq_frame(seq.die, u.facing, adv);
         } else if (u.fire_flash > 0.0) {
             // Play the fire/recoil sequence ONCE across the flash window.
@@ -5381,7 +5381,7 @@ void World::step(double dt) {
             // kTileW/kTileH/kLevelPx duplicating iso_renderer.cpp/input.cpp
             // (task-12-report.md Minor). MUST stay in sync with combat.cpp's
             // kFireFlashSecs if that ever changes.
-            const int adv = static_cast<int>((kFireFlashSecs - u.fire_flash) * kFireAnimFps);
+            const int adv = om::ftol((kFireFlashSecs - u.fire_flash) * kFireAnimFps);
             u.frame = seq_frame(seq.fire, u.facing, adv);
         }
         // else: leave step_units' stand/walk choice untouched.
@@ -5722,8 +5722,8 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 u.wait_time = 0.0;
             } else if (u.wait_time >= first_try &&
                        (prev_wait < first_try ||
-                        static_cast<int>((prev_wait - first_try) / kBlockedWait) !=
-                            static_cast<int>((u.wait_time - first_try) / kBlockedWait))) {
+                        om::ftol((prev_wait - first_try) / kBlockedWait) !=
+                            om::ftol((u.wait_time - first_try) / kBlockedWait))) {
                 // On a re-path attempt boundary (first_try, then every
                 // kBlockedWait after) -> attempt a re-path around the current
                 // traffic. On FAILURE keep the original path and keep waiting:
@@ -5766,7 +5766,7 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
 
         // Still walking: cycle the walk frames.
         u.anim_time += dt;
-        const int phase = static_cast<int>(u.anim_time * kWalkFps) % seq.walk.count;
+        const int phase = om::ftol(u.anim_time * kWalkFps) % seq.walk.count;
         u.frame = seq_frame(seq.walk, u.facing, phase);
     }
 }

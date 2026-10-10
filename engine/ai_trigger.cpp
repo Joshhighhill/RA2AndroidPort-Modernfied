@@ -1,4 +1,5 @@
 #include "ai_trigger.hpp"
+#include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 #include <cctype>
 #include <cmath>   // std::lround — the round(Weight_Current) draw [RE: §3]
 
@@ -87,7 +88,7 @@ bool trigger_condition_true(const AITriggerType& t, const TriggerView& view) {
             // credits. Stock is always N=0/op>= (effectively always-true);
             // the REAL compare is implemented — our economy exposes credits
             // [RE: §2 deviations].]
-            return compare_count((int)view.credits, t.comparator);
+            return compare_count(om::ftol(view.credits), t.comparator);
         case kCondCivilianHouseOwns: {
             // ct=7: counts the NEUTRAL/civilian house; FALSE unless a
             // neutral house exists (empty neutral slices -> -1) [RE: §2].

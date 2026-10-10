@@ -1,4 +1,5 @@
 #include "inf_anim.hpp"
+#include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 
 #include <algorithm>
 #include <cmath>
@@ -119,7 +120,7 @@ void arm_idle(InfAnimState& s, const InfTickCtx& c) {
     // [RE: FUN_0051cb80] Timer = Random over [freq*450, freq*1800] frames.
     const double lo = c.idle_frequency * 450.0, hi = c.idle_frequency * 1800.0;
     const double u = (next_rng(s) % 1000000u) / 1000000.0;
-    s.idle_timer = std::max(1, static_cast<int>(lo + (hi - lo) * u));
+    s.idle_timer = std::max(1, om::ftol(lo + (hi - lo) * u));
 }
 
 // [RE: FUN_0051cb80] the idle action roll.
@@ -225,7 +226,7 @@ int inf_anim_tick(InfAnimState& s, const InfTable& t, int& facing, const InfTick
 int inf_prone_damage(const InfAnimState& s, int damage, double prone_damage) {
     // [RE: FUN_00517db5 head] prone and damage > 0 -> ftol(damage * ProneDamage), >= 1.
     if (!s.armed || !s.prone || damage <= 0) return damage;
-    return std::max(1, static_cast<int>(damage * prone_damage));
+    return std::max(1, om::ftol(damage * prone_damage));
 }
 
 void inf_on_hit(InfAnimState& s, bool has_attacker, double ratio) {

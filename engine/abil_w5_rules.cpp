@@ -1,6 +1,7 @@
 // Wave-5 abilities (agent C): rulesmd -> BuildingTypeDef::w5 / UnitTypeDef::w5.
 // [RE: docs/re/abilities-w5.md]
 #include "abil_w5_rules.hpp"
+#include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 
 #include <algorithm>
 #include <cctype>
@@ -48,14 +49,14 @@ void fill_building_abilities(const ra2assets::Rules& rules, const std::string& i
     // Storage (+0x800) > 0 -> cash steal; Factory (+0xEB8) UnitType 0x28 /
     // InfantryType 0x10 -> veteran production; anything else does nothing.
     {
-        const int power = static_cast<int>(rules.section_double(id, "Power", 0.0));
+        const int power = om::ftol(rules.section_double(id, "Power", 0.0));
         const std::vector<std::string> tech = list_of(rules, "AI", "BuildTech");
         const std::string factory = upper(rules.section_string(id, "Factory", ""));
         int p = 0;   // None
         if (w.radar) p = 5;                                   // RadarLab
         else if (power >= 1) p = 2;                           // PowerPlant
         else if (std::find(tech.begin(), tech.end(), uid) != tech.end()) {
-            const int side = static_cast<int>(rules.section_double(id, "AIBasePlanningSide", 0.0));
+            const int side = om::ftol(rules.section_double(id, "AIBasePlanningSide", 0.0));
             p = side == 0 ? kSpyStolenAllied : side == 1 ? kSpyStolenSoviet : kSpyStolenThird;
         } else if (!rules.section_string(id, "SuperWeapon", "").empty()) p = 3;   // Superweapon
         else if (rules.section_double(id, "Storage", 0.0) > 0.0) p = 1;          // Refinery
@@ -65,14 +66,14 @@ void fill_building_abilities(const ra2assets::Rules& rules, const std::string& i
     w.prism = !uid.empty() && uid == upper(rules.general_string("PrismType", ""));
     w.overpowerable = rules.section_flag(id, "Overpowerable", false);
     w.gap_radius = rules.section_flag(id, "GapGenerator", false)
-                       ? static_cast<int>(rules.section_double(id, "GapRadiusInCells", 0.0))
+                       ? om::ftol(rules.section_double(id, "GapRadiusInCells", 0.0))
                        : 0;
-    w.inf_self_heal = static_cast<int>(rules.section_double(id, "InfantryGainSelfHeal", 0.0));
-    w.unit_self_heal = static_cast<int>(rules.section_double(id, "UnitsGainSelfHeal", 0.0));
+    w.inf_self_heal = om::ftol(rules.section_double(id, "InfantryGainSelfHeal", 0.0));
+    w.unit_self_heal = om::ftol(rules.section_double(id, "UnitsGainSelfHeal", 0.0));
     w.cloning = rules.section_flag(id, "Cloning", false);
-    w.psychic_radius = static_cast<int>(rules.section_double(id, "PsychicDetectionRadius", 0.0));
+    w.psychic_radius = om::ftol(rules.section_double(id, "PsychicDetectionRadius", 0.0));
     w.sensors_sight = rules.section_flag(id, "SensorArray", false)
-                          ? static_cast<int>(rules.section_double(id, "SensorsSight", 0.0))
+                          ? om::ftol(rules.section_double(id, "SensorsSight", 0.0))
                           : 0;
 }
 

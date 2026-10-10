@@ -1,4 +1,5 @@
 #include "skirmish.hpp"
+#include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 #include "ra2assets/rules.hpp"
 
 namespace ra2engine {

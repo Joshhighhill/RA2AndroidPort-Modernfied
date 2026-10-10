@@ -310,7 +310,7 @@ void World::an_area_damage(int house, double cx, double cy, int damage, double s
         if (z > 0.0) d = om::hypot(d, z - ((w.is_aircraft && w.altitude > 0.0) ? w.altitude : 0.0));
         if (d > radius) continue;
         const double scale = 1.0 - (1.0 - pmax) * (d / radius);
-        const int dmg = damage_vs(static_cast<int>(damage * scale), vv, w.armor_ix);
+        const int dmg = damage_vs(om::ftol(damage * scale), vv, w.armor_ix);
         const int hp0 = w.hp;
         an_damage_unit(j, dmg, -1);
         feed_damage(false, j, house, hp0 - units_[j].hp);   // W6-03-04 anger
@@ -318,7 +318,7 @@ void World::an_area_damage(int house, double cx, double cy, int damage, double s
     // W6-04-04/05 [RE: FUN_00489190 @0x489581]: wall cells inside the blast
     // take Reduce_Wall per the warhead's wall keys (a Nuke's
     // WallAbsoluteDestroyer erases them), never an HP hit.
-    const int wr = static_cast<int>(std::max(0.5, std::round(spread)));
+    const int wr = om::ftol(std::max(0.5, std::round(spread)));
     if (has_wall_overlays() && z <= 0.0)
         for (int dy = -wr; dy <= wr; ++dy)
             for (int dx = -wr; dx <= wr; ++dx) {
@@ -345,7 +345,7 @@ void World::an_area_damage(int house, double cx, double cy, int damage, double s
         if (d < 0.0 || d > radius) continue;
         const double scale = 1.0 - (1.0 - pmax) * (d / radius);
         const int hp0 = b.hp;
-        an_damage_building(bi, damage_vs(static_cast<int>(damage * scale), vv, b.armor_ix));
+        an_damage_building(bi, damage_vs(om::ftol(damage * scale), vv, b.armor_ix));
         feed_damage(true, bi, house, hp0 - buildings_[bi].hp);   // W6-03-04 anger
     }
 }
@@ -379,7 +379,7 @@ void World::an_nuke_detonate(const SwStrike& s) {
     // spread = the warhead CellSpread, as BulletClass::Detonate's RadSite block).
     if (an_.sw.nuke_rad_level > 0 && grid_w_ > 0 && grid_h_ > 0) {
         if (rad_.empty()) rad_.init(grid_w_, grid_h_);
-        rad_.detonate(s.x, s.y, static_cast<int>(spread), an_.sw.nuke_rad_level, ability_frame_,
+        rad_.detonate(s.x, s.y, om::ftol(spread), an_.sw.nuke_rad_level, ability_frame_,
                       ability_rules_);
     }
     an_event(SwEvent::Detonated, s.house, SuperweaponType::Nuke, s.x, s.y, s.ox, s.oy);

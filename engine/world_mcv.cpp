@@ -13,6 +13,7 @@
 #include <cmath>
 
 #include "building.hpp"
+#include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 #include "world.hpp"
 
 namespace ra2engine {
@@ -133,7 +134,7 @@ void World::finish_deploy(int idx) {
                                /*instant=*/buildup <= 0.0, d.sight, d.grants_map_reveal);
     // Health carried as a ratio, floored at 1 [FUN_007C4D00 ftol, min 1].
     Building& nb = buildings_[static_cast<std::size_t>(b)];
-    nb.hp = std::max(1, static_cast<int>(ratio * nb.max_hp));
+    nb.hp = std::max(1, om::ftol(ratio * nb.max_hp));
     deploy_events_.push_back({DeployEvent::Kind::Deployed, idx, b, house});
 }
 
@@ -206,7 +207,7 @@ bool World::try_undeploy(int b_idx) {
     const double ratio = b.max_hp > 0 ? static_cast<double>(b.hp) / b.max_hp : 1.0;
     const int house = b.house;
     Unit& u = add_combat_unit(ux, uy, house, undeploy_units_[k]);
-    u.hp = std::max(1, static_cast<int>(ratio * u.max_hp));
+    u.hp = std::max(1, om::ftol(ratio * u.max_hp));
     u.body_facing = u.turret_facing =
         static_cast<double>((t.deploy_facing & 0xFF) << 8);
     const int ui = static_cast<int>(units_.size()) - 1;

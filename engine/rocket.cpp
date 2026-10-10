@@ -12,7 +12,7 @@ namespace ra2engine {
 
 namespace {
 
-int ftol_i(double v) { return static_cast<int>(std::trunc(v)); }
+int ftol_i(double v) { return om::ftol(v); }   // Net L0: the original _ftol (FUN_007C4D00)
 
 std::string upper(std::string s) {
     for (char& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
@@ -62,17 +62,17 @@ RocketBlock resolve_block(const ra2assets::Rules& rules, const std::string& pre,
                           const char* ewh_def) {
     RocketBlock b = d;
     auto num = [&](const char* k, double def) { return rules.general_double(pre + k, def); };
-    b.pause_frames = static_cast<int>(num("PauseFrames", d.pause_frames));
-    b.tilt_frames = static_cast<int>(num("TiltFrames", d.tilt_frames));
+    b.pause_frames = om::ftol(num("PauseFrames", d.pause_frames));
+    b.tilt_frames = om::ftol(num("TiltFrames", d.tilt_frames));
     b.pitch_initial = num("PitchInitial", d.pitch_initial);
     b.pitch_final = num("PitchFinal", d.pitch_final);
     b.turn_rate = num("TurnRate", d.turn_rate);
-    b.raise_rate = static_cast<int>(num("RaiseRate", d.raise_rate));
+    b.raise_rate = om::ftol(num("RaiseRate", d.raise_rate));
     b.acceleration = num("Acceleration", d.acceleration);
-    b.altitude = static_cast<int>(num("Altitude", d.altitude));
-    b.damage = static_cast<int>(num("Damage", d.damage));
-    b.elite_damage = static_cast<int>(num("EliteDamage", d.elite_damage));
-    b.body_length = static_cast<int>(num("BodyLength", d.body_length));
+    b.altitude = om::ftol(num("Altitude", d.altitude));
+    b.damage = om::ftol(num("Damage", d.damage));
+    b.elite_damage = om::ftol(num("EliteDamage", d.elite_damage));
+    b.body_length = om::ftol(num("BodyLength", d.body_length));
     b.lazy_curve = yes(rules.section_string("General", pre + "LazyCurve", ""), d.lazy_curve);
     const std::string wh = warhead_key(rules, wh_key, wh_def);
     const std::string ewh = warhead_key(rules, ewh_key, ewh_def);

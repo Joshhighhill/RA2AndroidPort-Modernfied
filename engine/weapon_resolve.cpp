@@ -1,4 +1,5 @@
 #include "weapon_resolve.hpp"
+#include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 #include "abil_w5_rules.hpp"   // wave-5 (agent C)
 
 #include "ra2assets/rules.hpp"
@@ -34,10 +35,10 @@ WeaponSlot resolve_weapon_slot(const ra2assets::Rules& rules, const std::string&
     s.ag = rules.section_flag(proj, "AG", true);
     s.omni_fire = rules.weapon_omnifire(weapon);
     s.wall = rules.section_flag(wh, "Wall", false);   // G16: WarheadType +0x144
-    s.inf_death = static_cast<int>(rules.section_double(wh, "InfDeath", 0.0));   // W3-B
+    s.inf_death = om::ftol(rules.section_double(wh, "InfDeath", 0.0));   // W3-B
     s.prone_damage = warhead_prone_damage(rules, wh);
     // W6-04-01 [RE: WeaponTypeClass::LoadFromINI Burst -> +0x9C, default 1]
-    s.burst = std::max(1, static_cast<int>(rules.section_double(weapon, "Burst", 1.0)));
+    s.burst = std::max(1, om::ftol(rules.section_double(weapon, "Burst", 1.0)));
     s.sonic = rules.section_flag(wh, "Sonic", false);   // W6-04-09 (WarheadType +0x14B)
     s.bomb_disarm = rules.section_flag(wh, "BombDisarm", false);   // WarheadType +0x16E (DefuseKit)
     s.wall_flags = warhead_wall_flags(rules, wh);         // W6-04-04
@@ -45,7 +46,7 @@ WeaponSlot resolve_weapon_slot(const ra2assets::Rules& rules, const std::string&
     // W6-04-02: ShrapnelWeapon/ShrapnelCount are BulletType keys (the
     // projectile section), not WeaponType keys.
     const std::string sw = rules.section_string(proj, "ShrapnelWeapon", "");
-    const int sc = static_cast<int>(rules.section_double(proj, "ShrapnelCount", 0.0));
+    const int sc = om::ftol(rules.section_double(proj, "ShrapnelCount", 0.0));
     if (!sw.empty() && sc > 0) {
         s.shrapnel_count = sc;
         s.shrapnel_damage = rules.weapon_damage(sw);
@@ -78,8 +79,8 @@ double warhead_prone_damage(const ra2assets::Rules& rules, const std::string& wh
 
 std::string type_weapon_id(const ra2assets::Rules& rules, const std::string& type_id, int i,
                            bool elite) {
-    const int turret_count = static_cast<int>(rules.section_double(type_id, "TurretCount", 0.0));
-    const int weapon_count = static_cast<int>(rules.section_double(type_id, "WeaponCount", 0.0));
+    const int turret_count = om::ftol(rules.section_double(type_id, "TurretCount", 0.0));
+    const int weapon_count = om::ftol(rules.section_double(type_id, "WeaponCount", 0.0));
     if (turret_count < 1) {
         if (rules.section_flag(type_id, "ClearAllWeapons", false)) return "";
         static const char* kNormal[2] = {"Primary", "Secondary"};
@@ -102,12 +103,12 @@ TypeWeapons resolve_type_weapons(const ra2assets::Rules& rules, const std::strin
     // per-target Primary/Secondary pick -- slot 1 there is "Weapon2" (the FV's
     // RepairBullet), which must never be chosen as a secondary. The IFV swap is
     // P4's step_abilities (ifv_weapons); only slot 0 is the default turret.
-    if (static_cast<int>(rules.section_double(type_id, "TurretCount", 0.0)) >= 1) {
+    if (om::ftol(rules.section_double(type_id, "TurretCount", 0.0)) >= 1) {
         t.slot[1] = WeaponSlot{};
         t.elite[1] = WeaponSlot{};
     }
     t.deploy_fire_weapon =
-        static_cast<int>(rules.section_double(type_id, "DeployFireWeapon", 1.0));
+        om::ftol(rules.section_double(type_id, "DeployFireWeapon", 1.0));
     return t;
 }
 
@@ -178,7 +179,7 @@ void fill_building_weapons(const ra2assets::Rules& rules, const std::string& typ
     // FUN_0045FE40]: the garrison / bridge-hut keys.
     d.can_be_occupied = rules.section_flag(type_id, "CanBeOccupied", false);
     d.can_occupy_fire = rules.section_flag(type_id, "CanOccupyFire", false);
-    d.max_occupants = static_cast<int>(rules.section_double(type_id, "MaxNumberOccupants", 0.0));
+    d.max_occupants = om::ftol(rules.section_double(type_id, "MaxNumberOccupants", 0.0));
     d.bridge_repair_hut = rules.section_flag(type_id, "BridgeRepairHut", false);
     d.w6.gate = rules.section_flag(type_id, "Gate", false);   // R-210
     fill_building_abilities(rules, type_id, d);   // wave-5 (agent C): abil_w5_rules.cpp

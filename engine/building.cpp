@@ -1,4 +1,5 @@
 #include "building.hpp"
+#include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 #include <algorithm>
 
 namespace ra2engine {
@@ -76,7 +77,7 @@ int buildup_frame(const Building& b, int buildup_shp_frame_count) {
     if (image_frames < 1) return 0;
     if (b.buildup_total <= 0.0) return image_frames - 1;
     double period = b.buildup_total / image_frames;   // one frame per period
-    int f = (int)(b.buildup_time / period);
+    int f = om::ftol((b.buildup_time / period));
     return std::clamp(f, 0, image_frames - 1);
 }
 

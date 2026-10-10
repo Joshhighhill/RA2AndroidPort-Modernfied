@@ -161,11 +161,11 @@ void try_fire(const World& world, std::vector<Unit>& units, std::vector<Building
                                           double(iy - unit_lept_y(u)) * (iy - unit_lept_y(u)) +
                                           double(unit_lept_z(v) - unit_lept_z(u)) *
                                               (unit_lept_z(v) - unit_lept_z(u))));
-        const int wr = std::max(1, static_cast<int>(u.w_range * 256.0));
+        const int wr = std::max(1, om::ftol(u.w_range * 256.0));
         const int r = rng->random(0, 2 * world.projectile_rules().ballistic_scatter) * dist / wr;
         const double th = rng->angle();
-        ix += static_cast<int>(om::cos(th) * r);
-        iy += static_cast<int>(om::sin(th) * r);
+        ix += om::ftol(om::cos(th) * r);
+        iy += om::ftol(om::sin(th) * r);
     }
     damage_area(world, units, buildings, occ, u, attacker_idx, -1, ix, iy, unit_lept_z(v));
     // W2-SK-22 Prism split [RE: [Comet] ShrapnelWeapon/ShrapnelCount;
@@ -347,7 +347,7 @@ void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ, const Unit& a
         // before the falloff/Verses; only when the victim's hook is armed
         // (never in a legacy World -> the base expression is unchanged).
         const int full = w.vet.recv ? vet_receive(attacker.w_damage, w.vet) : attacker.w_damage;
-        const int base = inf_prone_damage(w.ia, static_cast<int>(full * scale),   // trunc (combat.md §3)
+        const int base = inf_prone_damage(w.ia, om::ftol(full * scale),   // trunc (combat.md §3)
                                           attacker.w_prone_damage);                // W3-B ProneDamage
         const int dmg = damage_vs(base, attacker.w_verses, w.armor_ix);
         w.hp -= dmg;
@@ -415,14 +415,14 @@ constexpr signed char kRingOffsets[369][2] = {
 constexpr int kLevelLept = 104;     // Unsorted::LevelHeight (DAT_0089D7E0)
 constexpr int kMaxDamage = 10000;   // rulesmd [CombatDamage] MaxDamage=10000 (Rules+0x16C8)
 
-int ftol_i(double v) { return static_cast<int>(v); }   // _ftol: truncate toward zero
+int ftol_i(double v) { return om::ftol(v); }   // _ftol: truncate toward zero
 
 int dist3_i(int dx, int dy, int dz) {
     return ftol_i(om::sqrt(static_cast<double>(dx) * dx + static_cast<double>(dy) * dy +
                             static_cast<double>(dz) * dz));
 }
 
-int lept_cell(int l) { return static_cast<int>(std::floor((l + 128.0) / 256.0)); }
+int lept_cell(int l) { return om::ftol(std::floor((l + 128.0) / 256.0)); }
 
 // Kill bookkeeping for a unit whose hp reached 0 (the deliver_hit_from tail).
 void start_unit_death(std::vector<Unit>& units, Occupancy& occ, int j, const Unit& shooter,
@@ -831,7 +831,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
     const int bgh = std::max(1, (world.grid_h() + kBucket - 1) / kBucket);
     std::vector<std::vector<int>> buckets(static_cast<std::size_t>(bgw) * bgh);
     auto bucket_of = [&](double c, int lim) {
-        const int b = static_cast<int>(std::floor(c)) / kBucket;
+        const int b = om::ftol(std::floor(c)) / kBucket;
         return std::max(0, std::min(lim - 1, b));
     };
     for (int j = 0; j < n; ++j) {
