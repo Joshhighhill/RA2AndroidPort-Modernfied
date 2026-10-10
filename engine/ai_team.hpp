@@ -198,7 +198,7 @@ struct TeamInstance {
 // wall-clock]. teams_created feeds the gate hash + witnesses.
 struct AiTeamState {
     std::vector<TeamInstance> teams;
-    double check_clock = 0.0;  // secs since the last TeamDelays management pass [§4]
+    double check_clock = 0.0;  // FRAMES since the last TeamDelays management pass [§4] (Net L0)
     double spawn_clock = 0.0;  // secs accrued toward the AutocreateTime spawn [§4]
     std::uint32_t rng = 0x2545F491u;  // deterministic fixed seed
     int teams_created = 0;     // lifetime counter (witness + hash)

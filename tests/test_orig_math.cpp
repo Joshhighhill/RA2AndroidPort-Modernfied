@@ -99,7 +99,7 @@ TEST_CASE("orig_math: ipow is plain repeated multiplication") {
 TEST_CASE("orig_math: no libm transcendental / sqrt / hypot / pow in simulation sources") {
     static const char* const kSim[] = {
         "world.cpp", "world_veterancy.cpp", "world_an.cpp", "world_depth.cpp", "world_abilities.cpp",
-        "world_mcv.cpp", "world_sw.cpp", "world_w5.cpp", "world_w6.cpp", "world.hpp",
+        "world_mcv.cpp", "world_sw.cpp", "world_w5.cpp", "world_w6.cpp", "world_econ.cpp", "world.hpp",
         "combat.cpp", "combat.hpp", "building_combat.cpp", "projectile.cpp", "projectile.hpp",
         "rocket.cpp", "rocket.hpp", "ai_base.cpp", "ai_team.cpp", "ai_team.hpp", "ai_trigger.cpp",
         "harvest.cpp", "flight.cpp", "cargo.cpp", "capture.cpp", "abilities.cpp", "abilities.hpp",

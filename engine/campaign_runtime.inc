@@ -921,7 +921,7 @@ private:
                     if (camp::up(camp::trim_comment(kv.second)) == camp::up(house_names_[i])) { arr = k; break; }
                     ++k;
                 }
-                w_.set_ai_team_check_clock((int)i, (double)(frame_ - 175L * arr) / 15.0);
+                w_.set_ai_team_check_clock((int)i, (double)(frame_ - 175L * arr));   // Net L0: frames
             }
             char b[200];
             std::snprintf(b, sizeof b, "[camp] f%ld %s%s: %s nodes=%d", frame_,
