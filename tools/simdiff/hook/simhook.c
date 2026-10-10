@@ -43,6 +43,10 @@ typedef unsigned char u8;
 #define A_SYNCDRAW     0x00AF91D0  /* FUN_006504D0's RNG sink                */
 #define A_HOOKCALL     0x0055DA6D  /* E8 rel32 -> 0x646D00 inside main loop  */
 #define A_QUEUEAI      0x00646D00
+#define A_LOGICCALL    0x0055D92E  /* E8 rel32 -> 0x55AC40 (ECX = &Logic)    */
+#define A_LOGICAI      0x0055AC40  /* LogicClass::AI                         */
+#define H_ISHUMAN      0x1EC       /* HouseClass::IsHumanPlayer (bool)       */
+#define H_INCONTROL    0x1ED       /* HouseClass::IsInPlayerControl (bool)   */
 #define A_CRC          0x0064D520  /* ComputeFrameCRC                        */
 #define A_FACING_CUR   0x004C92F0  /* FacingClass::Current(DirStruct*)       */
 #define A_RAND_SEED    0x0065C110  /* RandomClass::RandomClass(seed) body    */
@@ -95,6 +99,11 @@ static int g_autostart = 1;
 static int g_l0 = 0;
 static int g_frames_seen = 0;
 static char g_logpath[MAX_PATH];
+static int g_passive_mask = 0;     /* SIMHOOK_PASSIVE: bit i = make house i non-AI */
+static int g_passive_done = 0;
+static u32 g_logic_fn = A_LOGICAI;
+static int g_rngtrace = 0;          /* SIMHOOK_RNGTRACE=N: log sync-RNG callers for frames < N */
+static FILE *g_trace;
 
 static void hlog(const char *fmt, ...)
 {
@@ -274,6 +283,117 @@ static void __cdecl hk_queue_ai(void)
     }
 }
 
+/* Runs at the start of every logic frame (before LogicClass::AI). Used for
+ * scenario shaping that must precede frame 0's logic: SIMHOOK_PASSIVE turns
+ * the selected computer houses into idle "human" houses (no AI, no input),
+ * giving the "map ticking" rung its no-actor scenario. */
+static void __stdcall pre_logic(void)
+{
+    if (g_passive_mask && !g_passive_done && RD32(A_SESSIONMODE) == 5 && *(u8 **)A_SCENARIO) {
+        u8 **h = *(u8 ***)(V_HOUSE + 4);
+        int i, n = (int)RD32(V_HOUSE + 0x10);
+        for (i = 0; i < n && i < 32; ++i)
+            if (g_passive_mask & (1 << i)) {
+                h[i][H_ISHUMAN] = 1;
+                h[i][H_INCONTROL] = 1;
+                hlog("passive: house %d made idle at frame %d", i, (int)RD32(A_FRAME));
+            }
+        g_passive_done = 1;
+    }
+}
+
+__declspec(naked) static void hk_logic(void)
+{
+    __asm {
+        push ecx
+        call pre_logic
+        pop ecx
+        jmp dword ptr [g_logic_fn]
+    }
+}
+
+/* SIMHOOK_RNGTRACE: RandomClass::operator() (0x65C1C0) is replaced by an
+ * exact re-implementation of its R250 step (decompiled: disabled flag at +0,
+ * idx1 +4, idx2 +8, table +0xC, both indices wrap at 250) that also records
+ * the caller of every Scenario->Random draw. Same values, same state. */
+static u32 __stdcall trace_next(u8 *r, u32 ret)
+{
+    int *i1 = (int *)(r + 4), *i2 = (int *)(r + 8);
+    u32 *t = (u32 *)(r + 12), v;
+    if (r[0]) return 0;
+    t[*i1] ^= t[*i2];
+    v = t[*i1];
+    if (++*i1 > 249) *i1 = 0;
+    if (++*i2 > 249) *i2 = 0;
+    if (g_trace && *(u8 **)A_SCENARIO && r == *(u8 **)A_SCENARIO + 0x218 && (int)RD32(A_FRAME) < g_rngtrace) {
+        fprintf(g_trace, "%d %08X\n", (int)RD32(A_FRAME), ret);
+    } else if (g_trace && r == (u8 *)A_RNG2 && (int)RD32(A_FRAME) < g_rngtrace) {
+        fprintf(g_trace, "%d %08X T\n", (int)RD32(A_FRAME), ret);   /* twin (global) RNG */
+    }
+    return v;
+}
+
+/* RandomClass::operator()(lo, hi) (0x65C220) inlines the R250 step, so it
+ * is replaced the same way (exact transcription of the decompiled body). */
+static u32 r250_step(u8 *r)
+{
+    int *i1 = (int *)(r + 4), *i2 = (int *)(r + 8);
+    u32 *t = (u32 *)(r + 12), v;
+    t[*i1] ^= t[*i2];
+    v = t[*i1];
+    if (++*i1 > 249) *i1 = 0;
+    if (++*i2 > 249) *i2 = 0;
+    return v;
+}
+
+static int __stdcall trace_range(u8 *r, int lo, int hi, u32 ret)
+{
+    int b;
+    u32 range, bit, v;
+    if (lo == hi) return lo;
+    if (hi < lo) { int t = lo; lo = hi; hi = t; }
+    range = (u32)(hi - lo);
+    bit = range & 0x80000000u;
+    b = 31;
+    while (bit == 0 && b > 0) { --b; bit = range & (1u << b); }
+    v = range + 1;
+    while ((int)range < (int)v) {
+        v = r[0] ? 0 : r250_step(r);
+        v &= ~(0xFFFFFFFFu << ((b + 1) & 31));
+    }
+    if (g_trace && (int)RD32(A_FRAME) < g_rngtrace) {
+        if (*(u8 **)A_SCENARIO && r == *(u8 **)A_SCENARIO + 0x218)
+            fprintf(g_trace, "%d %08X R\n", (int)RD32(A_FRAME), ret);
+        else if (r == (u8 *)A_RNG2)
+            fprintf(g_trace, "%d %08X TR\n", (int)RD32(A_FRAME), ret);
+    }
+    return (int)(v + (u32)lo);
+}
+
+__declspec(naked) static void hk_rand_range(void)
+{
+    __asm {
+        mov eax, [esp]
+        push eax
+        push dword ptr [esp + 12]
+        push dword ptr [esp + 12]
+        push ecx
+        call trace_range
+        ret 8
+    }
+}
+
+__declspec(naked) static void hk_rand_next(void)
+{
+    __asm {
+        mov eax, [esp]
+        push eax
+        push ecx
+        call trace_next
+        ret
+    }
+}
+
 /* ---- shell automation ------------------------------------------------ */
 typedef struct { int id; HWND dlg; } FindCtx;
 
@@ -371,6 +491,18 @@ static int install(void)
     VirtualProtect(site, 5, old, &old);
     FlushInstructionCache(GetCurrentProcess(), site, 5);
     *(volatile u32 *)A_PRESETSEED = g_seed;
+    {
+        static const u8 expect2[5] = { 0xE8, 0x0D, 0xD3, 0xFF, 0xFF };
+        u8 *ls = (u8 *)A_LOGICCALL;
+        if (memcmp(ls, expect2, 5) == 0 && VirtualProtect(ls, 5, PAGE_EXECUTE_READWRITE, &old)) {
+            rel = (int)((u8 *)hk_logic - (ls + 5));
+            memcpy(ls + 1, &rel, 4);
+            VirtualProtect(ls, 5, old, &old);
+            FlushInstructionCache(GetCurrentProcess(), ls, 5);
+        } else {
+            hlog("warning: pre-logic hook not installed");
+        }
+    }
     /* Run without the YURI.exe launcher (same idea as yrpp-spawner's
      * CopyProtection patches at 1.001 0x49F5C0/0x49F620): IsLauncherRunning
      * and NotifyLauncher return true. Validate (0x49F6B0) already does. */
@@ -392,9 +524,32 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID r)
         g_every = env_int("SIMHOOK_EVERY", 1);
         g_autostart = env_int("SIMHOOK_AUTOSTART", 1);
         g_l0 = env_int("SIMHOOK_L0", 0);
+        g_passive_mask = env_int("SIMHOOK_PASSIVE", 0);
+        g_rngtrace = env_int("SIMHOOK_RNGTRACE", 0);
         hlog("simhook attach: seed %08X frames %d every %d autostart %d", g_seed, g_max_frames, g_every, g_autostart);
         if (!install()) return TRUE; /* stay loaded but inert */
         hlog("hook installed");
+        if (g_rngtrace > 0) {
+            char tp[MAX_PATH];
+            u8 *fn = (u8 *)A_RAND_NEXT;
+            DWORD old;
+            int rel = (int)((u8 *)hk_rand_next - (fn + 5));
+            snprintf(tp, sizeof tp, "%s.rngtrace", g_outpath);
+            g_trace = fopen(tp, "w");
+            if (g_trace && VirtualProtect(fn, 5, PAGE_EXECUTE_READWRITE, &old)) {
+                fn[0] = 0xE9; memcpy(fn + 1, &rel, 4);
+                VirtualProtect(fn, 5, old, &old);
+                FlushInstructionCache(GetCurrentProcess(), fn, 5);
+                fn = (u8 *)A_RAND_RANGE;
+                rel = (int)((u8 *)hk_rand_range - (fn + 5));
+                if (VirtualProtect(fn, 5, PAGE_EXECUTE_READWRITE, &old)) {
+                    fn[0] = 0xE9; memcpy(fn + 1, &rel, 4);
+                    VirtualProtect(fn, 5, old, &old);
+                    FlushInstructionCache(GetCurrentProcess(), fn, 5);
+                }
+                hlog("rng trace on for frames < %d", g_rngtrace);
+            }
+        }
         if (g_l0 > 0) l0_dump();
         if (g_autostart) CloseHandle(CreateThread(NULL, 0, shell_thread, NULL, 0, NULL));
     }

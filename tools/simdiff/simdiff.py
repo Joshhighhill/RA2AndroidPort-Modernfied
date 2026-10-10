@@ -89,6 +89,38 @@ def techno_census(fr):
     return c
 
 
+def matched(A, B):
+    """Pair objects by (rtti, type, owner), greedily nearest in position, and
+    measure how close the paired ones are. Order- and id-free, so it says
+    something useful long before a strict positional compare can."""
+    from collections import defaultdict
+    ga, gb = defaultdict(list), defaultdict(list)
+    for o in A.objs:
+        ga[(o[0], o[2], o[3])].append(o)
+    for o in B.objs:
+        gb[(o[0], o[2], o[3])].append(o)
+    pairs = []
+    for k, la in ga.items():
+        lb = list(gb.get(k, []))
+        for oa in la:
+            if not lb:
+                break
+            ax, ay = int(oa[4]), int(oa[5])
+            j = min(range(len(lb)), key=lambda i: abs(int(lb[i][4]) - ax) + abs(int(lb[i][5]) - ay))
+            pairs.append((oa, lb.pop(j)))
+    st = {"a": len(A.objs), "b": len(B.objs), "paired": len(pairs)}
+    if pairs:
+        d = [abs(int(a[4]) - int(b[4])) + abs(int(a[5]) - int(b[5])) for a, b in pairs]
+        st["pos_exact"] = sum(1 for x in d if x == 0)
+        st["pos_within_cell"] = sum(1 for x in d if x < 256)
+        st["pos_mean_l1"] = round(sum(d) / len(d), 1)
+        fe = [(a, b) for a, b in pairs if a[7] != "-" and b[7] != "-"]
+        st["facing_exact"] = sum(1 for a, b in fe if a[7] == b[7])
+        he = [(a, b) for a, b in pairs if a[9] != "-" and b[9] != "-"]
+        st["hp_exact"] = sum(1 for a, b in he if a[9] == b[9])
+    return st
+
+
 def cmp_val(a, b):
     return a == "-" or b == "-" or a == b
 
@@ -162,6 +194,11 @@ def diff(a_path, b_path, ignore=(), max_frames=None):
                     if first is None:
                         first = {"frame": n, "field": name, "index": idx, "a": " ".join(oa), "b": " ".join(ob)}
     res["absent"] = sorted(absent - compared)
+    res["not_compared"] = sorted(k for k in classes if classes[k] is None and k not in compared
+                                 and k not in absent and k in ("uid", "type", "owner", "position",
+                                                               "facing", "turret", "hp", "mission"))
+    probe = sorted(set([common[0], common[-1]] + [n for n in (10, 100, 300, 1000, 3000) if n in fa and n in fb])) if common else []
+    res["matched"] = OrderedDict((n, matched(fa[n], fb[n])) for n in probe)
     res["first_divergence"] = first
     res["by_class"] = classes
     res["matched_frames"] = (first["frame"] if first else (common[-1] + 1 if common else 0))
@@ -207,11 +244,17 @@ def fmt_diff(r):
     for k, v in r["by_class"].items():
         if v is None and k in r.get("absent", []):
             lines.append("   %-12s n/a (not produced by one side)" % k)
+        elif v is None and k in r.get("not_compared", []):
+            lines.append("   %-12s not compared (no positionally aligned objects)" % k)
         elif v is None:
             lines.append("   %-12s match (all %d frames)" % (k, r["common_frames"]))
         else:
             extra = {kk: vv for kk, vv in v.items() if kk != "frame"}
             lines.append("   %-12s frame %-6s %s" % (k, v["frame"], json.dumps(extra)[:220]))
+    if r.get("matched"):
+        lines.append("order-free pairing by (rtti,type,owner), nearest position:")
+        for n, st in r["matched"].items():
+            lines.append("   frame %-6s %s" % (n, json.dumps(st)))
     return "\n".join(lines)
 
 
@@ -225,6 +268,29 @@ def summary(path, step=100):
         print("F%-6d crc %s techno %d owners %s cen %s" % (n, f.hdr.get("crc"), len(f.objs), dict(owners), f.hdr.get("cen")))
 
 
+def markers(path):
+    """Event markers of a dump, used to place ladder windows: first frame a
+    techno moves, first new techno (production), first HP loss (combat)."""
+    meta, fr = parse(path)
+    prev = None
+    out = OrderedDict([("first_move", None), ("first_new_object", None), ("first_damage", None)])
+    for n, f in fr.items():
+        if prev is not None:
+            pa = {(o[1], o[2]): o for o in prev.objs if o[1] != "-"}
+            for o in f.objs:
+                q = pa.get((o[1], o[2]))
+                if q is None:
+                    if out["first_new_object"] is None and o[1] != "-":
+                        out["first_new_object"] = (n, " ".join(o[:4]))
+                    continue
+                if out["first_move"] is None and q[4:7] != o[4:7]:
+                    out["first_move"] = (n, " ".join(o[:4]))
+                if out["first_damage"] is None and q[9] != "-" and int(o[9]) < int(q[9]):
+                    out["first_damage"] = (n, " ".join(o[:4]))
+        prev = f
+    return out
+
+
 def ladder(manifest):
     """Manifest: JSON list of rungs {name, kind: l0|diff, a, b, ignore?, frames?}."""
     with open(manifest) as f:
@@ -236,6 +302,8 @@ def ladder(manifest):
             rows.append((r["name"], "PASS" if o["pass"] else "FAIL",
                          "%d raw + %d ranged draws; first mismatch raw=%s ranged=%s" % (
                              o["raw_compared"], o["ranged_compared"], o["raw_first_mismatch"], o["ranged_first_mismatch"])))
+        elif r["kind"] == "markers":
+            rows.append((r["name"], "info", json.dumps(markers(r["a"]))))
         else:
             o = diff(r["a"], r["b"], set(r.get("ignore", [])), r.get("frames"))
             fd = o["first_divergence"]
@@ -257,6 +325,7 @@ def main():
     l = sub.add_parser("l0"); l.add_argument("a"); l.add_argument("b")
     s = sub.add_parser("summary"); s.add_argument("a"); s.add_argument("--step", type=int, default=100)
     g = sub.add_parser("ladder"); g.add_argument("manifest")
+    mk = sub.add_parser("markers"); mk.add_argument("a")
     args = ap.parse_args()
     if args.cmd == "diff":
         r = diff(args.a, args.b, set(x for x in args.ignore.split(",") if x), args.frames)
@@ -271,6 +340,9 @@ def main():
         return 0 if o["pass"] else 1
     if args.cmd == "summary":
         summary(args.a, args.step)
+        return 0
+    if args.cmd == "markers":
+        print(json.dumps(markers(args.a), indent=1))
         return 0
     if args.cmd == "ladder":
         ladder(args.manifest)
