@@ -361,9 +361,11 @@ private:
             const int hw = u.is_vehicle ? 22 : 10, up = u.is_vehicle ? 24 : 30;
             if (mx >= gx - hw && mx <= gx + hw && my >= gy - up && my <= gy + 6) { hit = i; break; }
         }
+        const ra2engine::Selection& sel = in.selection();
+        auto sel_has = [&](const ra2engine::Unit& u) { return sel.has(static_cast<int>(&u - us.data())); };
         bool any_sel = false;
         for (const ra2engine::Unit& u : us)
-            if (u.selected && u.house == g_local_house && u.alive && u.die_time < 0.0) { any_sel = true; break; }
+            if (sel_has(u) && u.house == g_local_house && u.alive && u.die_time < 0.0) { any_sel = true; break; }
         if (hit >= 0) {
             const ra2engine::Unit& u = us[hit];
             if (u.house == g_local_house || !w.is_enemy(g_local_house, u.house)) return kSelect;
@@ -371,7 +373,7 @@ private:
             // [RE: presentation.md §3 FUN_004aada0] Attack only when in range,
             // else AttackOutOfRange (measured from the lowest selected unit).
             for (const ra2engine::Unit& s : us)
-                if (s.selected && s.house == g_local_house && s.alive && s.die_time < 0.0) {
+                if (sel_has(s) && s.house == g_local_house && s.alive && s.die_time < 0.0) {
                     const double d = std::hypot(s.fx - u.fx, s.fy - u.fy);
                     return d <= s.w_range ? kAttack : kAttackOutOfRange;
                 }
@@ -392,14 +394,15 @@ private:
         if (!w.explored_at(g_local_house, cx, cy)) return kMove;
         const int gw = w.grid_w(), gh = w.grid_h();
         if (cx < 0 || cy < 0 || cx >= gw || cy >= gh) return kNoMove;
-        return w.selection_can_enter(g_local_house, cx, cy) ? kMove : kNoMove;   // W2-AN-09
+        return w.group_can_enter(sel.ids(), g_local_house, cx, cy) ? kMove : kNoMove;   // W2-AN-09
     }
 
     // B's Input::Action (the authoritative "what would a click do") ->
     // MouseCursorType [RE: presentation.md §3, DisplayClass::ConvertAction
     // FUN_004aada0]: Attack shows AttackOutOfRange when the selection cannot
     // reach; over a shrouded cell Attack and Move both show Move.
-    int cursor_for_action(ra2engine::Input::Action a, const ra2engine::World& w, int mx, int my) const {
+    int cursor_for_action(ra2engine::Input::Action a, const ra2engine::World& w, const ra2engine::Input& in,
+                          int mx, int my) const {
         using A = ra2engine::Input::Action;
         int cx = 0, cy = 0;
         ra2engine::screen_to_cell(mx - cam_.x, my - cam_.y, 60, 30, cx, cy);
@@ -411,7 +414,8 @@ private:
             case A::Attack: {
                 if (shrouded) return kMove;
                 for (const ra2engine::Unit& s : w.units())
-                    if (s.selected && s.house == g_local_house && s.alive && s.die_time < 0.0)
+                    if (in.selection().has(static_cast<int>(&s - w.units().data())) && s.house == g_local_house && s.alive &&
+                        s.die_time < 0.0)
                         return std::hypot(s.fx - cx, s.fy - cy) <= s.w_range + 0.5 ? kAttack : kAttackOutOfRange;
                 return kAttack;
             }
@@ -442,7 +446,8 @@ public:
         // playfield follows B's action_at when supplied.
         const bool scroll = id >= kScrollN && id < kNoScrollN;
         if (action >= 0 && !scroll && !over_sidebar && mx < view_w)
-            id = cursor_for_action(static_cast<ra2engine::Input::Action>(action), w, mx, my);
+            id = cursor_for_action(static_cast<ra2engine::Input::Action>(action), w, in, mx, my);
+
         if (id != last_cursor_) {
             pres_log(frame_, "cursor " + std::to_string(id));
             last_cursor_ = id;

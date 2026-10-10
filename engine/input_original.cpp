@@ -37,11 +37,12 @@ constexpr int kLevelPxO = 15;           // one height level in screen px (input.
 // [RE: FUN_00730290] TeamSelect re-press window: timeGetTime() delta < 800 ms.
 constexpr uint32_t kGroupRepeatMs = 800;
 
-int lone_selected_with_image(const World& w, const char* image) {
+int lone_selected_with_image(const World& w, const Selection& sel, const char* image) {
     int found = -1;
-    for (int i = 0; i < static_cast<int>(w.units().size()); ++i) {
+    for (int i : sel.ids()) {
+        if (i >= static_cast<int>(w.units().size())) break;
         const Unit& u = w.units()[i];
-        if (!u.selected || !u.alive || u.die_time >= 0.0 || !w.controllable(u.house)) continue;
+        if (!u.alive || u.die_time >= 0.0 || !w.controllable(u.house)) continue;
         if (found >= 0) return -1;
         found = i;
     }
@@ -50,8 +51,11 @@ int lone_selected_with_image(const World& w, const char* image) {
 }  // namespace
 
 bool Input::any_own_selected() const {
-    for (const Unit& u : world_.units())
-        if (u.selected && world_.controllable(u.house) && u.alive && u.die_time < 0.0) return true;
+    for (int i : sel_.ids()) {
+        if (i >= static_cast<int>(world_.units().size())) break;
+        const Unit& u = world_.units()[i];
+        if (world_.controllable(u.house) && u.alive && u.die_time < 0.0) return true;
+    }
     return false;
 }
 
@@ -65,7 +69,7 @@ bool Input::cell_walkable(int cx, int cy) const {
     if (cx < 0 || cy < 0 || cx >= world_.grid_w() || cy >= world_.grid_h()) return false;
     // W2-AN-09: walkable for the SELECTION's movement domains (a ship moves on
     // the water grid, a landing craft on either, an aircraft anywhere).
-    return world_.selection_can_enter(world_.order_issuer(), cx, cy);
+    return world_.group_can_enter(sel_.ids(), world_.order_issuer(), cx, cy);
 }
 
 const char* Input::action_name(Action a) {
@@ -147,7 +151,7 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
     }
     // Force-fire (Ctrl) on any object that is not part of the selection.
     if (ctrl) {
-        if (idx >= 0 && !us[idx].selected && !world_.controllable(us[idx].house)) return Action::Attack;
+        if (idx >= 0 && !sel_.has(idx) && !world_.controllable(us[idx].house)) return Action::Attack;
         if (b >= 0 && world_.buildings()[b].house != world_.order_issuer()) return Action::Attack;
         if (idx < 0 && b < 0) return Action::Attack;   // G16: force-fire the ground cell
     }
@@ -155,15 +159,15 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
     if (idx >= 0) {
         const Unit& u = us[idx];
         // Wave-5 (R-046): a lone engineer on a bombed unit -> disarm.
-        if (u.bomb_frame >= 0 && !u.selected && lone_selected_with_image(world_, "ENGINEER") >= 0 &&
+        if (u.bomb_frame >= 0 && !sel_.has(idx) && lone_selected_with_image(world_, sel_, "ENGINEER") >= 0 &&
             !world_.is_enemy(world_.order_issuer(), u.house))
             return Action::Capture;
         // Wave-5 (R-052): an ALLIED transport takes the selected infantry.
         if (!world_.controllable(u.house) && world_.are_allied(world_.order_issuer(), u.house) && u.passengers_max > 0) {
-            for (std::size_t si = 0; si < us.size(); ++si) {
+            for (int si : sel_.ids()) {
+                if (si >= static_cast<int>(us.size())) break;
                 const Unit& su = us[si];
-                if (su.selected && world_.controllable(su.house) && su.alive && su.die_time < 0.0 &&
-                    su.passengers_max <= 0)
+                if (world_.controllable(su.house) && su.alive && su.die_time < 0.0 && su.passengers_max <= 0)
                     return Action::Enter;
             }
         }
@@ -174,23 +178,27 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
             // cell (the army moves there), not a re-select that drops the
             // army. A deliberate select is a tap on an own unit that is NOT
             // selected; a deploy needs a lone selection (or DPLY).
-            if (ev_touch_ && u.selected) {
+            if (ev_touch_ && sel_.has(idx)) {
                 int nsel = 0;
-                for (const Unit& su : us)
-                    if (su.selected && world_.controllable(su.house) && su.alive && su.die_time < 0.0) ++nsel;
+                for (int si : sel_.ids()) {
+                    if (si >= static_cast<int>(us.size())) break;
+                    const Unit& su = us[si];
+                    if (world_.controllable(su.house) && su.alive && su.die_time < 0.0) ++nsel;
+                }
                 if (nsel >= 2) return cell_walkable(cx, cy) ? Action::Move : Action::NoMove;
             }
             // ACTION_SELF: clicking the selected unit itself deploys / unloads it.
-            if (u.selected) {
+            if (sel_.has(idx)) {
                 const bool can = (!u.cargo.empty()) || u.abil.deployer || u.deployed ||
                                  (deploy_check_ && deploy_check_(u));
                 if (can) return Action::Deploy;
             }
             if (u.passengers_max > 0) {
-                for (std::size_t si = 0; si < us.size(); ++si) {
+                for (int si : sel_.ids()) {
+                    if (si >= static_cast<int>(us.size())) break;
                     const Unit& su = us[si];
-                    if (!su.selected || !world_.controllable(su.house) || !su.alive || su.die_time >= 0.0 ||
-                        static_cast<int>(si) == idx || su.passengers_max > 0)
+                    if (!world_.controllable(su.house) || !su.alive || su.die_time >= 0.0 ||
+                        si == idx || su.passengers_max > 0)
                         continue;
                     return Action::Enter;
                 }
@@ -201,21 +209,25 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
         // An ally / neutral unit: the click resolves to its ground cell.
     }
     bool harv = false;
-    for (const Unit& su : us)
-        if (su.selected && su.is_harvester && world_.controllable(su.house) && su.alive && su.die_time < 0.0) {
+    for (int si : sel_.ids()) {
+        if (si >= static_cast<int>(us.size())) break;
+        const Unit& su = us[si];
+        if (su.is_harvester && world_.controllable(su.house) && su.alive && su.die_time < 0.0) {
             harv = true;
             break;
         }
+    }
     if (harv && world_.ore().has_ore(cx, cy)) return Action::Harvest;
     if (b >= 0) {
         const Building& B = world_.buildings()[b];
         if (harv && B.house == world_.order_issuer() && is_refinery_type(B.type)) return Action::Dock;
         // G16 (agent G) [RE: world-depth.md §A2]: selected Occupier infantry on
         // a building they may garrison (CanBeOccupiedBy) -> the enter cursor.
-        for (int si = 0; si < static_cast<int>(us.size()); ++si)
-            if (us[si].selected && world_.controllable(us[si].house) && world_.can_occupy(si, b)) return Action::Enter;
-        if (lone_selected_with_image(world_, "SPY") >= 0 && B.house != world_.order_issuer()) return Action::Infiltrate;
-        if (lone_selected_with_image(world_, "ENGINEER") >= 0) {
+        for (int si : sel_.ids())
+            if (si < static_cast<int>(us.size()) && world_.controllable(us[si].house) && world_.can_occupy(si, b))
+                return Action::Enter;
+        if (lone_selected_with_image(world_, sel_, "SPY") >= 0 && B.house != world_.order_issuer()) return Action::Infiltrate;
+        if (lone_selected_with_image(world_, sel_, "ENGINEER") >= 0) {
             if (B.bomb_frame >= 0 && world_.are_allied(world_.order_issuer(), B.house)) return Action::Capture;   // wave-5 R-046
             if (B.house != world_.order_issuer()) return Action::Capture;
             if (B.hp < B.max_hp) return Action::EngineerRepair;
@@ -290,7 +302,7 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
                     commit_factory_click(px, py);   // re-click the selected factory -> primary
                 } else {
                     selected_building_ = b;
-                    world_.clear_selection();
+                    sel_.clear();
                 }
             } else {
                 selected_building_ = -1;            // fresh select (commit_factory_click
@@ -304,16 +316,15 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
             if (mod_ctrl_) {   // force-fire: target regardless of the is_enemy gate
                 const int idx = unit_under(px, py);
                 const int actor = lowest_selected();
-                if (idx >= 0 && !world_.units()[idx].selected) {
-                    world_.mark_player_order();   // W4-SQ
-                    world_.order_attack(idx);
+                const std::vector<int> sel = sel_.ids();
+                if (idx >= 0 && !sel_.has(idx)) {
+                    emit(make_mega(world_, sel, Mission::Attack, Target::unit(world_, idx), Target{}));
                 } else {
                     int cx = 0, cy = 0;
                     resolve_ground_cell(px, py, cx, cy);
                     const int b = pick_building(px, py, ev_touch_);   // W6-01-01
-                    world_.mark_player_order();   // W4-SQ
-                    if (b >= 0) world_.order_attack_building(b);
-                    else world_.order_attack_cell_selected(cx, cy);   // G16: ground
+                    if (b >= 0) emit(make_mega(world_, sel, Mission::Attack, Target::building(b), Target{}));
+                    else emit(make_mega(world_, sel, Mission::Attack, Target::cell(cx, cy), Target{}));   // G16: ground
                 }
                 actions_.attack_ordered = true;
                 actions_.actor = actor;
@@ -331,8 +342,7 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
                 int cx = 0, cy = 0;
                 resolve_ground_cell(px, py, cx, cy);
                 const int actor = lowest_selected();
-                world_.mark_player_order();   // W4-SQ
-                world_.order_move_selected(cx, cy);
+                emit(make_mega(world_, sel_.ids(), Mission::Move, Target{}, Target::cell(cx, cy)));
                 actions_.move_ordered = true;
                 actions_.actor = actor;
                 return;
@@ -346,7 +356,7 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
 }
 
 void Input::deselect_all() {
-    world_.clear_selection();
+    sel_.clear();
     selected_building_ = -1;
 }
 
@@ -475,30 +485,41 @@ void Input::handle_original(const InputEvent& ev) {
 
 void Input::stop_selected() {
     // Gap fix C: the World owns Stop/Guard/Scatter (engine/unit_orders.cpp).
-    world_.mark_player_order();   // W4-SQ
-    world_.order_stop_selected();
+    // NET L1 [RE: StopObject FUN_0072FF70 queues EVENT_IDLE per object]: one
+    // IDLE command with the selection as Whom (its apply marks W4-SQ).
+    sel_.prune(world_);
+    const std::vector<int> sel = sel_.ids();
+    if (!sel.empty()) emit(make_whom(world_, EventType::Idle, sel));
 }
 
 void Input::guard_selected() {
-    // Area_Guard anchored on the unit itself [RE: FUN_0072FE30]; World side.
-    world_.mark_player_order();   // W4-SQ
-    world_.order_guard_selected();
+    // Area_Guard anchored on the unit itself [RE: FUN_0072FE30 =
+    // MegaMission(Area_Guard 0xB, self)]; World side.
+    sel_.prune(world_);
+    const std::vector<int> sel = sel_.ids();
+    if (!sel.empty()) emit(make_mega(world_, sel, Mission::AreaGuard, Target{}, Target{}));
 }
 
 void Input::scatter_selected() {
     // World side (unit_orders.cpp): a free 8-ring neighbour drawn from the
-    // sync RNG [the original randomises TechnoClass::Scatter's cell].
-    world_.mark_player_order();   // W4-SQ
-    world_.order_scatter_selected();
+    // sync RNG [the original randomises TechnoClass::Scatter's cell;
+    // ScatterObject FUN_007300B0 queues EVENT_SCATTER per object].
+    sel_.prune(world_);
+    const std::vector<int> sel = sel_.ids();
+    if (!sel.empty()) emit(make_whom(world_, EventType::Scatter, sel));
 }
 
 bool Input::type_select() {
-    auto& us = world_.units();
+    sel_.prune(world_);
+    const auto& us = world_.units();
     std::vector<std::string> types;
-    for (const Unit& u : us)
-        if (u.selected && world_.controllable(u.house) && u.alive && u.die_time < 0.0 &&
+    for (int i : sel_.ids()) {
+        if (i >= static_cast<int>(us.size())) break;
+        const Unit& u = us[i];
+        if (world_.controllable(u.house) && u.alive && u.die_time < 0.0 &&
             std::find(types.begin(), types.end(), u.image) == types.end())
             types.push_back(u.image);
+    }
     if (types.empty()) return false;
     auto matches = [&](const Unit& u) {
         return world_.controllable(u.house) && u.alive && u.die_time < 0.0 && u.cargo_of < 0 &&
@@ -512,10 +533,10 @@ bool Input::type_select() {
     // [RE: FUN_00731A20] on screen first; if every on-screen match is already
     // selected, the press extends to the whole map.
     bool all_on_screen_selected = true;
-    for (const Unit& u : us)
-        if (matches(u) && on_screen(u) && !u.selected) { all_on_screen_selected = false; break; }
-    for (Unit& u : us)
-        if (matches(u) && (all_on_screen_selected || on_screen(u))) u.selected = true;
+    for (std::size_t i = 0; i < us.size(); ++i)
+        if (matches(us[i]) && on_screen(us[i]) && !sel_.has(static_cast<int>(i))) { all_on_screen_selected = false; break; }
+    for (std::size_t i = 0; i < us.size(); ++i)
+        if (matches(us[i]) && (all_on_screen_selected || on_screen(us[i]))) sel_.set(static_cast<int>(i));
     selected_building_ = -1;
     const int lo = lowest_selected();
     if (lo >= 0) { actions_.selected = true; actions_.actor = lo; }
@@ -528,22 +549,23 @@ void Input::sync_groups() {
 
 void Input::group_create(int n) {
     sync_groups();
-    auto& us = world_.units();
+    sel_.prune(world_);
+    const auto& us = world_.units();
     for (std::size_t i = 0; i < us.size(); ++i) {
         if (!world_.controllable(us[i].house)) continue;
         if (unit_group_[i] == n) unit_group_[i] = 0;
-        if (us[i].selected) unit_group_[i] = n;
+        if (sel_.has(static_cast<int>(i))) unit_group_[i] = n;
     }
 }
 
 void Input::group_add_select(int n) {
     clear_cursor_modes();
     sync_groups();
-    auto& us = world_.units();
+    const auto& us = world_.units();
     for (std::size_t i = 0; i < us.size(); ++i)
         if (unit_group_[i] == n && world_.controllable(us[i].house) && us[i].alive && us[i].die_time < 0.0 &&
             us[i].cargo_of < 0)
-            us[i].selected = true;
+            sel_.set(static_cast<int>(i));
     const int lo = lowest_selected();
     if (lo >= 0) { selected_building_ = -1; actions_.selected = true; actions_.actor = lo; }
 }
@@ -564,7 +586,7 @@ void Input::group_select(int n, uint32_t t_ms) {
         if (unit_group_[i] == n && world_.units()[i].alive && world_.units()[i].die_time < 0.0)
             any = true;
     if (!any) return;   // an empty group leaves the selection alone
-    world_.clear_selection();
+    sel_.clear();
     selected_building_ = -1;
     group_add_select(n);
 }
@@ -572,7 +594,7 @@ void Input::group_select(int n, uint32_t t_ms) {
 void Input::group_center(int n) {
     clear_cursor_modes();
     sync_groups();
-    world_.clear_selection();
+    sel_.clear();
     selected_building_ = -1;
     group_add_select(n);
     center_on_selection();
@@ -620,8 +642,12 @@ void Input::set_viewport(int view_w, int view_h) {
 
 void Input::center_on_selection() {
     std::vector<const Unit*> sel;
-    for (const Unit& u : world_.units())
-        if (u.selected && u.alive && u.die_time < 0.0) sel.push_back(&u);
+    for (int i : sel_.ids()) {
+        if (i >= static_cast<int>(world_.units().size())) break;
+        const Unit& u = world_.units()[i];
+        if (u.alive && u.die_time < 0.0) sel.push_back(&u);
+    }
+
     if (sel.empty()) return;
     double mx = 0, my = 0;
     for (const Unit* u : sel) { mx += u->fx; my += u->fy; }

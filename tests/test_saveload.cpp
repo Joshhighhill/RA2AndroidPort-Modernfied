@@ -385,10 +385,11 @@ void populate(World& w) {
             w.add_combat_unit(ox, oy, 1, gun("E2", 15, 4.0));
     }
     // A selected group order so paths/formations are in flight.
-    for (Unit& u : w.units())
-        if (u.house == 0) u.selected = true;
-    w.order_move_selected(bx + 2, by + 2);
-    w.clear_selection();
+    std::vector<int> own;
+    for (std::size_t i = 0; i < w.units().size(); ++i)
+        if (w.units()[i].house == 0) own.push_back(static_cast<int>(i));
+    w.group_move(ra2engine::kAnyHouse, own, bx + 2, by + 2);
+
     // Disguise + a pending spy order to keep capture state non-default.
     if (!w.units().empty()) w.set_disguise(static_cast<int>(w.units().size()) - 1, "E1", 0);
 }

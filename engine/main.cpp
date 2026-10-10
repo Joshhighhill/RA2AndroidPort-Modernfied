@@ -3823,11 +3823,16 @@ int shp_vehicle_frame(const ShpVehicleArt& s, const ra2engine::Unit& u, int coun
     return std::clamp(f, 0, std::max(0, count / 2 - 1));   // second half = shadows
 }
 
+// NET L1: the selection is UI state now (engine/selection.hpp). The game draws
+// its Input's selection; the non-interactive demos draw this one.
+ra2engine::Selection g_demo_selection;
+
 void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                   UnitAssets& ua, ra2engine::World& world, const ra2engine::Camera& cam,
                   int W, int H, const ra2engine::Input* input = nullptr,
                   const std::vector<const VehicleAssets*>* vlist = nullptr,
                   const BuildingAssets* ba = nullptr, const OreArt* ore_art = nullptr) {
+    const ra2engine::Selection& rsel = input ? input->selection() : g_demo_selection;
     ra2engine::set_color_world(&world);   // G-16: house colours for every sprite draw
     g_pres_assets = &a;                   // W5-PRES: ramp lookups (ore slopes)
     tc.next_frame();                      // W2-GA-P5: LRU clock (evicts only over budget)
@@ -3846,6 +3851,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                    cam, W, H);
     if (g_fx) g_fx->draw(ren, tc, cam, W, H, 0);   // W3-B Flat / ground-layer anims under objects
     const std::vector<ra2engine::Unit>& us = world.units();
+    auto usel = [&](const ra2engine::Unit& u) { return rsel.has(static_cast<int>(&u - us.data())); };
     // Hull sprite width for a vehicle unit (0 for infantry) -- sizes the
     // selection diamond + HP bar to the wider voxel sprite.
     auto veh_width = [&](const ra2engine::Unit& u) -> int {
@@ -3861,11 +3867,11 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         // G-88: in the real game only the player's SELECTED units show their
         // route, and only with RA2.INI "Target Lines" on (UnitActionLines);
         // the non-interactive render paths keep the old every-unit debug lines.
-        if (!input || (u.selected && u.house == g_local_house && pres_target_lines()))
+        if (!input || (usel(u) && u.house == g_local_house && pres_target_lines()))
             ra2engine::draw_path(ren, u, cam, W, H);   // carried units draw nothing
         // W2-UI-11: in the real game the selection marker IS the pip board
         // (drawn with the bars below); other render paths keep the diamond.
-        if (u.selected && !(input && g_pips)) ra2engine::draw_selection(ren, u, cam, W, H, veh_width(u));
+        if (usel(u) && !(input && g_pips)) ra2engine::draw_selection(ren, u, cam, W, H, veh_width(u));
     }
     // Sprites back-to-front so nearer units overlap farther ones. Vehicles
     // (an image with a VehicleAssets entry) draw via voxel sprites; otherwise
@@ -4072,17 +4078,17 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         if (world.unit_hidden_from(0, u)) continue;   // W2-AN-13 submerged, no sonar contact
         if (input && g_pips) {   // W2-UI-11: PIPBRD + PIPS on the selected units only
             const bool hovered = g_hover_unit == static_cast<int>(&u - us.data());   // W6-05-07
-            if (u.selected || hovered) {
+            if (usel(u) || hovered) {
                 const int up = (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) : 0;
                 const double ufx = u.fx + u.sub_x / 256.0, ufy = u.fy + u.sub_y / 256.0;   // W5-B
                 const int sx = static_cast<int>(std::lround((ufx - ufy) * 30.0)) + cam.x + 30;
                 const int lv = u.level + pres_unit_lift_levels(world, u);   // W5-PRES R-100 deck
                 const int sy = static_cast<int>(std::lround((ufx + ufy) * 15.0 - lv * 15)) + cam.y + 15 - up;
-                draw_unit_pips(ren, tc, u, sx, sy, g_pip_yellow, g_pip_red, u.selected);
+                draw_unit_pips(ren, tc, u, sx, sy, g_pip_yellow, g_pip_red, usel(u));
             }
-        } else if (u.selected || u.hp < u.max_hp)
+        } else if (usel(u) || u.hp < u.max_hp)
             ra2engine::draw_hp_bar(ren, u, cam, W, H, veh_width(u));
-        if (u.selected && u.passengers_max > 0)
+        if (usel(u) && u.passengers_max > 0)
             ra2engine::draw_cargo_pips(ren, u, ra2engine::cargo_total_size(us, u),
                                        u.passengers_max, cam, W, H);
     }
@@ -5545,6 +5551,7 @@ void enable_p5_features(ra2engine::World& world, const Rules& rules, const Build
     // ScenarioClass::Random is seeded per game in the original; the clone uses
     // the wall clock (the interactive game is not a gate).
     cc.seed = static_cast<std::uint32_t>(SDL_GetTicks()) ^ 0x52413252u;
+    if (g_crate_seed_override >= 0) cc.seed = static_cast<std::uint32_t>(g_crate_seed_override);   // NET L1 replay
     // W5-A: a campaign seeds its crate RNG from the mission name, so a mission
     // replays identically (the --play proofs) [RE-FALLBACK: the original's
     // per-game ScenarioClass::Random seed is not modelled for campaigns].
@@ -5561,7 +5568,9 @@ void enable_p5_features(ra2engine::World& world, const Rules& rules, const Build
         for (const ra2engine::UnitTypeDef& d : *defs)
             if (d.is_vehicle && d.combat.crate_goodie) cc.unit_pool.push_back(d.combat);
     if (campaign) cc.place_initial = false;
+    g_crate_seed_used = cc.seed;   // NET L1: the command log records it
     world.enable_crates(cc);
+
 }
 
 // ============================================================================
@@ -6202,6 +6211,15 @@ public:
         install_econ_rules();   // L2: every human house's production rules -> the World
         init_presentation();   // G-80..G-91 (pres_game.inc)
         campaign_audio_init();   // W2-CA-12 (campaign only)
+        // NET L1: every player action goes through the command queue.
+        input_.set_command_sink([this](ra2engine::Command c) { issue(std::move(c)); });
+        if (campaign_) campaign_->set_selection(&sim_sel_);
+        if (!g_cmd_record_path.empty()) {   // --record: this scene's command log
+            cmd_rec_.reset(new CmdRecorder);
+            if (!cmd_rec_->open(g_cmd_record_path, cfg_, g_crate_seed_used, kWinW, kWinH)) cmd_rec_.reset();
+            else SDL_Log("[record] command log -> %s", g_cmd_record_path.c_str());
+            g_cmd_record_path.clear();   // one game per recording
+        }
     }
     // P7 [RE: saveload.md §1]: the LOAD path -- rebuild the scene's assets from
     // the save's skirmish config, then overwrite the World and the scene
@@ -6210,8 +6228,23 @@ public:
     GameScene(bool no_audio, const ra2engine::save::SaveFile& f)
         : GameScene(no_audio, config_of(f)) {
         apply_loaded(f);
+        // NET L1: a command log replays from the map's start; a game resumed
+        // from a save is not recorded (its log could not be replayed).
+        if (cmd_rec_) {
+            SDL_Log("[record] a loaded game is not recorded (replays start from the map)");
+            cmd_rec_.reset();
+        }
     }
     ~GameScene() override {
+        if (cmd_rec_) {   // NET L1 --record: the end state the replay must reach
+            const std::uint64_t h = sim_state_hash();
+            cmd_rec_->end(sim_frame_, h);
+            char hb[160];
+            std::snprintf(hb, sizeof hb, "[record] end tick=%u commands=%u state_hash=%016llx", sim_frame_,
+                          cmds_applied_, static_cast<unsigned long long>(h));
+            SDL_Log("%s", hb);
+            std::cerr << hb << "\n";
+        }
         ra2engine::TouchGestures::set_box_mode(false);   // W6-01-11: BOX never outlives the game
         g_local_house = 0;   // L2
         lifecycle_teardown();   // W2-AR-09: a normal end removes the autosave
@@ -6394,6 +6427,8 @@ public:
                                 : g_user_settings
                                 ? ra2engine::game_speed_multiplier(g_user_settings->game_speed)
                                 : 1.0);
+        if (replaying_) logic_acc_ = kLogicDt;   // NET L1 replay: exactly one tick per update
+        select_notify_tick();   // NET L1: event 33 sees the selection via the command log
         int logic_steps = 0;
         while (logic_acc_ + 1e-9 >= kLogicDt) {
             if (logic_steps == kMaxLogicSteps) { logic_acc_ = 0.0; break; }
@@ -6401,6 +6436,10 @@ public:
             ++logic_steps;
             ++g_perf_logic_ticks;   // R-170 perf overlay
             const double dt = kLogicDt;   // the logic body below steps exactly one tick
+        // NET L1: the commands due on this tick apply FIRST, in (frame, house,
+        // sequence) order [RE: Queue_AI -> Execute_DoList FUN_0064BDF0 before
+        // the frame's logic].
+        apply_due_commands();
         // (L2: the repair wallet bridge and the spy wallet hint are gone -- the
         // human wallet is the World's HouseEcon, charged and stolen from in
         // the sim [RE: repair-sell.md §A2/§A3; HouseClass has one Balance].)
@@ -6462,7 +6501,9 @@ public:
             const std::vector<ra2engine::CargoEvent> cev = world_.take_cargo_events();
             pres_.w6_cargo_events(world_, cev);   // W6-04-27: the transport type's sound, positional
         }
+        ++sim_frame_;   // NET L1: the command clock
         }   // G-13 fixed logic tick
+        input_.selection().prune(world_);   // NET L1: units the tick boarded / consumed
         // Rolling credits tally (display-only).
         // W5-PRES R-142 [RE: CreditClass::AI 0x4A2510]: per logic frame the
         // shown value moves clamp(|d| >> 3, 1, 143) toward the wallet.
@@ -6494,18 +6535,28 @@ public:
         }
         // Repair / Sell clicks [RE: repair-sell.md §A4/§B2]. The mode STAYS
         // armed (it is not one-shot), so the player can work through a base.
+        // NET L1: each click is a command (EVENT_DEPLOY / REPAIR / POWERON|OFF /
+        // SELL / PLACE), applied at the next tick start.
         if (act.deploy_clicked) deploy_selected();   // ACTION_SELF (click the selected unit)
-        // L2: REPAIR 0x15 / POWERON-OFF / SELL 0x16 as the local house.
-        if (act.repair_clicked) world_.toggle_repair(act.repair_building, local_house_);
-        if (act.power_clicked) world_.econ_power(local_house_, act.power_building, -1);   // W5-E2 (EVA: pres edge)
-        if (act.sell_clicked) world_.begin_sell(act.sell_building, local_house_);
-        // Placement confirm: PLACE 0x0B [FUN_004FAF00] -- the World validates
-        // and puts the category's finished structure down.
+        if (act.repair_clicked) issue(ra2engine::make_building_event(ra2engine::EventType::Repair, act.repair_building));
+        if (act.power_clicked && act.power_building >= 0 &&
+            act.power_building < static_cast<int>(world_.buildings().size()))   // W5-E2 (EVA: pres edge)
+            issue(ra2engine::make_building_event(world_.buildings()[act.power_building].power_off
+                                                     ? ra2engine::EventType::PowerOn
+                                                     : ra2engine::EventType::PowerOff,
+                                                 act.power_building));
+        if (act.sell_clicked) issue(ra2engine::make_building_event(ra2engine::EventType::Sell, act.sell_building));
+        // Placement confirm: PLACE 0x0B [FUN_004FAF00] -- checked here with the
+        // cursor's rule (econ_placement), re-validated by the World at apply.
         if (act.place_confirmed && input_.placement_active()) {
             const int type = input_.placement_type();
             if (type >= 0 && type < static_cast<int>(ba_.roster.size()) && lq().producing(place_cat_) == type) {
-                if (world_.econ_place(local_house_, place_cat_, act.place_cx, act.place_cy) ==
-                    ra2engine::ProdResult::Placed) {
+                if (world_.econ_placement(local_house_, type, act.place_cx, act.place_cy).ok) {
+                    ra2engine::Command c = ra2engine::make_type_event(ra2engine::EventType::Place,
+                                                                      ra2engine::Rtti::BuildingType, type, false);
+                    c.cx = static_cast<std::int16_t>(act.place_cx);
+                    c.cy = static_cast<std::int16_t>(act.place_cy);
+                    issue(std::move(c));
                     input_.cancel_placement();
                     if (audio_.enabled) audio_.mixer->play("PlaceBuilding");
                 }
@@ -6532,6 +6583,12 @@ public:
         pres_.on_world_events(world_, ba_, pres_crates_, world_.take_ability_events(),
                               world_.take_garrison_events());
         pres_crates_.clear();
+        // NET L1: single player applies this frame's late commands (deploy /
+        // repair / sell / place / SW, issued after the ticks above) now -- the
+        // same World mutation order as applying them at the next tick's start,
+        // since nothing touches the World in between. A lockstep session must
+        // leave them for the tick (remote commands may still be in flight).
+        apply_due_commands();
     }
     // G-87: the map's own dressing in the real game (trees, overlays, smudges,
     // neutral structures). Never in a gate (GameScene-only).
@@ -6774,6 +6831,8 @@ public:
 #include "game_scene_play.inc"
     // Agent B controls/UI members (cursor state, building selection, hotkeys).
 #include "game_scene_controls.inc"
+#include "game_scene_commands.inc"   // NET L1: command queue / host / record
+
 #include "hud_tooltip.inc"   // W2-UI-07 cameo / sidebar tooltips
 #include "hud_messages.inc"  // W2-UI-12/21 message list / timer / banners
 #include "campaign_audio.inc"  // W2-CA-12 mission speech / sound / music
@@ -7300,7 +7359,7 @@ private:
         double sx = 0, sy = 0;
         int k = 0;
         for (const ra2engine::Unit& u : world_.units())
-            if (u.selected && u.alive && u.die_time < 0.0 && u.house == local_house_) { sx += u.fx; sy += u.fy; ++k; }
+            if (usel(u) && u.alive && u.die_time < 0.0 && u.house == local_house_) { sx += u.fx; sy += u.fy; ++k; }
         if (k == 0) return false;
         x = sx / k;
         y = sy / k;
@@ -7315,7 +7374,7 @@ private:
             if (!play_parse_spec(spec.substr(0, spec.size() - 5), h, type, n)) return -1;
             const ra2engine::Unit* me = nullptr;
             for (const ra2engine::Unit& u : world_.units())
-                if (u.alive && u.die_time < 0.0 && u.selected) { me = &u; break; }
+                if (u.alive && u.die_time < 0.0 && usel(u)) { me = &u; break; }
             if (!me) return -1;
             int best = -1;
             double bd = 0.0;
@@ -8928,13 +8987,52 @@ void MainMenuScene::handle(const ra2engine::InputEvent& ev) {
 // Platform/TextureCache, parse Rules (kept alive for the scene lifetime since
 // the scenes hold it by reference), and drive from MainMenuScene. run_interactive
 // STAYS as the thin quick-start wrapper; this is the new menu-first entry.
+// NET L1: `--replay <RA2CMD file>` -- rebuild the recorded game from its config
+// (no menus, no input) and re-apply the command log tick by tick; prints the
+// end state hash and whether it matches the recording's.
+int run_cmd_replay(const std::string& path) {
+    CmdLog log;
+    if (!log.load(path)) {
+        std::cerr << "[replay] cannot read command log " << path << "\n";
+        return 2;
+    }
+    g_session_no_audio = true;
+    ra2engine::Platform plat = ra2engine::Platform::create(kWindowTitle, 1280, 720, /*hidden=*/true);
+    g_platform = &plat;
+    if (!ensure_data_files(plat)) return 2;
+    ra2engine::Settings user;   // defaults (the --play harness isolates RA2.INI the same way)
+    g_user_settings = &user;
+    GameScene::set_canvas_size(log.canvas_w, log.canvas_h);
+    g_crate_seed_override = log.seed;
+    int rc = 0;
+    {
+        GameScene g(/*no_audio=*/true, log.cfg);
+        g.begin_replay(log.cmds);
+        while (g.sim_frame() < log.end_tick) g.update(1.0 / 15.0);
+        const std::uint64_t h = g.sim_state_hash();
+        char hb[64];
+        std::snprintf(hb, sizeof hb, "%016llx", static_cast<unsigned long long>(h));
+        const bool match = log.end_hash == hb;
+        std::cerr << "[replay] end tick=" << g.sim_frame() << " commands=" << log.cmds.size() << " state_hash=" << hb
+                  << " recorded=" << (log.end_hash.empty() ? "?" : log.end_hash) << " match=" << (match ? "yes" : "no")
+                  << "\n";
+        SDL_Log("[replay] end tick=%u state_hash=%s match=%s", g.sim_frame(), hb, match ? "yes" : "no");
+        rc = match ? 0 : 1;
+    }
+    g_crate_seed_override = -1;
+    g_user_settings = nullptr;
+    return rc;
+}
+
 int run_menu(bool no_audio) {
     g_session_no_audio = no_audio;
     g_interactive_session = true;   // main()'s catch shows a message box
     perf_init();   // R-170: RA2.INI [Engine] ShowFPS / RA2_PERF / debug.ra2.perf
     // R-184: --replay plays a --record file back (events + time steps).
+    if (!g_replay_path.empty() && is_cmd_log(g_replay_path)) return run_cmd_replay(g_replay_path);   // NET L1
     std::unique_ptr<InputReplay> replay;
     if (!g_replay_path.empty()) {
+
         replay.reset(new InputReplay);
         if (!replay->load(g_replay_path)) {
             std::cerr << "[replay] cannot read recording " << g_replay_path << "\n";
@@ -9057,8 +9155,8 @@ int run_demo_move(int goal_x, int goal_y) {
     const int start_y = world.units()[0].cell_y;
 
     // SELECT, then order the move.
-    world.units()[0].selected = true;
-    world.order_move_selected(goal_x, goal_y);
+    g_demo_selection.set(0);
+    world.group_move(ra2engine::kAnyHouse, {0}, goal_x, goal_y);
     const std::size_t path_len = world.units()[0].path.size();
 
     std::cerr << "[demo] start=(" << start_x << "," << start_y << ") target=(" << goal_x << ","
@@ -9150,8 +9248,8 @@ int run_demo_retarget(int x1, int y1, int x2, int y2) {
     const int start_x = world.units()[0].cell_x;
     const int start_y = world.units()[0].cell_y;
 
-    world.units()[0].selected = true;
-    world.order_move_selected(x1, y1);
+    g_demo_selection.set(0);
+    world.group_move(ra2engine::kAnyHouse, {0}, x1, y1);
     const std::size_t len1 = world.units()[0].path.size();
     std::cerr << "[demo-retarget] start=(" << start_x << "," << start_y << ") first_target=("
               << x1 << "," << y1 << ") path_len1=" << len1 << "\n";
@@ -9177,7 +9275,7 @@ int run_demo_retarget(int x1, int y1, int x2, int y2) {
     const bool genuinely_fractional = (fx_mid != cell_mid_x || fy_mid != cell_mid_y);
 
     // Retarget mid-walk.
-    world.order_move_selected(x2, y2);
+    world.group_move(ra2engine::kAnyHouse, {0}, x2, y2);
     const std::size_t len2 = world.units()[0].path.size();
     const bool no_backward_snap = (world.units()[0].fx == fx_mid && world.units()[0].fy == fy_mid);
     std::cerr << "[demo-retarget] retargeted at t=" << sim_time << "s (moving=" << was_moving_mid
@@ -9226,8 +9324,12 @@ int run_demo_group(int n, int gx, int gy) {
     Assets a = load_assets(dir, ra2);
     UnitAssets ua = load_unit_assets(dir, ra2);
     ra2engine::World world = build_world(a, ua, n);
-    for (auto& u : world.units()) u.selected = true;
-    world.order_move_selected(gx, gy);
+    std::vector<int> all_ids;
+    for (std::size_t i = 0; i < world.units().size(); ++i) {
+        all_ids.push_back(static_cast<int>(i));
+        g_demo_selection.set(static_cast<int>(i));
+    }
+    world.group_move(ra2engine::kAnyHouse, all_ids, gx, gy);
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
     SDL_Window* win = SDL_CreateWindow("RA2 Engine (demo-group)", SDL_WINDOWPOS_CENTERED,
@@ -9348,9 +9450,13 @@ DemoCombatResult simulate_combat(Assets& a, UnitAssets& ua, bool render, SDL_Ren
         const double d2 = dx * dx + dy * dy;
         if (nearest < 0 || d2 < best_d2) { nearest = static_cast<int>(i); best_d2 = d2; }
     }
-    for (auto& u : world.units())
-        if (u.house == 0) u.selected = true;
-    if (nearest >= 0) world.order_attack(nearest);
+    std::vector<int> squad;
+    for (std::size_t i = 0; i < world.units().size(); ++i)
+        if (world.units()[i].house == 0) {
+            squad.push_back(static_cast<int>(i));
+            g_demo_selection.set(static_cast<int>(i));
+        }
+    if (nearest >= 0) world.group_attack(0, squad, nearest);
     // Hostiles (house 1) get NO orders -- they auto-acquire/retaliate once a
     // GI closes into range (engine/combat.cpp step_combat).
 
@@ -9404,15 +9510,14 @@ DemoCombatResult simulate_combat(Assets& a, UnitAssets& ua, bool render, SDL_Ren
                 if (nearest_h < 0 || d2 < best_d2) { nearest_h = static_cast<int>(j); best_d2 = d2; }
             }
             if (nearest_h < 0) break;  // no living hostiles left; nothing to re-order
-            world.clear_selection();
-            world.units()[i].selected = true;
-            world.order_attack(nearest_h);
+            world.group_attack(0, {static_cast<int>(i)}, nearest_h);
         }
-        // Restore the "whole squad selected" visual the demo starts with --
-        // the per-unit re-order passes above touch selection one unit at a
-        // time via clear_selection()/order_attack().
-        for (auto& u : world.units())
-            if (u.house == 0 && u.alive && u.die_time < 0.0) u.selected = true;
+        // Restore the "whole squad selected" visual the demo starts with.
+        g_demo_selection.clear();
+        for (std::size_t k = 0; k < world.units().size(); ++k) {
+            const ra2engine::Unit& u = world.units()[k];
+            if (u.house == 0 && u.alive && u.die_time < 0.0) g_demo_selection.set(static_cast<int>(k));
+        }
 
         world.step(dt);
         t += dt;
@@ -9498,9 +9603,13 @@ DemoCombatResult simulate_tank_combat(Assets& a, UnitAssets& ua, const VehicleAs
         const double d2 = dx * dx + dy * dy;
         if (nearest < 0 || d2 < best_d2) { nearest = static_cast<int>(i); best_d2 = d2; }
     }
-    for (auto& u : world.units())
-        if (u.house == 0) u.selected = true;
-    if (nearest >= 0) world.order_attack(nearest);
+    std::vector<int> squad;
+    for (std::size_t i = 0; i < world.units().size(); ++i)
+        if (world.units()[i].house == 0) {
+            squad.push_back(static_cast<int>(i));
+            g_demo_selection.set(static_cast<int>(i));
+        }
+    if (nearest >= 0) world.group_attack(0, squad, nearest);
 
     DemoCombatResult result;
     const std::size_t nunits = world.units().size();
@@ -9548,12 +9657,13 @@ DemoCombatResult simulate_tank_combat(Assets& a, UnitAssets& ua, const VehicleAs
                 if (nearest_h < 0 || d2 < best_dh2) { nearest_h = static_cast<int>(j); best_dh2 = d2; }
             }
             if (nearest_h < 0) break;
-            world.clear_selection();
-            world.units()[i].selected = true;
-            world.order_attack(nearest_h);
+            world.group_attack(0, {static_cast<int>(i)}, nearest_h);
         }
-        for (auto& u : world.units())
-            if (u.house == 0 && u.alive && u.die_time < 0.0) u.selected = true;
+        g_demo_selection.clear();
+        for (std::size_t k = 0; k < world.units().size(); ++k) {
+            const ra2engine::Unit& u = world.units()[k];
+            if (u.house == 0 && u.alive && u.die_time < 0.0) g_demo_selection.set(static_cast<int>(k));
+        }
 
         world.step(dt);
         t += dt;
@@ -9997,9 +10107,12 @@ DemoBaseResult simulate_base(Assets& a, UnitAssets& ua, BuildingAssets& ba, doub
     else { r.witness.emplace_back("[base] GAWEAP NOT blocked (unexpected)"); r.ok = false; }
 
     // Order the GIs to attack the enemy NAPOWR; run until it dies (or a cap).
-    for (ra2engine::Unit& u : world.units())
-        if (u.house == 0 && u.alive && u.die_time < 0.0) u.selected = true;
-    world.order_attack_building(napowr_bi);
+    std::vector<int> gis;
+    for (std::size_t i = 0; i < world.units().size(); ++i) {
+        const ra2engine::Unit& u = world.units()[i];
+        if (u.house == 0 && u.alive && u.die_time < 0.0) gis.push_back(static_cast<int>(i));
+    }
+    world.group_attack_building(0, gis, napowr_bi);
     const double cap = 400.0;  // sim seconds
     auto napowr_dead = [&]() {
         const ra2engine::Building& b = world.buildings()[napowr_bi];
@@ -12065,8 +12178,9 @@ DemoTransportResult simulate_transport(Assets& a, UnitAssets& ua, const Transpor
 
     // 1) LOAD: select every GI and issue the enter order (oversubscribed by
     //    one -- the capacity refusal is part of the script).
-    for (int i = 1; i <= n_pass; ++i) world.units()[i].selected = true;
-    world.order_enter_transport(t_idx);
+    std::vector<int> pass;
+    for (int i = 1; i <= n_pass; ++i) pass.push_back(i);
+    world.group_enter_transport(0, pass, t_idx);
 
     if (render) { step_one(); capture_png(ren, start_png, W, H); }
     while (frame < 900 && boards + refusals < n_pass) step_one();
@@ -12079,9 +12193,7 @@ DemoTransportResult simulate_transport(Assets& a, UnitAssets& ua, const Transpor
     }
 
     // 2) CARRY: drive the loaded transport to a distant cell.
-    world.clear_selection();
-    world.units()[t_idx].selected = true;
-    world.order_move_selected(pc->x + 12, pc->y + 8);
+    world.group_move(ra2engine::kAnyHouse, {t_idx}, pc->x + 12, pc->y + 8);
     while (frame < 2400 && world.units()[t_idx].moving()) step_one();
     h = transport_fold(h, world);                     // checkpoint 2: post-carry
     {
@@ -12093,9 +12205,7 @@ DemoTransportResult simulate_transport(Assets& a, UnitAssets& ua, const Transpor
     }
 
     // 3) UNLOAD: one eject per frame via the facing-scatter eject_cell, LIFO.
-    world.clear_selection();
-    world.units()[t_idx].selected = true;
-    world.order_unload_selected();
+    world.group_unload(0, {t_idx});
     while (frame < 3000 && !world.units()[t_idx].cargo.empty()) step_one();
     h = transport_fold(h, world);                     // checkpoint 3: post-unload
 
@@ -12367,9 +12477,7 @@ DemoAircraftResult simulate_aircraft(Assets& a, UnitAssets& ua, const AircraftAs
     // 3) ATTACK: order the aircraft to attack ground target A; it flies to
     //    range and drops ONE bomb whose BlimpHE 2-cell splash must kill BOTH
     //    adjacent targets (A at the impact cell + B one cell away) [D5].
-    world.clear_selection();
-    world.units()[z_idx].selected = true;
-    world.order_attack(tgt_idx);
+    world.group_attack(0, {z_idx}, tgt_idx);
     while (frame < 5000 && !(dead(tgt_idx) && dead(tgt2_idx)))
         step_one();
     h = aircraft_fold(h, world);                        // checkpoint 3: post-attack
@@ -12693,9 +12801,7 @@ DemoNavalResult simulate_naval(Assets& a, UnitAssets& ua, const NavalAssets& na,
 
     // 3) ATTACK: order the ship to attack the hostile ship; it approaches over
     //    water (the combat-approach naval branch) and fires FlakTrackGun.
-    world.clear_selection();
-    world.units()[s_idx].selected = true;
-    world.order_attack(t_idx);
+    world.group_attack(0, {s_idx}, t_idx);
     while (frame < 9000 && !dead(t_idx)) step_one();
     h = naval_fold(h, world, water_cells);       // checkpoint 3: post-attack
     {
@@ -16316,9 +16422,7 @@ DemoProjectileResult simulate_projectile(Assets& a, UnitAssets& ua, const Vehicl
         return evs;
     };
     auto order_attack_by = [](ra2engine::World& world, int shooter, int target) {
-        world.clear_selection();
-        world.units()[shooter].selected = true;
-        world.order_attack(target);
+        world.group_attack(0, {shooter}, target);
     };
 
     // 1) FIREWALL: projectiles NOT enabled -> the Rhino's hit lands the same
@@ -16973,16 +17077,12 @@ DemoAbilitiesResult simulate_abilities(Assets& a, UnitAssets& ua, BuildingAssets
         int mode_gi = -1, rof_gi = -1, mode_empty = -1, mode_deso = -1, dmg_deso = -1;
         if (ok) {
             auto board = [&](int p) {
-                w.clear_selection();
-                w.units()[p].selected = true;
-                w.order_enter_transport(fv);
+                w.group_enter_transport(0, {p}, fv);
                 for (int k = 0; k < 200 && w.units()[p].cargo_of < 0; ++k) w.step(kDt);
                 w.step(kDt);
             };
             auto unload = [&]() {
-                w.clear_selection();
-                w.units()[fv].selected = true;
-                w.order_unload_selected();
+                w.group_unload(0, {fv});
                 for (int k = 0; k < 100 && !w.units()[fv].cargo.empty(); ++k) w.step(kDt);
                 w.step(kDt);
             };
@@ -17383,9 +17483,8 @@ DemoVeterancyResult simulate_veterancy(Assets& a, UnitAssets& ua, const Rules& r
                 cy2 = world.crates()[s].y;
             }
         if (cx2 < 0) return false;
-        world.units()[picker].selected = true;
-        world.order_move_selected(cx2, cy2);
-        world.units()[picker].selected = false;
+        world.group_move(ra2engine::kAnyHouse, {picker}, cx2, cy2);
+
         for (int f = 0; f < 200; ++f) {
             step_one();
             const std::vector<ra2engine::World::CrateEvent> ev = world.take_crate_events();
@@ -18037,8 +18136,9 @@ int main(int argc, char** argv) {
                             "                 folder, the retail registry key, D:\\Red Alert 2)\n"
                             "  --no-audio     run silent\n"
                             "  --fps          show the frame-rate / perf overlay (also Ctrl+Shift+F)\n"
-                            "  --record <f>   record this session's input to <f> (for bug reports)\n"
-                            "  --replay <f>   play a recorded session back (--hidden: no window)\n"
+                            "  --record <f>   record the game's command log to <f> (for bug reports)\n"
+                            "  --record-input <f>  record the raw input events to <f>\n"
+                            "  --replay <f>   replay a command log or an input recording (--hidden: no window)\n"
                             "  --version      print the version\n"
                             "developer modes: --play <script> [--out <dir>], --ai-soak, --demo-*\n",
                             RA2_VERSION);
@@ -18050,12 +18150,13 @@ int main(int argc, char** argv) {
             }
             // R-170 / R-184 (interactive runs; --play honours --record too).
             if (a == "--fps") { g_perf.overlay = true; g_perf.log = true; }
-            if (a == "--record" && i + 1 < argc) g_record_path = argv[i + 1];
+            if (a == "--record" && i + 1 < argc) g_cmd_record_path = argv[i + 1];       // NET L1: command log
+            if (a == "--record-input" && i + 1 < argc) g_record_path = argv[i + 1];     // R-184 raw input
             if (a == "--replay" && i + 1 < argc) g_replay_path = argv[i + 1];
             if (a == "--hidden") g_replay_hidden = true;
         }
-        if (g_record_path.empty())
-            if (const char* r = std::getenv("RA2_RECORD")) g_record_path = r;
+        if (g_cmd_record_path.empty())
+            if (const char* r = std::getenv("RA2_RECORD")) g_cmd_record_path = r;
         // G0 verification harness: --play <script> [--out <dir>] drives the
         // REAL shell scene tree with scripted input (engine/play_driver.inc).
         if (argc >= 3 && std::string(argv[1]) == "--play") {

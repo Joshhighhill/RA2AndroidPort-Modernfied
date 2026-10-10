@@ -158,15 +158,15 @@
         int sel = 0;
         for (const ra2engine::Unit& u : world_.units()) {
             if (!u.alive || u.die_time >= 0.0) continue;
-            if (u.selected) ++sel;
-            if (u.selected && u.moving()) ++out["sel.moving"];
+            if (usel(u)) ++sel;
+            if (usel(u) && u.moving()) ++out["sel.moving"];
             ++out["units." + std::to_string(u.house)];
             ++out["units." + std::to_string(u.house) + "." + u.image];
             if (u.moving()) ++out["moving." + std::to_string(u.house)];
         }
         out["sel"] = sel;
         for (const ra2engine::Unit& u : world_.units())   // first selected unit's cell
-            if (u.selected && u.alive && u.die_time < 0.0) {
+            if (usel(u) && u.alive && u.die_time < 0.0) {
                 out["sel.cx"] = u.cell_x;
                 out["sel.cy"] = u.cell_y;
                 break;
@@ -328,7 +328,7 @@
                 if (args[1] == ra2engine::powerup_name(i)) p = i;
             int sel = -1;
             for (int i = 0; i < static_cast<int>(world_.units().size()); ++i)
-                if (world_.units()[static_cast<std::size_t>(i)].selected) { sel = i; break; }
+                if (input_.selection().has(i)) { sel = i; break; }
             if (p < 0 || sel < 0 || !world_.crates_enabled()) return false;
             const ra2engine::Unit& u = world_.units()[static_cast<std::size_t>(sel)];
             const std::vector<ra2engine::World::Crate> before = world_.crates();
@@ -338,7 +338,7 @@
             const auto& after = world_.crates();
             for (std::size_t i = 0; i < after.size(); ++i)
                 if (after[i].x >= 0 && (i >= before.size() || before[i].x < 0)) {
-                    world_.order_move_selected(after[i].x, after[i].y);
+                    issue(ra2engine::make_mega(world_, input_.selection().ids(), ra2engine::Mission::Move, ra2engine::Target{}, ra2engine::Target::cell(after[i].x, after[i].y)));
                     break;
                 }
             return true;

@@ -39,11 +39,12 @@ static constexpr int kDblSlop = 6;
 // mixed selection (engineer + anything else) resolves to -1 so the right-click
 // falls through to the normal group move. Interactive-only: no demo selects an
 // engineer, so no gate exercises this.
-static int sel_engineer_idx(const World& world) {
+static int sel_engineer_idx(const World& world, const Selection& sel) {
     int found = -1;
-    for (int i = 0; i < static_cast<int>(world.units().size()); ++i) {
+    for (int i : sel.ids()) {
+        if (i >= static_cast<int>(world.units().size())) break;
         const Unit& u = world.units()[i];
-        if (!u.selected || !u.alive || u.die_time >= 0.0 || !world.controllable(u.house)) continue;
+        if (!u.alive || u.die_time >= 0.0 || !world.controllable(u.house)) continue;
         if (found >= 0) return -1;                 // more than one unit selected
         found = i;
     }
@@ -56,16 +57,50 @@ static int sel_engineer_idx(const World& world) {
 // rule as sel_engineer_idx -- a mixed selection resolves to -1 so the right-
 // click falls through to the normal group move. Interactive-only: no demo
 // selects a spy, so no gate exercises this.
-static int sel_spy_idx(const World& world) {
+static int sel_spy_idx(const World& world, const Selection& sel) {
     int found = -1;
-    for (int i = 0; i < static_cast<int>(world.units().size()); ++i) {
+    for (int i : sel.ids()) {
+        if (i >= static_cast<int>(world.units().size())) break;
         const Unit& u = world.units()[i];
-        if (!u.selected || !u.alive || u.die_time >= 0.0 || !world.controllable(u.house)) continue;
+        if (!u.alive || u.die_time >= 0.0 || !world.controllable(u.house)) continue;
         if (found >= 0) return -1;                 // more than one unit selected
         found = i;
     }
     if (found < 0) return -1;
     return world.units()[found].image == "SPY" ? found : -1;
+}
+
+// Would World::order_defuse accept (eng, unit_target, b_target)? (its own
+// guards, without the mutation -- the gesture decides before the command is
+// queued, the apply re-checks).
+static bool defuse_possible(const World& w, int eng, int unit_target, int b_target) {
+    if (eng < 0 || eng >= static_cast<int>(w.units().size())) return false;
+    const Unit& e = w.units()[static_cast<std::size_t>(eng)];
+    if (!e.alive || e.die_time >= 0.0) return false;
+    if (unit_target >= 0 && (unit_target >= static_cast<int>(w.units().size()) ||
+                             w.units()[static_cast<std::size_t>(unit_target)].bomb_frame < 0))
+        return false;
+    if (b_target >= 0 && (b_target >= static_cast<int>(w.buildings().size()) ||
+                          w.buildings()[static_cast<std::size_t>(b_target)].bomb_frame < 0))
+        return false;
+    return unit_target >= 0 || b_target >= 0;
+}
+
+void Input::emit(Command c) {
+    // NET L1: every order leaves Input as a Command. In the game the sink is
+    // the scene's scheduler (applied at the next tick start); without one
+    // (unit tests, tools) it is applied to the World at once.
+    if (sink_) {
+        sink_(std::move(c));
+        return;
+    }
+    struct RulesHost : CommandHost {
+        const OrderRules* r;
+        explicit RulesHost(const OrderRules* rr) : r(rr) {}
+        const OrderRules* order_rules() const override { return r; }
+    } host(&rules_);
+    c.house = static_cast<std::int8_t>(world_.order_issuer());
+    apply_command(world_, c, &host);
 }
 
 Input::Input(World& world, Camera& camera, int view_w, int view_h)
@@ -231,7 +266,7 @@ void Input::set_mode_(BaseMode want, int control) {
     }
     mode_ = next;
     // Reset_Cursor (FUN_0048DBA0): arming a mode DESELECTS EVERYTHING.
-    world_.clear_selection();
+    sel_.clear();
     selected_building_ = -1;
     l_down_ = false;
     dragging_ = false;
@@ -325,12 +360,7 @@ void Input::placement_cell(int& cx, int& cy) const {
     cy -= place_fh_ / 2;
 }
 
-int Input::lowest_selected() const {
-    const std::vector<Unit>& us = world_.units();
-    for (std::size_t i = 0; i < us.size(); ++i)
-        if (us[i].selected) return static_cast<int>(i);
-    return -1;
-}
+int Input::lowest_selected() const { return sel_.lowest(); }
 
 bool Input::selection_box(int& x0, int& y0, int& x1, int& y1) const {
     if (!(l_down_ && dragging_)) return false;
@@ -354,24 +384,17 @@ bool Input::commit_factory_click(int px, int py) {
             // Re-click the selected factory -> set primary [RE: production.md
             // §1.2, RE-FALLBACK: original toggles by right-click; our right-
             // click sets the rally, so LEFT re-click primes]. Resolve the
-            // building's category so set_primary clears only its sibling group.
-            const int t = world_.buildings()[b].type;
-            std::vector<int> cat;
-            for (int x : inf_factory_types_)
-                if (x == t) { cat = inf_factory_types_; break; }
-            if (cat.empty())
-                for (int x : veh_factory_types_)
-                    if (x == t) { cat = veh_factory_types_; break; }
-            if (cat.empty()) cat = {t};
+            // building's category so set_primary clears only its sibling group
+            // (OrderRules::primary_group, at the PRIMARY event's apply).
             const bool was_primary = world_.buildings()[b].primary;
-            world_.set_primary(b, cat);
+            emit(make_building_event(EventType::Primary, b));
             if (!was_primary) {   // W5-E EVA_PrimaryBuildingSelected
                 actions_.primary_set = true;
                 actions_.factory = b;
             }
         } else {
             selected_building_ = b;
-            world_.clear_selection();  // factory selection clears the unit selection
+            sel_.clear();  // factory selection clears the unit selection
         }
         return true;
     }
@@ -387,13 +410,13 @@ void Input::commit_click(int px, int py, bool shift) {
     if (idx >= 0 && !world_.controllable(world_.units()[idx].house)) idx = -1;
     if (idx >= 0) {
         if (shift) {
-            world_.units()[idx].selected = !world_.units()[idx].selected;  // toggle
+            sel_.toggle(idx);  // toggle
         } else {
-            world_.clear_selection();
-            world_.units()[idx].selected = true;
+            sel_.clear();
+            sel_.set(idx);
         }
     } else if (!shift) {
-        world_.clear_selection();  // click on empty ground (or a hostile) clears (Shift+empty = no-op)
+        sel_.clear();  // click on empty ground (or a hostile) clears (Shift+empty = no-op)
     }
     const int lo = lowest_selected();
     if (lo >= 0) { actions_.selected = true; actions_.actor = lo; }
@@ -415,8 +438,9 @@ void Input::commit_box(bool shift) {
     int x0, y0, x1, y1;
     x0 = std::min(down_x_, cur_x_); x1 = std::max(down_x_, cur_x_);
     y0 = std::min(down_y_, cur_y_); y1 = std::max(down_y_, cur_y_);
-    if (!shift) world_.clear_selection();  // plain box replaces; Shift+box adds
-    for (Unit& u : world_.units()) {
+    if (!shift) sel_.clear();  // plain box replaces; Shift+box adds
+    for (std::size_t i = 0; i < world_.units().size(); ++i) {
+        const Unit& u = world_.units()[i];
         // A box drag never selects hostiles, corpses, or CARRIED units --
         // house != 0, dead/dying, and cargo_of >= 0 (aboard a transport,
         // off-map [CB-1]) are skipped even if their ground point falls
@@ -424,7 +448,7 @@ void Input::commit_box(bool shift) {
         if (!world_.controllable(u.house) || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
         int gx, gy;
         unit_ground_px(u, gx, gy);
-        if (gx >= x0 && gx <= x1 && gy >= y0 && gy <= y1) u.selected = true;
+        if (gx >= x0 && gx <= x1 && gy >= y0 && gy <= y1) sel_.set(static_cast<int>(i));
     }
     const int lo = lowest_selected();
     if (lo >= 0) { actions_.selected = true; actions_.actor = lo; }
@@ -436,8 +460,9 @@ void Input::commit_double(int px, int py) {
     const int idx = unit_under(px, py);
     if (idx < 0 || !world_.controllable(world_.units()[idx].house)) return;
     const std::string type = world_.units()[idx].image;
-    world_.clear_selection();
-    for (Unit& u : world_.units()) {
+    sel_.clear();
+    for (std::size_t i = 0; i < world_.units().size(); ++i) {
+        const Unit& u = world_.units()[i];
         // The "same type" scan is also house-0-only and skips corpses AND
         // CARRIED units (a hostile, a dead unit, or one aboard a transport
         // (cargo_of >= 0 [CB-1]) sharing the clicked unit's image must never
@@ -447,7 +472,7 @@ void Input::commit_double(int px, int py) {
             continue;
         int gx, gy;
         unit_ground_px(u, gx, gy);
-        if (gx >= 0 && gx < view_w_ && gy >= 0 && gy < view_h_) u.selected = true;  // on-screen
+        if (gx >= 0 && gx < view_w_ && gy >= 0 && gy < view_h_) sel_.set(static_cast<int>(i));  // on-screen
     }
     const int lo = lowest_selected();
     if (lo >= 0) { actions_.selected = true; actions_.actor = lo; }
@@ -458,7 +483,11 @@ void Input::commit_double(int px, int py) {
 // now shared by Legacy right-down and Original left-up. G-06: the attack
 // gates use World::is_enemy(0, house) (allies/neutrals are not attack targets).
 void Input::issue_order(int px, int py) {
-    world_.mark_player_order();   // W4-SQ: a player order leaves the script team
+    // NET L1: each branch queues ONE command (MEGAMISSION / ARCHIVE) whose
+    // Whom is the selection; the World mutation happens at its apply. W4-SQ:
+    // the apply marks the ordered units ("a player order leaves the script
+    // team", formerly mark_player_order here).
+    const std::vector<int> sel = sel_.ids();
     InputEvent ev;   // the body below reads ev.x / ev.y
     actions_.order = InputActions::Order::Move;   // W5-E: per-order voice kind
     actions_.target_building = -1;
@@ -480,7 +509,9 @@ void Input::issue_order(int px, int py) {
         } else if (is_unit_factory_type(blds[selected_building_].type)) {   // G-10: rally = factories only
             int rcx = 0, rcy = 0;
             resolve_ground_cell(ev.x, ev.y, rcx, rcy);
-            world_.set_rally(selected_building_, rcx, rcy);
+            Command c = make_building_event(EventType::Archive, selected_building_);   // ArchiveTarget
+            c.target = Target::cell(rcx, rcy);
+            emit(std::move(c));
             actions_.rally_set = true;   // W5-E EVA_NewRallyPointEstablished
             actions_.factory = selected_building_;
             return;
@@ -497,12 +528,13 @@ void Input::issue_order(int px, int py) {
     // selection (spec gate); otherwise fall through to a ground move
     // so an unselected right-click behaves identically everywhere.
     bool any_selected = false;
-    for (const Unit& su : world_.units())
-        if (su.selected && su.alive && su.die_time < 0.0) { any_selected = true; break; }
+    for (int si : sel)
+        if (si < static_cast<int>(world_.units().size()) && world_.units()[si].alive &&
+            world_.units()[si].die_time < 0.0) { any_selected = true; break; }
     if (idx >= 0 && world_.is_enemy(world_.order_issuer(), world_.units()[idx].house) && any_selected) {
         // Capture actor BEFORE the order mutates any state.
         const int actor = lowest_selected();
-        world_.order_attack(idx);
+        emit(make_mega(world_, sel, Mission::Attack, Target::unit(world_, idx), Target{}));
         actions_.attack_ordered = true;
         actions_.actor = actor;
     } else {
@@ -535,15 +567,16 @@ void Input::issue_order(int px, int py) {
         // selected house-0 harvesters, so non-harvester
         // right-clicks fall straight through to attack/move below.
         bool harv_selected = false;
-        for (const Unit& su : world_.units())
-            if (su.selected && su.is_harvester && world_.controllable(su.house) && su.alive &&
-                su.die_time < 0.0) {
+        for (int si : sel) {
+            if (si >= static_cast<int>(world_.units().size())) break;
+            const Unit& su = world_.units()[si];
+            if (su.is_harvester && world_.controllable(su.house) && su.alive && su.die_time < 0.0) {
                 harv_selected = true;
                 break;
             }
+        }
         const int here_b = pick_b;
         if (harv_selected && world_.ore().has_ore(cx, cy)) {
-            world_.order_harvest(cx, cy);
             // MIXED selection (fix round): co-selected NON-harvester
             // units are not harvest-capable -- they get the normal
             // group move to the same cell (each unit interprets the
@@ -552,26 +585,26 @@ void Input::issue_order(int px, int py) {
             // order_move_selected can't clobber the harvest mission
             // just issued (it would set manual_hold + repath), then
             // restored -- the player's selection is untouched.
-            std::vector<std::size_t> harv_idx;
-            bool any_other = false;
-            for (std::size_t i = 0; i < world_.units().size(); ++i) {
+            std::vector<int> harv_idx, others;
+            for (int i : sel) {
+                if (i >= static_cast<int>(world_.units().size())) break;
                 const Unit& su = world_.units()[i];
                 // CB-1: also skip CARRIED units (cargo_of >= 0, aboard a
                 // transport / off-map) -- a widening of the corpse/
                 // validity skip, the fourth carry-guard site.
-                if (!su.selected || !su.alive || su.die_time >= 0.0 ||
-                    su.cargo_of >= 0)
+                if (!su.alive || su.die_time >= 0.0 || su.cargo_of >= 0)
                     continue;
                 if (su.is_harvester && world_.controllable(su.house))
                     harv_idx.push_back(i);
                 else
-                    any_other = true;
+                    others.push_back(i);
             }
-            if (any_other) {
+            // The miners get Mission_Harvest on the ore cell; the rest of a
+            // MIXED selection a plain move there (two MEGAMISSION runs).
+            emit(make_mega(world_, harv_idx, Mission::Harvest, Target::cell(cx, cy), Target{}));
+            if (!others.empty()) {
                 const int actor = lowest_selected();
-                for (std::size_t i : harv_idx) world_.units()[i].selected = false;
-                world_.order_move_selected(cx, cy);
-                for (std::size_t i : harv_idx) world_.units()[i].selected = true;
+                emit(make_mega(world_, others, Mission::Move, Target{}, Target::cell(cx, cy)));
                 if (actor >= 0) {
                     actions_.move_ordered = true;
                     actions_.actor = actor;
@@ -589,7 +622,7 @@ void Input::issue_order(int px, int py) {
             world_.buildings()[here_b].alive &&
             is_refinery_type(world_.buildings()[here_b].type)) {
             const int actor = lowest_selected();
-            world_.order_return();
+            emit(make_mega(world_, sel, Mission::Enter, Target::building(here_b), Target{}));   // dock
             if (actor >= 0) {   // W5-E: dock = Mission_Enter (VoiceEnter)
                 actions_.move_ordered = true;
                 actions_.actor = actor;
@@ -613,8 +646,9 @@ void Input::issue_order(int px, int py) {
         // Wave-5 (R-046): a single selected engineer right-clicking a unit
         // that carries an Ivan bomb walks over and disarms it (DefuseKit).
         if (idx >= 0 && world_.units()[idx].bomb_frame >= 0) {
-            const int eng = sel_engineer_idx(world_);
-            if (eng >= 0 && world_.order_defuse(eng, idx, -1)) {
+            const int eng = sel_engineer_idx(world_, sel_);
+            if (eng >= 0 && defuse_possible(world_, eng, idx, -1)) {
+                emit(make_mega(world_, {eng}, Mission::Capture, Target::unit(world_, idx), Target{}));
                 actions_.move_ordered = true;
                 actions_.actor = eng;
                 return;
@@ -624,10 +658,10 @@ void Input::issue_order(int px, int py) {
                          world_.are_allied(world_.order_issuer(), world_.units()[idx].house)) &&
             world_.units()[idx].passengers_max > 0) {
             bool eligible = false;
-            for (std::size_t si = 0; si < world_.units().size(); ++si) {
+            for (int si : sel) {
+                if (si >= static_cast<int>(world_.units().size())) break;
                 const Unit& su = world_.units()[si];
-                if (!su.selected || !world_.controllable(su.house) || !su.alive ||
-                    su.die_time >= 0.0 || static_cast<int>(si) == idx)
+                if (!world_.controllable(su.house) || !su.alive || su.die_time >= 0.0 || si == idx)
                     continue;
                 if (su.passengers_max > 0) continue;  // transports
                 eligible = true;                      // do not ride
@@ -635,7 +669,7 @@ void Input::issue_order(int px, int py) {
             }
             if (eligible) {
                 const int actor = lowest_selected();
-                world_.order_enter_transport(idx);
+                emit(make_mega(world_, sel, Mission::Enter, Target::unit(world_, idx), Target{}));
                 actions_.move_ordered = true;   // move-ack voice
                 actions_.actor = actor;
                 actions_.order = InputActions::Order::Enter;   // W5-E VoiceEnter
@@ -667,7 +701,8 @@ void Input::issue_order(int px, int py) {
             const int gb = pick_b;
             if (gb >= 0) {
                 const int actor = lowest_selected();
-                if (world_.order_occupy_selected(gb) > 0) {
+                if (world_.group_occupy_count(world_.order_issuer(), sel, gb) > 0) {
+                    emit(make_mega(world_, sel, Mission::Enter, Target::building(gb), Target{}));
                     actions_.move_ordered = true;
                     actions_.actor = actor;
                     actions_.order = InputActions::Order::Enter;   // W5-E VoiceEnter
@@ -675,18 +710,16 @@ void Input::issue_order(int px, int py) {
                 }
             }
         }
-        const int spy = sel_spy_idx(world_);
+        const int spy = sel_spy_idx(world_, sel_);
         if (spy >= 0) {
             const int b_hit = pick_b;
             if (b_hit >= 0) {
                 const Building& tb = world_.buildings()[b_hit];
                 const int spy_house = world_.units()[spy].house;
                 if (tb.house != spy_house) {   // enemy/neutral only
-                    const World::InfiltratePurpose purpose =
-                        infiltrate_purpose_of(tb.type);
-                    world_.order_spy_infiltrate(spy, b_hit, purpose,
-                                                spy_steal_pct_,
-                                                spy_blackout_frames_);
+                    // The purpose / steal / blackout are resolved at the apply
+                    // from the same OrderRules (Mission_Sabotage).
+                    emit(make_mega(world_, {spy}, Mission::Sabotage, Target::building(b_hit), Target{}));
                     actions_.move_ordered = true;   // move-ack voice
                     actions_.actor = spy;
                     actions_.order = InputActions::Order::Enter;   // W5-E [RE-FALLBACK: spy mission]
@@ -717,7 +750,7 @@ void Input::issue_order(int px, int py) {
         // here (a normal building grants none; the CAOILD=1000 roster
         // value is wired in Task 4 via a main.cpp-side startup
         // injection, mirroring set_refinery_types).
-        const int eng = sel_engineer_idx(world_);
+        const int eng = sel_engineer_idx(world_, sel_);
         if (eng >= 0) {
             const int b_hit = pick_b;
             if (b_hit >= 0) {
@@ -725,7 +758,8 @@ void Input::issue_order(int px, int py) {
                 const int eng_house = world_.units()[eng].house;
                 // Wave-5 (R-046): a bombed own/allied building -> defuse.
                 if (tb.bomb_frame >= 0 && world_.are_allied(eng_house, tb.house) &&
-                    world_.order_defuse(eng, -1, b_hit)) {
+                    defuse_possible(world_, eng, -1, b_hit)) {
+                    emit(make_mega(world_, {eng}, Mission::Capture, Target::building(b_hit), Target{}));
                     actions_.move_ordered = true;
                     actions_.actor = eng;
                     return;
@@ -743,7 +777,7 @@ void Input::issue_order(int px, int py) {
                     (tb.house != eng_house) ||   // enemy/neutral -> capture
                     (tb.hp < tb.max_hp);         // own damaged -> repair
                 if (is_target) {
-                    world_.order_engineer_capture(eng, b_hit);
+                    emit(make_mega(world_, {eng}, Mission::Capture, Target::building(b_hit), Target{}));
                     actions_.move_ordered = true;   // move-ack voice
                     actions_.actor = eng;
                     actions_.order = InputActions::Order::Capture;   // W5-E VoiceCapture
@@ -767,7 +801,7 @@ void Input::issue_order(int px, int py) {
         if (b_idx >= 0 && world_.is_enemy(world_.order_issuer(), world_.buildings()[b_idx].house) && any_selected) {
             // Capture actor BEFORE the order mutates any state.
             const int actor = lowest_selected();
-            world_.order_attack_building(b_idx);
+            emit(make_mega(world_, sel, Mission::Attack, Target::building(b_idx), Target{}));
             actions_.attack_ordered = true;
             actions_.actor = actor;
             actions_.target_building = b_idx;   // W5-E: C4 carriers -> Sabotage voice
@@ -778,7 +812,7 @@ void Input::issue_order(int px, int py) {
             // non-empty (an empty-selection right-click is a no-op
             // move).
             const int actor = lowest_selected();
-            world_.order_move_selected(cx, cy);
+            if (!sel.empty()) emit(make_mega(world_, sel, Mission::Move, Target{}, Target::cell(cx, cy)));
             if (actor >= 0) {
                 actions_.move_ordered = true;
                 actions_.actor = actor;
@@ -788,7 +822,9 @@ void Input::issue_order(int px, int py) {
 }
 
 void Input::handle(const InputEvent& ev) {
+    sel_.prune(world_);   // NET L1: the sim may have boarded / consumed selected units
     // NOTE: actions_ is deliberately NOT touched here -- it ACCUMULATES
+
     // across handle() calls (the commit/order sites below OR their flags in)
     // and is cleared only by take_actions(), the game loop's once-per-frame
     // consume point. See InputActions in input.hpp for the rationale.

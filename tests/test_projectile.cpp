@@ -352,6 +352,7 @@ TEST_CASE("projectile: real rulesmd pins (Cannon/BlimpBombP/FlakTProj/InvisibleL
 #include <vector>
 
 #include "ra2assets/map.hpp"
+#include "selection.hpp"
 #include "world.hpp"
 
 namespace {
@@ -539,12 +540,13 @@ TEST_CASE("projectile world: Vertical bomb from altitude falls ~35 frames and sp
 }
 
 TEST_CASE("projectile world: building target takes the hit only at detonation") {
+    ra2engine::Selection tsel_;   // NET L1: the selection is UI state
     Rig r;
     r.world.enable_projectiles(ProjectileRules{});
     r.world.add_combat_unit(0, 0, 0, cannon_stats());
     const int b = r.world.add_building(0, 5, 0, 2, 2, 1, 1000, 0, 0.0, /*instant=*/true);
-    r.world.units()[0].selected = true;
-    r.world.order_attack_building(b);
+    tsel_.set(0);
+    r.world.group_attack_building(0, tsel_.ids(), b);
     int launch_step = -1, hit_step = -1;
     for (int step = 1; step <= 60 && hit_step < 0; ++step) {
         r.world.step(1.0 / 15.0);

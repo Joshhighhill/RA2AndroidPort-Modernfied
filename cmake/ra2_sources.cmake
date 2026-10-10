@@ -143,6 +143,7 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/weapon_resolve.cpp
     ${RA2_ROOT}/engine/building_combat.cpp
     ${RA2_ROOT}/engine/unit_orders.cpp
+    ${RA2_ROOT}/engine/command.cpp
     ${RA2_ROOT}/engine/play_script.cpp
 )
 
@@ -173,6 +174,7 @@ set(RA2_NET_SOURCES
     ${RA2_ROOT}/engine/net/event_codec.cpp
     ${RA2_ROOT}/engine/net/lockstep.cpp
     ${RA2_ROOT}/engine/net/event_map.cpp
+    ${RA2_ROOT}/engine/net/command_bridge.cpp
     ${RA2_ROOT}/engine/net/global_msg.cpp
 )
 list(APPEND RA2_ENGINE_SOURCES ${RA2_NET_SOURCES})

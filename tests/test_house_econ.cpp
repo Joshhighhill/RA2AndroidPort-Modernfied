@@ -166,16 +166,12 @@ TEST_CASE("house econ: two human houses build, place and fight in one World") {
 
     // Fight: each player orders its own GI at the other's (issuer per order).
     // House 1's order does not move house 0's GI even when it is selected too.
-    w.units()[(std::size_t)gi[0]].selected = true;
-    w.units()[(std::size_t)gi[1]].selected = true;
+    // NET L1: orders carry the Whom ids and the issuing house.
     w.set_order_issuer(1);
-    w.order_attack(gi[0]);
+    w.group_attack(1, {gi[0], gi[1]}, gi[0]);
     CHECK(w.units()[(std::size_t)gi[0]].target != gi[0]);
     w.set_order_issuer(0);
-    w.clear_selection();
-    w.units()[(std::size_t)gi[0]].selected = true;
-    w.order_attack(gi[1]);
-    w.clear_selection();
+    w.group_attack(0, {gi[0]}, gi[1]);
     const int hp0 = w.units()[(std::size_t)gi[0]].hp, hp1 = w.units()[(std::size_t)gi[1]].hp;
     bool hit = false;
     for (int f = 0; f < 3000 && !hit; ++f) {

@@ -76,7 +76,7 @@ int deploy_player_mcv(Ctx& c, GameScene& g, int max_frames) {
     const int mx = w.units()[(std::size_t)mcv].cell_x, my = w.units()[(std::size_t)mcv].cell_y;
     g.gf_click_cell(mx, my, ra2engine::InputEvent::Left);
     g.update(1.0 / 15.0);
-    c.check(w.units()[(std::size_t)mcv].selected, "click selects the MCV");
+    c.check(g.ui_selection().has(mcv), "click selects the MCV");
     for (int k = 0; k < 10; ++k) g.update(1.0 / 15.0);   // beyond the double-click window
     g.gf_click_cell(mx, my, ra2engine::InputEvent::Left);
     g.update(1.0 / 15.0);
