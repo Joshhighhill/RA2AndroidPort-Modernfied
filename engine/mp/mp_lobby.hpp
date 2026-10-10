@@ -3,15 +3,17 @@
 // star topology: every client talks only to the host), carried in the
 // original 0x1236 global-channel framing (lobby_wire.hpp) over either a
 // direct UDP socket (LAN / Join by IP) or the CnCNet V3 tunnel (online,
-// through ra2lobbyd). docs/gap/net/05-transport-infra.md §5.3 / §6.1.
+// through ra2lobbyd) -- MpNet (mp_net.hpp): engine/net's NetManager, whose
+// endpoint the match keeps after GO. docs/gap/net/05-transport-infra.md §5.3 / §6.1.
 //
 //   client                          host
-//   QUERY_JOIN (ver, rules, pid) -> version / rules gate, first open slot
+//   QUERY_JOIN (ver, rules, pid, platform)
+//                                -> version / rules / platform gate, first open slot
 //                                <- CONFIRM_JOIN(slot) | REJECT_JOIN(reason)
 //                                <- GAME_OPTIONS(rev, options string chunks)
 //   SLOT_REQUEST / READY_TO_GO   -> host validates (unique colour / start)
 //   MESSAGE (original chat 0x0C) -> host relays to everyone
-//                                <- GO(rev, seed)   -> MpSessionConfig
+//                                <- GO(rev, seed, peer table) -> MpSessionConfig
 //   SIGN_OFF                     <-> slot freed / room closed
 //   PING (DATA_NOACK, 2 s)       <-> peer lost after 15 s of silence
 //
@@ -27,99 +29,9 @@
 
 #include "mp/lobby_wire.hpp"
 #include "mp/mp_model.hpp"
-#include "mp/mp_socket.hpp"
+#include "mp/mp_net.hpp"
 
 namespace ra2mp {
-
-using PeerId = std::uint64_t;
-constexpr PeerId kTunnelPeerFlag = 1ull << 63;
-inline PeerId peer_of(const Addr& a) { return a.key(); }
-inline PeerId peer_of_v3(std::uint32_t v3) { return kTunnelPeerFlag | v3; }
-
-// Datagram transport under the lobby (and, later, the game).
-class LobbyTransport {
-public:
-    virtual ~LobbyTransport() = default;
-    virtual bool send(PeerId to, const std::vector<std::uint8_t>& dgram) = 0;
-    virtual bool recv(PeerId& from, std::vector<std::uint8_t>& dgram) = 0;   // false = nothing waiting
-    virtual void tick(std::uint64_t now) { (void)now; }                       // keep-alives
-    virtual std::string describe(PeerId p) const;
-};
-
-// Direct UDP (LAN, Join by IP). Peers are ip:port.
-class UdpLobbyTransport : public LobbyTransport {
-public:
-    bool open(std::uint16_t port);          // 0 = ephemeral
-    std::uint16_t port() const { return sock_.local_port(); }
-    bool send(PeerId to, const std::vector<std::uint8_t>& dgram) override;
-    bool recv(PeerId& from, std::vector<std::uint8_t>& dgram) override;
-    std::string describe(PeerId p) const override;
-
-private:
-    UdpSocket sock_;
-};
-
-// CnCNet V3 tunnel: every datagram goes to the tunnel with the 8-byte
-// [sender LE][receiver LE] header; peers are V3 ids. A keep-alive to a
-// dummy receiver registers/refreshes our id at the tunnel.
-class TunnelLobbyTransport : public LobbyTransport {
-public:
-    bool open(const Addr& tunnel, std::uint32_t my_v3);
-    std::uint32_t my_v3() const { return me_; }
-    const Addr& tunnel() const { return tunnel_; }
-    bool send(PeerId to, const std::vector<std::uint8_t>& dgram) override;
-    bool recv(PeerId& from, std::vector<std::uint8_t>& dgram) override;
-    void tick(std::uint64_t now) override;
-    std::string describe(PeerId p) const override;
-    // Tunnel ping (50 -> 12 bytes); last measured RTT in ms (-1 unknown).
-    int rtt_ms() const { return rtt_; }
-
-private:
-    UdpSocket sock_;
-    Addr tunnel_;
-    std::uint32_t me_ = 0;
-    std::uint64_t last_keep_ = 0, ping_sent_ = 0;
-    std::uint32_t ping_nonce_ = 0;
-    int rtt_ = -1;
-};
-
-// In-memory pair for tests: two endpoints that deliver to each other.
-class MemoryHub {
-public:
-    class Endpoint : public LobbyTransport {
-    public:
-        bool send(PeerId to, const std::vector<std::uint8_t>& d) override;
-        bool recv(PeerId& from, std::vector<std::uint8_t>& d) override;
-        PeerId id = 0;
-        MemoryHub* hub = nullptr;
-        std::deque<std::pair<PeerId, std::vector<std::uint8_t>>> inbox;
-        int drop_every = 0, sent = 0;   // drop every Nth datagram (loss test)
-    };
-    Endpoint* add(PeerId id);
-    std::map<PeerId, std::unique_ptr<Endpoint>> eps;
-};
-
-// The global channel's reliability: DATA_ACK packets are resent until ACKed
-// (every 250 ms, 40 tries), duplicates filtered by (peer, PacketID).
-class GlobalChannel {
-public:
-    explicit GlobalChannel(LobbyTransport& t) : t_(t) {}
-    void send(PeerId to, const std::vector<std::uint8_t>& body, bool reliable, std::uint64_t now);
-    struct In { PeerId from; std::vector<std::uint8_t> body; };
-    // Receive + ACK + dedupe + resend. `lost` gets peers whose packets
-    // exhausted their retries.
-    void poll(std::uint64_t now, std::vector<In>& in, std::vector<PeerId>& lost);
-    void forget(PeerId p);
-    bool idle_to(PeerId p) const;   // nothing un-ACKed to p
-    LobbyTransport& transport() { return t_; }
-
-private:
-    struct Pending { PeerId to; std::uint32_t id; std::vector<std::uint8_t> dgram; std::uint64_t last; int tries; };
-    LobbyTransport& t_;
-    std::uint32_t next_id_ = 1;
-    std::vector<Pending> pend_;
-    std::deque<std::pair<PeerId, std::uint32_t>> seen_;
-};
 
 struct MpIdentity {
     std::string nick = "Player";
@@ -128,10 +40,15 @@ struct MpIdentity {
     std::uint32_t sim_ver = kSimVersion;
     std::uint32_t rules_crc = 0;
     std::string version;            // engine version string (informational)
+    // NET-PLAY: 1 Windows, 2 Android arm64, 3 Android x86_64 (mp_model.hpp
+    // platform_code()). Mixed platforms desync until the cross-platform
+    // deterministic math (net L0) lands, so the host refuses them unless the
+    // lobby's "cross-platform (experimental)" option is on.
+    std::uint8_t platform = 0;
 };
 
 enum class RejectReason : std::uint8_t {
-    None = 0, Version = 1, Rules = 2, Full = 3, Started = 4, Kicked = 5, HostLeft = 6, Lost = 7
+    None = 0, Version = 1, Rules = 2, Full = 3, Started = 4, Kicked = 5, HostLeft = 6, Lost = 7, Platform = 8
 };
 const char* reject_text(RejectReason r);
 
@@ -157,7 +74,9 @@ public:
 
 protected:
     void add_chat(const ChatLine& l);
-    void build_session(bool is_host);
+    // slot_peer: the transport peer of each remote human slot (the host's
+    // view; a client gets it in GO).
+    void build_session(bool is_host, const std::vector<std::pair<int, PeerId>>& slot_peer);
     MpLobbyModel model_;
     std::deque<ChatLine> chat_;
     int local_slot_ = -1;
@@ -169,7 +88,7 @@ protected:
 
 class LobbyHost : public LobbyBase {
 public:
-    LobbyHost(LobbyTransport& t, const MpIdentity& me, const MpLobbyModel& initial);
+    LobbyHost(MpNet& t, const MpIdentity& me, const MpLobbyModel& initial);
     void update(std::uint64_t now);
 
     // Host edits (any slot). Every change bumps the options revision and is
@@ -197,7 +116,7 @@ private:
     void send_options(PeerId to, std::uint64_t now);
     void drop_peer(PeerId p, const char* why);
     void changed(bool clear_ready);
-    GlobalChannel ch_;
+    LobbyChannel ch_;
     MpIdentity me_;
     std::map<PeerId, Peer> peers_;
     bool dirty_ = false, going_ = false;
@@ -207,7 +126,7 @@ private:
 class LobbyClient : public LobbyBase {
 public:
     enum class State { Joining, Joined, Rejected, Lost, Started };
-    LobbyClient(LobbyTransport& t, PeerId host, const MpIdentity& me);
+    LobbyClient(MpNet& t, PeerId host, const MpIdentity& me);
     void update(std::uint64_t now);
 
     void request_slot(int country, int color, int team, int start);
@@ -225,7 +144,7 @@ public:
 private:
     void handle(const std::vector<std::uint8_t>& body, std::uint64_t now);
     void send_ready(std::uint64_t now);
-    GlobalChannel ch_;
+    LobbyChannel ch_;
     PeerId host_;
     MpIdentity me_;
     State state_ = State::Joining;
@@ -239,6 +158,7 @@ private:
     std::vector<bool> got_;
     std::uint32_t go_rev_ = 0, go_seed_ = 0;
     bool go_pending_ = false;
+    std::vector<std::pair<int, PeerId>> go_peers_;   // GO's peer table (slot -> peer as the host sees it)
 };
 
 // Options-string chunking inside GAME_OPTIONS bodies (455 bytes each).

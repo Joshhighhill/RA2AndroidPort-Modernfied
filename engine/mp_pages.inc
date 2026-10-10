@@ -10,9 +10,9 @@
 // Included by main.cpp right after skirmish_page.inc. The protocol layers
 // are the SDL-free engine/mp/ modules (tested in tests/test_mp.cpp):
 //   LAN:    LanBrowser / LanAnnouncer (UDP 50010) + LobbyHost/LobbyClient
-//           over UdpLobbyTransport (host game port [Net] LanPort = 50020)
+//           over MpNet (direct UDP; host game port [Net] LanPort = 50020)
 //   Online: ServerLink (ra2lobbyd control plane) + the lobby over the
-//           CnCNet V3 tunnel (TunnelLobbyTransport)
+//           CnCNet V3 tunnel (MpNet::open_tunnel)
 //   Start:  mp_start_session() -- THE hand-off to the lockstep layer.
 //
 // --play targets / probe keys: scripts/play/README.md "Multiplayer".
@@ -90,18 +90,11 @@ inline ra2mp::MpIdentity identity(const Prefs& p) {
     id.player_id = p.pid;
     id.rules_crc = rules_crc();
     id.version = RA2_VERSION;
+    id.platform = ra2mp::platform_code();   // NET-PLAY: mixed platforms need the cross-platform option
     return id;
 }
 
-inline int platform_code() {
-#if defined(__ANDROID__) && defined(__aarch64__)
-    return 2;
-#elif defined(__ANDROID__)
-    return 3;
-#else
-    return 1;
-#endif
-}
+inline int platform_code() { return ra2mp::platform_code(); }
 
 inline void init_once() {
     static bool done = false;
@@ -139,7 +132,7 @@ inline void log_line(const std::string& s) {
 // s.players[k].peer, seeded with s.seed.
 class MpStartScene;
 Scene* mp_start_session(const Rules& rules, bool no_audio, const MenuArt& art, const ra2mp::MpSessionConfig& s,
-                        std::shared_ptr<ra2mp::LobbyTransport> transport);
+                        std::shared_ptr<ra2mp::MpNet> transport);
 
 namespace mpui {
 
@@ -449,14 +442,14 @@ private:
         m.map = map_info(mi);
         for (int i = std::max(1, m.map.max_players); i < ra2mp::kSlots; ++i) m.slots[i].kind = ra2mp::SlotKind::Closed;
         if (net_ == LAN) {
-            auto t = std::make_shared<ra2mp::UdpLobbyTransport>();
-            if (!t->open(prefs_.lan_port) && !t->open(0)) status_ = "Could not open a network port.";
+            auto t = std::make_shared<ra2mp::MpNet>();
+            if (!t->open_direct(prefs_.lan_port) && !t->open_direct(0)) status_ = "Could not open a network port.";
             port_ = t->port();
             transport_ = t;
         } else {
             my_v3_ = mpui::random_u32();
-            auto t = std::make_shared<ra2mp::TunnelLobbyTransport>();
-            t->open(link_ ? link_->tunnel_addr() : ra2mp::Addr{}, my_v3_);
+            auto t = std::make_shared<ra2mp::MpNet>();
+            t->open_tunnel(link_ ? link_->tunnel_addr() : ra2mp::Addr{}, my_v3_);
             transport_ = t;
         }
         host_ = std::make_unique<ra2mp::LobbyHost>(*transport_, mpui::identity(prefs_), m);
@@ -482,8 +475,8 @@ private:
         map_ix_ = mi;
     }
     void start_client_lan(const ra2mp::Addr& host) {
-        auto t = std::make_shared<ra2mp::UdpLobbyTransport>();
-        t->open(0);
+        auto t = std::make_shared<ra2mp::MpNet>();
+        t->open_direct(0);
         transport_ = t;
         client_ = std::make_unique<ra2mp::LobbyClient>(*transport_, ra2mp::peer_of(host), mpui::identity(prefs_));
         where_ = "Host " + host.str();
@@ -492,8 +485,8 @@ private:
     }
     void start_client_online(std::uint32_t my_v3, std::uint32_t host_v3) {
         my_v3_ = my_v3;
-        auto t = std::make_shared<ra2mp::TunnelLobbyTransport>();
-        t->open(link_ ? link_->tunnel_addr() : ra2mp::Addr{}, my_v3);
+        auto t = std::make_shared<ra2mp::MpNet>();
+        t->open_tunnel(link_ ? link_->tunnel_addr() : ra2mp::Addr{}, my_v3);
         transport_ = t;
         client_ = std::make_unique<ra2mp::LobbyClient>(*transport_, ra2mp::peer_of_v3(host_v3), mpui::identity(prefs_));
         host_v3_ = host_v3;
@@ -958,8 +951,7 @@ private:
             else if (link_) s.host_addr = link_->tunnel_addr().str();
             s.local_v3 = my_v3_;
             s.host_v3 = is_host() ? my_v3_ : host_v3_;
-            for (ra2mp::MpPlayer& p : s.players)
-                p.peer = host_ ? host_->peer_of_slot(p.slot) : (p.slot == 0 ? client_->host() : 0);
+            // (MpPlayer::peer: resolve_session copied GO's peer table.)
             announcer_.close();
             next_ = mp_start_session(rules_, no_audio_, art_, s, transport_);
         }
@@ -1165,7 +1157,7 @@ private:
     std::unique_ptr<ra2engine::MapCatalog> catalog_;
     std::map<std::string, std::string> digest_cache_;
     std::map<std::string, std::pair<int, int>> preview_size_;
-    std::shared_ptr<ra2mp::LobbyTransport> transport_;
+    std::shared_ptr<ra2mp::MpNet> transport_;
     std::unique_ptr<ra2mp::LobbyHost> host_;
     std::unique_ptr<ra2mp::LobbyClient> client_;
     std::unique_ptr<ra2mp::ServerLink> link_;
@@ -1483,7 +1475,7 @@ Scene* MpLobbyScene::make_return_page() {
 class MpStartScene : public MpPage {
 public:
     MpStartScene(const Rules& r, bool na, const MenuArt& a, const ra2mp::MpSessionConfig& s,
-                 std::shared_ptr<ra2mp::LobbyTransport> t)
+                 std::shared_ptr<ra2mp::MpNet> t)
         : MpPage(r, na, a), s_(s), transport_(std::move(t)) {
         status_ = "Network play hand-off: the lockstep layer is not part of this build yet.";
     }
@@ -1554,11 +1546,11 @@ private:
         }
     }
     ra2mp::MpSessionConfig s_;
-    std::shared_ptr<ra2mp::LobbyTransport> transport_;   // kept alive for the lockstep layer
+    std::shared_ptr<ra2mp::MpNet> transport_;   // kept alive for the lockstep layer
 };
 
 Scene* mp_start_session(const Rules& rules, bool no_audio, const MenuArt& art, const ra2mp::MpSessionConfig& s,
-                        std::shared_ptr<ra2mp::LobbyTransport> transport) {
+                        std::shared_ptr<ra2mp::MpNet> transport) {
     const std::string text = ra2mp::describe_session(s);
     std::size_t a = 0;
     while (a < text.size()) {

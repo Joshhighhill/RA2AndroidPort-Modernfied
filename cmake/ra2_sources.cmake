@@ -109,6 +109,7 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/mp/mp_socket.cpp
     ${RA2_ROOT}/engine/mp/mini_json.cpp
     ${RA2_ROOT}/engine/mp/lobby_wire.cpp
+    ${RA2_ROOT}/engine/mp/mp_net.cpp
     ${RA2_ROOT}/engine/mp/mp_model.cpp
     ${RA2_ROOT}/engine/mp/mp_lobby.cpp
     ${RA2_ROOT}/engine/mp/lan_discovery.cpp

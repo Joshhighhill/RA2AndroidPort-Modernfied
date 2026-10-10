@@ -299,7 +299,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_skirmish_lobby.cpp engine/skir
 # Multiplayer shell (engine/mp/, SDL-free): options string, 0x1236 framing,
 # lobby state machines over memory + loopback UDP, LAN beacons, JSON.
 target_sources(ra2assets_tests PRIVATE tests/test_mp.cpp engine/mp/mp_socket.cpp engine/mp/mini_json.cpp
-               engine/mp/lobby_wire.cpp engine/mp/mp_model.cpp engine/mp/mp_lobby.cpp
+               engine/mp/lobby_wire.cpp engine/mp/mp_net.cpp engine/mp/mp_model.cpp engine/mp/mp_lobby.cpp
                engine/mp/lan_discovery.cpp engine/mp/server_link.cpp)
 if (WIN32)
   target_link_libraries(ra2assets_tests PRIVATE ws2_32)
