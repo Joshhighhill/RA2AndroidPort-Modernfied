@@ -1,0 +1,39 @@
+# mp-online-join -- JOIN half of the online loopback test: connect, pick the
+# host's public room from the server's list, join through the V3 tunnel,
+# get ready, chat, wait for the start.
+set render_every 2000
+set max_frames 3000000
+click button Internet
+require scene == mp-online
+click edit:server
+key delete
+type "127.0.0.1:50000"
+click edit:nick
+key delete
+type "Joiner"
+click button Connect
+until 2000000 online_state == ready
+require online_state == ready
+until 2000000 rooms >= 1
+require rooms >= 1
+click room:0
+click button "Join Game"
+until 2000000 scene == mp-lobby
+require scene == mp-lobby
+assert mp_net == online
+until 2000000 mp_state == joined
+require mp_state == joined
+assert slot_name(0) == Hosty
+until 2000000 slot_has_map(1) == 1
+click button Ready
+until 2000000 slot_ready(1) == 1
+click edit:chat
+type "hello host"
+key enter
+until 2000000 chat_last == "Hosty: welcome"
+until 3000000 scene == mp-start
+require scene == mp-start
+assert session_transport == tunnel
+assert local_house == 1
+assert is_host == 0
+end

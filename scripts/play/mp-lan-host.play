@@ -1,0 +1,38 @@
+# mp-lan-host -- HOST half of the two-process LAN loopback test
+# (scripts/play/mp-lan-loopback.ps1 starts this, then mp-lan-join.play).
+# Hosts a LAN game on UDP 50020, waits for "Joiner", checks the joiner's
+# colour request + ready + chat arrive over the real 0x1236 lobby protocol,
+# answers in chat, starts the match and checks the hand-off session.
+set render_every 2000
+set max_frames 3000000
+click button Network
+require scene == mp-lan
+click edit:nick
+key delete
+type "Hosty"
+key enter
+click button "Host Game"
+require scene == mp-lobby
+assert lan_port == 50020
+log waiting for the joiner
+until 2000000 humans == 2
+require humans == 2
+assert slot_kind(1) == Human
+assert slot_name(1) == Joiner
+until 2000000 color(1) == 3
+until 2000000 slot_ready(1) == 1
+until 2000000 chat_last == "Joiner: hello host"
+click edit:chat
+type "welcome"
+key enter
+shot host_lobby
+until 1000 can_start == 1
+click button "Start Game"
+until 2000000 scene == mp-start
+require scene == mp-start
+assert is_host == 1
+assert session_players == 2
+assert local_house == 0
+assert house_color(1) == 3
+assert session_transport == lan
+end

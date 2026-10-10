@@ -1,0 +1,43 @@
+# mp-lan-join -- JOIN half of the two-process LAN loopback test
+# (scripts/play/mp-lan-loopback.ps1). Sees the host in the LAN browser when
+# broadcast works on this machine (soft), joins by IP 127.0.0.1:50020,
+# requests colour GRN, gets ready, chats, and waits for the host's start.
+set render_every 2000
+set max_frames 3000000
+click button Network
+require scene == mp-lan
+click edit:nick
+key delete
+type "Joiner"
+key enter
+waituntil 400000 lan_games >= 1
+log LAN browser games seen:
+if lan_games >= 1 then log beacon received from the host
+click edit:ip
+type "127.0.0.1:50020"
+key enter
+require scene == mp-lobby
+assert mp_role == client
+until 2000000 mp_state == joined
+require mp_state == joined
+assert local_slot == 1
+assert slot_name(0) == Hosty
+# the host learns our [Digest] check result one round trip later
+until 2000000 slot_has_map(1) == 1
+click combo:color1
+click pick:GRN
+until 2000000 color(1) == 3
+click button Ready
+until 2000000 slot_ready(1) == 1
+click edit:chat
+type "hello host"
+key enter
+until 2000000 chat_last == "Hosty: welcome"
+shot join_lobby
+until 3000000 scene == mp-start
+require scene == mp-start
+assert is_host == 0
+assert local_house == 1
+assert session_players == 2
+assert house_color(1) == 3
+end
