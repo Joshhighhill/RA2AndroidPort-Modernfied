@@ -5549,18 +5549,21 @@ int run_scene_driver(ra2engine::Platform& plat, ra2engine::TextureCache& tc, Sce
 // existing CRATES toggle (cfg.crates). launch_skirmish (shared with
 // --demo-skirmish) is deliberately NOT touched, so that gate's World never
 // opens either firewall.
-// Net L0: the session seed a game runs on. The launcher's choice when it made
-// one (lobby Start, a network host); else a campaign mission's name hash (so a
-// mission replays identically -- the old W5-A crate seed) or, for a quick-start
-// skirmish, the map's. Never the wall clock: the sim must be a pure function of
-// (map, rules, session seed, commands).
-std::uint32_t session_seed_for(const ra2engine::SkirmishConfig& cfg) {
-    if (cfg.session_seed) return cfg.session_seed;
-    const std::string& key = cfg.campaign_map.empty() ? (cfg.map_file.empty() ? cfg.map_id : cfg.map_file)
-                                                      : cfg.campaign_map;
+// Net L0: the session seed a game runs on -- the one a network host chose
+// (SkirmishConfig::session_seed), else 0. Seed 0 keeps every RNG stream on its
+// historical fixed seed, so single-player games (lobby skirmish, campaign,
+// --play scripts) behave exactly as before; a multiplayer session sets one
+// seed and every stream derives from it. Never the wall clock.
+std::uint32_t session_seed_for(const ra2engine::SkirmishConfig& cfg) { return cfg.session_seed; }
+
+// The crate generator's seed when no session seed is set: a campaign mission's
+// name hash (W5-A: a mission replays identically), else a fixed value (it was
+// the wall clock: a skirmish was not reproducible).
+std::uint32_t fallback_crate_seed(const ra2engine::SkirmishConfig& cfg) {
+    if (cfg.campaign_map.empty()) return 0x52413252u;
     std::uint32_t h = 2166136261u;
-    for (char ch : key) h = (h ^ static_cast<unsigned char>(std::toupper(static_cast<unsigned char>(ch)))) * 16777619u;
-    return h ? h : 1u;
+    for (char ch : cfg.campaign_map) h = (h ^ static_cast<unsigned char>(std::toupper(static_cast<unsigned char>(ch)))) * 16777619u;
+    return h;
 }
 
 void enable_p5_features(ra2engine::World& world, const Rules& rules, const BuildingAssets& ba,
@@ -5578,7 +5581,7 @@ void enable_p5_features(ra2engine::World& world, const Rules& rules, const Build
     // Net L0 [RE: InitRandom FUN_0052F960]: ScenarioClass::Random is seeded
     // with the session Seed itself. The session seed was chosen by the
     // launcher (session_seed_for) -- no wall clock -- and is in the save.
-    cc.seed = world.session_seed() ? world.session_seed() : 0x52413252u;
+    cc.seed = world.session_seed() ? world.session_seed() : fallback_crate_seed(cfg);
     int humans = 0;
     for (const ra2engine::SkirmishSlot& sl : cfg.slots)
         if (sl.combatant && !sl.is_ai) ++humans;
