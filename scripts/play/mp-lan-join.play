@@ -34,10 +34,10 @@ type "hello host"
 key enter
 until 2000000 chat_last == "Hosty: welcome"
 shot join_lobby
-until 3000000 scene == mp-start
-require scene == mp-start
-assert is_host == 0
+until 3000000 scene == game
+require scene == game
+require net == 1
+assert net_players == 2
 assert local_house == 1
-assert session_players == 2
-assert house_color(1) == 3
+until 3000000 sim_frame >= 30
 end

@@ -31,9 +31,10 @@ click edit:chat
 type "hello host"
 key enter
 until 2000000 chat_last == "Hosty: welcome"
-until 3000000 scene == mp-start
-require scene == mp-start
-assert session_transport == tunnel
+until 3000000 scene == game
+require scene == game
+require net == 1
+assert net_players == 2
 assert local_house == 1
-assert is_host == 0
+until 3000000 sim_frame >= 30
 end

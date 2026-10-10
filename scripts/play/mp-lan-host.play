@@ -2,7 +2,7 @@
 # (scripts/play/mp-lan-loopback.ps1 starts this, then mp-lan-join.play).
 # Hosts a LAN game on UDP 50020, waits for "Joiner", checks the joiner's
 # colour request + ready + chat arrive over the real 0x1236 lobby protocol,
-# answers in chat, starts the match and checks the hand-off session.
+# answers in chat, starts the match and checks the networked game starts.
 set render_every 2000
 set max_frames 3000000
 click button Network
@@ -28,11 +28,11 @@ key enter
 shot host_lobby
 until 1000 can_start == 1
 click button "Start Game"
-until 2000000 scene == mp-start
-require scene == mp-start
-assert is_host == 1
-assert session_players == 2
+# NET-PLAY: Start builds the lockstep match (the old mp-start page is gone).
+until 3000000 scene == game
+require scene == game
+require net == 1
+assert net_players == 2
 assert local_house == 0
-assert house_color(1) == 3
-assert session_transport == lan
+until 3000000 sim_frame >= 30
 end

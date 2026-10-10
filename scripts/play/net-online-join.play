@@ -1,0 +1,80 @@
+# net-online-join -- JOIN half of the two-process NETWORK MATCH test through a
+# local ra2lobbyd and the CnCNet V3 tunnel (scripts/play/net-match.ps1
+# -Online). Joins the host's room from the room list, plays Russia
+# (house 1): deploy, power plant, barracks, conscripts, then attacks the
+# host's base. Runs 3000 logic frames and logs its sync-hash trail.
+set render_every 3000
+set max_frames 6000000
+set on_quit continue
+click button Internet
+require scene == mp-online
+click edit:server
+key delete
+type "127.0.0.1:50000"
+click edit:nick
+key delete
+type "Joiner"
+click button Connect
+until 3000000 online_state == ready
+require online_state == ready
+until 3000000 rooms >= 1
+click room:0
+click button "Join Game"
+until 3000000 scene == mp-lobby
+require scene == mp-lobby
+assert mp_net == online
+until 3000000 mp_state == joined
+require mp_state == joined
+assert local_slot == 1
+until 3000000 slot_has_map(1) == 1
+click combo:country1
+click list:down
+click list:down
+click list:down
+click pick:Russia
+until 3000000 country(1) >= 0
+click button Ready
+# (the host starts as soon as we are ready: the lobby may already be gone)
+until 3000000 scene == game
+require scene == game
+require net == 1
+assert local_house == 1
+assert net_players == 2
+shot net_start
+
+# --- orders (Russia, house 1) ------------------------------------------------
+until 600000 sim_frame >= 20
+click unit 1:SMCV
+key d
+until 600000 built(1,NACNST) == 1
+click tab:0
+click cameo:NAPOWR
+until 900000 queue_ready(structure) == 1
+click cameo:NAPOWR
+place auto
+until 600000 built(1,NAPOWR) == 1
+click tab:0
+click cameo:NAHAND
+until 900000 queue_ready(structure) == 1
+click cameo:NAHAND
+place auto
+until 600000 built(1,NAHAND) == 1
+click tab:2
+click cameo:E2
+click cameo:E2
+click cameo:E2
+let e2 = units(1,E2)
+until 900000 units(1,E2) > $e2
+shot net_base
+# Chat over the global channel (original packet 0x0C) while the match runs.
+key enter
+type "gl hf"
+key enter
+click unit 1:E2
+key t
+click building 0:GACNST soft
+waituntil 6000000 sim_frame >= 3000 or net_end == 1
+shot net_end
+log net match done
+dump
+end
