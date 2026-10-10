@@ -235,7 +235,7 @@
             // alive, not carried, on the board (LocalSize) and not under shroud.
             auto seen = [&](int cx, int cy) {
                 // (before the first logic tick nothing is revealed yet)
-                return on_board(cx, cy) && (world_.vet_frame() == 0 || world_.object_visible_at(0, cx, cy));
+                return on_board(cx, cy) && (world_.vet_frame() == 0 || world_.object_visible_at(local_house_, cx, cy));
             };
             int ctl = 0, ctl_on = 0;
             for (const ra2engine::Unit& u : world_.units()) {
@@ -250,6 +250,34 @@
             for (const ra2engine::Building& b : world_.buildings())
                 if (b.house == local_house_ && b.alive && seen(b.cx, b.cy) && vis(b.cx + b.fw / 2.0, b.cy + b.fh / 2.0)) ++on;
             p.set("own_on_screen", on);
+            {   // fix-black: what the LOCAL house sees (a network joiner plays house != 0)
+                int expl = 0, expl_view = 0, own_n = 0;
+                double ox = 0, oy = 0;
+                for (const ra2engine::Unit& u : world_.units())
+                    if (u.alive && u.die_time < 0.0 && u.cargo_of < 0 && u.house == local_house_) { ox += u.cell_x; oy += u.cell_y; ++own_n; }
+                for (const ra2engine::Building& b : world_.buildings())
+                    if (b.alive && b.house == local_house_) { ox += b.cx; oy += b.cy; ++own_n; }
+                for (int y = 0; y < world_.grid_h(); ++y)
+                    for (int x = 0; x < world_.grid_w(); ++x) {
+                        if (!world_.shroud_enabled() || !world_.explored_at(local_house_, x, y)) continue;
+                        ++expl;
+                        if (vis(x, y)) ++expl_view;
+                    }
+                p.set("local_explored", expl);            // cells the local house explored
+                p.set("local_explored_on_screen", expl_view);   // ... of which inside the view
+                p.set("terrain_drawn", g_terrain_drawn);  // terrain tiles the last rendered frame drew
+                // the view centre and the local house's object centroid (cells)
+                const double sx = playfield_w_ / 2.0 - 30 - cam_.x, sy = kWinH / 2.0 - 15 - cam_.y;
+                p.set("cam_cell_x", (sx / 30.0 + sy / 15.0) / 2.0);
+                p.set("cam_cell_y", (sy / 15.0 - sx / 30.0) / 2.0);
+                p.set("own_cx", own_n ? ox / own_n : -1);
+                p.set("own_cy", own_n ? oy / own_n : -1);
+                {   // cells between the view centre and the local house's centroid
+                    const double ccx = (sx / 30.0 + sy / 15.0) / 2.0, ccy = (sy / 15.0 - sx / 30.0) / 2.0;
+                    const double dx = own_n ? ccx - ox / own_n : 9999, dy = own_n ? ccy - oy / own_n : 9999;
+                    p.set("cam_own_dist", std::sqrt(dx * dx + dy * dy));
+                }
+            }
             p.set("ctl_units", ctl);         // controllable (house 0 + PlayerControl) usable units
             p.set("ctl_on_screen", ctl_on);  // ... of which inside the view
             p.set("input_locked", input_locked_ ? 1 : 0);

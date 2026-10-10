@@ -157,14 +157,15 @@ void set_terrain_level_palettes(const std::vector<ra2assets::Palette>* pals);
 // fully outside [0,view_w) x [0,view_h) are skipped. Returns the number of
 // tiles actually drawn (for diagnostics).
 // Shroud/Fog [RE: presentation.md §4, W2-GA-02/03]: with a non-null `vis`
-// whose shroud is on, a cell house 0 never explored is skipped entirely (its
-// diamond AND its cliff/slope extra), and only with the FogOfWar flag is an
-// explored-but-not-visible cell dimmed. `vis == nullptr` draws every cell.
+// whose shroud is on, a cell the viewing house (`viewer`, the local house --
+// house 0 single-player; a network joiner's own slot) never explored is skipped
+// entirely (its diamond AND its cliff/slope extra), and only with the FogOfWar
+// flag is an explored-but-not-visible cell dimmed. `vis == nullptr` draws every cell.
 // Uses the cached per-map draw list (W2-GA-P1).
 int draw_terrain(void* sdl_renderer, TextureCache& tc,
                  const ra2assets::MapFile& map, Theater& theater,
                  const ra2assets::Palette& pal, const Camera& cam, int view_w,
-                 int view_h, const World* vis = nullptr);
+                 int view_h, const World* vis = nullptr, int viewer = 0);
 
 // Draw a unit's current SHP frame on top of the terrain (call AFTER
 // draw_terrain so the sprite is not painted over). The unit's interpolated

@@ -129,12 +129,12 @@ void pres_state_tick(const ra2engine::World& w, PresFx& fx) {
                                                                                         : nullptr;
                 return mc ? static_cast<int>(mc->level) : u.level;
             };
-            if (w.object_visible_at(0, pc.first, pc.second))
+            if (w.object_visible_at(g_local_house, pc.first, pc.second))
                 fx.spawn("WARPOUT", pc.first, pc.second, level_at(pc.first, pc.second), 0.0);
-            if (w.object_visible_at(0, u.cell_x, u.cell_y))
+            if (w.object_visible_at(g_local_house, u.cell_x, u.cell_y))
                 fx.spawn("WARPOUT", u.cell_x, u.cell_y, u.level, 0.0);
         }
-        if (warp && g_pres_tick % 24 == 0 && w.object_visible_at(0, u.cell_x, u.cell_y))
+        if (warp && g_pres_tick % 24 == 0 && w.object_visible_at(g_local_house, u.cell_x, u.cell_y))
             fx.spawn("CHRONOSK", u.fx + 120.0 / 256.0, u.fy + 120.0 / 256.0, u.level, 0.0);
         pc = {u.cell_x, u.cell_y};
         // R-122: a chute opens on the tick its paratrooper starts to fall.

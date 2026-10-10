@@ -241,7 +241,7 @@ public:
         for (const ra2engine::ProjectileEvent& e : pev)
             if (e.kind == ra2engine::ProjectileEvent::Detonate) {
                 const double fx = e.x / 256.0, fy = e.y / 256.0;
-                if (!w.object_visible_at(0, ra2engine::lepton_to_cell(e.x), ra2engine::lepton_to_cell(e.y))) continue;
+                if (!w.object_visible_at(g_local_house, ra2engine::lepton_to_cell(e.x), ra2engine::lepton_to_cell(e.y))) continue;
                 const ra2engine::Unit* a = (e.attacker >= 0 && e.attacker < static_cast<int>(w.units().size()))
                                                ? &w.units()[e.attacker] : nullptr;
                 if (a) impact(*a, e.damage, fx, fy, level_at(w, fx, fy), e.z * 36.74 / 256.0);
@@ -353,7 +353,7 @@ private:
         for (int i = static_cast<int>(us.size()) - 1; i >= 0; --i) {
             const ra2engine::Unit& u = us[i];
             if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
-            if (u.house != g_local_house && !w.object_visible_at(0, u.cell_x, u.cell_y)) continue;
+            if (u.house != g_local_house && !w.object_visible_at(g_local_house, u.cell_x, u.cell_y)) continue;
             const int gx = static_cast<int>(std::lround((u.fx - u.fy) * 30.0)) + cam_.x + 30;
             int gy = static_cast<int>(std::lround((u.fx + u.fy) * 15.0 - u.level * 15)) + cam_.y + 15;
             // W2-AN-24: the cursor tracks the RAISED sprite of an airborne unit.
@@ -971,7 +971,7 @@ public:
             const ra2engine::Building& b = bs[e.building];
             const double fx = b.cx + (b.fw - 1) / 2.0, fy = b.cy + (b.fh - 1) / 2.0;
             snd_.play_at(fx_.weapon_report(e.weapon), fx, fy, "defense report");
-            if (b.house != g_local_house && !w.object_visible_at(0, b.cx, b.cy)) continue;
+            if (b.house != g_local_house && !w.object_visible_at(g_local_house, b.cx, b.cy)) continue;
             // W2-GA-15: Tesla Coil bolts / Prism Tower beams from the tower top.
             const FxWeapon& bw = fx_.weapon_def(e.weapon);
             if (bw.bolt || bw.laser) {
@@ -1001,7 +1001,7 @@ public:
 private:
     void infantry_death_fx(const ra2engine::World& w, const ra2engine::Unit& u, bool was_living, bool was_alive) {
         if (!u.ia.armed || u.is_vehicle || u.is_aircraft || u.cargo_of >= 0) return;
-        if (!w.object_visible_at(0, u.cell_x, u.cell_y) && u.house != g_local_house) return;
+        if (!w.object_visible_at(g_local_house, u.cell_x, u.cell_y) && u.house != g_local_house) return;
         const int lvl = level_at(w, u.fx, u.fy);
         if (u.die_time >= 0.0 && was_living && u.ia.vanish) {
             static const char* kKey[11] = {nullptr, nullptr, nullptr, "InfantryExplode", "FlamingInfantry",
@@ -1050,7 +1050,7 @@ private:
             alive_prev_[i] = u.alive ? 1 : 0;
             if (u.fire_flash > prev_[i].first && u.cargo_of < 0) {
                 snd_.play_at(pick_report(v.report), u.fx, u.fy, "report");
-                if (u.house == g_local_house || w.object_visible_at(0, u.cell_x, u.cell_y)) fire_fx(w, u);
+                if (u.house == g_local_house || w.object_visible_at(g_local_house, u.cell_x, u.cell_y)) fire_fx(w, u);
             }
             if (u.die_time >= 0.0 && prev_[i].second < 0.0) {
                 // W2-GA-25: crushed infantry (killed by an adjacent Crusher
@@ -1073,9 +1073,9 @@ private:
                     // W4 [FUN_00662A70]: a rocket (detonated or shot down)
                     // explodes with its warhead's anim where it is -- in the
                     // air when it was hit in flight.
-                    if (w.object_visible_at(0, u.cell_x, u.cell_y)) rocket_fx(w, u);
+                    if (w.object_visible_at(g_local_house, u.cell_x, u.cell_y)) rocket_fx(w, u);
                 } else if (u.is_vehicle && !u.an.crashing && !u.an.sinking &&
-                    w.object_visible_at(0, u.cell_x, u.cell_y)) {
+                    w.object_visible_at(g_local_house, u.cell_x, u.cell_y)) {
                     const auto* ex = fx_.explosions(u.image);
                     if (ex && !ex->empty()) {
                         const uint32_t h = (static_cast<uint32_t>(i) * 2654435761u) ^
@@ -1158,9 +1158,9 @@ private:
             const ra2engine::SuperweaponType t = sw ? sw->type : ra2engine::SuperweaponType::None;
             const bool ready = sw && sw->ready;
             if (t != ra2engine::SuperweaponType::None) {
-                if (h == 0 && ready && !p.ready)
+                if (h == g_local_house && ready && !p.ready)
                     if (const char* l = sw_line(t, 0)) snd_.eva(l);
-                if (h != 0 && p.type != t && w.is_enemy(g_local_house, h))
+                if (h != g_local_house && p.type != t && w.is_enemy(g_local_house, h))
                     if (const char* l = sw_line(t, 1)) snd_.eva(l);
                 // Fired: was ready, same type, charge restarted from zero.
                 if (p.ready && !ready && p.type == t && sw->timer <= 0.5)

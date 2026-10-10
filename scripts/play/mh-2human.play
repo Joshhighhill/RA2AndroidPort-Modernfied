@@ -35,6 +35,13 @@ assert units(0,AMCV) == 1
 click unit 1:SMCV
 key d
 until 450 built(1,NACNST) == 1
+# FIX-BLACK: the local house 1 sees its own base (terrain drawn under ITS
+# shroud, camera on its start) -- not house 0's black explored mask.
+shot local1_base
+assert terrain_drawn > 200 @fix-black
+assert local_explored_on_screen > 100 @fix-black
+assert own_on_screen >= 1 @fix-black
+assert cam_own_dist < 15 @fix-black
 click tab:0
 assert can_build(NAPOWR) == 1
 click cameo:NAPOWR

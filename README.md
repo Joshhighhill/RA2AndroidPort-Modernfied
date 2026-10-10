@@ -4572,6 +4572,18 @@ drives house 1 through the sidebar while house 0 builds through World
 commands (`cheat econ_produce H TYPE`, `cheat econ_place H`,
 `cheat deploy_house H`), then the houses fight.
 
+Fix-black (network joiner saw a black map): the terrain pass
+(`iso_renderer.cpp draw_terrain`) skipped every cell HOUSE 0 had not
+explored, so any client whose local house is not 0 drew a black playfield
+with only its objects on top. `draw_terrain` now takes the viewing house
+(`g_local_house`), as do the remaining presentation `object_visible_at`
+reads (unit/building/FX/radar/sound reveal) and the SW sidebar slot.
+Probes `terrain_drawn`, `local_explored`, `local_explored_on_screen`,
+`cam_own_dist`, `cam_cell_x/y`, `own_cx/cy`; `own_on_screen` now counts the
+local house's objects through the local house's sight. Asserted by
+`mh-2human.play`, `mh-local1-view.play` and the four `net-*-host/join.play`
+(`@fix-black`); evidence in `docs/gap/net/evidence/`.
+
 Behaviour notes (deliberate, calibrated to the original): one Balance per
 house -- repairs and the Service Depot charge the wallet directly (the old
 scene's repair wallet bridge is gone); the unit queue holds up to

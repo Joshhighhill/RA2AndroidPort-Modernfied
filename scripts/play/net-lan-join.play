@@ -37,6 +37,13 @@ shot net_start
 
 # --- orders (Russia, house 1) ------------------------------------------------
 until 600000 sim_frame >= 20
+# FIX-BLACK: this client sees ITS OWN base (terrain under its own shroud, the
+# camera on its start, its units on screen) -- the joiner saw a black map.
+shot net_view
+assert terrain_drawn > 200 @fix-black
+assert local_explored_on_screen > 100 @fix-black
+assert own_on_screen >= 1 @fix-black
+assert cam_own_dist < 15 @fix-black
 click unit 1:SMCV
 key d
 until 600000 built(1,NACNST) == 1
@@ -59,6 +66,8 @@ click cameo:E2
 let e2 = units(1,E2)
 until 900000 units(1,E2) > $e2
 shot net_base
+assert terrain_drawn > 200 @fix-black
+assert local_explored_on_screen > 100 @fix-black
 # Chat over the global channel (original packet 0x0C) while the match runs.
 key enter
 type "gl hf"
