@@ -164,5 +164,19 @@ for k in range(8):
         house_round(h, 150, ARMY + ["E1", "JUMPJET"])
     p.add(f"if {g} then dump")
     p.train("MTNK", 3, 4, guard=True)
+# last-fix: a last straggler far from its base (a BadGuy2 Shock Trooper that
+# finished its approach walk in the south once its target died -- the
+# original keeps the cell Destination, FootClass::PointerExpired FUN_004D9870)
+# is out of reach of the 150-frame round clicks, and each round's walk
+# through the empty base pulled the army back north. Chase what is left.
+for k in range(4):
+    for h in HOUSES:
+        for t in UT:
+            cond = f"{g} and buildings({h}) == 0 and units({h},{t}) > occupants({h}) and units({h},{t}) > carried({h})"
+            p.add(f"if {cond} then click xy 500 400 right")
+            for n, a in enumerate(ARMY + ["E1", "JUMPJET"]):
+                p.add(f"if {cond} and units(0,{a}) > 0 then click unit 0:{a}:0{'' if n == 0 else ' shift'} soft")
+            p.add(f"if {cond} then key t", f"if {cond} then key t",
+                  f"if {cond} then click unit {h}:{t}:0 soft", f"if {cond} then wait 900")
 p.add("until 3000 outcome == WON", "end expect WON")
 p.save(sys.argv[1] if len(sys.argv) > 1 else "../m-all10-real.play")

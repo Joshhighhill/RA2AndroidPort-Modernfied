@@ -55,6 +55,16 @@ until 900 can_build(DOG) == 1
 click tab:2
 click cameo:DOG
 click cameo:DOG
+wait 400
+if units(0,DOG) < 2 and queue_stage(infantry) == 0 then click tab:2
+if units(0,DOG) < 2 and queue_stage(infantry) == 0 then click cameo:DOG
+wait 300
+if units(0,DOG) < 2 and queue_stage(infantry) == 0 then click tab:2
+if units(0,DOG) < 2 and queue_stage(infantry) == 0 then click cameo:DOG
+wait 300
+if units(0,DOG) < 2 and queue_stage(infantry) == 0 then click tab:2
+if units(0,DOG) < 2 and queue_stage(infantry) == 0 then click cameo:DOG
+wait 300
 until 900 units(0,DOG) >= 2
 until 900 units(2,E1) <= 5
 assert buildings(0,GAPILE) >= 1
@@ -78,6 +88,81 @@ until 1500 sel_moving == 0
 click cell 55 76
 wait 30
 until 1500 sel_moving == 0
+click cell 58 76
+wait 30
+until 1500 sel_moving == 0
+click xy 500 400 right
+click unit 0:DOG:0
+key t
+key t
+if units(1,E1) > 0 then click unit e:E1:near soft
+wait 60
+click xy 500 400 right
+click unit 0:DOG:0
+key t
+key t
+if units(1,DOG) > 0 then click unit e:DOG:near soft
+wait 60
+click xy 500 400 right
+click unit 0:DOG:0
+key t
+key t
+if units(1,E1) > 0 then click unit e:E1:near soft
+wait 60
+click xy 500 400 right
+click unit 0:DOG:0
+key t
+key t
+if units(1,DOG) > 0 then click unit e:DOG:near soft
+wait 60
+click xy 500 400 right
+click unit 0:DOG:0
+key t
+key t
+if units(1,E1) > 0 then click unit e:E1:near soft
+wait 60
+click xy 500 400 right
+click unit 0:DOG:0
+key t
+key t
+if units(1,DOG) > 0 then click unit e:DOG:near soft
+wait 60
+click xy 500 400 right
+click unit 0:DOG:0
+key t
+key t
+if units(1,E1) > 0 then click unit e:E1:near soft
+wait 60
+click xy 500 400 right
+click unit 0:DOG:0
+key t
+key t
+if units(1,DOG) > 0 then click unit e:DOG:near soft
+wait 60
+click xy 500 400 right
+click unit 0:DOG:0
+key t
+key t
+if units(1,E1) > 0 then click unit e:E1:near soft
+wait 60
+click xy 500 400 right
+click unit 0:DOG:0
+key t
+key t
+if units(1,DOG) > 0 then click unit e:DOG:near soft
+wait 60
+click xy 500 400 right
+click unit 0:DOG:0
+key t
+key t
+if units(1,E1) > 0 then click unit e:E1:near soft
+wait 60
+click xy 500 400 right
+click unit 0:DOG:0
+key t
+key t
+if units(1,DOG) > 0 then click unit e:DOG:near soft
+wait 60
 click xy 500 400 right
 click unit 0:DOG:0
 key t
@@ -169,22 +254,22 @@ until 2500 umov(6,FV,0) == 0
 if ucell(6,FV,0) != 66075 then click xy 500 400 right
 if ucell(6,FV,0) != 66075 then click unit 6:FV:0
 if ucell(6,FV,0) != 66075 then click cell 66 75
-wait 20
+if ucell(6,FV,0) != 66075 then wait 20
 until 600 umov(6,FV,0) == 0
 if ucell(6,FV,0) != 66075 then click xy 500 400 right
 if ucell(6,FV,0) != 66075 then click unit 6:FV:0
 if ucell(6,FV,0) != 66075 then click cell 66 75
-wait 20
+if ucell(6,FV,0) != 66075 then wait 20
 until 600 umov(6,FV,0) == 0
 if ucell(6,FV,0) != 66075 then click xy 500 400 right
 if ucell(6,FV,0) != 66075 then click unit 6:FV:0
 if ucell(6,FV,0) != 66075 then click cell 66 75
-wait 20
+if ucell(6,FV,0) != 66075 then wait 20
 until 600 umov(6,FV,0) == 0
 if ucell(6,FV,0) != 66075 then click xy 500 400 right
 if ucell(6,FV,0) != 66075 then click unit 6:FV:0
 if ucell(6,FV,0) != 66075 then click cell 66 75
-wait 20
+if ucell(6,FV,0) != 66075 then wait 20
 until 600 umov(6,FV,0) == 0
 assert ucell(6,FV,0) == 66075
 click xy 500 400 right
@@ -244,6 +329,66 @@ wait 1
 click xy 500 400 right
 click unit 6:FV:0
 click cell 66 71 ctrl
+wait 100
+move cell 66 71
+wait 1
+if cursor_name != move then click xy 500 400 right
+if cursor_name != move then click unit 6:FV:0
+if cursor_name != move then click cell 66 71 ctrl
+wait 100
+move cell 66 71
+wait 1
+if cursor_name != move then click xy 500 400 right
+if cursor_name != move then click unit 6:FV:0
+if cursor_name != move then click cell 66 71 ctrl
+wait 100
+move cell 66 71
+wait 1
+if cursor_name != move then click xy 500 400 right
+if cursor_name != move then click unit 6:FV:0
+if cursor_name != move then click cell 66 71 ctrl
+wait 100
+move cell 66 71
+wait 1
+if cursor_name != move then click xy 500 400 right
+if cursor_name != move then click unit 6:FV:0
+if cursor_name != move then click cell 66 71 ctrl
+wait 100
+move cell 66 71
+wait 1
+if cursor_name != move then click xy 500 400 right
+if cursor_name != move then click unit 6:FV:0
+if cursor_name != move then click cell 66 71 ctrl
+wait 100
+move cell 66 71
+wait 1
+if cursor_name != move then click xy 500 400 right
+if cursor_name != move then click unit 6:FV:0
+if cursor_name != move then click cell 66 71 ctrl
+wait 100
+move cell 66 71
+wait 1
+if cursor_name != move then click xy 500 400 right
+if cursor_name != move then click unit 6:FV:0
+if cursor_name != move then click cell 66 71 ctrl
+wait 100
+move cell 66 71
+wait 1
+if cursor_name != move then click xy 500 400 right
+if cursor_name != move then click unit 6:FV:0
+if cursor_name != move then click cell 66 71 ctrl
+wait 100
+move cell 66 71
+wait 1
+if cursor_name != move then click xy 500 400 right
+if cursor_name != move then click unit 6:FV:0
+if cursor_name != move then click cell 66 71 ctrl
+wait 100
+move cell 66 71
+wait 1
+if cursor_name != move then click xy 500 400 right
+if cursor_name != move then click unit 6:FV:0
+if cursor_name != move then click cell 66 71 ctrl
 wait 100
 move cell 66 71
 wait 1
