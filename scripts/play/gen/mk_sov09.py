@@ -27,6 +27,15 @@ six-SEAL group stay home; the player reloads x0.8, every computer house x1.2.
      Yuri's 8 (the map's [MindControl] Range=8). When the President walks
      to (64,61), Yuri 2 takes him: `Pres is Captured` -> Win.
 
+MR1 (after L0's FastMath/_ftol and frame timers changed the fights; no
+engine change): a pack of 8 more dogs (not 3) clears the American dogs and GI
+south of the compound; the IFV's legs to (66,75) re-issue the move whenever it
+stops short or picks a target (since R-212 a vanished auto-target leaves a unit
+walking on to its old firing cell); the plant shelling is polled every 10
+frames so a retaliation chase into the Prisms is cancelled at once; Yuri 1
+comes back after taking the IFV, Yuri 0 after the breach, and an idle Yuri
+walking off after a target during the shelling is called back.
+
 Engine fixes this needed (R3): force-fire/Stop/Guard/Scatter for PlayerControl
 units, and an attack on a building stopping at weapon range.
 Run from the repo root: python scripts/play/gen/mk_sov09.py
@@ -74,6 +83,26 @@ def go(p, spec, x, y, w=2500):
     return p.add(f"until {w} umov({h},{t},{n}) == 0")
 
 
+DOGS = int(os.environ.get("MK_SOV09_DOGS", "8"))
+PICKS = int(os.environ.get("MK_SOV09_PICKS", "12"))
+PLANT_POLLS = int(os.environ.get("MK_SOV09_PLANT_POLLS", "500"))
+
+
+def drive(p, spec, x, y, polls=60):
+    """MR1: like go(), but re-issue the move whenever the unit stops short or
+    picks a target on the way: an idle unit auto-acquires, and since R-212 a
+    vanished target leaves it walking on to its old firing cell (into the
+    Prisms), so the player keeps it on its move order."""
+    order(p, spec, f"cell {x} {y}", 10)
+    k = spec.replace(":", ",")
+    base = f"units({k.rsplit(',', 1)[0]}) > 0 and ucell({k}) != {x * 1000 + y}"
+    p.add(f"repeat {polls}", "wait 10")
+    for c in (f"{base} and utgt({k}) != -1", f"{base} and umov({k}) == 0"):   # no parentheses in --play
+        p.add(f"if {c} then click xy 500 400 right", f"if {c} then click unit {spec}",
+              f"if {c} then click cell {x} {y}")
+    return p.add("endrepeat")
+
+
 def main(out):
     p = P(HEADER)
     # 1. battle control: the Yuris walk east into the Prisms -> back west at once
@@ -88,6 +117,11 @@ def main(out):
           f"if {c} then click unit 1:FV:1")
     p.add("until 300 units(6,FV) >= 1")
     order(p, "6:FV:0", "cell 30 76")
+    # MR1: Yuri 1 (sent after the IFV) back with Yuri 2 -- left out at (44,74)
+    # it is worn down to 13 HP and dies before step 6
+    p.add("if ucell(6,YURI,1) != 30075 then click xy 500 400 right",
+          "if ucell(6,YURI,1) != 30075 then click unit 6:YURI:1",
+          "if ucell(6,YURI,1) != 30075 then click cell 31 76")
     # 2. Yuri 0: round the west side, the British engineer, the Alliance barracks
     go(p, "6:YURI:0", 26, 74, 1500)
     go(p, "6:YURI:0", 25, 47, 1500)
@@ -107,14 +141,16 @@ def main(out):
     p.add("until 900 units(0,DOG) >= 2", "until 900 units(2,E1) <= 5",
           "assert buildings(0,GAPILE) >= 1", "dump", "shot barracks")
     # 3. three more dogs clear the American GI and dogs south of the compound
-    p.add("click tab:2", "click cameo:DOG", "click cameo:DOG", "click cameo:DOG",
-          "until 1500 units(0,DOG) >= 4")
+    # MR1: after L0 the five American dogs and the GI beat a pack of four;
+    # a bigger pack (the 5600 credits allow it) clears them
+    p.add("click tab:2", *["click cameo:DOG"] * DOGS,
+          f"until {1500 + 120 * DOGS} units(0,DOG) >= {DOGS + 1}")
     p.add("click xy 500 400 right", "click unit 0:DOG:0", "key t", "key t")
     # last-fix: the American GI patrols y=73 between x=59 and 73; the dogs wait for
     # it at (58,76) (outside every Prism's reach) and keep picking for longer
     for (x, y) in [(36, 64), (40, 76), (55, 76), (58, 76)]:
         p.add(f"click cell {x} {y}", "wait 30", "until 1500 sel_moving == 0")
-    for _ in range(12):
+    for _ in range(PICKS):
         p.add("click xy 500 400 right", "click unit 0:DOG:0", "key t", "key t",
               "if units(1,E1) > 0 then click unit e:E1:near soft", "wait 60",
               "click xy 500 400 right", "click unit 0:DOG:0", "key t", "key t",
@@ -122,7 +158,7 @@ def main(out):
     p.add("dump")
     # 4. the IFV to (66,75), out of every Prism's reach; it breaks the wall at (66,71)
     for (x, y) in [(40, 77), (55, 78), (66, 75)]:
-        go(p, "6:FV:0", x, y)
+        drive(p, "6:FV:0", x, y)
     for _ in range(4):   # a car or civilian on the way can stop it short
         c = "ucell(6,FV,0) != 66075"
         p.add(f"if {c} then click xy 500 400 right", f"if {c} then click unit 6:FV:0",
@@ -138,12 +174,30 @@ def main(out):
               f"{g}click cell 66 71 ctrl")   # Ctrl = force-fire on the wall cell
         p.add("wait 100", "move cell 66 71", "wait 1")
     p.add("until 1500 cursor_name == move", "assert cursor_name == move", "dump", "shot breach")
+    # MR1: Yuri 0, left at (25,66), is worn down there (62/100 HP by ~f10400 and
+    # dead before step 6 -- the n-th-unit indices of Yuris 1/2 then shift); it
+    # walks back to the others now (one order, no wait: the IFV goes on)
+    order(p, "6:YURI:0", "cell 29 77")
     # 5. from the gap the IFV shells the plants in its range, nearest first:
     #    output 1000 -> 400 < 575, the Prisms go offline
-    for _ in range(40):
-        c = "power_out(1) >= 575"
-        p.add(f"if {c} then click xy 500 400 right", f"if {c} then click unit 6:FV:0",
-              f"if {c} then click building 1:GAPOWR:near", f"if {c} then wait 200")
+    # MR1: polled every 10 frames instead of re-clicked every 200 -- a unit
+    # that steps up to the IFV makes it retaliate and chase it north into the
+    # Prisms (dead in ~50 frames); a fresh attack order on the plant drops
+    # that target at once (and picks the next plant when one is gone).
+    p.add(f"repeat {PLANT_POLLS // 20}")   # 20 polls, then the Yuri check
+    for _ in range(20):
+        base = "power_out(1) >= 575 and units(6,FV) > 0"
+        for c in (f"{base} and utgt(6,FV,0) != -1", f"{base} and utgtb(6,FV,0) == -1"):
+            p.add(f"if {c} then click xy 500 400 right", f"if {c} then click unit 6:FV:0",
+                  f"if {c} then click building 1:GAPOWR:near")
+        p.add("if power_out(1) >= 575 then wait 10")
+    # MR1: an idle Yuri walking off after a target (R-212) is called back
+    for n, home in ((1, (31, 76)), (2, (30, 75))):
+        c = (f"power_out(1) >= 575 and umov(6,YURI,{n}) == 1 and "
+             f"upath(6,YURI,{n}) != {home[0] * 1000 + home[1]}")
+        p.add(f"if {c} then click xy 500 400 right", f"if {c} then click unit 6:YURI:{n}",
+              f"if {c} then click cell {home[0]} {home[1]}")
+    p.add("endrepeat")
     p.add("until 900 power_out(1) < 575", "assert power_out(1) < 575",
           "assert outcome == RUNNING", "dump", "shot blackout")
     # 6. the IFV clears the gap; Yuris 1 and 2 walk up to it
