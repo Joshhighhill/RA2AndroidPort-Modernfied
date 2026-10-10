@@ -100,11 +100,29 @@ void World::order_occupy(int ui, int bi) {
     }
 }
 
-int World::order_occupy_selected(int bi) {
+int World::group_occupy_count(int issuer, const std::vector<int>& ids, int bi) const {
+    if (bi < 0 || bi >= static_cast<int>(buildings_.size())) return 0;
     int n = 0;
-    for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
-        const Unit& u = units_[i];
-        if (!u.selected || u.house != 0 || u.cargo_of >= 0) continue;
+    for (int i : ids) {
+        if (i < 0 || i >= static_cast<int>(units_.size())) continue;
+        const Unit& u = units_[static_cast<std::size_t>(i)];
+        if (u.house != issuer || u.cargo_of >= 0) continue;
+        if (!can_occupy(i, bi)) continue;
+        // Room check against the orders already given this click.
+        const Building& b = buildings_[bi];
+        if (static_cast<int>(b.occupants.size()) + n >= btypes()[b.type].max_occupants) break;
+        ++n;
+    }
+    return n;
+}
+
+int World::group_occupy(int issuer, const std::vector<int>& ids, int bi) {
+    if (bi < 0 || bi >= static_cast<int>(buildings_.size())) return 0;
+    int n = 0;
+    for (int i : ids) {
+        if (i < 0 || i >= static_cast<int>(units_.size())) continue;
+        const Unit& u = units_[static_cast<std::size_t>(i)];
+        if (u.house != issuer || u.cargo_of >= 0) continue;
         if (!can_occupy(i, bi)) continue;
         // Room check against the orders already given this click.
         const Building& b = buildings_[bi];
@@ -124,7 +142,6 @@ void World::occupy_now(int ui, int bi) {
     occ_.release_all_of(ui, -1, -1);
     u.path.clear();
     u.path_idx = 0;
-    u.selected = false;
     u.target = -1;
     u.target_building = -1;
     u.occupy_target = -1;
@@ -551,18 +568,20 @@ void World::order_attack_cell(int ui, int cx, int cy) {
     u.attack_cell_y = cy;
 }
 
-int World::order_attack_cell_selected(int cx, int cy) {
+int World::group_attack_cell(int issuer, const std::vector<int>& ids, int cx, int cy) {
     // R3: every selected unit the player commands -- house 0 and the
     // PlayerControl houses (W2-CA-02), as order_attack / order_move do since
     // W5-A. The original issues the order for each CurrentObjects entry the
     // player owns; there is no Owner == PlayerPtr test (see order_stop_selected).
     int n = 0;
-    for (int i = 0; i < static_cast<int>(units_.size()); ++i)
-        if (units_[i].selected && controllable(units_[i].house) && units_[i].cargo_of < 0) {
+    for (int i : ids)
+        if (i >= 0 && i < static_cast<int>(units_.size()) && can_command(issuer, units_[i].house) &&
+            units_[i].cargo_of < 0) {
             order_attack_cell(i, cx, cy);
             ++n;
         }
     return n;
+
 }
 
 // ------------------------------------------------------------------ the pass

@@ -941,7 +941,6 @@ template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
 // --- the live objects ---
 template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.cell_x); io(ar, v.cell_y); io(ar, v.level); io(ar, v.frame); io(ar, v.image);
-    io(ar, v.selected);
     io(ar, v.path);
     io(ar, v.path_idx);
     io(ar, v.fx); io(ar, v.fy);

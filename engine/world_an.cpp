@@ -342,7 +342,7 @@ void World::an_step_fixed_wing(double dt) {
     for (int i = 0; i < n; ++i) {
         Unit& u = units_[i];
         if (!(u.an.t.fixed_wing || u.an.t.missile) || !u.alive || u.die_time >= 0.0) continue;
-        if (u.an.t.spawned) u.selected = false;   // Spawned=yes: not player controllable
+        // (Spawned=yes: not player controllable -- Selection::prune drops it)
         // A player/AI attack order lands in target/target_building (commit_attack_target):
         // turn it into a sortie.
         if (!u.an.t.spawned && (u.target >= 0 || u.target_building >= 0)) {

@@ -7,7 +7,7 @@
     int w2_first_selected() const {
         const auto& us = world_.units();
         for (int i = 0; i < static_cast<int>(us.size()); ++i)
-            if (us[i].selected && us[i].house == 0 && us[i].alive && us[i].die_time < 0.0) return i;
+            if (input_.selection().has(i) && us[i].house == 0 && us[i].alive && us[i].die_time < 0.0) return i;
         return -1;
     }
     bool w2_water_cell(int x, int y) const {
@@ -23,7 +23,7 @@
         n = 0;
         std::vector<std::pair<int, int>> cells;
         for (const ra2engine::Unit& u : world_.units())
-            if (u.selected && u.house == 0 && u.alive && u.die_time < 0.0 && u.cargo_of < 0 &&
+            if (usel(u) && u.house == 0 && u.alive && u.die_time < 0.0 && u.cargo_of < 0 &&
                 !(u.is_aircraft && u.altitude > 0.0))
                 cells.push_back({u.cell_x, u.cell_y});
         for (const auto& c0 : cells)
@@ -63,7 +63,7 @@
                         if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
                         const int x = s.cell_x + dx, y = s.cell_y + dy;
                         if (!w2_water_cell(x, y) || !free_at(x, y)) continue;
-                        if (!world_.selection_can_enter(0, x, y)) continue;
+                        if (!world_.group_can_enter(input_.selection().ids(), 0, x, y)) continue;
                         // keep away from the shore so a group fans out on water
                         bool open = true;
                         for (int k = -1; k <= 1 && open; ++k)
@@ -369,10 +369,23 @@
             input_.arm_superweapon(w2_armed_, 1);   // now pick the destination
             return;
         }
-        if (t == T::ChronoSphere)
-            world_.fire_superweapon_at(0, t, w2_chrono_x_, w2_chrono_y_, cx, cy);
-        else
-            world_.fire_superweapon_at(0, t, cx, cy);
+        // NET L1: EVENT_SPECIAL_PLACE (SWIdx, cell); the Chronosphere's second
+        // pick rides in the same command (the codec sends it as the ChronoWarp
+        // SPECIAL_PLACE).
+        ra2engine::Command c;
+        c.type = ra2engine::EventType::SpecialPlace;
+        c.value = static_cast<std::int32_t>(t);
+        if (t == T::ChronoSphere) {
+            c.cx = static_cast<std::int16_t>(w2_chrono_x_);
+            c.cy = static_cast<std::int16_t>(w2_chrono_y_);
+            c.cx2 = static_cast<std::int16_t>(cx);
+            c.cy2 = static_cast<std::int16_t>(cy);
+        } else {
+            c.cx = static_cast<std::int16_t>(cx);
+            c.cy = static_cast<std::int16_t>(cy);
+        }
+        issue(std::move(c));
+
         w2_armed_ = 0;
         w2_chrono_x_ = w2_chrono_y_ = -1;
     }

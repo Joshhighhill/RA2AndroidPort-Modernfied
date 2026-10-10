@@ -140,7 +140,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_combat.cpp engine/combat.cpp)
 # Gap fix C: weapon slots / per-target pick / slot resolution.
 target_sources(ra2assets_tests PRIVATE engine/weapon.cpp engine/weapon_unit.cpp
                                        engine/weapon_resolve.cpp engine/building_combat.cpp
-                                       engine/unit_orders.cpp
+                                       engine/unit_orders.cpp engine/command.cpp tests/test_command.cpp
                                        tests/test_gap_combat.cpp)
 # W5-B: combat and movement core (DamageArea, sub-cells, land speed, crush).
 target_sources(ra2assets_tests PRIVATE tests/test_w5_combat.cpp)

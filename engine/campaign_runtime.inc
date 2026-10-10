@@ -1772,8 +1772,12 @@ private:
                 t.discovered = true;
                 raise_obj(t, ra2engine::kEvDiscoveredByPlayer, u.house);
             }
-            if (u.selected && !t.selected) raise_obj(t, ra2engine::kEvSelectedByPlayer, u.house);
-            t.selected = u.selected;
+            // NET L1: the player's selection as the sim last saw it (the
+            // SELECT_NOTIFY command log; GameScene feeds it, a bare runtime
+            // has none).
+            const bool usel = sel_ && sel_->has(static_cast<int>(i));
+            if (usel && !t.selected) raise_obj(t, ra2engine::kEvSelectedByPlayer, u.house);
+            t.selected = usel;
         }
         for (std::size_t i = 0; i < btrack_.size(); ++i) {
             Track& t = btrack_[i];
@@ -3239,9 +3243,16 @@ private:
         }
     }
 
+public:
+    // NET L1: the local player's selection the event "Selected by player"
+    // (33) watches -- set by GameScene from the SELECT_NOTIFY commands.
+    void set_selection(const ra2engine::Selection* s) { sel_ = s; }
+private:
+    const ra2engine::Selection* sel_ = nullptr;
     camp::Launch launch_;
     std::string dir_;
     ra2engine::World& w_;
+
     Assets& a_;
     BuildingAssets& ba_;
     const Ini& rules_ini_;

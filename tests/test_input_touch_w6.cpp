@@ -93,20 +93,20 @@ TEST_CASE("W6-01-06: a touch tap on a unit of the selected army is a move order"
     const std::vector<int> g = spawn_gis(world, 3);
     if (g.size() < 3) { MESSAGE("skipped: no cells"); return; }
     look_at(world.units()[g[0]].cell_x, world.units()[g[0]].cell_y);
-    world.units()[g[0]].selected = true;
-    world.units()[g[1]].selected = true;
+    in.selection().set(g[0]);
+    in.selection().set(g[1]);
     int x, y;
     unit_px(world.units()[g[1]], x, y);
     tap(in, x, y - 8, 5000);   // on the body of a SELECTED unit
     const ra2engine::InputActions a = in.take_actions();
     CHECK(a.move_ordered);
-    CHECK(world.units()[g[0]].selected);   // the army stays selected
-    CHECK(world.units()[g[1]].selected);
+    CHECK(in.selection().has(g[0]));   // the army stays selected
+    CHECK(in.selection().has(g[1]));
     // A tap on the body of an UNSELECTED own unit is a deliberate select.
     unit_px(world.units()[g[2]], x, y);
     tap(in, x, y - 8, 9000);
-    CHECK(world.units()[g[2]].selected);
-    CHECK_FALSE(world.units()[g[0]].selected);
+    CHECK(in.selection().has(g[2]));
+    CHECK_FALSE(in.selection().has(g[0]));
 }
 
 TEST_CASE("W6-01-06: with a selection, a touch tap beside an own unit (box, not body) is ground") {
@@ -119,15 +119,15 @@ TEST_CASE("W6-01-06: with a selection, a touch tap beside an own unit (box, not 
     const std::vector<int> g = spawn_gis(world, 3, 3);
     if (g.size() < 3) { MESSAGE("skipped: no cells"); return; }
     look_at(world.units()[g[0]].cell_x, world.units()[g[0]].cell_y);
-    world.units()[g[0]].selected = true;
+    in.selection().set(g[0]);
     int x, y;
     unit_px(world.units()[g[2]], x, y);
     // 28 px right of the feet: inside the 65 px selection box, outside the body
     CHECK(in.pick_unit_at(x + 28, y) == g[2]);
     tap(in, x + 28, y, 5000);
     CHECK(in.take_actions().move_ordered);
-    CHECK(world.units()[g[0]].selected);
-    CHECK_FALSE(world.units()[g[2]].selected);
+    CHECK(in.selection().has(g[0]));
+    CHECK_FALSE(in.selection().has(g[2]));
 }
 
 TEST_CASE("W6-01-05: a touch double tap selects the type and never deploys") {
@@ -143,7 +143,7 @@ TEST_CASE("W6-01-05: a touch double tap selects the type and never deploys") {
     int x, y;
     unit_px(world.units()[g[0]], x, y);
     tap(in, x, y - 8, 5000);   // select
-    CHECK(world.units()[g[0]].selected);
+    CHECK(in.selection().has(g[0]));
     in.take_actions();
     tap(in, x + 3, y - 6, 5600);   // later: a single tap on the lone selected deployer
     CHECK_FALSE(in.take_actions().deploy_clicked);   // waits out the double-tap window
@@ -159,7 +159,7 @@ TEST_CASE("W6-01-05: a touch double tap selects the type and never deploys") {
     in.touch_tick(1.0);
     const ra2engine::InputActions a = in.take_actions();
     CHECK_FALSE(a.deploy_clicked);
-    for (int i : g) CHECK(world.units()[i].selected);
+    for (int i : g) CHECK(in.selection().has(i));
 }
 
 TEST_CASE("W6-01-01: building pick -- mouse by foundation + hotspot, touch by the drawn art") {
@@ -204,11 +204,11 @@ TEST_CASE("W6-01-01: building pick -- mouse by foundation + hotspot, touch by th
     tap(in, ccx + 6, ccy - 30, 5000);
     CHECK(in.take_actions().building_selected);
     CHECK(in.selected_building() == b);
-    CHECK_FALSE(world.units()[gi_idx].selected);
+    CHECK_FALSE(in.selection().has(gi_idx));
     // ... and the GI's body still selects the GI.
     int ux, uy;
     unit_px(world.units()[gi_idx], ux, uy);
     tap(in, ux, uy - 10, 9000);
-    CHECK(world.units()[gi_idx].selected);
+    CHECK(in.selection().has(gi_idx));
     CHECK(in.selected_building() == -1);
 }

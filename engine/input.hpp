@@ -5,8 +5,10 @@
 #include <utility>
 #include <vector>
 
+#include "command.hpp"       // NET L1: Command / OrderRules
 #include "iso_renderer.hpp"  // Camera
 #include "platform.hpp"      // InputEvent
+#include "selection.hpp"     // NET L1: the local selection (UI state)
 #include "world.hpp"         // World / Unit
 
 namespace ra2engine {
@@ -111,6 +113,20 @@ public:
     // the --play harness's `place auto` round-trip check).
     void resolve_ground_cell(int px, int py, int& cx, int& cy) const;
     Input(World& world, Camera& camera, int view_w, int view_h);
+
+    // --- NET L1: selection + command output ----------------------------------
+    // The local player's unit selection (UI state, not the World's).
+    Selection& selection() { return sel_; }
+    const Selection& selection() const { return sel_; }
+    // Every order Input gives leaves as a Command. With a sink installed (the
+    // game's scheduler) it is handed over; without one it is applied to the
+    // World immediately (unit tests, tools) -- same result, no tick boundary.
+    void set_command_sink(std::function<void(Command)> sink) { sink_ = std::move(sink); }
+    // The issuing house of this Input's commands (the local player).
+    void set_local_house(int h) { house_ = h; }
+    int local_house() const { return house_; }
+    // The gesture tables an apply needs too (refineries, factory groups, spy).
+    const OrderRules& order_rules() const { return rules_; }
 
     // Feed one polled event (RA2-classic model, see input.cpp).
     void handle(const InputEvent& ev);
@@ -337,7 +353,10 @@ public:
     // issues order_return ONLY when that building's type is in this list; a
     // click on any other own building stays a plain ground move. Empty
     // (never called) = no building ever triggers a return order.
-    void set_refinery_types(std::vector<int> types) { refinery_types_ = std::move(types); }
+    void set_refinery_types(std::vector<int> types) {
+        refinery_types_ = std::move(types);
+        rules_.refinery_types = refinery_types_;
+    }
 
     // Production phase [RE: production.md §1.2/§1.4]: the roster-index lists of
     // the player's UNIT factories, used by the factory-select / rally / primary
@@ -347,8 +366,14 @@ public:
     // primary-set trigger resolve the SELECTED factory's category so
     // set_primary clears the right sibling group. All own-house 0 only.
     void set_unit_factory_types(std::vector<int> t) { unit_factory_types_ = std::move(t); }
-    void set_infantry_factory_types(std::vector<int> t) { inf_factory_types_ = std::move(t); }
-    void set_vehicle_factory_types(std::vector<int> t) { veh_factory_types_ = std::move(t); }
+    void set_infantry_factory_types(std::vector<int> t) {
+        inf_factory_types_ = std::move(t);
+        rules_.inf_factory_types = inf_factory_types_;
+    }
+    void set_vehicle_factory_types(std::vector<int> t) {
+        veh_factory_types_ = std::move(t);
+        rules_.veh_factory_types = veh_factory_types_;
+    }
 
     // Engineer/Spy Capture phase [RE: capture.md §B]: the per-roster-index
     // infiltration purpose map (main.cpp resolves it from building ids:
@@ -363,6 +388,9 @@ public:
         infiltrate_purposes_ = std::move(purposes);
         spy_steal_pct_ = steal_pct;
         spy_blackout_frames_ = blackout_frames;
+        rules_.infiltrate_purposes = infiltrate_purposes_;
+        rules_.spy_steal_pct = steal_pct;
+        rules_.spy_blackout_frames = blackout_frames;
     }
 
     // The own (house 0) factory currently selected for rally/primary, or -1.
@@ -453,6 +481,13 @@ private:
     World& world_;
     Camera& cam_;
     bool quit_ = false;
+    // NET L1.
+    Selection sel_;
+    OrderRules rules_;
+    int house_ = 0;
+    std::function<void(Command)> sink_;
+    void emit(Command c);
+
     InputActions actions_;  // accumulator; cleared only by take_actions()
 
     // Left-button gesture state.

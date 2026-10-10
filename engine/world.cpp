@@ -889,10 +889,12 @@ bool World::unit_can_enter_cell(const Unit& u, int x, int y) const {
     }
 }
 
-bool World::selection_can_enter(int house, int x, int y) const {
+bool World::group_can_enter(const std::vector<int>& ids, int house, int x, int y) const {
     bool any = false;
-    for (const Unit& u : units_) {
-        if (!u.selected || u.house != house || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0)
+    for (int i : ids) {
+        if (i < 0 || i >= static_cast<int>(units_.size())) continue;
+        const Unit& u = units_[static_cast<std::size_t>(i)];
+        if (u.house != house || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0)
             continue;
         any = true;
         if (unit_can_enter_cell(u, x, y)) return true;
@@ -1139,12 +1141,13 @@ Unit& World::add_harvester(int cell_x, int cell_y, int house, const UnitCombat& 
     return u;
 }
 
-void World::order_harvest(int x, int y) {
-    for (std::size_t i = 0; i < units_.size(); ++i) {
-        Unit& u = units_[i];
-        // Player orders act on the player's (house-0) selected harvesters
-        // only -- same house gate order_attack applies to its issuers.
-        if (!u.selected || !u.is_harvester || u.house != 0 || !u.alive || u.die_time >= 0.0)
+void World::group_harvest(int issuer, const std::vector<int>& ids, int x, int y) {
+    for (int i : ids) {
+        if (i < 0 || i >= static_cast<int>(units_.size())) continue;
+        Unit& u = units_[static_cast<std::size_t>(i)];
+        // Player orders act on the issuer's OWN harvesters only (not its
+        // PlayerControl houses' -- the pre-L1 house-0 gate).
+        if (!u.is_harvester || u.house != issuer || !u.alive || u.die_time >= 0.0)
             continue;
         u.harv_cell_x = x;
         u.harv_cell_y = y;
@@ -1153,14 +1156,16 @@ void World::order_harvest(int x, int y) {
         u.harv_timer = 0.0;
         u.manual_hold = false;
         u.enter_target = -1;  // CB-1: a harvest order supersedes an enter order
-        order_unit_move(static_cast<int>(i), x, y);
+        order_unit_move(i, x, y);
     }
 }
 
-void World::order_return() {
-    for (Unit& u : units_) {
-        // Same house-0 gate as order_harvest above.
-        if (!u.selected || !u.is_harvester || u.house != 0 || !u.alive || u.die_time >= 0.0)
+void World::group_return(int issuer, const std::vector<int>& ids) {
+    for (int i : ids) {
+        if (i < 0 || i >= static_cast<int>(units_.size())) continue;
+        Unit& u = units_[static_cast<std::size_t>(i)];
+        // Same own-house gate as group_harvest above.
+        if (!u.is_harvester || u.house != issuer || !u.alive || u.die_time >= 0.0)
             continue;
         u.harv = HarvState::ReturnToRef;
         u.harv_timer = 0.0;
@@ -1176,9 +1181,6 @@ std::vector<HarvestEvent> World::take_harvest_events() {
     return out;
 }
 
-void World::clear_selection() {
-    for (Unit& u : units_) u.selected = false;
-}
 
 int World::unit_at_cell(int x, int y) const {
     for (std::size_t i = 0; i < units_.size(); ++i) {
@@ -1292,14 +1294,17 @@ void World::order_unit_move(int idx, int gx, int gy) {
     }
 }
 
-void World::order_move_selected(int goal_x, int goal_y) {
+void World::group_move(int issuer, const std::vector<int>& ids, int goal_x, int goal_y) {
     std::vector<int> sel;
     std::vector<Cellxy> cur;
-    for (std::size_t i = 0; i < units_.size(); ++i)
-        if (units_[i].selected && units_[i].alive && units_[i].die_time < 0.0) {
-            sel.push_back(static_cast<int>(i));
-            cur.push_back({units_[i].cell_x, units_[i].cell_y});
+    for (int i : ids) {
+        if (i < 0 || i >= static_cast<int>(units_.size())) continue;
+        const Unit& u = units_[static_cast<std::size_t>(i)];
+        if (u.alive && u.die_time < 0.0 && can_command(issuer, u.house)) {
+            sel.push_back(i);
+            cur.push_back({u.cell_x, u.cell_y});
         }
+    }
     if (sel.empty()) return;
 
     // W2-AN-09: one formation per movement domain -- ships spread over the
@@ -1386,17 +1391,18 @@ void World::order_move_selected(int goal_x, int goal_y) {
     }
 }
 
-void World::order_attack(int target_idx) {
+void World::group_attack(int issuer, const std::vector<int>& ids, int target_idx) {
     if (target_idx < 0 || target_idx >= static_cast<int>(units_.size())) return;
     const Unit& tgt = units_[target_idx];
-    // Can't order an attack on a dead/dying target, or on a house-0 unit
-    // (order_attack is issued for the player's house-0 units against
-    // hostiles -- a house-0 target would mean "attack a friendly").
-    if (!tgt.alive || tgt.die_time >= 0.0 || controllable(tgt.house)) return;   // W5-A: any player-commanded house
+    // Can't order an attack on a dead/dying target, or on a unit the issuer
+    // commands itself (that would mean "attack a friendly").
+    if (!tgt.alive || tgt.die_time >= 0.0 || can_command(issuer, tgt.house)) return;   // W5-A: any player-commanded house
 
-    for (std::size_t i = 0; i < units_.size(); ++i) {
+    for (int ii : ids) {
+        if (ii < 0 || ii >= static_cast<int>(units_.size())) continue;
+        const std::size_t i = static_cast<std::size_t>(ii);
         Unit& u = units_[i];
-        if (!u.selected || !controllable(u.house) || !u.alive || u.die_time >= 0.0) continue;   // W5-A: PlayerControl houses too
+        if (!can_command(issuer, u.house) || !u.alive || u.die_time >= 0.0) continue;   // W5-A: PlayerControl houses too
         // W2-SK-22 Spy disguise [RE: capture.md §C; [SPY] Primary=MakeupKit
         // "virtual weapon that picks disguise"]: a spy "attacking" an enemy
         // infantry takes on its look instead.
@@ -1450,16 +1456,18 @@ int World::building_at_cell(int x, int y) const {
     return -1;
 }
 
-void World::order_attack_building(int b_idx) {
+void World::group_attack_building(int issuer, const std::vector<int>& ids, int b_idx) {
     if (b_idx < 0 || b_idx >= static_cast<int>(buildings_.size())) return;
     const Building& tgt = buildings_[b_idx];
-    // Can't order an attack on a dead/Dead-state/house-0 (friendly) building
-    // -- mirrors order_attack's own guard against a house-0 target.
-    if (!tgt.alive || tgt.state == Building::State::Dead || controllable(tgt.house)) return;   // W5-A
+    // Can't order an attack on a dead/Dead-state/own (friendly) building
+    // -- mirrors group_attack's own guard against a friendly target.
+    if (!tgt.alive || tgt.state == Building::State::Dead || can_command(issuer, tgt.house)) return;   // W5-A
 
-    for (std::size_t i = 0; i < units_.size(); ++i) {
+    for (int ii : ids) {
+        if (ii < 0 || ii >= static_cast<int>(units_.size())) continue;
+        const std::size_t i = static_cast<std::size_t>(ii);
         Unit& u = units_[i];
-        if (!u.selected || !controllable(u.house) || !u.alive || u.die_time >= 0.0) continue;   // W5-A: PlayerControl houses too
+        if (!can_command(issuer, u.house) || !u.alive || u.die_time >= 0.0) continue;   // W5-A: PlayerControl houses too
         u.attack_cell_x = u.attack_cell_y = -1;   // G16
         // Player guard kept above; shared mutation tail via commit_attack_target
         // [RE-GATE APPLIED: ai-team.md §5 — de-duplication].
@@ -1592,20 +1600,22 @@ bool World::factory_category_lost(const std::vector<int>& factory_types, int hou
 
 // --- CB-1 Transports/Cargo [RE: transport-cargo.md] --------------------------
 
-void World::order_enter_transport(int t_idx) {
+void World::group_enter_transport(int issuer, const std::vector<int>& ids, int t_idx) {
     if (t_idx < 0 || t_idx >= static_cast<int>(units_.size())) return;
     const Unit& t = units_[t_idx];
     // Wave-5 (R-052): an ALLIED transport admits the player's infantry too.
-    if (!t.alive || t.die_time >= 0.0 || !are_allied(0, t.house) || t.passengers_max <= 0) return;
+    if (!t.alive || t.die_time >= 0.0 || !are_allied(issuer, t.house) || t.passengers_max <= 0) return;
     const auto allied = [this](int a, int b) { return are_allied(a, b); };
     // Gather eligible movers: selected house-0, alive, non-dying, not the
     // transport itself, passing can_load NOW (capacity re-checked at
     // boarding -- orders may oversubscribe) [spec §3].
     std::vector<int> movers;
     std::vector<Cellxy> cur;
-    for (std::size_t i = 0; i < units_.size(); ++i) {
+    for (int ii : ids) {
+        if (ii < 0 || ii >= static_cast<int>(units_.size())) continue;
+        const std::size_t i = static_cast<std::size_t>(ii);
         const Unit& u = units_[i];
-        if (!u.selected || !controllable(u.house) || !u.alive || u.die_time >= 0.0) continue;   // W5-A: PlayerControl houses too
+        if (!can_command(issuer, u.house) || !u.alive || u.die_time >= 0.0) continue;   // W5-A: PlayerControl houses too
         if (static_cast<int>(i) == t_idx) continue;
         if (!can_load(units_, t_idx, static_cast<int>(i), allied)) continue;
         movers.push_back(static_cast<int>(i));
@@ -1633,10 +1643,12 @@ void World::order_enter_transport(int t_idx) {
     }
 }
 
-void World::order_unload_selected() {
-    for (Unit& u : units_) {
+void World::group_unload(int issuer, const std::vector<int>& ids) {
+    for (int i : ids) {
+        if (i < 0 || i >= static_cast<int>(units_.size())) continue;
+        Unit& u = units_[static_cast<std::size_t>(i)];
         // W4-SQ-01: any house the player commands (PlayerControl, W2-CA-02).
-        if (!u.selected || !controllable(u.house) || !u.alive || u.die_time >= 0.0) continue;
+        if (!can_command(issuer, u.house) || !u.alive || u.die_time >= 0.0) continue;
         if (u.passengers_max <= 0 || u.cargo.empty()) continue;
         u.unload_pending = true;
         cargo_any_ = true;
@@ -1785,7 +1797,7 @@ void World::step_cargo(double /*dt*/) {
                 occ_.release_all_of(static_cast<int>(i), -1, -1);
                 u.path.clear();
                 u.path_idx = 0;
-                u.selected = false;        // boarding force-clears selection (spec §4)
+                // (boarding drops the unit from every selection: Selection::prune, spec §4)
                 u.target = -1;
                 u.target_building = -1;
                 u.attack_order = false;
@@ -2465,8 +2477,8 @@ void World::consume_unit(int idx) {
     u.alive = false;
     u.die_time = -1.0;
     u.hp = 0;
-    u.selected = false;
     u.target = -1;
+
     u.target_building = -1;
     u.path.clear();
     u.path_idx = 0;

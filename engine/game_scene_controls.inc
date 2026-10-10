@@ -1,6 +1,12 @@
 // Agent B (controls/UI) GameScene members, #included INSIDE the GameScene class
 // body (public section) to keep main.cpp edits to single include/call lines.
 
+    // NET L1: is this unit (a reference into world_.units()) in the local
+    // player's selection? The selection is Input's UI state.
+    bool usel(const ra2engine::Unit& u) const {
+        return input_.selection().has(static_cast<int>(&u - world_.units().data()));
+    }
+
     // G-08: the cursor STATE under the pointer (what a left click would do).
     // Agent E draws the cursor art from this; over the sidebar it is None.
     ra2engine::Input::Action cursor_action() const {
@@ -115,17 +121,23 @@
     void deploy_selected() {
         // G16 (agent G) [RE: world-depth.md §A5]: Deploy on a selected own
         // garrison = Mission_Unload -> UnloadOccupants (FUN_0044D880).
+        // NET L1 [RE: DeployObject queues EVENT_DEPLOY per object]: ONE DEPLOY
+        // command -- Whom = the garrison (if any) + the selected units; its
+        // apply unloads the garrison, then the transports, then deploys.
+        input_.selection().prune(world_);
+        ra2engine::Command c;
+        c.type = ra2engine::EventType::Deploy;
         const int sb = input_.selected_building();
         if (sb >= 0 && sb < static_cast<int>(world_.buildings().size()) &&
             world_.buildings()[sb].house == 0 && !world_.buildings()[sb].occupants.empty())
-            world_.unload_occupants(sb);
-        world_.order_unload_selected();
+            c.whom.push_back(ra2engine::Target::building(sb));
         int first = -1;
-        for (int i = 0; i < static_cast<int>(world_.units().size()); ++i)
-            if (world_.units()[i].selected && world_.controllable(world_.units()[i].house)) {
-                if (first < 0) first = i;
-                world_.order_deploy(i);
-            }
+        for (int i : input_.selection().ids()) {
+            if (i >= static_cast<int>(world_.units().size())) break;
+            c.whom.push_back(ra2engine::Target::unit(world_, i));
+            if (first < 0 && world_.controllable(world_.units()[i].house)) first = i;
+        }
+        if (!c.whom.empty()) issue(std::move(c));
         pres_.note_deploy_order(world_, first);   // W5-E Mission_Unload -> VoiceDeploy
     }
 
@@ -135,15 +147,13 @@
         const auto& us = world_.units();
         const int n = static_cast<int>(us.size());
         if (n == 0) return;
-        int start = -1;
-        for (int i = 0; i < n; ++i)
-            if (us[i].selected) { start = i; break; }
+        const int start = input_.selection().lowest();
         for (int k = 1; k <= n; ++k) {
             const int i = ((start < 0 ? (dir > 0 ? -1 : 0) : start) + dir * k + n * 4) % n;
             const ra2engine::Unit& u = us[i];
             if (!world_.controllable(u.house) || !u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
-            world_.clear_selection();
-            world_.units()[i].selected = true;
+            input_.selection().clear();
+            input_.selection().set(i);
             input_.center_on_selection();
             return;
         }
@@ -219,8 +229,8 @@
     int follow_unit_ = -1;
     void hotkey_follow() {
         if (follow_unit_ >= 0) { follow_unit_ = -1; return; }
-        for (int i = 0; i < static_cast<int>(world_.units().size()); ++i)
-            if (world_.units()[static_cast<std::size_t>(i)].selected) { follow_unit_ = i; return; }
+        const int first = input_.selection().lowest();
+        if (first >= 0 && first < static_cast<int>(world_.units().size())) follow_unit_ = first;
     }
     void follow_tick() {
         if (follow_unit_ < 0) return;
@@ -246,11 +256,11 @@
         };
         bool all_sel = true, any = false;
         for (const ra2engine::Unit& u : world_.units())
-            if (combatant(u) && unit_on_screen(u)) { any = true; if (!u.selected) all_sel = false; }
+            if (combatant(u) && unit_on_screen(u)) { any = true; if (!usel(u)) all_sel = false; }
         const bool whole_map = any && all_sel;
-        world_.clear_selection();
-        for (ra2engine::Unit& u : world_.units())
-            if (combatant(u) && (whole_map || unit_on_screen(u))) u.selected = true;
+        input_.selection().clear();
+        for (const ra2engine::Unit& u : world_.units())
+            if (combatant(u) && (whole_map || unit_on_screen(u))) input_.selection().set(static_cast<int>(&u - world_.units().data()));
         last_nav_ = 0;
     }
     // HealthNav / VeterancyNav [RE: FUN_00732450 / FUN_00732790]: repeated
@@ -277,9 +287,10 @@
             for (const ra2engine::Unit& u : world_.units())
                 if (own_live(u) && cat_of(u) == nav_step_ && (!on_screen || unit_on_screen(u))) found = true;
             if (!found) continue;
-            world_.clear_selection();
-            for (ra2engine::Unit& u : world_.units())
-                if (own_live(u) && cat_of(u) == nav_step_ && (!on_screen || unit_on_screen(u))) u.selected = true;
+            input_.selection().clear();
+            for (const ra2engine::Unit& u : world_.units())
+                if (own_live(u) && cat_of(u) == nav_step_ && (!on_screen || unit_on_screen(u)))
+                    input_.selection().set(static_cast<int>(&u - world_.units().data()));
             return;
         }
     }
@@ -292,7 +303,7 @@
         const long now = static_cast<long>(g_pres_tick);
         if (now < cheer_next_) return;
         cheer_next_ = now + 30;
-        world_.make_house_cheer(0);
+        issue(ra2engine::Command{ra2engine::EventType::AllCheer});   // EVENT_ALLCHEER 0x2D
         pres_.note_cheer();
     }
     // CenterOnRadarEvent [RE: FUN_007331F0]: a press within 1600 ms of the
@@ -394,47 +405,28 @@
             for (int t : it->second) n += (t == type);
         return n;
     }
+    // NET L1: the click picks the EVENT (the StripClass action's decision);
+    // the economy change happens at its apply (game_scene_commands.inc
+    // cmd_produce / cmd_suspend / cmd_abandon), so a replay or a lockstep peer
+    // runs the same code on the same tick.
     void cameo_click(int type, bool right, bool shift) {
+        using ET = ra2engine::EventType;
         if (active_tab_ >= 2) {   // ---- units ----
             const ra2engine::QueueCat cat = rp_cat_of_unit(type);   // agent A: own factory queue
             const int ci = static_cast<int>(cat);
             const bool current = queues_.producing(cat) == type;
             const bool held = held_.count(ci) != 0;
-            std::vector<int>& bl = backlog_[ci];
             if (right) {
-                if (shift) {   // ABANDON_ALL of this type
-                    bl.erase(std::remove(bl.begin(), bl.end(), type), bl.end());
-                    if (current) refund_cancel(cat);
-                    return;
-                }
+                if (shift) { issue_type_event(ET::AbandonAll, false, type); return; }   // ABANDON_ALL
                 if (current && !held && !queues_.ready(cat)) {   // SUSPEND
-                    held_.insert(ci);
+                    issue_type_event(ET::Suspend, false, type);
                     pres_.note_eva("EVA_OnHold");   // W5-E [RE: FUN_006AA390 @6AA692]
                     return;
                 }
-                const auto last = std::find(bl.rbegin(), bl.rend(), type);
-                if (last != bl.rend()) { bl.erase(std::next(last).base()); return; }   // ABANDON a queued copy
-                if (current) refund_cancel(cat);                                         // ABANDON current
+                issue_type_event(ET::Abandon, false, type);   // ABANDON a queued copy / the current one
                 return;
             }
-            if (current && held) { held_.erase(ci); return; }   // PRODUCE = resume
-            const std::vector<int>& ft = rp_ft_of(cat);
-            if (queues_.producing(cat) == -1) {
-                if (ra2engine::can_start_unit(queues_.state(cat), type, ur_.defs, world_.buildings(),
-                                              ba_.roster, 0, ba_.groups,
-                                              !world_.factory_category_lost(ft, 0))) {
-                    queues_.set_credits(player_credits_);
-                    queues_.start_unit(cat, type, ur_.defs, build_speed_);
-                }
-                return;
-            }
-            // Busy: queue one more of this type (same buildability test as a start,
-            // evaluated against an idle slot), capped by MaximumQueuedObjects.
-            ra2engine::ProductionState probe_ps;
-            if (static_cast<int>(bl.size()) + 1 < max_queued() &&
-                ra2engine::can_start_unit(probe_ps, type, ur_.defs, world_.buildings(), ba_.roster, 0,
-                                          ba_.groups, !world_.factory_category_lost(ft, 0)))
-                bl.push_back(type);
+            issue_type_event(ET::Produce, false, type);   // PRODUCE: resume / start / queue one more
             return;
         }
         // ---- buildings (one at a time) ----
@@ -447,11 +439,11 @@
         if (right) {
             if (!current) return;
             if (!held && !bq.slot.ready) {   // SUSPEND
-                held_.insert(bi);
+                issue_type_event(ET::Suspend, true, type);
                 pres_.note_eva("EVA_OnHold");   // W5-E [RE: FUN_006AA390 @6AA793]
                 return;
             }
-            refund_cancel(bcat);                                         // ABANDON
+            issue_type_event(ET::Abandon, true, type);                   // ABANDON
             return;
         }
         if (current && bq.slot.ready) {
@@ -459,17 +451,12 @@
             input_.begin_placement(type, ba_.roster[type].fw, ba_.roster[type].fh);
             return;
         }
-        if (current && held) { held_.erase(bi); return; }   // resume
+        if (current && held) { issue_type_event(ET::Produce, true, type); return; }   // resume
         if (current) return;                                // running: no effect
         // W5-E [RE: FUN_006AA390 @6AAA3C]: the building factory is busy with
         // another type -> EVA_UnableToComply.
         if (bq.slot.type >= 0) { pres_.note_eva("EVA_UnableToComply"); return; }
-        if (ra2engine::can_start(bq, type, ba_.roster, world_.buildings(), 0, ba_.groups,
-                                 conyard_alive(world_, ba_, 0))) {
-            queues_.set_credits(player_credits_);
-            ra2engine::start(bq, type, ba_.roster, build_speed_);
-            rp_after_building_start(bq, type);   // agent A: wall build-time rule
-        }
+        issue_type_event(ET::Produce, true, type);         // PRODUCE = start (re-checked at apply)
     }
     // A held queue skips its production tick: tick() early-outs on a READY
     // slot, so mark held slots ready for the duration of prod_tick only.
@@ -564,14 +551,17 @@
         if (!radar_active() || !radar_cell_at(ev.x, ev.y, cx, cy)) return true;   // consumed, inert
         bool any = false;
         for (const ra2engine::Unit& u : world_.units())
-            if (u.selected && world_.controllable(u.house) && u.alive && u.die_time < 0.0) { any = true; break; }
+            if (usel(u) && world_.controllable(u.house) && u.alive && u.die_time < 0.0) { any = true; break; }
         // W6-01-08 [engine deviation, touch]: a phone player looks around with
         // the radar, so a finger tap always centres the view; a radar MOVE
         // order by touch needs [MOVE] armed in the command column (one-shot).
         // A mouse keeps the original rule (selection -> move, else centre).
         const bool order = any && (!ev.touch || touch_move_);
         if (ev.touch && touch_move_) touch_move_ = false;
-        if (order) world_.order_move_selected(cx, cy);
+        if (order)   // NET L1: MEGAMISSION(Move) with the selection as Whom
+            issue(ra2engine::make_mega(world_, input_.selection().ids(), ra2engine::Mission::Move,
+                                       ra2engine::Target{}, ra2engine::Target::cell(cx, cy)));
+
         else input_.center_on_cell(cx, cy);
         return true;
     }

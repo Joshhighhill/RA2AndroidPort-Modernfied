@@ -133,7 +133,7 @@ TEST_CASE("Input original: left selects, left on ground moves, right deselects")
     unit_px(world.units()[f.g0], ux, uy);
     CHECK(in.action_at(ux, uy) == Input::Action::Select);
     lclick(in, ux, uy, 2000);
-    CHECK(world.units()[f.g0].selected);
+    CHECK(in.selection().has(f.g0));
     CHECK(in.take_actions().selected);
 
     // Left-click ground with a selection = MOVE (orders on the LEFT button).
@@ -142,11 +142,11 @@ TEST_CASE("Input original: left selects, left on ground moves, right deselects")
     const ra2engine::InputActions a = in.take_actions();
     CHECK(a.move_ordered);
     CHECK(world.units()[f.g0].moving());
-    CHECK(world.units()[f.g0].selected);   // the selection survives the order
+    CHECK(in.selection().has(f.g0));   // the selection survives the order
 
     // Right-click (no drag) with no mode armed = deselect all [FUN_004AAC40 tail].
     rclick(in, gx, gy);
-    for (const auto& u : world.units()) CHECK_FALSE(u.selected);
+    CHECK(in.selection().empty());
 }
 
 TEST_CASE("Input original: left on a hostile attacks; Alt forces a move") {
@@ -158,7 +158,7 @@ TEST_CASE("Input original: left on a hostile attacks; Alt forces a move") {
     Input in(world, cam, 1280, 720);
     Fx f = spawn3(world);
     if (!f.ok) { MESSAGE("skipped"); return; }
-    world.units()[f.g0].selected = true;
+    in.selection().set(f.g0);
     int cx, cy;
     unit_px(world.units()[f.c], cx, cy);
     CHECK(in.action_at(cx, cy) == Input::Action::Attack);
@@ -184,7 +184,7 @@ TEST_CASE("Input original: G-06 an ALLIED unit is not an attack target") {
     Input in(world, cam, 1280, 720);
     Fx f = spawn3(world);
     if (!f.ok) { MESSAGE("skipped"); return; }
-    world.units()[f.g0].selected = true;
+    in.selection().set(f.g0);
     int cx, cy;
     unit_px(world.units()[f.c], cx, cy);
     CHECK(in.action_at(cx, cy) != Input::Action::Attack);
@@ -202,14 +202,14 @@ TEST_CASE("Input original: right-drag scrolls and does NOT deselect") {
     Fx f = spawn3(world);
     if (!f.ok) { MESSAGE("skipped"); return; }
     in.center_on_cell(world.units()[f.g0].cell_x, world.units()[f.g0].cell_y);
-    world.units()[f.g0].selected = true;
+    in.selection().set(f.g0);
     const int x0 = cam.x;
     in.handle(ev(InputEvent::PointerDown, 600, 300, true));
     in.handle(ev(InputEvent::PointerMove, 620, 300));
     in.handle(ev(InputEvent::PointerMove, 660, 300));
     in.handle(ev(InputEvent::PointerUp, 660, 300, true));
     CHECK(cam.x != x0);
-    CHECK(world.units()[f.g0].selected);
+    CHECK(in.selection().has(f.g0));
 }
 
 TEST_CASE("Input original: right-click cancels ONE mode before it deselects") {
@@ -220,15 +220,15 @@ TEST_CASE("Input original: right-click cancels ONE mode before it deselects") {
     Input in(world, cam, 1280, 720);
     Fx f = spawn3(world);
     if (!f.ok) { MESSAGE("skipped"); return; }
-    world.units()[f.g0].selected = true;
+    in.selection().set(f.g0);
     in.begin_placement(1, 2, 2);
     CHECK(in.action_at(100, 100) == Input::Action::Place);
     rclick(in, 100, 100);
     CHECK_FALSE(in.placement_active());
     CHECK(in.take_actions().place_cancelled);
-    CHECK(world.units()[f.g0].selected);   // the first right-click only cancelled
+    CHECK(in.selection().has(f.g0));   // the first right-click only cancelled
     rclick(in, 100, 100);
-    CHECK_FALSE(world.units()[f.g0].selected);
+    CHECK_FALSE(in.selection().has(f.g0));
 }
 
 TEST_CASE("Input original: G-10 any own building is selectable; right-click deselects it") {
@@ -242,14 +242,14 @@ TEST_CASE("Input original: G-10 any own building is selectable; right-click dese
     const auto o = far_cell(world, world.units()[f.g0].cell_x, world.units()[f.g0].cell_y, 8);
     if (o.first < 0) { MESSAGE("skipped"); return; }
     const int b = world.add_building(1, o.first, o.second, 2, 2, 0, 1000, 0, 0.0, true);
-    world.units()[f.g0].selected = true;
+    in.selection().set(f.g0);
     int px, py;
     cell_px(o.first, o.second, px, py);
     CHECK(in.action_at(px, py) == Input::Action::SelectBuilding);
     lclick(in, px, py, 1000);
     CHECK(in.selected_building() == b);
     CHECK(in.take_actions().building_selected);
-    CHECK_FALSE(world.units()[f.g0].selected);   // selecting a building drops units
+    CHECK_FALSE(in.selection().has(f.g0));   // selecting a building drops units
     rclick(in, px, py);
     CHECK(in.selected_building() == -1);
 }
@@ -262,23 +262,23 @@ TEST_CASE("Input original: G-04 control groups create / select / add / centre") 
     Input in(world, cam, 1280, 720);
     Fx f = spawn3(world);
     if (!f.ok) { MESSAGE("skipped"); return; }
-    world.units()[f.g0].selected = true;
+    in.selection().set(f.g0);
     in.group_create(1);
     CHECK(in.group_of(f.g0) == 1);
-    world.clear_selection();
-    world.units()[f.g1].selected = true;
+    in.selection().clear();
+    in.selection().set(f.g1);
     in.group_create(2);
-    world.clear_selection();
+    in.selection().clear();
 
     in.group_select(1, 5000);
-    CHECK(world.units()[f.g0].selected);
-    CHECK_FALSE(world.units()[f.g1].selected);
+    CHECK(in.selection().has(f.g0));
+    CHECK_FALSE(in.selection().has(f.g1));
     in.group_add_select(2);
-    CHECK(world.units()[f.g1].selected);
+    CHECK(in.selection().has(f.g1));
 
     // Re-creating group 1 from g1 moves g1 (one group per unit) and empties g0.
-    world.clear_selection();
-    world.units()[f.g1].selected = true;
+    in.selection().clear();
+    in.selection().set(f.g1);
     in.group_create(1);
     CHECK(in.group_of(f.g1) == 1);
     CHECK(in.group_of(f.g0) == 0);
@@ -302,10 +302,10 @@ TEST_CASE("Input original: G-04 Stop halts at the next cell and drops the target
     Input in(world, cam, 1280, 720);
     Fx f = spawn3(world);
     if (!f.ok) { MESSAGE("skipped"); return; }
-    world.units()[f.g0].selected = true;
+    in.selection().set(f.g0);
     const auto goal = far_cell(world, world.units()[f.g0].cell_x, world.units()[f.g0].cell_y, 8);
     if (goal.first < 0) { MESSAGE("skipped"); return; }
-    world.order_move_selected(goal.first, goal.second);
+    world.group_move(ra2engine::kAnyHouse, in.selection().ids(), goal.first, goal.second);
     REQUIRE(world.units()[f.g0].moving());
     for (int i = 0; i < 5; ++i) world.step(1.0 / 15.0);
     in.stop_selected();
@@ -326,10 +326,10 @@ TEST_CASE("Input original: G-04 TypeSelect extends the selection by image") {
     Fx f = spawn3(world);
     if (!f.ok) { MESSAGE("skipped"); return; }
     in.center_on_cell(world.units()[f.g0].cell_x, world.units()[f.g0].cell_y);
-    world.units()[f.g0].selected = true;
+    in.selection().set(f.g0);
     CHECK(in.type_select());
-    CHECK(world.units()[f.g1].selected);       // same image (GI)
-    CHECK_FALSE(world.units()[f.c].selected);  // different image + hostile
+    CHECK(in.selection().has(f.g1));       // same image (GI)
+    CHECK_FALSE(in.selection().has(f.c));  // different image + hostile
 }
 
 TEST_CASE("Input original: ACTION_SELF -- clicking the selected deployable unit deploys it") {
@@ -340,7 +340,7 @@ TEST_CASE("Input original: ACTION_SELF -- clicking the selected deployable unit 
     Input in(world, cam, 1280, 720);
     Fx f = spawn3(world);
     if (!f.ok) { MESSAGE("skipped"); return; }
-    world.units()[f.g0].selected = true;
+    in.selection().set(f.g0);
     int ux, uy;
     unit_px(world.units()[f.g0], ux, uy);
     CHECK(in.action_at(ux, uy) == Input::Action::Select);   // a plain GI: re-select
@@ -348,5 +348,5 @@ TEST_CASE("Input original: ACTION_SELF -- clicking the selected deployable unit 
     CHECK(in.action_at(ux, uy) == Input::Action::Deploy);
     lclick(in, ux, uy, 1000);
     CHECK(in.take_actions().deploy_clicked);
-    CHECK(world.units()[f.g0].selected);
+    CHECK(in.selection().has(f.g0));
 }
