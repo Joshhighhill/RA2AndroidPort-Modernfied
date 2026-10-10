@@ -180,8 +180,8 @@ struct PlannedNode {
 // jitter); deterministic, NEVER wall-clock].
 struct AiBaseState {
     AiDifficulty difficulty = AiDifficulty::Normal;
-    double build_clock = 0.0;  // FRAMES since the last build pass (Net L0)
-    double build_gate = 0.0;   // frames the next pass waits for; 0 = fire (Net L0)
+    double build_clock = 0.0;  // secs since the last build pass (kept in seconds, Net L0 note in world.cpp)
+    double build_gate = 0.0;   // secs the next pass waits for; 0 = fire
                                // immediately. Re-armed after each pass to
                                // max(~7 s tick jitter, difficulty BuildDelay)
                                // [RE-GATE APPLIED: ai-base.md §1 — the tick

@@ -3235,12 +3235,19 @@ void World::step_ai_houses(double dt) {
         //    [RE-FALLBACK: secs = min x 60]. The jitter draw uses the
         //    engine-local xorshift32 [RE-FALLBACK: ai-base.md deviations —
         //    stands in for the lockstep game RNG; NEVER wall-clock].
-        rec.state.build_clock += dt * 15.0;   // Net L0: whole frames
+        // Net L0: this clock deliberately stays in SECONDS (a running sum of dt).
+        // Counting exact frames re-times every AI build pass by a frame (the
+        // sum of 1/15 s runs one tick past k/15), which re-times the whole AI
+        // base build order and the gates that ride it (--demo-ai-base,
+        // --demo-ai-team). The sum is IEEE-exact on every platform, so it is
+        // deterministic; matching the original's frame period is left to the
+        // AI calibration work (tools/simdiff build-order rung).
+        rec.state.build_clock += dt;
         if (rec.state.build_clock < rec.state.build_gate) continue;
         rec.state.build_clock = 0.0;
         rec.state.build_gate = std::max(
-            (double)(0x69 + 1 + (int)(ai_rand(rec.state.rng) % 7)),
-            cfg.mods.build_delay_min * 900.0);
+            (double)(0x69 + 1 + (int)(ai_rand(rec.state.rng) % 7)) / 15.0,
+            cfg.mods.build_delay_min * 60.0);
         // 6b) [G-65] AI sell [RE: FUN_00450620 -- money < [AI] CreditReserve,
         //     health ratio < ConditionRed (Rules+0x1708) and rand(0,50) <
         //     house+0x1d4 (the house TechLevel, ai-trigger.md; 10 in skirmish)
@@ -4461,7 +4468,7 @@ void World::step_ai_teams(double dt) {
                         team_ok[ti] = 0;
             }
             st.spawn_clock += check_period;
-            const double spawn_period = tc.rules.autocreate_time_min * 60.0;  // min->s
+            const double spawn_period = tc.rules.autocreate_time_min * 900.0;  // min->frames (Net L0)
             if (st.spawn_clock >= spawn_period) {
                 st.spawn_clock = 0.0;
                 // CONTRACT F: select_autocreate_team takes a trailing seeded rng
