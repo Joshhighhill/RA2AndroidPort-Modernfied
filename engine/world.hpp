@@ -857,6 +857,10 @@ public:
                         const LandSpeedRules& r);
     bool land_speed_armed() const { return land_speed_armed_; }
     int speed_land_at(int x, int y) const;   // effective LandType (ore -> Tiberium)
+    // W7-06-02 [RE: GetFireError @0x6FBC86, SelectWeapon FUN_006F2890]: a
+    // target standing on this cell is a naval target (LandType Water 2 or
+    // Beach 6). Unarmed land speed: the water grid.
+    bool an_victim_naval_cell(int x, int y) const;
     int ramp_at(int x, int y) const {        // TMP ramp type (0 flat; unarmed 0)
         if (ramp_.empty() || x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return 0;
         return ramp_[static_cast<std::size_t>(y) * grid_w_ + x];
@@ -1238,6 +1242,12 @@ public:
     // W4-SQ-03: a fixed-wing aircraft with no dock leaves over the nearest
     // map edge and is removed (not a loss: deployed_away).
     bool order_leave_map(int idx);
+    std::size_t an_waves_count() const { return an_.waves.size(); }   // W7-06-10 probe
+    // W7-05-04 [RE: FUN_0065D770 @0x65D9E1: a reinforcement team's loaded
+    // transport that is an AircraftClass gets techno +0x3D4 = 1 (a loaner)].
+    void set_loaner(int idx) {
+        if (idx >= 0 && idx < static_cast<int>(units_.size())) units_[static_cast<std::size_t>(idx)].an.loaner = true;
+    }
     int spawn_drop_plane(const std::string& plane_id, int house, int sx, int sy, int dx, int dy,
                          int ex, int ey);
     // Drain the board/refuse/eject events accumulated by step_cargo since
@@ -2552,6 +2562,7 @@ private:
         double nuke_spread = 10.0;
         double nuke_pmax = 0.02;
         std::array<int, 11> nuke_verses{};
+        std::vector<SonicWave> waves;            // W7-06-10 Dolphin sonic waves (v35)
     };
     AnWorld an_;
     void an_event(int kind, int house, SuperweaponType type, int x, int y, int x2 = -1, int y2 = -1);
@@ -2561,6 +2572,15 @@ private:
     void an_step_spawners(double dt);
     void an_step_fixed_wing(double dt);
     void an_step_deaths(double dt);
+    // --- wave 7 (world_an.cpp) ---
+    void an_spawn_tick(int owner);                   // W7-06-03 SpawnManager AI (every 10 frames)
+    void an_spawn_owner_lost(int owner);             // W7-06-03 FUN_006B6780
+    void an_spawn_reset_target(int owner);           // W7-06-03 ResetTarget FUN_006B7230
+    void an_spawn_launch(int owner, int node);       // W7-06-03 node 0 -> 2
+    void an_crash_alive(int idx);                    // W7-05-04 vtbl+0x3DC FUN_004DEAC0
+    void an_step_waves();                            // W7-06-10 sonic waves
+    void an_step_distributed_fire();                 // W7-06-11
+    void an_step_pad_repair();                       // W7-05-07
     void an_step_strikes(double dt);
     void an_nuke_detonate(const SwStrike& s);
     void an_storm_bolt(SwStrike& s, int x, int y);

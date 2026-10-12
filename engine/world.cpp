@@ -1020,6 +1020,13 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     // and a fixed-wing aircraft with full ammo.
     u.an.t = c.an;
     u.an.spawn_ready = c.an.spawner_slot >= 0 ? c.an.spawns_number : 0;
+    // W7-06-03 [RE: SpawnManager ctor FUN_006B6310]: SpawnsNumber nodes, each
+    // docked with a spawn ready (state 0).
+    if (c.an.spawner_slot >= 0 && c.an.spawns_number > 0) {
+        u.an.sp_state.assign(static_cast<std::size_t>(c.an.spawns_number), kSpawnDocked);
+        u.an.sp_timer.assign(static_cast<std::size_t>(c.an.spawns_number), 0);
+        u.an.sp_unit.assign(static_cast<std::size_t>(c.an.spawns_number), -1);
+    }
     u.an.ammo = c.an.ammo;
     u.an.in_water = c.is_naval;
     u.an.submerged = c.an.underwater && c.an.cloakable;
@@ -5896,6 +5903,12 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
             continue;
         }
 
+        // W7-06-16 [RE: FUN_006B7400 (spawn nodes in state 1 + rockets in
+        // state 2) != 0 -> the move step returns "hold": ShipLoco FUN_006A1310
+        // @0x6A13E6, DriveLoco FUN_004B2550 @0x4B264C]: a Dreadnought / V3
+        // with its own rockets on the deck stays where it is.
+        if (u.an.launch_hold) continue;
+
         // Vehicle hull turn-then-move gate (docs/re/voxel-render.md §5): a
         // vehicle first rotates its body toward the next segment's direction
         // at its ROT rate; until the body is aligned (shortest arc within
@@ -6260,6 +6273,21 @@ void World::launch_projectile(int attacker, int target_unit, int target_building
     p.launch_speed = lr.speed;
     p.max_z = src.z;
     p.weapon_slot = u.w_active;   // Gap fix C: detonate with the slot that fired
+    // W7-06-11 [RE: TechnoClass::Fire FUN_006FD210 @0x6FDF7F..0x6FE0A6]:
+    // RadialFireSegments (TechnoType +0x6A4) > 0 launches the bullet along the
+    // firer's facing (+0x388) turned back by k x (half a circle / segments),
+    // k = the shot counter (+0x43C) cycling 0..segments-1 -- the Aegis's fan.
+    if (u.an.t.radial_segments > 0 && p.kind == ProjKind::Homing) {
+        Unit& f = units_[static_cast<std::size_t>(attacker)];
+        const int seg = u.an.t.radial_segments;
+        const double face = (u.is_vehicle ? u.turret_facing : u.body_facing) + 2.0 -
+                            32768.0 * static_cast<double>(f.an.radial_counter) / seg;
+        const double a = face * (2.0 * kProjPi / 65536.0);
+        const double hv = om::hypot(p.vx, p.vy);
+        p.vx = om::sin(a) * hv;
+        p.vy = -om::cos(a) * hv;
+        if (++f.an.radial_counter >= seg) f.an.radial_counter = 0;
+    }
     if (p.kind == ProjKind::Homing) {
         init_homing(p, spec, lr.speed);
         p.target_air = target_unit >= 0 && unit_airborne(units_[target_unit]);

@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "ability_types.hpp"   // W7: WeaponSpec (the crash death weapon)
 #include "rocket.hpp"   // W4: RocketLocomotion blocks + per-type warheads
 
 namespace ra2engine {
@@ -70,6 +71,36 @@ struct AnType {
     // Explicit death delivery for missiles / crashes: the warhead verses used by
     // a missile detonation (V3WH) and its splash.
     double missile_spread = 0.0;
+    // --- wave 7 (save v35) ---
+    // W7-05-04 [RE: AircraftType +0xE0D, read by Enter_Idle_Mode FUN_004176F0]:
+    // AirportBound=yes -- no dock found when the plane goes idle -> it crashes.
+    bool airport_bound = false;
+    // W7-05-09 [RE: FireDeathWeapon FUN_0070CAC0]: DeathWeapon (+0xD18), else
+    // the Primary, its Damage x DeathWeaponDamageModifier (+0xD1C).
+    WeaponSpec crash_weapon;
+    // W7-06-03 [RE: SpawnManager AI FUN_006B68B0 status 0]: the spawner
+    // weapon's range (InRange, vtbl+0x3AC -> FUN_006F6CB0).
+    double spawner_range = 0.0;
+    // W7-06-10 [RE: WeaponType IsSonic +0x130, AmbientDamage +0x98]: the
+    // primary weapon's (and elite primary's) sonic wave damage per frame.
+    int sonic_ambient = 0;
+    int sonic_ambient_elite = 0;
+    // W7-06-11 [RE: TechnoType DistributedFire +0x6B0, RadialFireSegments +0x6A4].
+    bool distributed_fire = false;
+    int radial_segments = 0;
+    // W7-05-13 [RE: ObjectType RadarInvisible +0x22F; FootType HoverAttack +0x390].
+    bool radar_invisible = false;
+    bool hover_attack = false;
+};
+
+// W7-06-03/06 [RE: SpawnManagerClass, ctor FUN_006B6310, AI FUN_006B68B0]:
+// one SpawnNode per SpawnsNumber. States as the original numbers them:
+//   0 docked + armed, 1 rocket handed to the KamikazeTracker (pause + tilt),
+//   2 launched (gathering by the owner / rocket on its way), 3 attacking,
+//   4 returning, 6 reloading aboard (SpawnReloadRate), 7 dead (SpawnRegenRate).
+enum : int {
+    kSpawnDocked = 0, kSpawnRocketWait = 1, kSpawnLaunched = 2, kSpawnAttack = 3,
+    kSpawnReturn = 4, kSpawnReload = 6, kSpawnDead = 7,
 };
 
 struct AnUnit {
@@ -117,6 +148,52 @@ struct AnUnit {
     // W4-SQ-06 (save v16): a paratrooper's height while it falls under its
     // parachute (cargo_of == kParachuteCargo); 0 on the ground.
     double para_alt = 0.0;
+    // --- wave 7 (save v35) ---
+    // W7-06-03/06/08 spawn manager: per node (state, frames left on the node
+    // timer, spawned unit index), the manager's launch timer, its AI timer
+    // (every 10 frames), status (+0x70: 0 idle, 1 launching, 2 out), target
+    // (+0x68) and queued next target (+0x6C).
+    std::vector<int> sp_state;
+    std::vector<int> sp_timer;
+    std::vector<int> sp_unit;
+    int sp_tick = 0;
+    int sp_launch = 0;
+    int sp_status = 0;
+    int sp_tgt_unit = -1, sp_tgt_bld = -1;
+    int sp_next_unit = -1, sp_next_bld = -1;
+    // W7-06-16 [RE: FUN_006B7400 from ShipLoco FUN_006A1310 @0x6A13E6]:
+    // own rockets on the deck (pause + tilt) hold the launcher still.
+    bool launch_hold = false;
+    // W7-05-04 [RE: techno +0x3D4 set only by the reinforcement / superweapon
+    // plane code 0x65D320..0x65E4F0]: a "loaner" retreats off the map instead
+    // of crashing when it has nowhere to land.
+    bool loaner = false;
+    // W7-05-09 [RE: FlyLoco FUN_004CD520 @0x4CD6E8]: a plane that hit the
+    // ground with Strength left (it crashed alive: no airfield, carrier lost)
+    // -> its Strength as C4Warhead damage; 0 = it was shot down.
+    int crash_hp = 0;
+    // W7-06-02 [RE: GetFireError @0x6FBC86]: stands on a Water / Beach cell,
+    // not airborne, not on a bridge (the target-side naval test).
+    bool naval_cell = false;
+    // W7-06-11 [RE: Fire FUN_006FD210 @0x6FED3C, FUN_007089D0]: targets this
+    // DistributedFire unit already shot; the RadialFireSegments counter (+0x43C).
+    std::vector<int> shot_list;
+    int radial_counter = 0;
+};
+
+// W7-06-10 [RE: WaveClass ctor FUN_0075D770 (type 0 = sonic), AI
+// FUN_0075FD70, sweep FUN_00761910 / FUN_0075FF10, cell damage
+// FUN_0075E150]: one Dolphin sonic wave in flight.
+struct SonicWave {
+    int firer = -1;
+    int target_unit = -1, target_bld = -1;
+    double sx = 0, sy = 0, tx = 0, ty = 0;   // cells
+    double head = 0.0, tail = 0.0;           // wave front / back along the line (0..1)
+    bool growing = true;                     // +0x12C: the firer still holds its target
+    bool tail_moving = false;                // +0x12D
+    int damage = 0;                          // AmbientDamage
+    std::vector<int> verses;                 // the primary weapon's warhead
+    bool sonic_wh = false;                   // W6-04-09 Sonic warhead
 };
 
 // --- Superweapons v2 (W2-AN-04/05/06/17/20) -----------------------------------
@@ -177,6 +254,11 @@ struct SwParams {
     int repair_step = 7;
     int repair_rate_frames = 14;
     double repair_percent = 0.15;
+    // W7-05-09 [RE: FlyLoco FUN_004CD520 @0x4CD7C9: Rules+0xFA8 =
+    // [CombatDamage] C4Warhead]: an alive crash's warhead.
+    std::vector<int> c4_verses = std::vector<int>(11, 100);
+    double c4_spread = 0.0;
+    double c4_pmax = 1.0;
 };
 
 // One superweapon effect in progress (a nuke in flight or a lightning storm).
@@ -216,8 +298,12 @@ struct SwEvent {
 // type data `a` engage a victim in the given situation? Returns the slot to use
 // (0/1), or -1. `want` = the slot the ordinary armor/AA choice picked (-1 =
 // none), `has_secondary` = the attacker has a valid slot 1.
+// W7-06-02/09 [RE: GetFireError @0x6FBC86, NavalTargeting switch FUN_006F2D80]:
+// victim_in_water = the victim's cell is Water/Beach (not airborne, not on a
+// bridge); victim_underwater = its TYPE is Underwater=yes; victim_cloaked = it
+// is submerged now; victim_hover = SpeedType Hover.
 int an_naval_slot(const AnType& a, int want, bool has_secondary, bool victim_in_water,
-                  bool victim_submerged, bool victim_organic, bool victim_airborne,
-                  bool victim_is_building);
+                  bool victim_underwater, bool victim_cloaked, bool victim_organic,
+                  bool victim_hover, bool victim_airborne, bool victim_is_building);
 
 }  // namespace ra2engine

@@ -130,6 +130,11 @@ public:
             for (const ra2engine::Unit& u : w.units()) {
                 if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
                 if (u.house != g_local_house && !w.object_visible_at(g_local_house, u.cell_x, u.cell_y)) continue;
+                // W7-05-13 [RE: radar cell draw FUN_00655690 @0x65583F: an object
+                // whose type is RadarInvisible (+0x22F) is drawn only for a house
+                // allied with the player (FUN_004F98B0)] -- the Night Hawk.
+                if (u.an.t.radar_invisible && u.house != g_local_house && !w.are_allied(g_local_house, u.house))
+                    continue;
                 plot(u.cell_x, u.cell_y, w.house_palette(ba.unit_pal, u.house)[24], 1.0);
             }
             if (tex_ && (tw_ != TW || th_ != TH)) { SDL_DestroyTexture(tex_); tex_ = nullptr; }

@@ -98,6 +98,7 @@ struct SaveAccess {
         save::io(ar, a.nuke_spread);
         save::io(ar, a.nuke_pmax);
         save::io(ar, a.nuke_verses);
+        save::io(ar, a.waves);   // v35: W7-06-10
     }
     template <class Ar> static void tech_income(Ar& ar, World::TechIncome& t) {
         save::io(ar, t.building);
@@ -368,6 +369,7 @@ template <class Ar> void fields(Ar& ar, SwParams& v) {   // W2-AN (save v9)
     io(ar, v.repair_rate_frames); io(ar, v.repair_percent);
     io(ar, v.parachute_fall);   // W4-SQ-06 (save v16)
     io(ar, v.storm_wall_flags); io(ar, v.nuke_wall_flags);   // v25: W6-04-04
+    io(ar, v.c4_verses); io(ar, v.c4_spread); io(ar, v.c4_pmax);   // v35: W7-05-09
 }
 template <class Ar> void fields(Ar& ar, SwStrike& v) {   // W2-AN (save v9)
     io(ar, v.kind); io(ar, v.house); io(ar, v.x); io(ar, v.y); io(ar, v.ox); io(ar, v.oy);
@@ -387,6 +389,9 @@ template <class Ar> void fields(Ar& ar, AnType& v) {   // W2-AN (save v9)
     io(ar, v.spawns); io(ar, v.spawns_number); io(ar, v.spawn_regen_frames);
     io(ar, v.spawn_reload_frames); io(ar, v.landable); io(ar, v.missile_spread);
     io(ar, v.rocket_kind); io(ar, v.rocket_speed); io(ar, v.no_shadow);   // W4 (v15)
+    io(ar, v.airport_bound); io(ar, v.crash_weapon); io(ar, v.spawner_range);   // v35: wave 7
+    io(ar, v.sonic_ambient); io(ar, v.sonic_ambient_elite); io(ar, v.distributed_fire);
+    io(ar, v.radial_segments); io(ar, v.radar_invisible); io(ar, v.hover_attack);
 }
 template <class Ar> void fields(Ar& ar, AnUnit& v) {   // W2-AN (save v9)
     io(ar, v.t); io(ar, v.in_water); io(ar, v.submerged); io(ar, v.surface_left_frames);
@@ -400,6 +405,15 @@ template <class Ar> void fields(Ar& ar, AnUnit& v) {   // W2-AN (save v9)
     io(ar, v.drop_x); io(ar, v.drop_y); io(ar, v.exit_x); io(ar, v.exit_y);
     io(ar, v.rocket_elite); io(ar, v.rocket_end); io(ar, v.rocket);   // W4 (v15)
     io(ar, v.para_alt);   // W4-SQ-06 (save v16)
+    io(ar, v.sp_state); io(ar, v.sp_timer); io(ar, v.sp_unit); io(ar, v.sp_tick);   // v35: wave 7
+    io(ar, v.sp_launch); io(ar, v.sp_status); io(ar, v.sp_tgt_unit); io(ar, v.sp_tgt_bld);
+    io(ar, v.sp_next_unit); io(ar, v.sp_next_bld); io(ar, v.launch_hold); io(ar, v.loaner);
+    io(ar, v.crash_hp); io(ar, v.naval_cell); io(ar, v.shot_list); io(ar, v.radial_counter);
+}
+template <class Ar> void fields(Ar& ar, SonicWave& v) {   // v35: W7-06-10
+    io(ar, v.firer); io(ar, v.target_unit); io(ar, v.target_bld); io(ar, v.sx); io(ar, v.sy);
+    io(ar, v.tx); io(ar, v.ty); io(ar, v.head); io(ar, v.tail); io(ar, v.growing);
+    io(ar, v.tail_moving); io(ar, v.damage); io(ar, v.verses); io(ar, v.sonic_wh);
 }
 template <class Ar> void fields(Ar& ar, RocketWarhead& v) {   // W4 (v15)
     io(ar, v.id); io(ar, v.spread); io(ar, v.pmax); io(ar, v.verses);
