@@ -47,6 +47,9 @@ struct BldTypeW5 {
     bool explodes = false;
     bool delay_kill_eligible = false;
     WeaponSpec death;
+    // W7-01-22 [rules CAMISC01/02/06, AMMOCRAT CanC4=no; RE 0x51A2E3..0x51A3F0]:
+    // a CanC4=no building refuses a C4 plant (save v35).
+    bool can_c4 = true;
 };
 
 // Per UNIT TYPE in a producible roster.

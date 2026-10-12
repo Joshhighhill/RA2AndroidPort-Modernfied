@@ -47,7 +47,8 @@ auto pres_mirage_impl(const U& u, int) -> decltype(std::string(u.w5.mirage_tree)
 template <class U>
 std::string pres_mirage_impl(const U&, long) { return std::string(); }
 inline std::string pres_mirage_tree(const ra2engine::Unit& u) {
-    if (!u.disguised) return std::string();
+    // W7-03-04: during the fake blink after a shot the tank shows.
+    if (!u.disguised || u.w7.blink_left > 0) return std::string();
     std::string t = pres_mirage_impl(u, 0);
     // --play diagnostic before agent C's state lands: RA2_PRES_MIRAGE=<tree>.
     if (t.empty() && u.disguise_when_still)

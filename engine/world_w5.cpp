@@ -101,8 +101,12 @@ void World::step_w5(double dt) {
             for (Unit& u : units_) {
                 if (!live(u) || u.hp <= 0 || u.hp >= u.max_hp) continue;
                 if (u.house < 0 || u.house >= house_count()) continue;
-                const bool infantry = !u.is_vehicle && !u.is_aircraft && !u.is_naval;
-                const bool vehicle = u.is_vehicle && !u.is_aircraft;
+                // W7-08-16 [RE: FUN_006F9380]: the Hospital branch takes
+                // infantry OR an Organic UnitType (Dolphin, Giant Squid); the
+                // Machine Shop the remaining units, ships included.
+                const bool infantry = (!u.is_vehicle && !u.is_aircraft && !u.is_naval) ||
+                                      (u.an.t.organic && !u.is_aircraft);
+                const bool vehicle = u.is_vehicle && !u.is_aircraft && !infantry;
                 int amt = 0;
                 if (infantry && inf_tick) amt = R.self_heal_inf_amount * inf[(std::size_t)u.house];
                 else if (vehicle && unit_tick) amt = R.self_heal_unit_amount * veh[(std::size_t)u.house];
@@ -221,7 +225,21 @@ void World::step_w5(double dt) {
         const RulesW5& R = w5_.rules;
         for (int ti = 0; ti < nu; ++ti) {
             Unit& t = units_[(std::size_t)ti];
-            if (!t.w5.p.open_topped || t.cargo.empty() || !live(t)) continue;
+            if (!t.w5.p.open_topped || !live(t)) continue;
+            // W7-08-23 [RE: TechnoClass::GetWeaponRange 0x700760]: an OpenTopped
+            // transport's range is min(own weapon range, every passenger's
+            // weapon Range) -- without the +2 bonus -- so a Battle Fortress
+            // carrying GIs closes to their 4 cells.
+            if (t.w_active == 0 && t.vet.base.range > 0.0) {
+                const bool el = t.vet.recv && is_elite(t.vet.veterancy) && t.vet.has_elite;
+                double r = el ? t.vet.elite.range : t.vet.base.range;
+                for (int pi : t.cargo)
+                    if (pi >= 0 && pi < nu && units_[(std::size_t)pi].w_range > 0.0 &&
+                        units_[(std::size_t)pi].w_damage > 0)
+                        r = std::min(r, units_[(std::size_t)pi].w_range);
+                t.w_range = r;
+            }
+            if (t.cargo.empty()) continue;
             for (int pi : t.cargo) {
                 if (pi < 0 || pi >= nu) continue;
                 Unit& p = units_[(std::size_t)pi];
@@ -238,7 +256,8 @@ void World::step_w5(double dt) {
                 auto ok = [&](int j) {
                     if (j < 0 || j >= nu) return false;
                     const Unit& v = units_[(std::size_t)j];
-                    if (!live(v) || !is_enemy(p.house, v.house) || v.disguised || v.an.submerged) return false;
+                    if (!live(v) || !is_enemy(p.house, v.house) || v.an.submerged) return false;
+                    if (!p.detect_disguise && disguise_fools(p.house, v)) return false;   // W7-01-02
                     if (rocket_on_launcher(v)) return false;
                     if (p.house < 8 && !(v.seen_by_mask & (1u << p.house))) return false;
                     const bool air = v.is_aircraft && v.altitude > 0.0;
@@ -255,7 +274,39 @@ void World::step_w5(double dt) {
                     }
                 }
                 p.target = tgt;
-                if (tgt < 0 || p.rearm_frames > 0.0) continue;
+                // W7-08-24 [RE: 0x6F9840-0x6F9960 validates a passenger target
+                // that may be a structure]: with no unit to shoot, a passenger
+                // fires at the transport's structure target in range + bonus.
+                int tbld = -1;
+                if (tgt < 0 && t.target_building >= 0 && t.target_building < static_cast<int>(buildings_.size())) {
+                    const Building& o = buildings_[static_cast<std::size_t>(t.target_building)];
+                    if (o.alive && o.state != Building::State::Dead && is_enemy(p.house, o.house) && p.w_ag &&
+                        verses_allows(p.w_verses, o.armor_ix)) {
+                        double bestd = -1.0;
+                        for (const Cellxy& c : foundation_cells(o.cx, o.cy, o.fw, o.fh)) {
+                            const double dd = om::hypot(c.x - t.fx, c.y - t.fy);
+                            if (bestd < 0.0 || dd < bestd) bestd = dd;
+                        }
+                        if (bestd >= 0.0 && bestd <= range) tbld = t.target_building;
+                    }
+                }
+                if ((tgt < 0 && tbld < 0) || p.rearm_frames > 0.0) continue;
+                if (tbld >= 0) {
+                    Unit shooter = p;
+                    shooter.fx = t.fx;
+                    shooter.fy = t.fy;
+                    shooter.cell_x = t.cell_x;
+                    shooter.cell_y = t.cell_y;
+                    shooter.w_damage = om::ftol(p.w_damage * R.open_topped_damage_mult);
+                    p.rearm_frames = unit_rearm_frames(p, &combat_rng_);
+                    fire_events_.push_back({ti, -1, -1, tbld, 0, "OpenTopped"});
+                    const Building& o = buildings_[static_cast<std::size_t>(tbld)];
+                    int ax = 0, ay = 0, az = 0;
+                    building_aim_lept(o, cell_level(o.cx, o.cy), ax, ay, az);
+                    damage_area(*this, units_, buildings_, occ_, shooter, pi, -1, ax, ay, az);
+                    ++w5_.passenger_shots;
+                    continue;
+                }
                 Unit shooter = p;
                 shooter.fx = t.fx;
                 shooter.fy = t.fy;
@@ -523,7 +574,7 @@ void World::w5_ai_pass() {
         if (tb >= 0)
             for (const IdleUnitView& iv : idle) {
                 const Unit& u = units_[(std::size_t)iv.unit];
-                if (u.image != "ENGINEER" || u.capture_target >= 0) continue;
+                if (!unit_is_engineer(u) || u.capture_target >= 0) continue;   // W7-01-33
                 order_engineer_capture(iv.unit, tb);
                 ++w5_.ai_tech_captures;
                 break;

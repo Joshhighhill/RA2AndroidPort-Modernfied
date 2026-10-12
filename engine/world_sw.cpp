@@ -23,6 +23,7 @@
 
 #include "combat.hpp"
 #include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
+#include "group_move.hpp"  // nearest_free_cells (W7-08-08)
 #include "world.hpp"
 
 namespace ra2engine {
@@ -394,81 +395,154 @@ void World::an_iron_curtain(int house, int cx, int cy) {
             Unit& u = units_[i];
             if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
             if (u.cell_x != x || u.cell_y != y) continue;
-            if (u.an.t.organic) {
-                // [RE-FALLBACK: the IronCurtain virtual (+0x154) body was not
-                // decompiled; classic RA2 kills infantry caught in the curtain.]
+            // W7-08-05 [RE: SuperClass::Place FUN_006CBA10 case 1 @0x6CC576]:
+            // the SW walks the cell's ground / bridge object lists, so an
+            // airborne aircraft is not curtained; an object already flagged
+            // for a chrono warp (+0x27C) is skipped.
+            if (u.is_aircraft && u.altitude > 0.0) continue;
+            if (u.an.chrono_left_frames > 0) continue;
+            // W7-08-05 [RE: InfantryClass::IronCurtain 0x522330]: EVERY
+            // infantry dies (C4Warhead, ignoreDefenses); [RE: FootClass::
+            // IronCurtain 0x4DE9F0] an Organic UnitType (squid, dolphin) too.
+            if (u.is_infantry || (!u.is_vehicle && !u.is_aircraft && !u.is_naval) || u.an.t.organic) {
                 u.an.iron_left_frames = 0;
                 an_damage_unit(i, u.hp, -1);
                 continue;
             }
+            // W7-04-12 / W7-08-04 [RE: FootClass::IronCurtain 0x4DEA48]: a
+            // riding parasite gets Suppression 50 and ExitUnit -- a Terror
+            // Drone dies, a squid is let go.
+            if (u.parasite_on_me >= 0) parasite_exit(i, /*suppressed=*/true);
             u.an.iron_left_frames = secs;
         }
         const int b = building_at_cell(x, y);
-        if (b >= 0) buildings_[b].iron_left_frames = secs;
+        if (b >= 0) {
+            Building& B = buildings_[b];
+            // W7-08-06 [RE: BuildingClass::IronCurtain FUN_00457C90]: an armed
+            // C4 is DEFUSED (C4Applied +0x6DF cleared, the C4 timer reset),
+            // then TechnoClass::IronCurtain. (W7-01-23's blast-side proposal
+            // is superseded.)
+            if (B.c4_applied) {
+                B.c4_applied = false;
+                B.c4_frame = 0;
+            }
+            B.iron_left_frames = secs;
+        }
     }
 }
 
+// W7-08-07/08 [RE: SuperClass::Place 0x6CBD02-0x6CC268; FootClass chrono
+// arrival FUN_00717600 / FUN_00717B40 / 0x718DE0].
 void World::an_chrono(int house, int sx, int sy, int tx, int ty) {
     (void)house;
     const int freeze = an_.sw.chrono_delay_frames;   // Net L0: whole frames
     // Collect first (a teleported unit must not be picked up again at its
     // destination when the two areas overlap).
     std::vector<std::pair<int, int>> movers;   // unit, offset index
+    std::vector<std::uint8_t> moving(units_.size(), 0);
     for (int k = 0; k < 9; ++k) {
         const int x = sx + kArea3x3[k][0], y = sy + kArea3x3[k][1];
         for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
             const Unit& u = units_[i];
             if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
             if (u.is_aircraft && u.altitude > 0.0) continue;   // airborne: not in the cell layer
-            if (u.cell_x == x && u.cell_y == y) movers.push_back({i, k});
+            if (u.cell_x != x || u.cell_y != y) continue;
+            // [RE: 0x6CBDF0-0x6CBE52] Organic && !Teleporter dies (C4Warhead,
+            // ignoreDefenses) BEFORE the curtain test -- curtained or not.
+            if (u.an.t.organic && !u.an.t.teleporter) {
+                Unit& k = units_[static_cast<std::size_t>(i)];
+                k.an.iron_left_frames = 0;
+                an_damage_unit(i, k.hp, -1);
+                continue;
+            }
+            // W7-08-07 [RE: 0x6CBE61]: curtained, already warping (+0x27C) and
+            // being-erased (+0x270 / +0x271) objects are skipped.
+            if (u.an.iron_left_frames > 0 || u.an.chrono_left_frames > 0 || u.warp_remaining > 0) continue;
+            {
+                movers.push_back({i, k});
+                moving[static_cast<std::size_t>(i)] = 1;
+            }
         }
     }
+    auto kill = [&](int i) {
+        units_[static_cast<std::size_t>(i)].an.iron_left_frames = 0;
+        an_damage_unit(i, units_[static_cast<std::size_t>(i)].hp, -1);
+    };
     for (const auto& m : movers) {
         const int i = m.first;
         Unit& u = units_[i];
-        // The chrono-kill branch: Organic && !Teleporter -> full-Strength damage.
-        if (u.an.t.organic && !u.an.t.teleporter) {
-            u.an.iron_left_frames = 0;
-            an_damage_unit(i, u.hp, -1);
+        const int dx = tx + kArea3x3[m.second][0], dy = ty + kArea3x3[m.second][1];
+        // [RE: 0x6CBF1D-0x6CC226] every Foot object (infantry and landed
+        // aircraft too) gets the piggyback Teleport locomotor to its offset cell.
+        const bool inf = !u.is_vehicle && !u.is_aircraft && !u.is_naval;
+        // W7-08-08 [RE: FUN_00717600]: the EXACT offset cell (no nearest-free
+        // search). Off the map: destroyed.
+        if (dx < 0 || dy < 0 || dx >= grid_w_ || dy >= grid_h_) {
+            kill(i);
             continue;
         }
-        const int dx = tx + kArea3x3[m.second][0], dy = ty + kArea3x3[m.second][1];
-        // [RE-FALLBACK: vtable +0x480 (the warp-in) not decompiled] a unit that
-        // lands where its domain cannot stand (a tank in the sea, a ship on
-        // land) is destroyed; an occupied landing cell slides to the nearest
-        // free cell of its domain within 2 cells.
-        int fx = -1, fy = -1;
-        if (unit_can_enter_cell(u, dx, dy)) {
-            for (int r = 0; r <= 2 && fx < 0; ++r)
-                for (int oy = -r; oy <= r && fx < 0; ++oy)
-                    for (int ox = -r; ox <= r && fx < 0; ++ox) {
-                        if (std::max(std::abs(ox), std::abs(oy)) != r) continue;
-                        const int cx = dx + ox, cy = dy + oy;
-                        if (!unit_can_enter_cell(u, cx, cy)) continue;
-                        if (!occ_.is_free(cx, cy) || building_at_cell(cx, cy) >= 0) continue;
-                        fx = cx;
-                        fy = cy;
-                    }
+        // Telefrag [RE: FUN_00717600]: a non-curtained Foot occupant of the
+        // landing cell dies (C4Warhead, ignoreDefenses) -- infantry landing on
+        // infantry only kills the same sub-cell, which the clone's spots stand
+        // in for by not killing (the arrival takes a free spot / cell); a
+        // curtained occupant kills the ARRIVING unit (0x717B5B). A non-Foot
+        // occupant (a building) blocks: the arrival is re-aimed at a nearby
+        // location (MapClass::NearbyLocation 0x56D750), not killed.
+        int lx = dx, ly = dy;
+        if (lx >= 0 && ly >= 0 && lx < grid_w_ && ly < grid_h_ && building_at_cell(lx, ly) >= 0) {
+            const std::vector<Cellxy> g = nearest_free_cells({lx, ly}, 1, grid_for(u.movement_domain), grid_w_, grid_h_, occ_);
+            if (g.empty()) continue;   // stays where it is
+            lx = g[0].x;
+            ly = g[0].y;
         }
-        if (fx < 0) {
-            u.an.iron_left_frames = 0;
-            an_damage_unit(i, u.hp, -1);
+        bool blocked_by_curtain = false, inf_left = false;
+        std::vector<int> frag;
+        for (int j = 0; j < static_cast<int>(units_.size()); ++j) {
+            if (j == i || moving[static_cast<std::size_t>(j)]) continue;
+            const Unit& o = units_[static_cast<std::size_t>(j)];
+            if (!o.alive || o.die_time >= 0.0 || o.cargo_of >= 0) continue;
+            if (o.is_aircraft && o.altitude > 0.0) continue;
+            if (o.cell_x != lx || o.cell_y != ly) continue;
+            if (o.an.iron_left_frames > 0) blocked_by_curtain = true;
+            else if (inf && !o.is_vehicle && !o.is_aircraft && !o.is_naval) inf_left = true;
+            else frag.push_back(j);
+        }
+        if (blocked_by_curtain) {
+            kill(i);
+            continue;
+        }
+        for (int j : frag) kill(j);
+        if (inf_left) {   // infantry on infantry: another spot / cell
+            const std::vector<Cellxy> g = nearest_free_cells({lx, ly}, 1, grid_for(u.movement_domain), grid_w_, grid_h_, occ_);
+            if (g.empty()) continue;
+            lx = g[0].x;
+            ly = g[0].y;
+        }
+        // [RE: 0x718DE0] water under a vehicle that is neither Hover (an
+        // amphibious domain) nor Naval and not on a bridge deck: it SINKS
+        // (IsSinking +0x3CD; its passengers drown with it). A cell its
+        // movement zone cannot use on land: destroyed.
+        if (!unit_can_enter_cell(u, lx, ly)) {
+            const std::size_t ci = static_cast<std::size_t>(ly) * grid_w_ + lx;
+            const bool water = ci < water_passable_.size() && water_passable_[ci] != 0;
+            if (water && !u.is_naval && !inf) u.an.sinking = true;
+            kill(i);
             continue;
         }
         occ_.release_all_of(i, -1, -1);
-        u.cell_x = fx;
-        u.cell_y = fy;
-        u.fx = fx;
-        u.fy = fy;
+        u.cell_x = lx;
+        u.cell_y = ly;
+        u.fx = lx;
+        u.fy = ly;
         u.path.clear();
         u.path_idx = 0;
         u.target = -1;
         u.target_building = -1;
         u.attack_order = false;
-        u.guard_x = fx;
-        u.guard_y = fy;
-        if (!u.is_aircraft) occ_.set(fx, fy, i);
-        if (const ra2assets::MapCell* mc = map_ ? map_->at(fx, fy) : nullptr) u.level = mc->level;
+        u.guard_x = lx;
+        u.guard_y = ly;
+        occ_.set(lx, ly, i);
+        if (const ra2assets::MapCell* mc = map_ ? map_->at(lx, ly) : nullptr) u.level = mc->level;
         u.an.chrono_left_frames = freeze;
         u.frozen = true;
     }

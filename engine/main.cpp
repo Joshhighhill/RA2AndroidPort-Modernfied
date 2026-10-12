@@ -2493,6 +2493,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     ba.repair_sell.repair_percent = rules.general_double("RepairPercent", 15.0) / 100.0;
     ba.repair_sell.repair_rate    = rules.general_double("RepairRate", 0.016);
     ba.repair_sell.refund_percent = rules.general_double("RefundPercent", 50.0) / 100.0;
+    ba.repair_sell.u_repair_rate  = rules.general_double("URepairRate", 0.016);   // W7-08-03
     ba.repair_sell.allied_survivor_divisor =
         static_cast<int>(rules.general_double("AlliedSurvivorDivisor", 500.0));
     ba.repair_sell.soviet_survivor_divisor =
@@ -13501,13 +13502,17 @@ DemoCaptureResult simulate_capture(Assets& a, UnitAssets& ua,
     world.add_combat_unit(bx + 6, by + 9, /*house=*/1, dogc);
     world.units().back().detect_disguise = true;
     step_one();                                        // detection pass with the dog present
-    const bool dog_revealed = disguised_set && stayed_disguised && !world.units()[spy2_idx].disguised;
+    // W7-01-02 [RE: 0x6F71D0 L455-467]: a DetectDisguise dog does not clear
+    // the disguise (no radius, no flag clear): it ignores it in its OWN scan,
+    // while the disguise keeps fooling the copied house.
+    const bool dog_revealed = disguised_set && stayed_disguised && world.units()[spy2_idx].disguised &&
+                              world.units().back().detect_disguise && world.disguise_fools(1, world.units()[spy2_idx]);
     h = capture_fold(h, world);                        // checkpoint 9: dog reveal
     {
         char b[144];
         std::snprintf(b, sizeof b, "[cap] disguise: set=%s past_nondetector=%s dog_revealed=%s",
                       disguised_set ? "yes" : "no", stayed_disguised ? "yes" : "no",
-                      world.units()[spy2_idx].disguised ? "still-disguised" : "revealed");
+                      dog_revealed ? "dog-sees-through" : "no");
         r.witness.emplace_back(b);
     }
 
@@ -13522,7 +13527,7 @@ DemoCaptureResult simulate_capture(Assets& a, UnitAssets& ua,
     if (!blackout_armed)   { r.ok = false; r.witness.emplace_back("[cap] WEDGE: blackout did not arm"); }
     if (!sw_reset)         { r.ok = false; r.witness.emplace_back("[cap] WEDGE: SW did not reset"); }
     if (!produced_vet)     { r.ok = false; r.witness.emplace_back("[cap] WEDGE: produced unit is not a veteran"); }
-    if (!dog_revealed)     { r.ok = false; r.witness.emplace_back("[cap] WEDGE: dog did not reveal the spy"); }
+    if (!dog_revealed)     { r.ok = false; r.witness.emplace_back("[cap] WEDGE: dog / disguise semantics wrong"); }
 
     char hb[64];
     std::snprintf(hb, sizeof hb, "[cap] capture_hash=%016llx",

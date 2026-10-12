@@ -57,6 +57,9 @@ void World::order_stop(int idx) {
     u.guard_x = post.x;
     u.guard_y = post.y;
     u.tg.area_guard = false;   // W6-02-11: Stop leaves Area_Guard
+    // W7-01-32 / W7-02-08 / W7-04-17 [RE: Enter_Idle_Mode 0x51CB2A / 0x737BB6]:
+    // a DefaultToGuardArea type (dogs, Terror Drone) idles in Area_Guard.
+    if (u.w7.t.default_to_guard_area && !u.is_aircraft) u.tg.area_guard = true;
 }
 
 // [RE: TechnoClass::SetOwningHouse FUN_00700940 (FootClass FUN_004DBDE0 /
@@ -88,6 +91,10 @@ void World::order_scatter(int idx) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     Unit& u = units_[idx];
     if (!orderable(u) || u.frozen || u.is_aircraft) return;
+    // W7-01-19 [RE: ScatterObject 0x4C6BD0 -> TechnoClass::Scatter 0x51CEA0]:
+    // X is ignored for a human's deployed unit and for a unit on the move.
+    if (u.deployed && !house_is_computer(u.house)) return;
+    if (u.moving()) return;
     static const int kDx[8] = {0, 1, 1, 1, 0, -1, -1, -1};
     static const int kDy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
     const int start = combat_rng_.random(0, 7);   // deterministic sync-RNG pick

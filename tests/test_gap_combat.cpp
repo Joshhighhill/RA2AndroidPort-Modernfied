@@ -136,9 +136,11 @@ TEST_CASE("gapC deploy: a GI deploys into a firing post with Para, not a frozen 
     CHECK(w.units()[1].hp < 125);
     CHECK(w.units()[0].w_active == 1);
     CHECK(w.units()[0].cell_x == 2);
-    // A move order packs it up.
+    // W7-01-05 [RE: 0x51F510 / 0x51F370]: a human's deployed GI refuses a
+    // move order (it stays dug in).
     w.order_unit_move(0, 2, 4);
-    CHECK_FALSE(w.units()[0].deployed);
+    CHECK(w.units()[0].deployed);
+    CHECK_FALSE(w.units()[0].moving());
 }
 
 TEST_CASE("gapC defenses: a pillbox acquires, turns and kills; Powered goes offline at low power (G-40)") {

@@ -11,7 +11,7 @@ bool verses_allows(const std::vector<int>& verses, int armor_ix) {
 }
 
 bool slot_can_target(const WeaponSlot& w, bool air, int armor_ix) {
-    if (!w.valid) return false;
+    if (!w.valid || w.never_use) return false;   // W7-01-01: NeverUse never fires
     if (air ? !w.aa : !w.ag) return false;
     return verses_allows(w.verses, armor_ix);
 }

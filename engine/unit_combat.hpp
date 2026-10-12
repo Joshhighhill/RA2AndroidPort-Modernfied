@@ -8,6 +8,7 @@
 #include "air_naval.hpp"  // W2-AN: AnType (pure)
 #include "unit_w6.hpp"    // wave-6 #4: UnitTypeW6 (pure)
 #include "target_w6.hpp"  // W6 fix #2 (missions): UnitTypeTgt (pure)
+#include "unit_w7.hpp"    // wave-7 fix (units): UnitTypeW7 (pure)
 
 namespace ra2engine {
 
@@ -186,6 +187,7 @@ struct UnitCombat {
     double prone_damage = 1.0;
     UnitTypeW6 w6;                    // wave-6 #4 type data (unit_w6.hpp)
     UnitTypeTgt tg;                   // W6 fix #2: rules id + targeting type data (target_w6.hpp)
+    UnitTypeW7 w7;                    // wave-7 fix (units): unit_w7.hpp (save v35)
 };
 
 }  // namespace ra2engine

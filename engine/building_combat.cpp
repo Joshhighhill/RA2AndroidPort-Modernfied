@@ -197,7 +197,8 @@ void World::step_building_combat(double dt) {
         }
         // [defenses.md §2] Powered=yes: offline while the house is short of power.
         b.def_offline = false;
-        if (b.power_off) {   // W5-E2: powered down by its owner -- no fire at all
+        // W7-01-11: a Powered defence being erased has no power (HasPower=0).
+        if (b.power_off || (t.powered && b.w7.warp_unpowered)) {   // W5-E2: powered down by its owner -- no fire at all
             b.def_offline = true;
             b.def_target = -1;
             continue;
@@ -254,7 +255,7 @@ void World::step_building_combat(double dt) {
             if (j < 0 || j >= nu) return false;
             const Unit& v = units_[j];
             if (!v.alive || v.die_time >= 0.0 || v.cargo_of >= 0) return false;
-            if (!is_enemy(b.house, v.house) || v.disguised) return false;
+            if (!is_enemy(b.house, v.house) || disguise_fools(b.house, v)) return false;   // W7-01-02
             // W2-AN-13/14: base defenses are NavalTargeting=0 (UNDERWATER_NEVER).
             if (v.an.submerged) return false;
             if (rocket_on_launcher(v)) return false;   // W4: not yet in the air

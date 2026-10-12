@@ -54,7 +54,15 @@ bool World::can_occupy(int ui, int bi) const {
     const BuildingTypeDef& t = btypes()[b.type];
     if (!t.can_be_occupied) return false;
     const bool owner_ok = b.house == u.house || !house_combatant(b.house) || passive_house(b.house);
+    // W7-08-09 [RE: CanBeOccupiedBy FUN_00457CE0]: no entry at or below
+    // ConditionRed (Rules+0x1708).
+    if (garrison_red(b)) return false;
     return owner_ok && static_cast<int>(b.occupants.size()) != t.max_occupants;
+}
+
+// W7-08-09 [RE: FUN_004581F0 / FUN_00457CE0]: health ratio <= ConditionRed.
+bool World::garrison_red(const Building& b) const {
+    return b.max_hp > 0 && static_cast<double>(b.hp) / static_cast<double>(b.max_hp) <= land_rules_.condition_red;
 }
 
 bool World::campaign_can_occupy(int bi) const {
@@ -63,6 +71,7 @@ bool World::campaign_can_occupy(int bi) const {
     if (!b.alive || b.state != Building::State::Idle || b.selling) return false;
     if (b.type < 0 || b.type >= static_cast<int>(btypes().size())) return false;
     const BuildingTypeDef& t = btypes()[b.type];
+    if (garrison_red(b)) return false;   // W7-08-09
     return t.can_be_occupied && static_cast<int>(b.occupants.size()) < t.max_occupants;
 }
 
@@ -209,6 +218,30 @@ void World::unload_occupants(int bi) {
     sync_garrison_owner(bi);
 }
 
+// W7-02-10 / W7-01-38(a): the player gives an own firing garrison a target
+// (unit or structure) like a defence [RE: SUSPECTED, BuildingClass
+// What_Action for CanOccupyFire not traced]. Returns false if refused.
+bool World::garrison_attack(int issuer, int bi, int unit_target, int bld_target) {
+    if (bi < 0 || bi >= static_cast<int>(buildings_.size()) || !garrison_firing(bi)) return false;
+    Building& b = buildings_[static_cast<std::size_t>(bi)];
+    if (!b.alive || !can_command(issuer, b.house)) return false;
+    if (unit_target >= 0 && unit_target < static_cast<int>(units_.size())) {
+        const Unit& v = units_[static_cast<std::size_t>(unit_target)];
+        if (!v.alive || v.die_time >= 0.0 || v.cargo_of >= 0 || are_allied(b.house, v.house)) return false;
+        b.garrison_target = unit_target;
+        b.w7.garrison_target_building = -1;
+        return true;
+    }
+    if (bld_target >= 0 && bld_target < static_cast<int>(buildings_.size()) && bld_target != bi) {
+        const Building& o = buildings_[static_cast<std::size_t>(bld_target)];
+        if (!o.alive || o.state == Building::State::Dead || are_allied(b.house, o.house)) return false;
+        b.garrison_target = -1;
+        b.w7.garrison_target_building = bld_target;
+        return true;
+    }
+    return false;
+}
+
 bool World::garrison_firing(int bi) const {   // vtable +0x400 = FUN_00458DC0
     if (bi < 0 || bi >= static_cast<int>(buildings_.size())) return false;
     const Building& b = buildings_[bi];
@@ -253,23 +286,62 @@ void World::step_garrison_combat(double dt) {
             if (j < 0 || j >= nu) return false;
             const Unit& v = units_[j];
             if (!v.alive || v.die_time >= 0.0 || v.cargo_of >= 0) return false;
-            if (!is_enemy(b.house, v.house) || v.disguised) return false;
+            if (!is_enemy(b.house, v.house) || disguise_fools(b.house, v)) return false;   // W7-01-02
             if (!(v.seen_by_mask & (1u << b.house))) return false;
             if (!slot_can_target(w, v.is_aircraft && v.altitude > 0.0, v.armor_ix)) return false;
             return om::hypot(v.fx - cx, v.fy - cy) <= range + 0.5;
         };
+        // W7-02-10: a structure target (an order, or the defence rule's
+        // armed / occupied enemy building when no unit is in range).
+        const int nb_all = static_cast<int>(buildings_.size());
+        auto bld_engageable = [&](int j, bool ordered) {
+            if (j < 0 || j >= nb_all || j == bi) return false;
+            const Building& o = buildings_[static_cast<std::size_t>(j)];
+            if (!o.alive || o.state == Building::State::Dead || !is_enemy(b.house, o.house)) return false;
+            if (o.type < 0 || o.type >= static_cast<int>(btypes().size())) return false;
+            const BuildingTypeDef& ot = btypes()[static_cast<std::size_t>(o.type)];
+            if (ot.wall || o.iron_left_frames > 0) return false;
+            if (!ordered) {
+                if (ot.insignificant) return false;
+                const bool armed = ot.armed || (ot.can_occupy_fire && !o.occupants.empty());
+                if (!armed && !(house_is_computer(b.house) && ai_threat_any_building())) return false;
+                if (!object_visible_at(b.house, o.cx, o.cy)) return false;
+            }
+            if (!slot_can_target(w, false, o.armor_ix)) return false;
+            double best = -1.0;
+            for (const Cellxy& c : foundation_cells(o.cx, o.cy, o.fw, o.fh)) {
+                const double d = om::hypot(c.x - cx, c.y - cy);
+                if (best < 0.0 || d < best) best = d;
+            }
+            return best >= 0.0 && best <= range + 0.5;
+        };
+        if (b.garrison_target >= 0 && b.w7.garrison_target_building >= 0) b.w7.garrison_target_building = -1;
         if (!engageable(b.garrison_target)) {
             b.garrison_target = -1;
-            double best = 0.0;
-            for (int j = 0; j < nu; ++j) {
-                if (!engageable(j)) continue;
-                const double d = om::hypot(units_[j].fx - cx, units_[j].fy - cy);
-                if (b.garrison_target < 0 || d < best) { b.garrison_target = j; best = d; }
+            if (!bld_engageable(b.w7.garrison_target_building, true)) {
+                b.w7.garrison_target_building = -1;
+                double best = 0.0;
+                for (int j = 0; j < nu; ++j) {
+                    if (!engageable(j)) continue;
+                    const double d = om::hypot(units_[j].fx - cx, units_[j].fy - cy);
+                    if (b.garrison_target < 0 || d < best) { b.garrison_target = j; best = d; }
+                }
+                if (b.garrison_target < 0)
+                    for (int j = 0; j < nb_all; ++j) {
+                        if (!bld_engageable(j, false)) continue;
+                        const Building& o = buildings_[static_cast<std::size_t>(j)];
+                        const double d = om::hypot(o.cx + (o.fw - 1) / 2.0 - cx, o.cy + (o.fh - 1) / 2.0 - cy);
+                        if (b.w7.garrison_target_building < 0 || d < best) { b.w7.garrison_target_building = j; best = d; }
+                    }
             }
         }
-        if (b.garrison_target < 0 || b.garrison_rearm_frames > 0.0) continue;
+        const int tbld = b.garrison_target < 0 ? b.w7.garrison_target_building : -1;
+        if ((b.garrison_target < 0 && tbld < 0) || b.garrison_rearm_frames > 0.0) continue;
         // TechnoClass::GetROF (FUN_006FC460): ROF / OccupantCount, then
         // ftol(ROF / OccupyROFMultiplier) when the multiplier is > 1.0.
+        // W7-02-10 [RE: GetROF FUN_006FC460 @0x6FC570/0x6FC594]: the
+        // veterancy is the BUILDING's own (never veteran), the 0..2 jitter is
+        // rearm_frames_for's Random(0,2).
         int rof = w.rof / static_cast<int>(b.occupants.size());
         if (depth_rules_.occupy_rof_mult > 1.0) rof = ftol(rof / depth_rules_.occupy_rof_mult);
         b.garrison_rearm_frames = rearm_frames_for(rof, &combat_rng_);
@@ -290,6 +362,16 @@ void World::step_garrison_combat(double dt) {
         shooter.w_inf_death = w.inf_death;          // W3-B
         shooter.w_prone_damage = w.prone_damage;
         shooter.alive = false;
+        if (tbld >= 0) {   // W7-02-10: a garrison shot at a structure
+            fire_events_.push_back({-1, bi, -1, tbld, 0, w.id});
+            ++garrison_shots_;
+            const Building& o = buildings_[static_cast<std::size_t>(tbld)];
+            int ax = 0, ay = 0, az = 0;
+            building_aim_lept(o, cell_level(o.cx, o.cy), ax, ay, az);
+            damage_area(*this, units_, buildings_, occ_, shooter, -1, bi, ax, ay, az);
+            b.firing_occupant = (b.firing_occupant + 1) % static_cast<int>(b.occupants.size());
+            continue;
+        }
         fire_events_.push_back({-1, bi, b.garrison_target, -1, 0, w.id});
         ++garrison_shots_;
         // UC weapons fly invisible projectiles: delivered as instant hits
@@ -507,6 +589,40 @@ int World::break_high_bridge(int x, int y) {
     return n;
 }
 
+// W7-08-19 [RE: InfantryClass::What_Action 0x51E17C L60-63 -> FUN_00586E40]:
+// over a BridgeRepairHut the engineer gets Enter only when a bridge within the
+// hut's scan needs repair (else NoEnter): the read-only twin of the two
+// repair walks above (same cells, same connected flood).
+bool World::bridge_needs_repair_near(int bi) const {
+    if (bi < 0 || bi >= static_cast<int>(buildings_.size())) return false;
+    const Building& b = buildings_[bi];
+    if (!bridge_ovl_.empty()) {
+        std::vector<Cellxy> stack;
+        std::vector<std::uint8_t> seen(bridge_ovl_.size(), 0);
+        for (int y = b.cy - 2; y < b.cy + b.fh + 2; ++y)
+            for (int x = b.cx - 2; x < b.cx + b.fw + 2; ++x)
+                if (is_low_bridge_overlay(bridge_overlay_at(x, y))) stack.push_back({x, y});
+        while (!stack.empty()) {
+            const Cellxy c = stack.back();
+            stack.pop_back();
+            const std::size_t i = static_cast<std::size_t>(c.y) * grid_w_ + c.x;
+            if (seen[i]) continue;
+            seen[i] = 1;
+            if (low_bridge_repaired(bridge_ovl_[i]) != bridge_ovl_[i]) return true;
+            for (int dy = -1; dy <= 1; ++dy)
+                for (int dx = -1; dx <= 1; ++dx) {
+                    const int x = c.x + dx, y = c.y + dy;
+                    if ((dx || dy) && is_low_bridge_overlay(bridge_overlay_at(x, y))) stack.push_back({x, y});
+                }
+        }
+    }
+    if (hbridge_.empty()) return false;
+    for (int y = b.cy - 4; y < b.cy + b.fh + 4; ++y)
+        for (int x = b.cx - 4; x < b.cx + b.fw + 4; ++x)
+            if (high_bridge_destroyed(x, y)) return true;
+    return false;
+}
+
 int World::repair_high_bridge_near(int bi) {
     if (hbridge_.empty() || bi < 0 || bi >= static_cast<int>(buildings_.size())) return 0;
     const Building& b = buildings_[bi];
@@ -637,6 +753,13 @@ void World::step_depth(double dt) {
         // The building died or is being sold: its occupants walk out
         // (FUN_004421B0 / FUN_00449B70 both call UnloadOccupants).
         if (!b.occupants.empty() && (!b.alive || b.state == Building::State::Dead || b.selling)) {
+            unload_occupants(bi);
+            continue;
+        }
+        // W7-08-09 [RE: the damage-state update FUN_0043FAA0 @0x44012F ->
+        // FUN_004581F0 -> UnloadOccupants FUN_00457DD0]: at health ratio <=
+        // ConditionRed every occupant walks out alive.
+        if (!b.occupants.empty() && garrison_red(b)) {
             unload_occupants(bi);
             continue;
         }

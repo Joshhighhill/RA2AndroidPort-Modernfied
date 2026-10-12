@@ -57,6 +57,9 @@ bool is_passable(const std::vector<std::uint8_t>& passable, int gw, int gh, int 
 // pileup can plausibly exhaust; beyond it the warp aborts in place (the
 // unit's own just-released cell is always re-claimable, see teleport_unit).
 constexpr int kWarpDeflectRadius = 8;
+// W7-04-23 [CONFIRMED-DATA rulesmd [General] HarvesterTooFarDistance=5;
+// RE 0x73DB0E]: cells beyond which a returning miner does not radio its refinery.
+constexpr int kHarvesterTooFarDistance = 5;
 
 // Teleport `u` (unit index `self`) to (tx, ty), reconciling occupancy
 // (Task 6 review fix -- the pre-fix code only checked terrain passability
@@ -430,12 +433,31 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                 // [economy.md §2 -- the radio handshake binds a miner to the
                 // refinery that answered it].
                 int ref = u.dock_refinery;
+                bool fresh_pick = false;
                 if (ref < 0 || ref >= (int)buildings.size() ||
                     !buildings[(size_t)ref].alive ||
                     buildings[(size_t)ref].state != Building::State::Idle) {
                     ref = nearest_refinery(buildings, types, refinery_types, u.house, u.cell_x,
                                            u.cell_y);
                     u.dock_refinery = ref;
+                    fresh_pick = true;
+                }
+                // W7-04-23 [RE: UnitClass harvest mission 0x73DB0E,
+                // [General] HarvesterTooFarDistance=5]: a returning miner
+                // radios (binds) the refinery only within 5 cells; farther
+                // away it drives toward it (FUN_0056D750) and decides again
+                // -- a distant miner neither holds the dock nor queues.
+                if (fresh_pick && ref >= 0 && !u.chrono_miner) {
+                    const Building& rb = buildings[(size_t)ref];
+                    const int ddx = u.cell_x < rb.cx ? rb.cx - u.cell_x : (u.cell_x >= rb.cx + rb.fw ? u.cell_x - (rb.cx + rb.fw - 1) : 0);
+                    const int ddy = u.cell_y < rb.cy ? rb.cy - u.cell_y : (u.cell_y >= rb.cy + rb.fh ? u.cell_y - (rb.cy + rb.fh - 1) : 0);
+                    if (std::max(ddx, ddy) > kHarvesterTooFarDistance) {
+                        u.dock_refinery = -1;
+                        const Cellxy ac = dock_approach_cell(rb, passable, gw, gh);
+                        if (!u.moving() || u.path.back().x != ac.x || u.path.back().y != ac.y)
+                            moves.push_back({idx, ac.x, ac.y});
+                        break;
+                    }
                 }
                 if (ref < 0) {
                     // No alive refinery: park the (still loaded) miner back

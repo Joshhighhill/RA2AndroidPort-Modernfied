@@ -308,18 +308,18 @@ TEST_CASE("harvest: CMIN warps home, HARV drives") {
     CHECK(count_events(r.events, HarvestEvent::Kind::ChronoIn, 0) == 1);
     for (const auto& m : r.moves) CHECK(m.unit != 0);  // no HarvestMove for unit 0
 
-    // HARV: no chrono events, hasn't arrived. W2-SK-03: the CMIN now holds
-    // the dock (WaitDock), so the HARV heads for the QueueingCell (cx+fw,
-    // cy+1) = (12, 9) instead of crowding the pad.
+    // HARV: no chrono events, hasn't arrived. W7-04-23 [RE: 0x73DB0E,
+    // HarvesterTooFarDistance=5]: farther than 5 cells it does not radio
+    // (bind) the refinery yet -- it drives toward the dock and decides again.
     bool harv_move_found = false;
     for (const auto& m : r.moves) {
         if (m.unit == 1) {
             harv_move_found = true;
-            CHECK(m.gx == 12);
-            CHECK(m.gy == 9);
+            CHECK_FALSE((m.gx == 12 && m.gy == 9));
         }
     }
     CHECK(harv_move_found);
+    CHECK(r.units[1].dock_refinery == -1);
     CHECK(r.units[1].harv == HarvState::ReturnToRef);
     CHECK(r.units[1].cell_x == 1);
     CHECK(r.units[1].cell_y == 2);
