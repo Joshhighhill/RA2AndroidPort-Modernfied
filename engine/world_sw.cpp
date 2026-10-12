@@ -262,7 +262,7 @@ bool World::fire_superweapon_at(int house, SuperweaponType type, int cx, int cy,
 
 // ------------------------------------------------------------------ damage --
 
-void World::an_damage_unit(int idx, int dmg, int attacker) {
+void World::an_damage_unit(int idx, int dmg, int attacker, int inf_death) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     Unit& v = units_[idx];
     if (!v.alive || v.die_time >= 0.0 || dmg <= 0) return;
@@ -271,6 +271,7 @@ void World::an_damage_unit(int idx, int dmg, int attacker) {
     if (v.hp <= 0) {
         v.die_time = 0.0;
         v.vet.killed_by = attacker;
+        if (inf_death >= 0) v.ia.death = inf_death;   // W7-12-08 (presentation only)
         occ_.release_all_of(idx, -1, -1);
         v.target = -1;
         v.target_building = -1;
@@ -296,7 +297,7 @@ void World::an_damage_building(int b, int dmg) {
 // callers that want it.]
 void World::an_area_damage(int house, double cx, double cy, int damage, double spread, double pmax,
                            const std::array<int, 11>& verses, bool hit_air, bool spare_house,
-                           double z, int wall_flags) {
+                           double z, int wall_flags, int inf_death) {
     const double radius = std::max(0.5, std::round(spread)) * kLept;
     const std::vector<int> vv(verses.begin(), verses.end());
     for (int j = 0; j < static_cast<int>(units_.size()); ++j) {
@@ -313,7 +314,7 @@ void World::an_area_damage(int house, double cx, double cy, int damage, double s
         const double scale = 1.0 - (1.0 - pmax) * (d / radius);
         const int dmg = damage_vs(om::ftol(damage * scale), vv, w.armor_ix);
         const int hp0 = w.hp;
-        an_damage_unit(j, dmg, -1);
+        an_damage_unit(j, dmg, -1, inf_death);
         feed_damage(false, j, house, hp0 - units_[j].hp);   // W6-03-04 anger
     }
     // W6-04-04/05 [RE: FUN_00489190 @0x489581]: wall cells inside the blast
@@ -375,7 +376,8 @@ void World::an_nuke_detonate(const SwStrike& s) {
     // W2-AN-06: everything in the blast, the firer's own units and airborne
     // units included (FUN_00489190 has no house or layer filter).
     an_area_damage(s.house, s.x, s.y, dmg, spread, pmax, verses, /*hit_air=*/true,
-                   /*spare_house=*/false, 0.0, an_.sw.nuke_wall_flags);   // W6-04-04: walls erased
+                   /*spare_house=*/false, 0.0, an_.sw.nuke_wall_flags,   // W6-04-04: walls erased
+                   nuke_inf_death_);                                     // W7-12-08
     // [NukePayload] RadLevel=500: a radiation site over the blast (P4 RadField;
     // spread = the warhead CellSpread, as BulletClass::Detonate's RadSite block).
     if (an_.sw.nuke_rad_level > 0 && grid_w_ > 0 && grid_h_ > 0) {
@@ -584,7 +586,8 @@ void World::an_storm_bolt(SwStrike& s, int x, int y) {
     for (int v : verses) any |= v != 0;
     if (!any) verses.fill(100);
     an_area_damage(s.house, x, y, an_.sw.storm_damage, an_.sw.storm_wh_spread, an_.sw.storm_wh_pmax,
-                   verses, /*hit_air=*/false, /*spare_house=*/false, 0.0, an_.sw.storm_wall_flags);   // W6-04-04
+                   verses, /*hit_air=*/false, /*spare_house=*/false, 0.0, an_.sw.storm_wall_flags,   // W6-04-04
+                   storm_inf_death_);   // W7-12-08
     an_event(SwEvent::Bolt, s.house, SuperweaponType::LightningStorm, x, y);
     s.recent.push_back(x);
     s.recent.push_back(y);

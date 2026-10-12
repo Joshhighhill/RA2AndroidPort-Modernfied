@@ -605,7 +605,9 @@ bool Input::type_select() {
         if (matches(us[i]) && (all_on_screen_selected || on_screen(us[i]))) sel_.set(static_cast<int>(i));
     selected_building_ = -1;
     const int lo = lowest_selected();
-    if (lo >= 0) { actions_.selected = true; actions_.actor = lo; }
+    // W7-12-26 [RE: 0x7318A0 saves AllowVoice and forces it to 0]: the
+    // select-same-type sweep is SILENT -- no `selected` voice request.
+    if (lo >= 0) actions_.actor = lo;
     return lo >= 0;
 }
 

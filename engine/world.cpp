@@ -5767,8 +5767,13 @@ void World::step(double dt) {
 
         // W3-B: the live game's infantry sequence machine (inf_anim.cpp),
         // one step per 15 Hz logic tick of accumulated time.
-        if (inf_anims_ && !u.is_vehicle && !u.is_aircraft && !u.is_naval && u.cargo_of < 0) {
-            const InfTable* it = inf_table(u.image);
+        // W7-01-21: a jumpjet soldier (the Rocketeer, is_aircraft) runs the
+        // sequence machine too, with the airborne substitutions.
+        if (inf_anims_ && !u.is_vehicle && (!u.is_aircraft || u.is_infantry) && !u.is_naval && u.cargo_of < 0) {
+            // W7-09-02: the per-RULES-id table first (Fearless / Fraidycat /
+            // NotHuman are InfantryType fields: CTECH shares CIV3's image).
+            const InfTable* it = u.tg.t.rules_id.empty() ? nullptr : inf_table(u.tg.t.rules_id);
+            if (!it) it = inf_table(u.image);
             if (it) {
                 const int ui = static_cast<int>(&u - units_.data());
                 if (!u.ia.armed) {
@@ -5783,10 +5788,16 @@ void World::step(double dt) {
                 c.human = u.house == inf_human_ || is_human(u.house);   // L2: every human house
                 const std::size_t ci = static_cast<std::size_t>(u.cell_y) * grid_w_ + u.cell_x;
                 c.in_water = u.cell_x >= 0 && u.cell_y >= 0 && ci < water_passable_.size() && water_passable_[ci];
+                // W7-12-09 [RE: PlayAnim 0x51D4C0 -- the wet set runs on a
+                // cell whose LandType is Water (2) OR Beach (6); only types
+                // with the Swim set are affected (AmphibiousDestroyer)].
+                if (!c.in_water && land_speed_armed_ && speed_land_at(u.cell_x, u.cell_y) == 6) c.in_water = true;
                 c.has_target = u.target >= 0 || u.target_building >= 0;
                 c.dying = u.die_time >= 0.0;
                 c.deployed = u.deployed;
                 c.fire_flash = u.fire_flash;
+                c.fire_slot = u.w_active;   // W7-12-10 (presentation: sequence pick only)
+                c.airborne = u.is_aircraft && u.altitude > 0.0;   // W7-01-21
                 c.idle_frequency = inf_idle_freq_;
                 if (it->fraidycat) c.scatter = [this, ui]() { order_scatter(ui); };
                 u.ia.acc += dt * 15.0;

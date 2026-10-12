@@ -193,8 +193,10 @@ void try_fire(const World& world, std::vector<Unit>& units, std::vector<Building
         Unit frag = u;
         frag.w_damage = u.shrapnel_damage;
         frag.w_verses = u.shrapnel_verses;
-        for (int k = 0; k < static_cast<int>(near.size()) && k < u.shrapnel_count; ++k)
+        for (int k = 0; k < static_cast<int>(near.size()) && k < u.shrapnel_count; ++k) {
+            world.note_fragment(attacker_idx, v.fx, v.fy, v.level, near[static_cast<std::size_t>(k)].second);   // W7-12-07
             deliver_hit_from(units, occ, frag, attacker_idx, -1, near[static_cast<std::size_t>(k)].second);
+        }
     }
 }
 

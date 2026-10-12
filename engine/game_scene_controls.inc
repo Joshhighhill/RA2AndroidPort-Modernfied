@@ -411,13 +411,18 @@
             const bool current = lq().producing(cat) == type;
             const bool held = world_.econ_held(lh, cat);
             if (right) {
-                if (shift) { issue_type_event(ET::AbandonAll, false, type); return; }   // ABANDON_ALL
+                if (shift) {   // ABANDON_ALL
+                    issue_type_event(ET::AbandonAll, false, type);
+                    pres_.note_eva("EVA_Canceled");   // W7-12-01 [RE: FUN_006AA390 @6AA4C4]
+                    return;
+                }
                 if (current && !held && !lq().ready(cat)) {   // SUSPEND
                     issue_type_event(ET::Suspend, false, type);
                     pres_.note_eva("EVA_OnHold");   // W5-E [RE: FUN_006AA390 @6AA692]
                     return;
                 }
                 issue_type_event(ET::Abandon, false, type);   // a queued copy, else the current
+                pres_.note_eva("EVA_Canceled");   // W7-12-01 [RE: FUN_006AA390 @6AA4C4]
                 return;
             }
             issue_type_event(ET::Produce, false, type);   // resume / start / queue one more
@@ -437,6 +442,7 @@
                 return;
             }
             issue_type_event(ET::Abandon, true, type);                   // ABANDON
+            pres_.note_eva("EVA_Canceled");   // W7-12-01 [RE: FUN_006AA390 @6AA4C4]
             return;
         }
         if (current && bq.slot.ready) {

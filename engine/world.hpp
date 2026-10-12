@@ -926,6 +926,16 @@ public:
     }
     bool infantry_anims() const { return inf_anims_; }
     void set_inf_table(const std::string& image, const InfTable& t) { inf_tables_[image] = t; }
+    // W7-12-08 [RE: InfantryClass::ReceiveDamage 0x517DB5 switches on the
+    // warhead's InfDeath for EVERY damage source]: the InfDeath of the
+    // non-weapon kill paths -- [Radiation] RadSiteWarhead, the Nuke warhead,
+    // the Lightning Storm warhead. Presentation-only (Unit::ia.death picks the
+    // death sequence / anim); not saved, set by the host at setup.
+    void set_inf_deaths(int rad, int nuke, int storm) {
+        rad_inf_death_ = rad;
+        nuke_inf_death_ = nuke;
+        storm_inf_death_ = storm;
+    }
     const InfTable* inf_table(const std::string& image) const {
         auto it = inf_tables_.find(image);
         return it == inf_tables_.end() ? nullptr : &it->second;
@@ -2108,6 +2118,21 @@ public:
         std::string weapon;        // weapon id when known (defenses), else ""
     };
     std::vector<FireEvent> take_fire_events();
+    // W7-12-07 [RE: BulletClass shrapnel FUN_0046a230 @0x46a7cc/0x46aca1 --
+    // each fragment draws its weapon's laser / bolt from the impact point to
+    // its target]: one record per fragment hit, presentation-only (never
+    // hashed or saved). Written from combat.cpp's const World view.
+    struct FragEvent {
+        int attacker = -1;        // the unit whose shot split
+        double x0 = 0, y0 = 0;    // the impact point (cell space)
+        int level0 = 0;
+        int target = -1;          // the fragment's unit target
+    };
+    void note_fragment(int attacker, double x0, double y0, int level0, int target) const {
+        frag_events_.push_back(FragEvent{attacker, x0, y0, level0, target});
+    }
+    const std::vector<FragEvent>& frag_events() const { return frag_events_; }
+    void clear_frag_events() { frag_events_.clear(); }
     // W3-B: the not-yet-taken events (the presentation's per-tick observer).
     const std::vector<FireEvent>& pending_fire_events() const { return fire_events_; }
     // Stop / Guard / Scatter (unit_orders.cpp). B binds S / G / X to the
@@ -2611,12 +2636,13 @@ private:
     void an_chrono(int house, int sx, int sy, int dx, int dy);
     void an_iron_curtain(int house, int cx, int cy);
     int an_spawn(const std::string& id, int house, int x, int y);
-    void an_damage_unit(int idx, int dmg, int attacker);
+    void an_damage_unit(int idx, int dmg, int attacker, int inf_death = -1);
     void an_damage_building(int b, int dmg);
     void an_area_damage(int house, double cx, double cy, int damage, double spread, double pmax,
                         const std::array<int, 11>& verses, bool hit_air, bool spare_house,
                         double z = 0.0,    // W4: explosion height (0 = the 2-D test)
-                        int wall_flags = 0);   // W6-04-04: the warhead's Wall/Wood/WallAbsoluteDestroyer
+                        int wall_flags = 0,    // W6-04-04: the warhead's Wall/Wood/WallAbsoluteDestroyer
+                        int inf_death = -1);   // W7-12-08: the warhead's InfDeath (death sequence / anim)
     // W4 RocketLocomotion (world_an.cpp): target point, explosion.
     bool rocket_target_point(int tu, int tb, double& x, double& y, double& z) const;
     void rocket_explode(int i, int end);
@@ -2790,6 +2816,8 @@ private:
     int inf_human_ = 0;
     double inf_idle_freq_ = 0.15;
     std::map<std::string, InfTable> inf_tables_;
+    int rad_inf_death_ = -1, nuke_inf_death_ = -1, storm_inf_death_ = -1;   // W7-12-08 (not saved)
+    mutable std::vector<FragEvent> frag_events_;   // W7-12-07 (presentation feed; not saved)
 
     // --- Economy phase [RE: economy.md] ---
     OreField ore_;
@@ -2846,7 +2874,7 @@ private:
     // Teleport `idx` to the nearest free cell at/around (gx,gy) [§C1].
     void teleport_unit(int idx, int gx, int gy);
     // Start a unit's death the combat.cpp way (die_time=0, release occupancy).
-    void ability_kill_unit(int idx);
+    void ability_kill_unit(int idx, int inf_death = -1);   // W7-12-08: the warhead InfDeath (-1 unknown)
     // Remove a unit from the game without dying (erase, §C2).
     void ability_erase_unit(int idx);
     // DamageArea [§E/§F]: all houses, units + buildings, linear falloff.
@@ -2859,7 +2887,7 @@ private:
     void ability_fire_event(int idx);
     void ability_death_pass();
     // Weapon application to a unit/building with verses (no splash).
-    void ability_damage_unit(int victim, int dmg);
+    void ability_damage_unit(int victim, int dmg, int inf_death = -1);
     void ability_damage_building(int b_idx, int dmg);
     void ability_apply_weapon_fields(Unit& u, const WeaponSpec& w);
     void ability_bind_unit(Unit& u);

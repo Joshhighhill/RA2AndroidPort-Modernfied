@@ -141,12 +141,17 @@ std::uint32_t Mixer::start_(const std::string& key, double dist_cells, int pan, 
         return 0;
     }
 
-    // [RE: FUN_004048b0] Attack (first) + body + Decay (last) partition.
+    // [RE: FUN_004048b0] Attack (first A) + body + Decay (last D) partition.
+    // W7-12-24 [RE: FUN_0074F260 Attack= / Decay= counts; FUN_00406570 forces
+    // 1 only when the Control bit is set and the count is 0]: the intro is a
+    // random one of the first A samples, the outro one of the last D.
     const int count = static_cast<int>(s.variants.size());
-    const int a = (s.attack && count >= 2) ? 1 : 0;
-    const int d = (s.decay && count - a >= 2) ? 1 : 0;
+    int a = !s.attack ? 0 : std::max(1, s.attack_n);
+    int d = !s.decay ? 0 : std::max(1, s.decay_n);
+    if (a >= count) a = count >= 2 ? count - 1 : 0;
+    if (d > count - a - 1) d = std::max(0, count - a - 1);
     std::vector<int> seq;
-    if (a) seq.push_back(s.variants[0]);
+    if (a) seq.push_back(s.variants[static_cast<std::size_t>(a == 1 ? 0 : ranged_(0, a - 1))]);
     int body = -1;
     if (s.all) {
         for (int i = a; i < count - d; ++i) seq.push_back(s.variants[static_cast<std::size_t>(i)]);
@@ -157,7 +162,9 @@ std::uint32_t Mixer::start_(const std::string& key, double dist_cells, int pan, 
         body = s.variants[static_cast<std::size_t>(ranged_(a, count - d - 1))];
         seq.push_back(body);
     }
-    if (d) seq.push_back(s.variants[static_cast<std::size_t>(count - 1)]);
+    // W7-12-24: a LOOP+ALL event repeats only its body (the outro on stop
+    // was not traced, [SUSPECTED]); others end on the outro.
+    if (d && !(s.loop && s.all)) seq.push_back(s.variants[static_cast<std::size_t>(d == 1 ? count - 1 : ranged_(count - d, count - 1))]);
 
     Voice v{key, seq.front(), 0, 0, s.priority, age_counter_++, s.bus,
             100, 8192, 0, 65536, 0, {}, 0, -1, false, 0, false, false, 0, 0};   // the member defaults, spelled out (-Wextra)
@@ -175,6 +182,7 @@ std::uint32_t Mixer::start_(const std::string& key, double dist_cells, int pan, 
     v.seq = seq;
     v.seq_ix = 1;
     v.loop_from = !s.loop ? -1 : (s.all ? -2 : (body >= 0 ? body : seq.front()));
+    v.loop_start = static_cast<std::size_t>(a > 0 && seq.size() > 1 ? 1 : 0);
     if (s.predelay || s.ambient) {   // W5-E predelay
         v.predelay = s.predelay;
         v.ambient = s.ambient;
@@ -317,7 +325,7 @@ bool Mixer::next_sample_(Voice& v, int& sample) {
                 if (v.delay > 0) { --v.delay; sample = 0; return true; }
             }
         } else if (v.loop_from == -2 && !v.seq.empty()) {
-            v.seq_ix = 0;
+            v.seq_ix = std::min(v.loop_start, v.seq.size() - 1);   // W7-12-24: the body only
             v.clip = v.seq[v.seq_ix++];
             if (v.predelay || v.ambient) {
                 v.delay = draw_delay_(v.ambient, v.delay_lo, v.delay_hi);

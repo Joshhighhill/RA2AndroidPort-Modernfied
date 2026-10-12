@@ -29,6 +29,10 @@ struct SoundEntry {
     // Delay= min max in milliseconds (one value = both), read for PREDELAY /
     // AMBIENT events.
     int delay_lo = 0, delay_hi = 0;
+    // W7-12-24 [RE: FUN_0074F260 ReadInteger "Attack" / "Decay" (+0x138 /
+    // +0x13C)]: how many leading / trailing samples are the attack / decay
+    // pool (0 = unset; FUN_00406570 forces 1 when the Control bit is set).
+    int attack_n = 0, decay_n = 0;
 };
 
 // Thin, minimal reader for soundmd.ini's sound-event sections (Task 2 of the

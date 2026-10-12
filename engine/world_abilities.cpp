@@ -196,10 +196,11 @@ void World::teleport_unit(int idx, int gx, int gy) {
     ability_events_.push_back({Ev::Kind::Teleport, idx, -1, dist, delay, false});
 }
 
-void World::ability_kill_unit(int idx) {
+void World::ability_kill_unit(int idx, int inf_death) {
     Unit& v = units_[idx];
     if (!v.alive || v.die_time >= 0.0) return;
     if (v.hp > 0) v.hp = 0;
+    if (inf_death >= 0) v.ia.death = inf_death;   // W7-12-08 (presentation only)
     // The combat.cpp death path, verbatim (die anim -> tombstone in step_combat).
     v.die_time = 0.0;
     occ_.release_all_of(idx, -1, -1);
@@ -245,12 +246,12 @@ void World::ability_erase_unit(int idx) {
     v.path_idx = 0;
 }
 
-void World::ability_damage_unit(int victim, int dmg) {
+void World::ability_damage_unit(int victim, int dmg, int inf_death) {
     Unit& v = units_[victim];
     if (!v.alive || v.die_time >= 0.0) return;
     if (v.an.iron_left_frames > 0.0) return;   // W2-AN-04 Iron Curtain
     v.hp -= dmg;
-    if (v.hp <= 0) ability_kill_unit(victim);
+    if (v.hp <= 0) ability_kill_unit(victim, inf_death);
 }
 
 void World::ability_damage_building(int b_idx, int dmg) {
@@ -442,7 +443,7 @@ void World::ability_fire_event(int i) {
         case AbilityKind::Suicide:
             // [§F 0x6FD27C] no bullet: the firer dies; the death pass blasts.
             ability_events_.push_back({Ev::Kind::Suicide, i, vb, 0, 0, true});
-            ability_kill_unit(i);
+            ability_kill_unit(i, u.w_inf_death);   // W7-12-08: its own weapon's warhead
             break;
         default:
             // Parasite vs a building: not infectable (BuildingType Parasiteable
@@ -518,7 +519,7 @@ void World::ability_fire_event(int i) {
         break;
     case AbilityKind::Suicide:
         ability_events_.push_back({Ev::Kind::Suicide, i, vt, 0, 0, false});
-        ability_kill_unit(i);
+        ability_kill_unit(i, u.w_inf_death);   // W7-12-08: its own weapon's warhead
         break;
     default:
         break;
@@ -679,6 +680,7 @@ void World::step_abilities(double dt) {
             rof = rof_frames(rof, true, vet_rules_.rof);
         u.deploy_next_fire = F + std::max(1, rof);
         ability_events_.push_back({Ev::Kind::Eruption, i, -1, u.cell_x, u.cell_y, false});
+        u.ia.erupt = true;   // W7-02-05: the DeployedFire sequence (presentation only)
         ability_area_damage(i, u.fx, u.fy, w, w.damage);
         if (w.rad_level > 0)
             rad_.detonate(u.cell_x, u.cell_y, ability_ftol(w.cell_spread), w.rad_level, ability_frame_,
@@ -889,7 +891,7 @@ void World::step_abilities(double dt) {
             if (raw <= 0) continue;
             const int dmg = damage_vs(raw, ability_rules_.rad_verses, u.armor_ix);
             ability_events_.push_back({Ev::Kind::RadDamage, i, -1, dmg, raw, false});
-            if (dmg > 0) ability_damage_unit(i, dmg);
+            if (dmg > 0) ability_damage_unit(i, dmg, rad_inf_death_);   // W7-12-08 RadSiteWarhead
         }
     }
 
