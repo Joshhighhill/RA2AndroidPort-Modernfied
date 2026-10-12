@@ -128,7 +128,8 @@ void World::step_w5(double dt) {
             continue;
         }
         int c = u.w5.charging;
-        if (c >= 0 && (c >= nb || !live_bld(buildings_[(std::size_t)c]) || buildings_[(std::size_t)c].house != u.house))
+        if (c >= 0 && (c >= nb || !live_bld(buildings_[(std::size_t)c]) ||
+                       !allied_with(u.house, buildings_[(std::size_t)c].house)))   // W7-02-02: allied coils too
             c = -1;
         if (c >= 0) {   // still adjacent?
             const Building& b = buildings_[(std::size_t)c];
@@ -143,7 +144,7 @@ void World::step_w5(double dt) {
                 const int bi = building_at_cell(u.cell_x + kDx[k], u.cell_y + kDy[k]);
                 if (bi < 0) continue;
                 const Building& b = buildings_[(std::size_t)bi];
-                if (b.house != u.house || b.type < 0 || b.type >= (int)types.size()) continue;
+                if (!allied_with(u.house, b.house) || b.type < 0 || b.type >= (int)types.size()) continue;   // W7-02-02
                 if (!types[(std::size_t)b.type].w5.overpowerable) continue;
                 c = bi;
             }
@@ -182,7 +183,9 @@ void World::step_w5(double dt) {
     // gain it at rank 1 in this rulesmd) [RE-FALLBACK: the original scatters
     // the unit from incoming fire through its threat response; here a ranked
     // unit standing idle that loses HP steps aside (order_scatter)].
-    if (vet_any_)
+    // w7fix-combat: with the W7 rules armed the damage scatter is World::
+    // step_missions_w7 (the original's ReceiveDamage rule, W7-07-24).
+    if (vet_any_ && !w7_rules_.armed)
         for (int i = 0; i < nu; ++i) {
             Unit& u = units_[(std::size_t)i];
             const int prev = u.w5.last_hp;

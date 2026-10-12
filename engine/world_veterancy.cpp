@@ -56,6 +56,13 @@ void World::refresh_vet_stats(int idx) {
     u.w_damage = fire_damage(w.damage, v.firepower_mult, has(Ability::Firepower), vet_rules_.combat,
                              house_fp);
     u.w_rof = rof_frames(w.rof, has(Ability::Rof), vet_rules_.rof, house_rof);
+    // w7fix-combat W7-07-14/15: keep the parts for the jitter-first rearm and
+    // the slot switch (the house handicap survives activate_weapon_slot).
+    u.tg.w7_rof = w7_rules_.armed;
+    u.tg.rof_raw = w.rof;
+    u.tg.house_rof = house_rof;
+    u.tg.house_fp = house_fp;
+    u.tg.rof_vet = has(Ability::Rof) ? vet_rules_.rof : 1.0;
     u.w6.burst = w.burst;   // W6-04-01: the elite slot's Burst (105mmE 2, 120mmxE 4)
     u.w6.omni_fire = w.omni_fire;   // W6-04-06
     u.w6.sonic = w.sonic;           // W6-04-09
@@ -135,7 +142,20 @@ void World::credit_kill(int killer, int victim_house, int victim_cost, float vic
     // Wave-5 (item 8) [RE-FALLBACK: the original's spawn-manager kill credit
     // was not traced; in play the Carrier / V3 launcher is what gains rank]:
     // a spawned aircraft or a missile credits its spawner.
-    {
+    if (w7_rules_.armed) {
+        // W7-07-16 [RE: FUN_007021D0 0x70232D..0x70247A]: (1) an open-topped
+        // passenger credits its Trainable transport; (2) else a Trainable
+        // killer itself (Hornets, ASW planes); (3) else a MissileSpawn credits
+        // its SpawnOwner.
+        const Unit& s = units_[killer];
+        const int tr = s.cargo_of;
+        if (tr >= 0 && tr < static_cast<int>(units_.size()) && units_[tr].w5.p.open_topped &&
+            units_[tr].vet.trainable)
+            killer = tr;
+        else if (!s.vet.trainable && s.an.t.missile && s.an.owner >= 0 &&
+                 s.an.owner < static_cast<int>(units_.size()))
+            killer = s.an.owner;
+    } else {
         const Unit& s = units_[killer];
         if ((s.an.t.spawned || s.an.t.missile) && s.an.owner >= 0 &&
             s.an.owner < static_cast<int>(units_.size()))
@@ -143,7 +163,9 @@ void World::credit_kill(int killer, int victim_house, int victim_cost, float vic
     }
     Unit& k = units_[killer];
     if (!k.alive) return;
-    const bool allied = !is_enemy(k.house, victim_house);
+    // W7-07-16 [RE: 0x7022FC IsAlliedWith]: only an allied victim is worth 0
+    // (a neutral kill scores).
+    const bool allied = w7_rules_.armed ? allied_with(k.house, victim_house) : !is_enemy(k.house, victim_house);
     const int value = kill_value(victim_cost, victim_vet, allied);
     if (!k.vet.trainable) return;
     k.vet.veterancy = veterancy_add(k.vet.veterancy, k.vet.cost, value, vet_rules_);

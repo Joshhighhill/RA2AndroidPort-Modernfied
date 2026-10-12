@@ -344,7 +344,17 @@ void World::step_garrison_combat(double dt) {
         // rearm_frames_for's Random(0,2).
         int rof = w.rof / static_cast<int>(b.occupants.size());
         if (depth_rules_.occupy_rof_mult > 1.0) rof = ftol(rof / depth_rules_.occupy_rof_mult);
-        b.garrison_rearm_frames = rearm_frames_for(rof, &combat_rng_);
+        if (w7_rules_.armed) {
+            // W7-07-14 [RE: FUN_006FC460]: ftol((ROF * houseROF + Random(0,2))
+            // / occupants / OccupyROFMultiplier) -- the jitter and the house
+            // ROF before the divisions (ROF 20, 5 occupants: a constant 3).
+            double t = w.rof * house_rof_mul(b.house) + combat_rng_.random(0, 2);
+            t /= static_cast<double>(b.occupants.size());
+            if (depth_rules_.occupy_rof_mult > 1.0) t /= depth_rules_.occupy_rof_mult;
+            b.garrison_rearm_frames = ftol(t);
+        } else {
+            b.garrison_rearm_frames = rearm_frames_for(rof, &combat_rng_);
+        }
         b.def_fire_flash = kFireFlashSecs;
         // TechnoClass::Fire (FUN_006FD210): damage x OccupyDamageMultiplier.
         Unit shooter;

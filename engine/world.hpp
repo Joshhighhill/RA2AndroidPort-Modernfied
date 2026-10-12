@@ -541,6 +541,18 @@ bool vehicle_aimed(const Unit& u, double target_facing);
 // W5-B R-062 [RE: DriveLocomotionClass FUN_004B2550; GroundType table
 // DAT_0089D9B0 read by FUN_00673A40]: the per-cell land speed inputs. Null /
 // unarmed -> every unit keeps its flat speed (the pre-W5 behaviour).
+// w7fix-combat: one landed hit (combat.hpp HitLog; World::step_missions_w7).
+struct HitRec {
+    int victim = -1;            // unit index (building victims: building index)
+    bool building = false;      // victim is a building
+    int attacker = -1;          // attacking unit, or -1
+    int attacker_building = -1; // attacking building, or -1
+    int attacker_house = -1;
+    int ax = 0, ay = 0;         // attacker cell (scatter-away direction)
+    bool disguised = false;     // the attacker was disguised
+    bool incoming = false;      // W7-07-26: a slow projectile is coming (no hit yet)
+};
+class World;
 struct MoveSpeedCtx {
     bool armed = false;
     const std::vector<std::uint8_t>* land = nullptr;   // LandType per cell (tile + overlay)
@@ -556,6 +568,9 @@ struct MoveSpeedCtx {
     // W5-B R-050 [RE-FALLBACK: CellClass::Incoming scatter not unwound]: idle
     // friendly infantry blocking a vehicle's next cell, asked to step aside.
     std::vector<int>* scatter_out = nullptr;
+    // w7fix-combat: the World (alliance view IsAlliedWith, house IQ, the W7
+    // rules) for the crush / hold-up gates. Null -> the pre-W7 same-house rule.
+    const World* world = nullptr;
 };
 // R-210 bridges and cliffs: the terrain step_units walks over -- the height
 // gate (FUN_004D9B70) on every step, the deck layer (Unit::on_deck) and the
@@ -853,6 +868,67 @@ public:
     void arm_elevation(const ElevationRules& r) { elev_rules_ = r; }
     const ElevationRules& elevation_rules() const { return elev_rules_; }
     const CrushRules& crush_rules() const { return crush_rules_; }
+    // --- w7fix-combat: the wave-7 shared-combat rules (armed by w5_arm_combat
+    // with the real rulesmd; unarmed in every synthetic gate -> the pre-W7
+    // behaviour). docs/gap/wave7/07-shared-combat.md.
+    struct CombatW7Rules {
+        bool armed = false;
+        bool player_return_fire = false;   // [General] PlayerReturnFire (Rules+0x17EC)
+        bool player_scatter = false;       // [General] PlayerScatter (Rules+0x17ED)
+        int iq_guard_area = 2;             // [IQ] GuardArea (Rules+0x1440)
+        int iq_auto_crush = 2;             // [IQ] AutoCrush (Rules+0x1448)
+        int iq_scatter = 2;                // [IQ] Scatter
+        int max_iq = 5;                    // [IQ] MaxIQLevels
+        double close_enough = 2.25;        // [General] CloseEnough (Rules+0x1718), cells
+        int normal_targeting_delay = 27;   // [General] NormalTargetingDelay (Rules+0xE08)
+        int guard_area_targeting_delay = 36;   // [General] GuardAreaTargetingDelay (Rules+0xE04)
+        int incoming = 10;                 // [CombatDamage] Incoming (Rules+0x16C0)
+        // FUN_0070C190 threat coefficients ([General] *CoefficientDefault).
+        double my_eff = 200.0, tgt_eff = -200.0, tgt_special = 200.0, tgt_strength = -200.0,
+               tgt_distance = -10.0, enemy_house_bonus = 400.0;
+        double call_for_help_budget = 1.0;   // Rules+0xB18 [SUSPECTED key]
+    };
+    void arm_combat_w7(const CombatW7Rules& r) { w7_rules_ = r; }
+    // W7-07-21/22 [RE: CellClass::Incoming FUN_00481580]: does occupant `o`
+    // answer an Incoming(.., forced, nokidding) scatter? (elite_in_cell: an
+    // elite object shares the cell.)
+    bool incoming_scatters(const Unit& o, bool elite_in_cell, bool nokidding) const;
+    const CombatW7Rules& combat_w7() const { return w7_rules_; }
+    // The house IQ (+0x24C): the map's [<House>] IQ= in a campaign
+    // (set_house_iq), MaxIQLevels for a computer house elsewhere, 0 for a human.
+    void set_house_iq(int h, int iq);
+    int house_iq(int h) const;
+    // W7-07-02 [RE: TechnoClass +0xAC CurrentMission]: unit idx's mission --
+    // the explicit tg.mission, else derived from the clone's state.
+    int unit_mission(const Unit& u) const;
+    // [RE: MissionControl, rulesmd [Sleep]..[Open]; FUN_005B3430]
+    struct MissionCtl { bool no_threat, paralyzed, retaliate, scatter, zombie; };
+    static MissionCtl mission_control(int mission);
+    // W7-07-05 [RE: UnitClass::Enter_Idle_Mode 0x737990 @0x737B90..0x737BD0 /
+    // InfantryClass 0x51CB0E]: an armed idle unit outside a team enters Area
+    // Guard when house IQ >= [IQ] GuardArea, or its type DefaultToGuardArea.
+    void enter_idle_mode(int idx);
+    // W7-07-01 [RE: CanRetaliateToAttacker 0x707C40]: may victim retaliate
+    // against attacker unit `a` (or building `ab`)?
+    bool can_retaliate(const Unit& victim, int a, int ab) const;
+    // W7-07-09 [RE: FUN_00707500]: a computer victim calls its idle army.
+    void call_for_help(int victim_house, int victim_unit, int victim_building, int attacker);
+    // W7-07-12: attack-move (YR mission 29) [RE: FUN_00730CC0 / FootClass
+    // FUN_004DEFF0]: move, engaging anything met on the way, then resume.
+    void group_attack_move(int issuer, const std::vector<int>& ids, int cx, int cy);
+    // W7-09-08/09: wake a Harmless / dormant unit (mission back to idle).
+    void wake_unit(int idx);
+    // W7-07-01..12: the per-frame mission pass (retaliation resume, area
+    // guard return, attack-move resume, damage scatter). Called from step().
+    void step_missions_w7();
+    // W7-07-01 [RE: FootClass::Override_Mission 0x4D8E60]: unit vi attacks
+    // unit a (or building ab) now, the old order saved for the resume.
+    void w7_override_attack(int vi, int a, int ab);
+    // W7-07-25 / W7-09-11 [RE: InfantryClass::Scatter 0x51CEB3..0x51CF18,
+    // UnitClass FUN_00742880 -> MapClass::NearByLocation]: scatter away from
+    // the threat cell (ax, ay): the 8-way search starts at the away direction
+    // +/- Random (infantry Random(0,4)-2, a vehicle Random(0,2)-1).
+    void order_scatter_from(int idx, int ax, int ay);
     // W5-B: true for a computer-controlled (AI) house.
     bool house_is_computer(int h) const { return ai_enabled(h); }
     // W5-B R-064 switch (armed by w5_arm_combat): computer units' idle threat
@@ -1612,6 +1688,13 @@ public:
     // share a team with. Self is always allied to self. NOT read by world_hash.
     bool are_allied(int a, int b) const;
     bool is_enemy(int a, int b) const;
+    // W7-03-01 / W7-09-04 [RE: HouseClass::IsAlliedWith FUN_004F98B0 -- the
+    // same house, or a bit in the house's OWN Allies mask +0x5788]: the
+    // house's own view, INCLUDING a neutral / civilian house the map lists as
+    // an ally (are_allied() is false for every non-combatant). The crush,
+    // hold-up scatter and retaliation gates read this one. == are_allied for
+    // two combatants.
+    bool allied_with(int a, int b) const;
     // W2-CA-10 [RE: MakeAlly/MakeEnemy FUN_004f9990/FUN_004f9db0 are PAIRWISE,
     // campaign.md §2/§10]: the first call snapshots the team relation into a
     // per-pair matrix; from then on are_allied() reads the matrix, so
@@ -2810,6 +2893,9 @@ private:
     std::vector<std::int8_t> level_grid_;
     LandSpeedRules land_rules_;
     CrushRules crush_rules_;   // W5-B R-050
+    CombatW7Rules w7_rules_;   // w7fix-combat (save v35)
+    std::vector<int> house_iq_;   // w7fix-combat: -1 = default (save v35)
+    std::vector<HitRec> w7_hits_;   // the hit log (combat.hpp), drained by step_missions_w7
     ElevationRules elev_rules_;   // W5-B R-063
     AnimTable anims_;  // Unit::image -> UnitAnimSeq (set_anim); unregistered -> default_anim()
     bool inf_anims_ = false;                       // W3-B

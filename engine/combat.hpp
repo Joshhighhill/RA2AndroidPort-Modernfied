@@ -66,6 +66,26 @@ inline void feed_damage(bool building, int victim, int attacker_house, int dmg) 
     if (f.fn && dmg > 0 && attacker_house >= 0) f.fn(f.ctx, building, victim, attacker_house, dmg);
 }
 
+// w7fix-combat: the ReceiveDamage tail's behaviour hooks (retaliation
+// CanRetaliateToAttacker 0x707C40, call-for-help FUN_00707500, the damage
+// scatter 0x701ED5..0x702196, Harmless wake FUN_004D7250) need the World;
+// the pure damage helpers log every landed hit here instead and the World
+// resolves the log (World::step_missions_w7). `sink` is armed by World::step
+// only while the W7 rules are armed; null -> the pre-W7 inline retaliation.
+// (HitRec: world.hpp)
+struct HitLog { std::vector<HitRec>* sink = nullptr; };
+// W7-07-03 [RE: FUN_0070C190]: the threat `u` (index self_idx, -1 = none) sees
+// in unit `v` / building `b` (combat.cpp).
+int threat_value_unit(const World& world, const Unit& u, int self_idx, const Unit& v);
+int threat_value_building(const World& world, const Unit& u, const Building& b);
+HitLog& hit_log();
+inline bool log_hit(const HitRec& r) {
+    HitLog& h = hit_log();
+    if (!h.sink) return false;
+    h.sink->push_back(r);
+    return true;
+}
+
 void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ,
                          const Unit& attacker, const Unit& center);
 
