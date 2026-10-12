@@ -136,7 +136,7 @@ void placed(ProductionState& ps);
 // start(ps, type, types, build_speed) becomes a one-line wrapper over this
 // (types[type].cost, and charge = types[type].charge>0 ? types[type].charge :
 // types[type].cost) so the BuildingType path stays BIT-IDENTICAL.
-void start(ProductionState& ps, int cost, int charge, double build_speed);
+void start(ProductionState& ps, int cost, int charge, double build_speed, double time_mult = 1.0);
 
 // Can unit `unit_type` start in queue `ps`? factory_alive = an own alive Idle
 // factory of this queue's category exists; slot idle; TechLevel > 0; prereqs

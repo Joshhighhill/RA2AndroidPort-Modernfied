@@ -227,6 +227,8 @@ struct SaveAccess {
         save::io(ar, w.ability_profiles_); save::mark(ar, "ability_profiles_");
         save::io(ar, w.rad_); save::mark(ar, "rad_");
         save::io(ar, w.no_c4_types_); save::mark(ar, "no_c4_types_");
+        save::io(ar, w.side_disguise_); save::mark(ar, "side_disguise_");   // v35: wave-7 W7-01-03
+        save::io(ar, w.infantry_blink_disguise_); save::mark(ar, "infantry_blink_disguise_");   // v35: W7-03-04
         save::io(ar, w.ability_events_); save::mark(ar, "ability_events_");
         save::io(ar, w.fire_events_); save::mark(ar, "fire_events_");   // Gap fix C
         save::io(ar, w.combat_rng_); save::mark(ar, "combat_rng_");
@@ -452,6 +454,7 @@ template <class Ar> void fields(Ar& ar, RepairSellRules& v) {
     io(ar, v.allied_survivor_divisor);
     io(ar, v.soviet_survivor_divisor);
     io(ar, v.third_survivor_divisor);
+    io(ar, v.u_repair_rate);   // v35: W7-08-03
 }
 template <class Ar> void fields(Ar& ar, World::HouseRec& v) {
     io(ar, v.side); io(ar, v.color_ix); io(ar, v.country); io(ar, v.alliance_team); io(ar, v.combatant);
@@ -532,6 +535,7 @@ template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
     io(ar, v.wall_flags);   // v25: W6-04-04
     io(ar, v.shrapnel_count); io(ar, v.shrapnel_damage); io(ar, v.shrapnel_range); io(ar, v.shrapnel_verses);   // v25: W6-04-02
     io(ar, v.min_range);   // v25: W6-04-22
+    io(ar, v.never_use);   // v35: W7-01-01
 }
 // G16 world depth (agent G)
 template <class Ar> void fields(Ar& ar, World::DepthRules& v) {
@@ -731,6 +735,7 @@ template <class Ar> void fields(Ar& ar, BldTypeW5& v) {
     io(ar, v.gap_radius); io(ar, v.inf_self_heal); io(ar, v.unit_self_heal); io(ar, v.cloning);
     io(ar, v.psychic_radius); io(ar, v.sensors_sight); io(ar, v.delayed_fire_delay);
     io(ar, v.explodes); io(ar, v.delay_kill_eligible); io(ar, v.death);   // P4 (v23)
+    io(ar, v.can_c4);   // v35: W7-01-22
 }
 template <class Ar> void fields(Ar& ar, UnitTypeW5& v) {
     io(ar, v.requires_stolen); io(ar, v.base_tech_level);
@@ -739,6 +744,22 @@ template <class Ar> void fields(Ar& ar, UnitTypeW5& v) {
 template <class Ar> void fields(Ar& ar, UnitTypeTgt& v) {
     io(ar, v.rules_id); io(ar, v.insignificant); io(ar, v.legal_target); io(ar, v.immune_psionics);
     io(ar, v.guard_range);
+}
+// --- wave-7 fix (units) (unit_w7.hpp), save v35 ---
+template <class Ar> void fields(Ar& ar, UnitTypeW7& v) {
+    io(ar, v.agent); io(ar, v.infiltrate); io(ar, v.engineer); io(ar, v.perma_disguise);
+    io(ar, v.detect_disguise); io(ar, v.selectable_combatant); io(ar, v.move_to_shroud);
+    io(ar, v.default_to_guard_area); io(ar, v.has_turret); io(ar, v.fake_blink); io(ar, v.fake_blink_elite);
+    io(ar, v.deploy_area_fire); io(ar, v.undeploy_delay); io(ar, v.mc_capacity); io(ar, v.mc_infinite);
+    io(ar, v.build_time_mult);
+}
+template <class Ar> void fields(Ar& ar, UnitW7& v) {
+    io(ar, v.t); io(ar, v.blink_left); io(ar, v.redisguise_left); io(ar, v.flash_seen); io(ar, v.hull_aiming);
+    io(ar, v.paralysed_until); io(ar, v.host_raw_hit); io(ar, v.deploy_ready_at); io(ar, v.undeploy_at); io(ar, v.erased_by);
+    io(ar, v.depot_target); io(ar, v.mc_controller); io(ar, v.mc_victims); io(ar, v.mc_shot); io(ar, v.missile_holds);
+}
+template <class Ar> void fields(Ar& ar, BldW7& v) {
+    io(ar, v.depot_next); io(ar, v.depot_client); io(ar, v.warp_unpowered); io(ar, v.garrison_target_building);
 }
 template <class Ar> void fields(Ar& ar, UnitTgt& v) { io(ar, v.t); io(ar, v.in_playfield); io(ar, v.area_guard); }
 template <class Ar> void fields(Ar& ar, BldTgt& v) {
@@ -878,6 +899,7 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.an);   // W2-AN (save v9)
     io(ar, v.w6);   // v25: wave-6 #4
     io(ar, v.tg);   // W6 fix #2 (save v29)
+    io(ar, v.w7);   // v35: wave-7 fix (units)
 }
 template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
     io(ar, v.id);
@@ -1101,6 +1123,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.w6);   // v25: wave-6 #4
     io(ar, v.tg);   // W6 fix #2 (save v29)
     io(ar, v.on_deck);   // R-210 (save v30)
+    io(ar, v.w7);        // v35: wave-7 fix (units)
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.type);
@@ -1156,6 +1179,7 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.power_off);   // W5-E2 power-down (save v21)
     io(ar, v.w6);          // v25: wave-6 #4
     io(ar, v.tg);          // W6 fix #2 (save v29)
+    io(ar, v.w7);          // v35: wave-7 fix (units)
 }
 
 // --- production ---

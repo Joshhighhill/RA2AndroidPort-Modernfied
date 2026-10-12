@@ -42,6 +42,7 @@ void fill_building_abilities(const ra2assets::Rules& rules, const std::string& i
     BldTypeW5& w = d.w5;
     const std::string uid = upper(id);
     w.radar = rules.section_flag(id, "Radar", false);
+    w.can_c4 = rules.section_flag(id, "CanC4", true);   // W7-01-22
     // [RE: abilities-w5.md §1] BuildingClass::Infiltrate (FUN_004571E0) tests,
     // in this order: Radar (+0x16A4) -> owner shroud reset; Power (+0xEE0) >= 1
     // -> blackout; listed in Rules [AI] BuildTech (+0x920) -> stolen tech by

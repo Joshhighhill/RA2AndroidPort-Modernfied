@@ -43,6 +43,9 @@ struct WeaponSlot {
     int shrapnel_damage = 0;
     double shrapnel_range = 0.0;
     std::vector<int> shrapnel_verses;
+    // W7-01-01 [rules [VirtualScanner] NeverUse=yes]: a weapon that only widens
+    // the scan; it is never chosen to fire (save v35).
+    bool never_use = false;
 };
 
 // GetFireError's warhead gate [RE: combat.md §2, FUN_006fb5d0]: a weapon whose

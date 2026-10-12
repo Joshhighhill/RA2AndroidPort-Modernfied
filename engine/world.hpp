@@ -400,6 +400,7 @@ struct Unit {
     // FUN_004D9B70]: 1 while the unit stands on a high-bridge deck (Level + 4),
     // 0 on the ground (or under the deck). Kept by step_units (save v30).
     std::uint8_t on_deck = 0;
+    UnitW7 w7;                       // wave-7 fix (units): unit_w7.hpp (save v35)
 };
 // G16: the cargo_of sentinel of a garrisoned infantry (never a unit index).
 constexpr int kGarrisonCargo = 0x3FFFFFFF;
@@ -1793,6 +1794,10 @@ public:
     // destroyed. [RE-FALLBACK: the pad is part of the foundation in the
     // original; here the docked cell is any cell touching the footprint.]
     int depot_client(int b_idx) const;
+    void para_start(int unit_idx, double alt);   // W7-01-07 (world_an.cpp)
+    void w7_step_deploy_timers();                // W7-10-06 (world_abilities.cpp)
+    // W7-04-11..13: ParasiteClass::ExitUnit (see world.cpp).
+    bool parasite_exit(int host_idx, bool suppressed);
     bool depot_servicing(int house) const;
     void step_service_depots();
     void step_disguises();   // W2-SK-22 Mirage disguise-when-still
@@ -1851,6 +1856,38 @@ public:
     // (only the flag matters for render/detection).
     void set_disguise(int unit_idx, const std::string& as_type, int as_house);
     void clear_disguise(int unit_idx);
+    // --- wave-7 fix (units) --------------------------------------------------
+    // W7-01-33: the spy / engineer roles come from the type flags Agent= /
+    // Infiltrate= / Engineer= (a hand-built unit with no rules id falls back
+    // to the old image test so the legacy tests keep their meaning).
+    bool unit_is_spy(const Unit& u) const;
+    bool unit_is_engineer(const Unit& u) const;
+    // W7-01-02 [RE: 0x6F71D0 L455-467, 0x5224B0 / 0x522520]: does `u`'s
+    // disguise fool an observer of `viewer_house`? Fooled = the unit is
+    // disguised, not allied with the viewer, and its disguise house is (a tree
+    // disguise, as_house < 0, fools every non-ally). A DetectDisguise scanner
+    // is never fooled (the caller tests the scanner's own flag).
+    bool disguise_fools(int viewer_house, const Unit& u) const;
+    // W7-01-03 [RE: 0x6F34A0 L597-612; [General] AlliedDisguise /
+    // SovietDisguise / ThirdDisguise]: the PermaDisguise look per side (SHP
+    // image). Set by the host from the rules; defaults are this install's.
+    void set_infantry_blink_disguise(int frames) { infantry_blink_disguise_ = frames; }   // W7-03-04
+    void set_side_disguise(int side, const std::string& image) {
+        if (side >= 0 && side < static_cast<int>(side_disguise_.size())) side_disguise_[static_cast<std::size_t>(side)] = image;
+    }
+    // W7-08-01 / W7-04-06 [RE: BuildingClass::Mission_Repair 0x44B780]: send
+    // the issuer's damaged vehicles to an own / allied UnitRepair building.
+    // Returns the number of units ordered.
+    int group_depot(int issuer, const std::vector<int>& ids, int b_idx);
+    // Would group_depot take any of these units (the cursor / command test)?
+    bool depot_wants(int issuer, const std::vector<int>& ids, int b_idx) const;
+    // W7-01-04/14/16, W7-08-19/20 [RE: InfantryClass::What_Action 0x51E17C]:
+    // what an engineer would do to a building (the cursor, the command and the
+    // arrival all use this one rule).
+    enum class EngineerAct { None, Capture, Repair, Defuse, Hut };
+    EngineerAct engineer_action(int eng_idx, int b_idx) const;
+    // [RE: 0x51E17C L981-988]: a spy may infiltrate a non-allied Spyable building.
+    bool spy_can_infiltrate(int spy_idx, int b_idx) const;
     // Read-only Capture state for the gate (§gate) and the power path.
     double house_credits(int house) const {
         return (house >= 0 && house < house_count()) ? house_credits_[house] : 0.0;
@@ -2174,6 +2211,8 @@ public:
     const DepthRules& depth_rules() const { return depth_rules_; }
     // Garrisons.
     bool can_occupy(int unit_idx, int b_idx) const;          // BuildingClass::CanBeOccupiedBy
+    bool garrison_red(const Building& b) const;              // W7-08-09: hp ratio <= ConditionRed
+    bool garrison_attack(int issuer, int b_idx, int unit_target, int bld_target);   // W7-02-10
     void order_occupy(int unit_idx, int b_idx);              // walk adjacent, then enter
     int group_occupy(int issuer, const std::vector<int>& ids, int b_idx);   // returns #ordered
     int group_occupy_count(int issuer, const std::vector<int>& ids, int b_idx) const;   // the same, dry run
@@ -2272,6 +2311,7 @@ public:
     int bridge_overlay_at(int x, int y) const;               // current runtime index, -1 none
     int bridge_explosion(int cx, int cy, int damage, bool wall_warhead);   // FUN_00489190 bridge part
     int repair_bridge_near(int b_idx);                       // engineer entered a BridgeRepairHut
+    bool bridge_needs_repair_near(int b_idx) const;          // W7-08-19: the hut's Enter test
     // W4-SQ-10 high bridges [RE: FUN_00586BB0 dispatch -> FUN_005766D0
     // (BRIDGE1/2 concrete) / FUN_00570FC0 (BRIDGEB1/B2 wood)]. `cells`: per
     // cell 0 none, 1 deck over water/cliff (passable only while intact), 2
@@ -2759,6 +2799,8 @@ private:
     std::map<std::string, AbilityProfile> ability_profiles_;  // by image
     RadField rad_;
     std::vector<int> no_c4_types_;
+    std::vector<std::string> side_disguise_{"GI", "CONS", "INIT"};   // wave-7 W7-01-03 (save v35)
+    int infantry_blink_disguise_ = 20;   // W7-03-04 [General] InfantryBlinkDisguiseTime (Rules+0x1014) (save v35)
     std::vector<AbilityEvent> ability_events_;
     // Teleport `idx` to the nearest free cell at/around (gx,gy) [§C1].
     void teleport_unit(int idx, int gx, int gy);

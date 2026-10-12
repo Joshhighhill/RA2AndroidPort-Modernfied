@@ -270,7 +270,15 @@ void World::an_step_spawners(double dt) {
         // every 80 frames while the last ones are still in the air).
         const auto st = an_.types.find(t.spawns);
         const bool missile_spawns = st != an_.types.end() && st->second.an.missile;
-        const int out_held = missile_spawns ? 0 : o.an.spawn_out;
+        // W7-04-08 [RE: SpawnManagerClass::AI FUN_006B68B0, 0x6B72E0]: a
+        // missile node is held for PauseFrames + TiltFrames after its launch
+        // (V3 0 + 60, DMisl 80), then waits SpawnRegenRate (state 7).
+        int held = 0;
+        for (int& h : o.w7.missile_holds)
+            if (h > 0 && --h > 0) ++held;
+        o.w7.missile_holds.erase(std::remove(o.w7.missile_holds.begin(), o.w7.missile_holds.end(), 0),
+                                 o.w7.missile_holds.end());
+        const int out_held = missile_spawns ? held : o.an.spawn_out;
         if (o.an.spawn_ready + out_held + o.an.spawn_pending < t.spawns_number) {
             if (++o.an.spawn_regen_timer >= std::max(1, t.spawn_regen_frames)) {
                 o.an.spawn_regen_timer = 0;
@@ -319,8 +327,24 @@ void World::an_step_spawners(double dt) {
                 // PauseFrames + TiltFrames from the rocket's own block.
                 double gx = s.fx, gy = s.fy, gz = 0.0;
                 rocket_target_point(tu, tb, gx, gy, gz);
+                // W7-04-05 [RE: KamikazeTrackerClass::Add 0x54E040 stores
+                // MapClass::Cell(Target->GetCoords()) at launch; the tracker
+                // (0x54E160) and RocketLocomotion (0x661D00) steer at that
+                // FIXED cell]: the impact point is the centre of the cell the
+                // target held when the rocket left (a building's centre coord
+                // cell: cx + fw/2), on the ground -- a moving tank dodges.
+                if (tu >= 0 && tu < static_cast<int>(units_.size())) {
+                    gx = std::lround(units_[static_cast<std::size_t>(tu)].fx);
+                    gy = std::lround(units_[static_cast<std::size_t>(tu)].fy);
+                } else if (tb >= 0 && tb < static_cast<int>(buildings_.size())) {
+                    const Building& tbd = buildings_[static_cast<std::size_t>(tb)];
+                    gx = tbd.cx + tbd.fw / 2;
+                    gy = tbd.cy + tbd.fh / 2;
+                    gz = 0.0;
+                }
                 const RocketBlock& blk = an_.sw.rockets.block[static_cast<std::size_t>(
                     std::clamp(s.an.t.rocket_kind < 0 ? 1 : s.an.t.rocket_kind, 0, 2))];
+                units_[i].w7.missile_holds.push_back(std::max(1, blk.pause_frames + blk.tilt_frames));   // W7-04-08
                 rocket_launch(blk, s.an.rocket, s.fx * kLept, s.fy * kLept, kRocketDeckZ, gx * kLept,
                               gy * kLept);
                 s.an.rocket.tx = gx * kLept;
@@ -370,13 +394,8 @@ void World::an_step_fixed_wing(double dt) {
         // Altitude, LazyCurve arc or level-off + dive, nose-contact explode.
         if (u.an.t.missile) {
             RocketFlight& f = u.an.rocket;
-            if (have_goal) {   // the live target keeps being tracked
-                double px = gx, py = gy, pz = 0.0;
-                rocket_target_point(tu, tb, px, py, pz);
-                f.tx = px * kLept;
-                f.ty = py * kLept;
-                f.tz = pz;
-            }
+            // W7-04-05: no re-aim -- the impact point was frozen at launch.
+            (void)have_goal;
             const RocketBlock& blk = P.rockets.block[static_cast<std::size_t>(
                 std::clamp(u.an.t.rocket_kind < 0 ? 1 : u.an.t.rocket_kind, 0, 2))];
             const int r = rocket_step(blk, u.an.t.rocket_speed, f, f.tx, f.ty, f.tz);
@@ -535,6 +554,11 @@ void World::an_step_fixed_wing(double dt) {
                                 if (!walkable(cx, cy) || !occ_.is_free(cx, cy) || building_at_cell(cx, cy) >= 0) continue;
                                 const int pi = an_spawn(u.an.drop_type, u.house, cx, cy);
                                 if (pi >= 0) {
+                                    // W7-01-07 [rules ParadropRadius / ParachuteMaxFallRate,
+                                    // PARACH, art Paradrop=]: the trooper jumps and falls
+                                    // under its parachute from the plane's height (the
+                                    // team-drop model, an_drop_passenger).
+                                    para_start(pi, units_[i].altitude);
                                     placed = 1;
                                     an_event(SwEvent::Dropped, units_[i].house, SuperweaponType::ParaDrop, cx, cy);
                                 }
@@ -694,7 +718,9 @@ void World::an_paradrop(int house, SuperweaponType type, int cx, int cy) {
                     for (int ox = -r; ox <= r && !placed; ++ox) {
                         if (std::max(std::abs(ox), std::abs(oy)) != r) continue;
                         if (!walkable(cx + ox, cy + oy) || !occ_.is_free(cx + ox, cy + oy)) continue;
-                        placed = an_spawn(inf, house, cx + ox, cy + oy) >= 0;
+                        const int qi = an_spawn(inf, house, cx + ox, cy + oy);
+                        placed = qi >= 0;
+                        if (placed) para_start(qi, an_.sw.flight_level);   // W7-01-07
                     }
         }
         return;
@@ -782,6 +808,16 @@ bool World::order_leave_map(int idx) {
 // height [RE-FALLBACK: the per-jump cadence and the landing-cell scan of the
 // ParadropApproach mission were not traced; one jump per frame onto the
 // first free cell of the rings around the target, as the SW plane does].
+// W7-01-07: a spawned superweapon paratrooper starts under its parachute at
+// `alt` leptons over its landing cell (which it keeps occupied).
+void World::para_start(int ui, double alt) {
+    if (ui < 0 || ui >= static_cast<int>(units_.size())) return;
+    Unit& u = units_[static_cast<std::size_t>(ui)];
+    u.cargo_of = kParachuteCargo;
+    u.an.para_alt = std::max(1.0, alt);
+    u.ia.seq = -1;   // W3-B: the machine restarts on landing
+}
+
 bool World::an_drop_passenger(int i) {
     Unit& pl = units_[i];
     if (pl.cargo.empty()) return false;

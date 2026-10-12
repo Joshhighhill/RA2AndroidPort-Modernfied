@@ -2493,6 +2493,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     ba.repair_sell.repair_percent = rules.general_double("RepairPercent", 15.0) / 100.0;
     ba.repair_sell.repair_rate    = rules.general_double("RepairRate", 0.016);
     ba.repair_sell.refund_percent = rules.general_double("RefundPercent", 50.0) / 100.0;
+    ba.repair_sell.u_repair_rate  = rules.general_double("URepairRate", 0.016);   // W7-08-03
     ba.repair_sell.allied_survivor_divisor =
         static_cast<int>(rules.general_double("AlliedSurvivorDivisor", 500.0));
     ba.repair_sell.soviet_survivor_divisor =

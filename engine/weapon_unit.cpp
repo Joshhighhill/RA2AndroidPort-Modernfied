@@ -30,6 +30,11 @@ const WeaponSlot& secondary_view(const Unit& u) {
 namespace {
 int unit_weapon_for_unit_base(const Unit& u, const Unit& v) {
     if (u.deploy_fire && u.deployed) return u.deploy_fire_slot == 1 && u.w2.valid ? 1 : 0;
+    // W7-01-06 [RE: InfantryClass::SelectWeapon 0x521610]: an undeployed
+    // DeployFire infantry (GI, Guardian GI) has weapon 0 only -- the
+    // undeployed GGI never fires its anti-air MissileLauncher.
+    if (u.deploy_fire && u.is_infantry)
+        return slot_can_target(primary_view(u), unit_airborne(v), v.armor_ix) ? 0 : -1;
     if (!u.w2.valid) {
         // No secondary: the primary alone, gated like GetFireError.
         return slot_can_target(primary_view(u), unit_airborne(v), v.armor_ix) ? 0 : -1;
@@ -66,6 +71,7 @@ int unit_weapon_for_unit(const Unit& u, const Unit& v) {
 int unit_weapon_for_building(const Unit& u, int armor_ix, bool target_bombed) {
     int want;
     if (u.deploy_fire && u.deployed) want = u.deploy_fire_slot == 1 && u.w2.valid ? 1 : 0;
+    else if (u.deploy_fire && u.is_infantry) want = slot_can_target(primary_view(u), false, armor_ix) ? 0 : -1;   // W7-01-06
     else if (!u.w2.valid) want = slot_can_target(primary_view(u), false, armor_ix) ? 0 : -1;
     else want = choose_weapon(primary_view(u), secondary_view(u), false, armor_ix);
     // W2-AN-14: LandTargeting=1 / UnderwaterOnly cannot hit a structure.

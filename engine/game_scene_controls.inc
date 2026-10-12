@@ -251,8 +251,12 @@
     // screen; a second press when they are all already selected widens to the
     // whole map (DAT_00B0EDC4).
     void hotkey_combatant_select() {
+        // W7-01-13 / W7-02-07 [RE: FUN_00731690 / 0x7316A7]: the predicate is
+        // the type's IsSelectableCombatant (+0xDBC) -- Engineers, Spies and
+        // Terrorists say no -- and an armed unit (vtbl+0x13C).
         auto combatant = [&](const ra2engine::Unit& u) {
-            return own_live(u) && u.w_damage > 0 && !u.is_harvester;
+            if (u.tg.t.rules_id.empty()) return own_live(u) && u.w_damage > 0 && !u.is_harvester;
+            return own_live(u) && u.w7.t.selectable_combatant && u.w_damage > 0;
         };
         bool all_sel = true, any = false;
         for (const ra2engine::Unit& u : world_.units())

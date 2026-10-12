@@ -1618,85 +1618,132 @@ private:
         mc_type_[type] = mc;
         return mc;
     }
-    void mc_release(Track& ctl) {
-        const int v = ctl.mc_victim;
-        ctl.mc_victim = -1;
+    // W7-10-03 / W7-08-11 [RE: CaptureManager::FreeUnit FUN_00471F20]: free
+    // victim `v` of controller `ctl` back to the house it had at capture
+    // (stop and guard); a computer-owned unit then gets its fate (Hunt).
+    void mc_free(int ctl, int v) {
+        auto& us = w_.units();
+        if (ctl >= 0 && ctl < (int)us.size()) {
+            std::vector<int>& vv = us[(std::size_t)ctl].w7.mc_victims;
+            vv.erase(std::remove(vv.begin(), vv.end(), v), vv.end());
+        }
         if (v < 0 || v >= (int)utrack_.size()) return;
         Track& vt = utrack_[(std::size_t)v];
-        ra2engine::Unit& vu = w_.units()[(std::size_t)v];
-        // SetOwningHouse back to the old owner: stop and guard here.
-        if (vt.mc_orig >= 0 && live(vu)) w_.set_unit_owner(v, vt.mc_orig);
+        ra2engine::Unit& vu = us[(std::size_t)v];
+        if (vu.w7.mc_controller != ctl) return;   // held by somebody else now
+        vu.w7.mc_controller = -1;
+        if (vt.mc_orig >= 0 && live(vu)) {
+            w_.set_unit_owner(v, vt.mc_orig);
+            // W7-08-12(c) [RE: DecideUnitFate FUN_004722E0 after Free]: a
+            // computer-owned unit is put on Hunt (the roll's fallback).
+            if (w_.house_is_computer(vt.mc_orig)) vt.hunt = true;
+        }
         vt.mc_orig = -1;
     }
+    // [RE: CaptureManager::FreeAll FUN_00472070]
+    void mc_free_all(int ctl) {
+        if (ctl < 0 || ctl >= (int)w_.units().size()) return;
+        const std::vector<int> vv = w_.units()[(std::size_t)ctl].w7.mc_victims;
+        for (int v : vv) mc_free(ctl, v);
+        w_.units()[(std::size_t)ctl].w7.mc_victims.clear();
+        if (ctl < (int)utrack_.size()) utrack_[(std::size_t)ctl].mc_victim = -1;
+    }
+    // W2-CA-15 / W7-10-02..04 / W7-10-09 / W7-08-11..12 [RE: CaptureManager
+    // FUN_004716F0 (ctor: Max = primary Damage, Infinite =
+    // InfiniteMindControl), CanCapture FUN_00471BB0, Capture FUN_00471C80,
+    // FreeUnit FUN_00471F20, FreeAll FUN_00472070, CannotControlAnyMore
+    // FUN_004721D0, DecideUnitFate FUN_004722E0]:
+    //   * the capture rides the controller's real shot (Unit::w7.mc_shot,
+    //     set by try_fire -- ROF, facing and range apply);
+    //   * CanCapture refuses the own house, ImmuneToPsionics, an Iron-Curtained
+    //     target and one that is already mind-controlled (no stealing);
+    //   * the capacity is the weapon's Damage (YR rules; SOV09's map gives 10),
+    //     Infinite lifts it; with Max == 1 a new capture frees the old victim,
+    //     with Max > 1 a full controller cannot take more;
+    //   * a full controller does not auto-acquire (CannotControlAnyMore);
+    //   * FreeAll on the controller's death, when it boards a transport /
+    //     building, and when a Temporal shot starts on it; a victim that
+    //     boards is freed first; a dead victim leaves the list;
+    //   * the victim always leaves its team; a computer new owner puts it on
+    //     Hunt (DecideUnitFate's fallback; Grinder / Bio Reactor are Yuri-only).
     void poll_mind_control() {
+        auto& us = w_.units();
         for (std::size_t i = 0; i < utrack_.size(); ++i) {
             Track& t = utrack_[i];
-            ra2engine::Unit& u = w_.units()[i];
-            if (t.mc_victim >= 0 && (!live(u))) { mc_release(t); continue; }
-            // The Controller shot captures instead of damaging (World Unit::
-            // w_mind_control, read by try_fire in the World::step after this
-            // frame). Before, with R-205's shared 3-D range rule, the shot
-            // landed in the same step the Yuri came into range -- one frame
-            // before this poll could capture -- and its Damage=10 killed SOV09's
-            // President (Strength=10) instead of taking him.
-            if (!t.dead && live(u)) u.w_mind_control = mind_controller(t.type);
-            if (t.dead || !live(u) || u.target < 0 || u.target >= (int)w_.units().size()) continue;
-            if (!mind_controller(t.type)) continue;
-            // W5-A R-036 [RE-FALLBACK: the YR CaptureManager capacity (1 for the
-            // Yuri, MindControl=yes without MultipleControl) -- a controller
-            // whose slot is full does not pick a new victim by itself; only an
-            // explicit attack order trades the held victim for a new one].
-            // Before, two Yuris near two civilians traded them back and forth
-            // every frame and never obeyed a move order (SOV09).
-            if (t.mc_victim >= 0 && t.mc_victim < (int)w_.units().size() &&
-                live(w_.units()[(std::size_t)t.mc_victim]) && !u.attack_order) {
-                if (u.target != t.mc_victim) u.target = -1;
+            ra2engine::Unit& u = us[i];
+            const int ci = static_cast<int>(i);
+            // Victim bookkeeping: dead victims drop out; a boarding victim is freed.
+            if (!u.w7.mc_victims.empty()) {
+                const std::vector<int> vv = u.w7.mc_victims;
+                for (int v : vv) {
+                    if (v < 0 || v >= (int)us.size()) continue;
+                    const ra2engine::Unit& vu = us[(std::size_t)v];
+                    if (!live(vu) || vu.w7.mc_controller != ci) {
+                        std::vector<int>& lst = u.w7.mc_victims;
+                        lst.erase(std::remove(lst.begin(), lst.end(), v), lst.end());
+                        if (!live(vu) && v < (int)utrack_.size()) utrack_[(std::size_t)v].mc_orig = -1;
+                        if (!live(vu) && vu.w7.mc_controller == ci) us[(std::size_t)v].w7.mc_controller = -1;
+                    } else if (vu.cargo_of >= 0) {
+                        mc_free(ci, v);
+                    }
+                }
+            }
+            t.mc_victim = u.w7.mc_victims.empty() ? -1 : u.w7.mc_victims.back();
+            if (!live(u) || u.cargo_of >= 0 || u.warp_remaining > 0) {
+                if (!u.w7.mc_victims.empty()) mc_free_all(ci);
+                u.w7.mc_shot = -1;
                 continue;
             }
-            ra2engine::Unit& v = w_.units()[(std::size_t)u.target];
-            // W6-02-12 [RE-FALLBACK: standard YR behaviour (YRpp/ModEnc) -- a
-            // MindControl warhead cannot target or capture an ImmuneToPsionics
-            // object; SOV09 sets [CAR]/[DOG] ImmuneToPsionics=yes for exactly
-            // this]: the shot is refused and the target dropped.
-            if (!w_.psionic_target_ok(u.target)) {
-                u.target = -1;
-                u.attack_order = false;
-                continue;
+            if (!t.dead) u.w_mind_control = mind_controller(t.type);
+            if (t.dead || !mind_controller(t.type)) continue;
+            const int cap = std::max(1, u.w7.t.mc_capacity);
+            const bool infinite = u.w7.t.mc_infinite;
+            const bool full = !infinite && (int)u.w7.mc_victims.size() >= cap;
+            // Targeting refusals (GetFireError 5 at 0x6FC05F): immune, curtained
+            // or already-controlled targets are dropped before a shot.
+            if (u.target >= 0 && u.target < (int)us.size()) {
+                const ra2engine::Unit& tv = us[(std::size_t)u.target];
+                if (!w_.psionic_target_ok(u.target) || tv.an.iron_left_frames > 0 ||
+                    (tv.w7.mc_controller >= 0 && tv.w7.mc_controller != ci)) {
+                    u.target = -1;
+                    u.attack_order = false;
+                }
             }
-            if (!live(v) || !w_.is_enemy(u.house, v.house) || v.is_aircraft) continue;
-            // R-205 [RE: the capture rides the controller's shot -- CaptureManager
-            // FUN_00471C80 is called only from the bullet detonation @0x4692C0, and
-            // the shot leaves only through the fire-range test FUN_006F6750]: use the
-            // SAME 3-D range rule as combat's fire path. A separate 2-D test let the
-            // two disagree near the edge (~8.5 cells): combat thought the Yuri in
-            // range (no approach), the capture thought not, and the order died.
-            if (!ra2engine::unit_in_weapon_range(w_, u, v)) continue;
-            const int vi = u.target;
-            if (t.mc_victim >= 0 && t.mc_victim != vi) mc_release(t);
+            // CannotControlAnyMore: a full controller picks no victim by itself.
+            if (full && !u.attack_order && u.target >= 0) u.target = -1;
+            const int vi = u.w7.mc_shot;
+            u.w7.mc_shot = -1;
+            if (vi < 0 || vi >= (int)us.size()) continue;
+            ra2engine::Unit& v = us[(std::size_t)vi];
+            if (!live(v) || v.cargo_of >= 0 || v.house == u.house || v.is_aircraft) continue;
+            if (!w_.psionic_target_ok(vi) || v.an.iron_left_frames > 0) continue;   // W7-08-04
+            if (v.w7.mc_controller >= 0) continue;                                    // W7-10-03 / W7-08-11
+            if (full) {
+                if (cap != 1 || infinite) continue;           // Max > 1: no room
+                mc_free(ci, u.w7.mc_victims.front());         // Max == 1: the old one goes
+            }
             Track& vt = utrack_[(std::size_t)vi];
             const int from = v.house;
             if (vt.mc_orig < 0) vt.mc_orig = from;
             raise_attacked(vt, from, u.house);
             // [RE: TechnoClass::SetOwningHouse FUN_00700940]: the victim drops
-            // its target and move and guards where it stands, whoever the new
-            // owner is (before, only a team member taken by the player was
-            // stopped; any other kept walking its old path and kept its old
-            // guard anchor).
+            // its target and move and guards where it stands.
             w_.set_unit_owner(vi, u.house);
-            // [RE: FootClass::SetOwningHouse FUN_004DBDE0 -- after the owner
-            // change (TechnoClass FUN_00700940), a foot whose NEW owner is a
-            // human-controlled house (+0x1EC) leaves its team (FUN_006E9DD0)]:
-            // a unit the player's Yuri takes stops running its old script
-            // (SOV09: the x=37 IFV patrol kept driving into the GIs).
-            if (!w_.house_is_computer(u.house) && vt.team >= 0 && vt.team < (int)teams_.size()) {
+            // [RE: Capture 0x471C80 -> 0x6E9DD0]: the victim always leaves its
+            // team; W7-10-01 [RE: DecideUnitFate FUN_004722E0]: a computer
+            // owner's victim hunts (the roll's fallback in a campaign without
+            // a Grinder / Bio Reactor).
+            if (vt.team >= 0 && vt.team < (int)teams_.size()) {
                 std::vector<int>& mm = teams_[(std::size_t)vt.team].members;
                 mm.erase(std::remove(mm.begin(), mm.end(), vi), mm.end());
                 vt.team = -1;
-                vt.hunt = false;
             }
+            vt.hunt = w_.house_is_computer(u.house);
+            v.w7.mc_controller = ci;
+            u.w7.mc_victims.push_back(vi);
+            t.mc_victim = vi;
             u.target = -1;
             u.attack_order = false;
-            t.mc_victim = vi;
             char b[120];
             std::snprintf(b, sizeof b, "[camp] f%ld mind control unit=%d %s house %d -> %d", frame_, vi,
                           vt.type.c_str(), from, u.house);
@@ -2210,7 +2257,7 @@ private:
                 // A still-disguised spy passes for a friend (the auto-acquire
                 // precedent, capture.md §Design 6) -- the W6-02-18 patrol scan
                 // must not see through it.
-                if (u.disguised) continue;
+                if (w_.disguise_fools(house, u)) continue;   // W7-01-02
                 if (want_inf && u.is_vehicle) continue;
                 if (want_veh && !u.is_vehicle) continue;
                 const long d = (long)(u.cell_x - x) * (u.cell_x - x) + (long)(u.cell_y - y) * (u.cell_y - y);
