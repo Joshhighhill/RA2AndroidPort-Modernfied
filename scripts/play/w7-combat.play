@@ -42,15 +42,19 @@ move unit 0:HTNK
 wait 2
 assert cursor != 6 @W7-02-11
 # --- T2 Tesla Troopers onto an own Tesla Coil: attack cursor, they charge it
-cheat place NATSLA 0 building 0:NACNST -6 +6
+cheat place TESLA 0 building 0:NACNST -6 +6
 cheat spawn SHK 0 building 0:NACNST -2 +3
 wait 2
+# (a selected Ivan would bomb the trooper: AttackCursorOnFriendlies) -- deselect
+click unit 0:SHK right
+wait 1
 click unit 0:SHK
 wait 1
-move building 0:NATSLA
+move building 0:TESLA
 wait 2
 assert cursor == 6 @W7-02-02
-click building 0:NATSLA
+assert selected_type(SHK) >= 1
+click building 0:TESLA
 wait 2
 assert selected_type(SHK) >= 1 @W7-02-02
 until 300 overpowerers >= 1 @W7-02-02

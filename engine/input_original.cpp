@@ -164,9 +164,7 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
     };
     // W7-02-11 [RE: InfantryClass::What_Action 0x51E89E]: an Ivan over an
     // object that already carries a bomb gets NoIvanBomb (no order).
-    if (idx >= 0 && !sel_.has(idx) && us[idx].bomb_frame >= 0 && ivan_sel() &&
-        (ctrl || !world_.controllable(us[idx].house)))
-        return Action::NoMove;
+    if (idx >= 0 && !sel_.has(idx) && us[idx].bomb_frame >= 0 && ivan_sel()) return Action::NoMove;
     // W7-07-12 [RE: YR mission 29 Attack Move, AttackMoveNav cursor; the
     // modifier is SUSPECTED Ctrl+Shift]: Ctrl+Shift on the ground is an
     // attack-move (the move cursor).

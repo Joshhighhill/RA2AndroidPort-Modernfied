@@ -5931,7 +5931,12 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 if (temp) {
                     const Cellxy goal = u.path.back();
                     const double gx = goal.x - u.cell_x, gy = goal.y - u.cell_y;
-                    if (om::sqrt(gx * gx + gy * gy) <= W7->combat_w7().close_enough) {
+                    // (the stop ends a plain move; an attack approach keeps
+                    // re-pathing -- the attack mission would re-issue the same
+                    // approach every frame and livelock against the stop)
+                    const bool plain_move = u.target < 0 && u.target_building < 0 && u.attack_cell_x < 0 &&
+                                            !u.crushing;
+                    if (plain_move && om::sqrt(gx * gx + gy * gy) <= W7->combat_w7().close_enough) {
                         u.path.clear();
                         u.path_idx = 0;
                         u.fx = u.cell_x;
@@ -5945,7 +5950,12 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                     for (int o : occs) {
                         if (o < 0 || o == self || o >= static_cast<int>(units.size())) continue;
                         const Unit& v = units[o];
-                        if (v.alive && v.die_time < 0.0 && !v.moving() && v.enter_target < 0 &&
+                        // (a unit busy with a target keeps it: Scatter only
+                        // moves an idle one -- the step-aside never cancels
+                        // an attack, or two attackers livelock scattering
+                        // each other)
+                        if (v.alive && v.die_time < 0.0 && !v.moving() && v.enter_target < 0 && v.target < 0 &&
+                            v.target_building < 0 && v.attack_cell_x < 0 &&
                             W7->incoming_scatters(v, false, /*nokidding=*/true))
                             speed->scatter_out->push_back(o);
                     }
