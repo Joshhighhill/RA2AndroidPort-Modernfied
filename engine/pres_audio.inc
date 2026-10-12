@@ -76,6 +76,51 @@ inline std::string pres_lower(std::string s) {
     for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return s;
 }
+// W7-12-28 / W7-01-12 / W7-09-01: the unit's RULES id (E1, JUMPJET, DTRUCK),
+// not its SHP/VXL Image= (GI, ROCK, TRUCKA). Every per-type rules key the
+// presentation reads (voices, Report, MoveSound, Explosion=, DeadBodies, ...)
+// lives in the rules id's section [RE: TechnoTypeClass::LoadFromINI
+// FUN_00711510 reads them from the type's own section]. Units built by hand
+// without a rules id (tests / old gates) fall back to the image.
+inline const std::string& pres_type_id(const ra2engine::Unit& u) {
+    return u.tg.t.rules_id.empty() ? u.image : u.tg.t.rules_id;
+}
+// W7-12-21 [RE: DrawHealthBar 0x6F5A00 branches on WhatAmI == Infantry]:
+// the Terror Drone is a UnitType (rules [VehicleTypes]) drawn through the SHP
+// path (is_vehicle false) -- it gets the vehicle board, pips and chevron.
+inline bool pres_rtti_infantry(const ra2engine::Unit& u) {
+    if (u.is_vehicle || u.is_aircraft) return false;
+    return u.is_infantry || u.tg.t.rules_id.empty();
+}
+// W7-12-11 [RE: UnitClass::AI @0x735571-0x735686 -- a sinking ship's z
+// drops 5 leptons per frame and it is removed below -400 (80 frames); every
+// 4th frame a Wake spawns at +-170 leptons on the water; the voxel draw
+// 0x73A3A0 @0x73AE58 clips the sprite at the waterline's screen y stored on
+// the first sinking draw; no shadow, the HVA counter frozen]. The clone's
+// sim tombstones the wreck after 1 s, so the presentation keeps its own
+// sinking hull for the 80 frames.
+struct PresSinker {
+    int unit = -1;
+    long start = 0;
+    double fx = 0, fy = 0;
+    int level = 0;
+    double body = 0, turret = 0;
+    int house = 0;
+    std::string image;
+};
+std::vector<PresSinker> g_pres_sinkers;
+int g_sink_drop_px = 0;   // set while render_world draws a sinking hull (no shadow, lowered)
+// W7-04-25 [RE: per-cell crush 0x7406A2-0x740764 removes the victim at
+// once]: crushed bodies (unit indices) the renderer no longer draws.
+std::vector<std::uint8_t> g_pres_crushed;
+inline void pres_mark_crushed(int i) {
+    if (i < 0) return;
+    if (static_cast<std::size_t>(i) >= g_pres_crushed.size()) g_pres_crushed.resize(static_cast<std::size_t>(i) + 1, 0);
+    g_pres_crushed[static_cast<std::size_t>(i)] = 1;
+}
+inline bool pres_crushed(int i) {
+    return i >= 0 && static_cast<std::size_t>(i) < g_pres_crushed.size() && g_pres_crushed[static_cast<std::size_t>(i)];
+}
 
 // Downmix to mono and resample to the 22050 Hz sink (linear). The game's
 // clips are 22050 Hz; a few BAG clips are 11025/44100 and would otherwise play
@@ -269,6 +314,8 @@ public:
         ms.all = has_token(e.control, "all");
         ms.attack = has_token(e.control, "attack");
         ms.decay = has_token(e.control, "decay");
+        ms.attack_n = e.attack_n;   // W7-12-24
+        ms.decay_n = e.decay_n;
         ms.loop = has_token(e.control, "loop");
         // W5-E [RE: audio-playback.md Control table @0x8150C0, FUN_004055c0;
         // Type table @0x815048, FUN_0074f8e0]: PREDELAY/AMBIENT predelay from
@@ -361,6 +408,24 @@ public:
         int pan = 8192;
         if (!place(key, fx, fy, d, pan)) return;
         if (const std::uint32_t h = audio_->mixer->play_at(key, d, pan)) live_.push_back({h, fx, fy, key});
+    }
+    // W7-12-25 [RE: FUN_0074F740(voice, 1.0) never calls the attenuation
+    // FUN_0074F8E0]: a unit's queued voice -- centred, full volume, wherever
+    // the unit is. Returns the voice handle (0 deviceless / failed).
+    std::uint32_t play_voice(const std::string& key, const char* why) {
+        if (key.empty()) return 0;
+        pres_log(frame_, std::string("sound ") + key + " (" + why + ")");
+        if (!mixer_live()) return 0;
+        ensure_sound(key);
+        return audio_->mixer->play_at(key, 0.0, 8192);
+    }
+    bool voice_alive(std::uint32_t h) const { return h && mixer_live() && audio_->mixer->voice_alive(h); }
+    // soundmd Control= has LOOP (W7-04-30 move loops).
+    bool sound_loops(const std::string& key) {
+        if (key.empty() || !sounds_) return false;
+        auto it = loops_cache_.find(key);
+        if (it != loops_cache_.end()) return it->second;
+        return loops_cache_[key] = has_token(sounds_->entry(key).control, "loop");
     }
     // W5-E: a non-positional event at a fixed volume scale (FUN_0074F740(snd,
     // vol)), logged like play().
@@ -696,6 +761,7 @@ private:
     std::function<bool(int, int)> revealed_;           // W5-E Type=SHROUD gate
     int cam_x_ = 0, cam_y_ = 0, view_w_ = 1, view_h_ = 1;
     std::set<std::string> registered_;
+    std::map<std::string, bool> loops_cache_;   // W7-04-30
     std::map<std::string, EvaDef> eva_;
     struct ClipRec { int id = -1; double secs = 0.0; };
     std::map<std::string, ClipRec> eva_clips_;

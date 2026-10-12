@@ -46,6 +46,12 @@ std::string type_weapon_id(const ra2assets::Rules& rules, const std::string& typ
 void fill_unit_combat_extras(const ra2assets::Rules& rules, const std::string& type_id,
                              const TypeWeapons& tw, UnitCombat& c);
 
+// Wave-7 fix (units): the UnitTypeW7 keys (role flags, disguise, Turret=,
+// Mirage blink, AreaFire deploy, mind-control capacity). Called by
+// fill_unit_combat_extras.
+void fill_unit_w7(const ra2assets::Rules& rules, const std::string& type_id, const TypeWeapons& tw,
+                  UnitTypeW7& w);
+
 // Gap fix C (G-40) [RE: docs/re/defenses.md]: a building type's weapons
 // (same slot rule as units), Powered=, ROT=, Turret=, GuardRange=.
 void fill_building_weapons(const ra2assets::Rules& rules, const std::string& type_id,

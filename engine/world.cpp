@@ -140,6 +140,19 @@ void step_turrets(std::vector<Unit>& units, const std::vector<Building>& buildin
             want = facing_u16_from_delta(static_cast<double>(u.attack_cell_x) - u.fx,
                                          static_cast<double>(u.attack_cell_y) - u.fy);
         }
+        // W7-03-02 [RE: UnitClass turret AI FUN_00735A60 @0x735A9C, type
+        // Turret +0xCA1]: a TURRETLESS vehicle (Tank Destroyer, Mirage, V3)
+        // that has a target, no destination and a stopped locomotor turns its
+        // HULL to the target (FacingClass::Set_Desired); the fire gate then
+        // waits for the hull. Moving, it keeps its path facing. The aim gate
+        // reads turret_facing, which follows the hull here.
+        if (!u.w7.t.has_turret && !u.is_aircraft && !u.omni_fire && !u.w6.omni_fire) {
+            const bool has_target = u.target >= 0 || u.target_building >= 0 || u.attack_cell_x >= 0;
+            if (has_target && !u.moving() && !u.frozen)
+                u.body_facing = turn_toward(u.body_facing, want, u.rot_u16_per_sec * dt);
+            u.turret_facing = u.body_facing;
+            continue;
+        }
         u.turret_facing = turn_toward(u.turret_facing, want, u.rot_u16_per_sec * dt);
     }
 }
@@ -930,6 +943,19 @@ Unit& World::add_unit(int cell_x, int cell_y, const std::string& image, int fram
 }
 
 Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat& c) {
+    // W7-08-21 / W7-01-15 [RE: InfantryClass Init 0x517AE0 @0x517B4A, UnitClass
+    // Init 0x745640 @0x74569A / 0x734490 @0x734717]: the house's
+    // BarracksInfiltrated (+0x2BF) / WarFactoryInfiltrated (+0x2C0) flags are
+    // tested when EVERY Trainable infantry / non-Naval Trainable vehicle the
+    // house creates is initialised (production, paradrops, reinforcements,
+    // crates) -- never for ships or aircraft.
+    int vrank = c.veteran_rank;
+    if (vrank == 0 && c.trainable && house >= 0 && house < (int)produced_veteran_.size()) {
+        const std::uint8_t m = produced_veteran_[(std::size_t)house];
+        if (c.is_infantry && (m & (1u << 1))) vrank = 1;
+        else if (c.is_vehicle && !c.is_naval && !c.is_aircraft && (m & (1u << 2))) vrank = 1;
+    }
+    if (!c.trainable) vrank = 0;   // [V15] SetVeteran only if Trainable (FUN_00734490 L107-111)
     Unit& u = add_unit(cell_x, cell_y, c.image, 0);
     u.house = house;
     u.hp = u.max_hp = c.strength;
@@ -938,15 +964,15 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     // Engineer/Spy Capture [RE-GATE APPLIED: capture.md §B5]: a veteran unit
     // spawns with scaled firepower + HP. rank 0 (every existing spawn) leaves
     // w_damage/hp/max_hp EXACTLY as resolved above -> byte-identical.
-    u.veteran_rank = c.veteran_rank;
+    u.veteran_rank = vrank;
     u.sight = c.sight;  // [RE: shroud.md §2] reveal radius; inert until Task 3
     // P5 [RE: veterancy.md V15]: in a veterancy-enabled World a produced
     // veteran is Veterancy=1.0f (applied below), NOT the legacy spawn-baked
     // HP/damage. The legacy baking is kept verbatim for every World that never
     // enabled veterancy (the capture gate) -> byte-identical there.
-    if (c.veteran_rank > 0 && !vet_any_) {
-        u.w_damage = veteran_firepower(u.w_damage, c.veteran_rank);
-        u.max_hp = veteran_hp(u.max_hp, c.veteran_rank);
+    if (vrank > 0 && !vet_any_) {
+        u.w_damage = veteran_firepower(u.w_damage, vrank);
+        u.max_hp = veteran_hp(u.max_hp, vrank);
         u.hp = u.max_hp;
     }
     u.w_rof = c.rof;
@@ -967,6 +993,9 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     // [RE: Unlimbo FUN_006F61D0 -> IsWithinUsableArea FUN_00577E90].
     u.tg.t = c.tg;
     u.tg.in_playfield = cell_in_playfield(cell_x, cell_y);
+    // Wave-7 fix (units): the type data (unit_w7.hpp).
+    u.w7.t = c.w7;
+    u.detect_disguise = u.detect_disguise || c.w7.detect_disguise;   // W7-01-02
     // Projectile phase (P2) [RE: projectile.md]: the primary weapon's projectile
     // spec. Copied unconditionally but READ ONLY behind projectiles_enabled_
     // (the firewall) -- inert in every existing gate.
@@ -1001,6 +1030,13 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     // and a fixed-wing aircraft with full ammo.
     u.an.t = c.an;
     u.an.spawn_ready = c.an.spawner_slot >= 0 ? c.an.spawns_number : 0;
+    // W7-06-03 [RE: SpawnManager ctor FUN_006B6310]: SpawnsNumber nodes, each
+    // docked with a spawn ready (state 0).
+    if (c.an.spawner_slot >= 0 && c.an.spawns_number > 0) {
+        u.an.sp_state.assign(static_cast<std::size_t>(c.an.spawns_number), kSpawnDocked);
+        u.an.sp_timer.assign(static_cast<std::size_t>(c.an.spawns_number), 0);
+        u.an.sp_unit.assign(static_cast<std::size_t>(c.an.spawns_number), -1);
+    }
     u.an.ammo = c.an.ammo;
     u.an.in_water = c.is_naval;
     u.an.submerged = c.an.underwater && c.an.cloakable;
@@ -1070,8 +1106,8 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.vet.base_sight = c.sight;
     if (vet_any_) {
         // [V15] SetVeteran only if Trainable (FUN_00734490 L107-111).
-        if (c.veteran_rank > 0 && c.trainable)
-            u.vet.veterancy = c.veteran_rank >= 2 ? 2.0f : 1.0f;
+        if (vrank > 0 && c.trainable)
+            u.vet.veterancy = vrank >= 2 ? 2.0f : 1.0f;
         init_unit_vet(u);
     }
     // P4 [RE: abilities.md]: bind the ability profile at spawn so the unit's
@@ -1079,7 +1115,75 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     // abilities_any_ (no pre-P4 gate registers a profile).
     if (abilities_any_) ability_bind_unit(u);
     subcell_register(static_cast<int>(&u - units_.data()));   // W5-B R-061
+    // W7-01-03 [RE: TechnoClass::Init 0x6F34A0 L597-612, called from
+    // InfantryClass 0x517AE0]: a CanDisguise && PermaDisguise unit starts
+    // disguised as its side's [General] AlliedDisguise / SovietDisguise /
+    // ThirdDisguise, in its OWN house (it fools nobody until it disguises on
+    // an enemy infantry -- disguise_fools).
+    if (c.w7.perma_disguise) {
+        const int side = static_cast<int>(house_side(house));
+        const std::string& look = side_disguise_[side >= 0 && side < 3 ? static_cast<std::size_t>(side) : 0];
+        u.disguised = true;
+        u.disguised_as_type = look;
+        u.disguised_as_house = house;
+    }
     return u;
+}
+
+World::EngineerAct World::engineer_action(int eng_idx, int b_idx) const {
+    if (eng_idx < 0 || eng_idx >= static_cast<int>(units_.size())) return EngineerAct::None;
+    if (b_idx < 0 || b_idx >= static_cast<int>(buildings_.size())) return EngineerAct::None;
+    const Unit& e = units_[static_cast<std::size_t>(eng_idx)];
+    const Building& b = buildings_[static_cast<std::size_t>(b_idx)];
+    if (!b.alive || b.state == Building::State::Dead) return EngineerAct::None;
+    const BuildingTypeDef* t =
+        (b.type >= 0 && b.type < static_cast<int>(btypes().size())) ? &btypes()[static_cast<std::size_t>(b.type)] : nullptr;
+    const bool allied = are_allied(e.house, b.house);
+    if (b.bomb_frame >= 0 && allied) return EngineerAct::Defuse;   // wave-5 R-046
+    // W7-08-19: a hut takes the engineer only when a bridge needs repair.
+    if (t && t->bridge_repair_hut) return bridge_needs_repair_near(b_idx) ? EngineerAct::Hut : EngineerAct::None;
+    // W7-08-20 [RE: 0x51E17C L64-77, loader 0x4600BB]: own / allied, or a
+    // neutral (civilian) CanBeOccupied building -> the repair branch.
+    const int nh = neutral_house();
+    const bool neutral_occ = t && t->can_be_occupied && (nh >= 0 ? b.house == nh : !house_combatant(b.house));
+    if (allied || neutral_occ) {
+        if (b.hp < b.max_hp) return EngineerAct::Repair;
+        if (allied) return EngineerAct::None;
+    }
+    // W7-01-16 [RE: 0x51E17C L709-715; 0x519449 L1279]: no capture of a
+    // Capturable=no building or of one being sold.
+    if (!building_capturable(b_idx) || b.selling) return EngineerAct::None;
+    return EngineerAct::Capture;
+}
+
+bool World::spy_can_infiltrate(int spy_idx, int b_idx) const {
+    if (spy_idx < 0 || spy_idx >= static_cast<int>(units_.size())) return false;
+    if (b_idx < 0 || b_idx >= static_cast<int>(buildings_.size())) return false;
+    const Building& b = buildings_[static_cast<std::size_t>(b_idx)];
+    if (!b.alive || b.state == Building::State::Dead) return false;
+    if (are_allied(units_[static_cast<std::size_t>(spy_idx)].house, b.house)) return false;
+    // An untyped (hand-built) building: the gesture's purpose decides.
+    if (b.type < 0 || b.type >= static_cast<int>(btypes().size())) return true;
+    return btypes()[static_cast<std::size_t>(b.type)].spyable;
+}
+
+bool World::unit_is_spy(const Unit& u) const {
+    if (!u.tg.t.rules_id.empty()) return u.w7.t.agent || u.w7.t.infiltrate;
+    return u.image == "SPY";   // a hand-built test unit (no rules id)
+}
+
+bool World::unit_is_engineer(const Unit& u) const {
+    if (!u.tg.t.rules_id.empty()) return u.w7.t.engineer;
+    return u.image == "ENGINEER";
+}
+
+bool World::disguise_fools(int viewer_house, const Unit& u) const {
+    if (!u.disguised) return false;
+    if (are_allied(viewer_house, u.house)) return false;
+    // A Mirage tree (no house) fools every non-ally; a spy only the houses
+    // allied with the house it is disguised as [RE: 0x522520].
+    if (u.disguise_when_still || u.disguised_as_house < 0) return true;
+    return are_allied(viewer_house, u.disguised_as_house);
 }
 
 void World::set_anim(const std::string& image, const UnitAnimSeq& seq) { anims_[image] = seq; }
@@ -1223,10 +1327,16 @@ void World::order_unit_move(int idx, int gx, int gy) {
     // erased, deployed) takes no move; a Teleporter's move is a TELEPORT.
     // Both fields are inert (false) unless a P4 profile is bound, which no
     // pre-P4 gate does -> the existing body below runs unchanged.
+    // W7-01-05 / W7-02-03 [RE: InfantryClass What_Action 0x51F510 -> NoMove;
+    // Mission_Move 0x51F370]: a DEPLOYED Deployer infantry (GI, Guardian GI,
+    // Desolator) owned by a human refuses the move (the destination is
+    // cleared, it stays put); a computer-owned one undeploys first (the
+    // Undeploy sequence and sound) and then walks.
+    if (u.deployed && !u.is_vehicle && (u.deploy_fire || u.abil.deployer)) {
+        if (!house_is_computer(u.house)) return;
+        (void)order_deploy(idx);   // toggles back: emits Deploy(0)
+    }
     if (u.frozen) return;
-    // Gap fix C (G-45): a deployed DeployFire infantry packs up and walks
-    // (the original undeploys on a move order).
-    if (u.deploy_fire && u.deployed) u.deployed = false;
     if (u.abil.teleporter && !u.is_aircraft) {
         teleport_unit(idx, gx, gy);
         return;
@@ -1431,8 +1541,15 @@ void World::group_attack(int issuer, const std::vector<int>& ids, int target_idx
         // W2-SK-22 Spy disguise [RE: capture.md §C; [SPY] Primary=MakeupKit
         // "virtual weapon that picks disguise"]: a spy "attacking" an enemy
         // infantry takes on its look instead.
-        if (u.image == "SPY") {
-            if (!tgt.is_vehicle && !tgt.is_aircraft) set_disguise(static_cast<int>(i), tgt.image, tgt.house);
+        // W7-01-42 [RE: 0x522430]: infantry only, and a target that is itself
+        // disguised lends its disguise (type and house), not its real look.
+        if (unit_is_spy(u)) {
+            if (!tgt.is_vehicle && !tgt.is_aircraft && !tgt.is_naval) {
+                if (tgt.disguised && !tgt.disguise_when_still)
+                    set_disguise(static_cast<int>(i), tgt.disguised_as_type, tgt.disguised_as_house);
+                else
+                    set_disguise(static_cast<int>(i), tgt.image, tgt.house);
+            }
             continue;
         }
         u.attack_cell_x = u.attack_cell_y = -1;   // G16
@@ -1578,8 +1695,7 @@ int World::launch_unit(int factory_idx, const BuildingTypeDef& factory_def, cons
         if (pad < 0 && !an_.dock_offsets.empty()) return -1;
         const double px = (f.cx * 256.0 + f.fw * 128.0 + (pad >= 0 ? an_.dock_offsets[pad].first : 0)) / 256.0 - 0.5;
         const double py = (f.cy * 256.0 + f.fh * 128.0 + (pad >= 0 ? an_.dock_offsets[pad].second : 0)) / 256.0 - 0.5;
-        UnitCombat cv = c;
-        cv.veteran_rank = produced_veteran(f.house) ? 1 : 0;
+        UnitCombat cv = c;   // W7-01-15: no spied-factory veterancy for aircraft
         const int house = f.house;
         add_combat_unit(static_cast<int>(std::lround(px)), static_cast<int>(std::lround(py)), house, cv);
         const int ui = static_cast<int>(units_.size()) - 1;
@@ -1767,32 +1883,56 @@ void World::step_cargo(double /*dt*/) {
         return walkable(x, y) && occ_.is_free(x, y);
     };
 
-    // 1) Transport-death disposition [RE-GATE APPLIED: transport-cargo.md §5
-    //    -- CONFIRMED: every death path in the original (FUN_00700DA0 /
-    //    FUN_00707130 / ~UnitClass) deletes each passenger with NO survival
-    //    branch; OpenTopped grants NO death survival (it governs fire-out
-    //    while alive -- an RE-documented carry-forward for the fire-out
-    //    phase, not CB-1 code). Every carried unit dies WITH the transport,
-    //    tombstoned directly (alive=false, no die anim -- it was never
-    //    on-screen), coords stamped to the transport's cell.] A transport
-    //    killed by step_combat in frame N is handled here
-    //    in frame N+1 (step_cargo precedes step_combat in the step order) --
-    //    a one-frame lag, deterministic, documented.
+    // 1) Transport-death disposition. W7-04-02 [RE: UnitClass::ReceiveDamage
+    //    FUN_00736D60, KILLED branch 0x736FD1..0x7371D6]: a non-Crashable
+    //    unit's passengers are unlimboed on the transport's cell and
+    //    scattered -- they ESCAPE ALIVE. A passenger dies only when it cannot
+    //    stand there (a transport killed on water drowns its infantry), when
+    //    the unlimbo fails (no free cell), or on the separate kill-all paths:
+    //    an Explodes / Suicide death (0x701A97, KillPassengers FUN_00707130)
+    //    and aircraft transports (Crashable). (transport-cargo.md §5 used to
+    //    say every passenger dies; it read only the kill-all sites.) A
+    //    transport killed by step_combat in frame N is handled here in frame
+    //    N+1 (step_cargo precedes step_combat) -- a one-frame lag.
     for (std::size_t ti = 0; ti < units_.size(); ++ti) {
         Unit& t = units_[ti];
         if (t.cargo.empty()) continue;
         if (t.alive && t.die_time < 0.0) continue;   // transport still fine
-        for (int p : t.cargo) {
+        const bool kill_all = t.is_aircraft || t.abil.explodes || t.abil.fire_kind == AbilityKind::Suicide ||
+                              t.an.sinking;
+        // LIFO, as the unload: the last-boarded leaves first.
+        for (auto it = t.cargo.rbegin(); it != t.cargo.rend(); ++it) {
+            const int p = *it;
             if (p < 0 || p >= static_cast<int>(units_.size())) continue;
             Unit& u = units_[p];
-            u.alive = false;          // tombstone directly (no die anim)
-            u.die_time = -1.0;
-            u.hp = 0;
+            std::vector<Cellxy> g;
+            if (!kill_all && unit_can_enter_cell(u, t.cell_x, t.cell_y))
+                g = nearest_free_cells({t.cell_x, t.cell_y}, 1, grid_for(u.movement_domain), grid_w_, grid_h_, occ_);
             u.cargo_of = -1;
-            u.cell_x = t.cell_x;      // coords stamped to the transport's cell
-            u.cell_y = t.cell_y;
-            u.fx = t.cell_x;
-            u.fy = t.cell_y;
+            if (g.empty()) {
+                u.alive = false;          // tombstone directly (no die anim)
+                u.die_time = -1.0;
+                u.hp = 0;
+                u.cell_x = t.cell_x;      // coords stamped to the transport's cell
+                u.cell_y = t.cell_y;
+                u.fx = t.cell_x;
+                u.fy = t.cell_y;
+                continue;
+            }
+            u.cell_x = g[0].x;
+            u.cell_y = g[0].y;
+            u.fx = g[0].x;
+            u.fy = g[0].y;
+            u.guard_x = g[0].x;
+            u.guard_y = g[0].y;
+            u.path.clear();
+            u.path_idx = 0;
+            u.target = -1;
+            u.target_building = -1;
+            u.attack_order = false;
+            occ_.set(g[0].x, g[0].y, p);
+            if (map_) if (const ra2assets::MapCell* mc = map_->at(g[0].x, g[0].y)) u.level = mc->level;
+            cargo_events_.push_back({CargoEvent::Kind::Eject, p, static_cast<int>(ti), g[0].x, g[0].y});
         }
         t.cargo.clear();
         t.unload_pending = false;
@@ -2223,8 +2363,10 @@ bool World::infiltrate_building(int b_idx, int spy_house, InfiltratePurpose purp
             // (+0x2C0) -- a Naval Yard is Factory=UnitType too, so a war
             // factory and a yard set the same flag (vehicles AND ships).
             std::uint8_t bits = 0;
+            // W7-01-15 [RE: 0x734717]: the War Factory flag makes non-Naval
+            // vehicles veteran -- never ships (and nothing reads it for aircraft).
             if (kind == 1) bits = 1u << 1;
-            else if (kind == 2 || kind == 3) bits = (1u << 2) | (1u << 3);
+            else if (kind == 2 || kind == 3) bits = 1u << 2;
             else bits = (std::uint8_t)(kind > 0 ? (1u << kind) : 0x1Eu);
             if (spy_house >= 0 && spy_house < house_count())
                 produced_veteran_[spy_house] |= bits;
@@ -2250,7 +2392,12 @@ bool World::repair_building(int b_idx, int by_house) {
     if (b_idx < 0 || b_idx >= (int)buildings_.size()) return false;
     Building& b = buildings_[b_idx];
     if (!b.alive || b.state == Building::State::Dead) return false;
-    if (!are_allied(by_house, b.house)) return false;  // repair OWN + ALLIED (self-ally holds)
+    // repair OWN + ALLIED (self-ally holds); W7-08-20: and a neutral (civilian)
+    // CanBeOccupied building [RE: 0x51E17C L64-77].
+    const int nh = neutral_house();
+    const bool neutral_occ = b.type >= 0 && b.type < (int)btypes().size() && btypes()[(std::size_t)b.type].can_be_occupied &&
+                             (nh >= 0 ? b.house == nh : !house_combatant(b.house));
+    if (!are_allied(by_house, b.house) && !neutral_occ) return false;
     if (b.hp >= b.max_hp) return false;         // full HP -> no action (engineer NOT consumed)
     capture_any_ = true;
     b.hp = b.max_hp;                            // heal to full [RE-GATE APPLIED §A5]
@@ -2477,6 +2624,56 @@ void World::step_repair_sell(double dt) {
     }
 }
 
+static bool engineer_approach_goal(const Building& b, int px, int py,
+                                   const std::vector<uint8_t>& passable, int w, int h,
+                                   const Occupancy& occ, Cellxy& g);
+
+bool World::depot_wants(int issuer, const std::vector<int>& ids, int b_idx) const {
+    if (b_idx < 0 || b_idx >= (int)buildings_.size()) return false;
+    const Building& b = buildings_[(std::size_t)b_idx];
+    if (!b.alive || b.state == Building::State::Dead || b.type < 0 || b.type >= (int)btypes().size() ||
+        !btypes()[(std::size_t)b.type].unit_repair || !can_command(issuer, b.house))
+        return false;
+    for (int i : ids) {
+        if (i < 0 || i >= (int)units_.size()) continue;
+        const Unit& u = units_[(std::size_t)i];
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != b.house) continue;
+        if (!u.is_vehicle || u.is_aircraft || u.is_naval) continue;   // vehicles only [RE: 0x44B780]
+        if (u.hp < u.max_hp || u.parasite_on_me >= 0) return true;
+    }
+    return false;
+}
+
+int World::group_depot(int issuer, const std::vector<int>& ids, int b_idx) {
+    if (!depot_wants(issuer, ids, b_idx)) return 0;
+    const Building& b = buildings_[(std::size_t)b_idx];
+    int n = 0;
+    for (int i : ids) {
+        if (i < 0 || i >= (int)units_.size()) continue;
+        Unit& u = units_[(std::size_t)i];
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.house != b.house) continue;
+        if (!u.is_vehicle || u.is_aircraft || u.is_naval || (u.hp >= u.max_hp && u.parasite_on_me < 0)) continue;
+        // The dock order supersedes engagement and any pending intent.
+        u.target = -1;
+        u.target_building = -1;
+        u.attack_order = false;
+        u.attack_cell_x = u.attack_cell_y = -1;
+        u.enter_target = -1;
+        u.unload_pending = false;
+        u.tg.area_guard = false;
+        if (u.is_harvester) u.manual_hold = true;
+        u.w7.depot_target = b_idx;
+        // [RE-FALLBACK: the original radios the depot and drives onto its pad;
+        // the clone's service pass serves a vehicle parked beside the
+        // foundation, so the dock goal is the nearest free adjacent cell.]
+        Cellxy g;
+        if (engineer_approach_goal(b, u.cell_x, u.cell_y, passable_, grid_w_, grid_h_, occ_, g))
+            order_unit_move(i, g.x, g.y);
+        ++n;
+    }
+    return n;
+}
+
 int World::depot_client(int b_idx) const {
     if (b_idx < 0 || b_idx >= (int)buildings_.size()) return -1;
     const Building& b = buildings_[(std::size_t)b_idx];
@@ -2502,51 +2699,159 @@ bool World::depot_servicing(int house) const {
 }
 
 void World::step_service_depots() {
-    const std::uint64_t frame = repair_frame_ > 0 ? repair_frame_ - 1 : 0;   // step_repair_sell's phase
-    const int interval = repair_interval_frames(repair_rules_.repair_rate);
-    const bool due = repair_due(frame, interval);
+    // W7-08-03 [RE: BuildingClass::Mission_Repair 0x44B780 @0x44BD38 /
+    // 0x44BFE5]: each depot steps on its OWN accumulator (+0x620) every
+    // URepairRate minutes (trunc(.016*900) = 14 frames) from the moment its
+    // client docks -- not the global Frame % RepairRate phase of building
+    // repair. One client at a time; a paid step adds RepairStep HP for the
+    // per-step cost; a broke house gets no step.
+    const std::int64_t F = static_cast<std::int64_t>(repair_frame_ > 0 ? repair_frame_ - 1 : 0);
+    const int interval = repair_interval_frames(repair_rules_.u_repair_rate);
     for (int bi = 0; bi < (int)buildings_.size(); ++bi) {
+        Building& depot = buildings_[(std::size_t)bi];
         const int ui = depot_client(bi);
-        if (ui < 0) continue;
-        Unit& u = units_[(std::size_t)ui];
-        // A riding Terror Drone dies at the depot (every frame, not phased).
-        if (u.parasite_on_me >= 0 && u.parasite_on_me < (int)units_.size()) {
-            Unit& d = units_[(std::size_t)u.parasite_on_me];
-            if (d.alive && d.die_time < 0.0) ability_kill_unit(u.parasite_on_me);
-            u.parasite_on_me = -1;
+        if (ui < 0) {
+            depot.w7.depot_client = -1;
+            depot.w7.depot_next = -1;
+            continue;
         }
-        if (!due || u.hp >= u.max_hp) continue;
-        const int h = buildings_[(std::size_t)bi].house;
+        // [RE: 0x44C2E2] the first step is sent at once when the client docks;
+        // then one step per URepairRate interval (0x44BD2D-0x44BD7A).
+        if (ui != depot.w7.depot_client || depot.w7.depot_next < 0) {
+            depot.w7.depot_client = ui;
+            depot.w7.depot_next = F;
+        }
+        if (F < depot.w7.depot_next) continue;
+        Unit& u = units_[(std::size_t)ui];
+        const int h = depot.house;
         if (h < 0 || h >= house_count()) continue;
         const int cost = repair_step_cost(u.vet.cost > 0 ? u.vet.cost : u.max_hp, u.max_hp,
                                           repair_rules_.repair_step, repair_rules_.repair_percent);
         double& pool = econ_active(h) ? econ_[(std::size_t)h].credits : house_credits_[(std::size_t)h];
-        if (pool < (double)cost) continue;   // broke: no partial step, no free repair
+        // Broke [RE: 0x44C098 / 0x44C318]: back to state 1, which re-sends the
+        // step every frame until the house can pay (no partial step).
+        if (pool < (double)cost) continue;
+        depot.w7.depot_next = F + interval;
         pool -= (double)cost;
         u.hp = std::min(u.max_hp, u.hp + repair_rules_.repair_step);
+        // W7-08-02 / W7-04-11 / W7-04-32 [RE: TechnoClass::Receive_Message case
+        // 0x1C @0x6F4010]: on a PAID step a riding parasite gets
+        // SuppressionTimer = {Frame, 50} and ParasiteClass::ExitUnit
+        // (FUN_00629F40), which with the timer running UnInits a non-naval
+        // parasite (the Terror Drone dies silently; a squid is let go).
+        if (u.parasite_on_me >= 0) parasite_exit(ui, /*suppressed=*/true);
+        if (u.hp >= u.max_hp && u.parasite_on_me < 0) u.w7.depot_target = -1;   // serviced
     }
 }
 
+// W7-04-11..13 [RE: ParasiteClass::ExitUnit FUN_00629F40]: the parasite riding
+// `host` leaves it. A non-naval parasite (Terror Drone, dog) whose
+// SuppressionTimer is running (a heal hit, a depot step, the Iron Curtain set
+// it to 50 first) is destroyed outright (Health 0 + UnInit, no death anim);
+// otherwise it is unlimboed on a free cell of its domain beside the host and,
+// on that placement branch, paralysed for weapon ROF x 3 (ParalysisTimer
+// +0x6A0) with its mission / target / destination cleared. No free cell: it
+// stays riding (the original's Unlimbo failure keeps it attached).
+bool World::parasite_exit(int host_idx, bool suppressed) {
+    if (host_idx < 0 || host_idx >= (int)units_.size()) return false;
+    Unit& host = units_[(std::size_t)host_idx];
+    const int di = host.parasite_on_me;
+    if (di < 0 || di >= (int)units_.size()) { host.parasite_on_me = -1; return false; }
+    Unit& d = units_[(std::size_t)di];
+    const std::int64_t F = static_cast<std::int64_t>(ability_frame_);
+    if (suppressed) d.suppress_until = F + 50;
+    if (suppressed && !d.is_naval) {
+        host.parasite_on_me = -1;
+        host.last_hp = -1;
+        d.alive = false;
+        d.hp = 0;
+        d.cargo_of = -1;
+        d.death_done = true;
+        ability_events_.push_back({AbilityEvent::Kind::DroneLost, di, host_idx, 0, 0, false});
+        return true;
+    }
+    const std::vector<Cellxy> g = nearest_free_cells({host.cell_x, host.cell_y}, 1,
+                                                     grid_for(d.movement_domain), grid_w_, grid_h_, occ_);
+    if (g.empty()) return false;
+    host.parasite_on_me = -1;
+    host.last_hp = -1;
+    d.cargo_of = -1;
+    d.cell_x = g[0].x; d.cell_y = g[0].y; d.fx = g[0].x; d.fy = g[0].y;
+    d.guard_x = g[0].x; d.guard_y = g[0].y;
+    d.target = -1;
+    d.target_building = -1;
+    d.attack_order = false;
+    d.path.clear();
+    d.path_idx = 0;
+    occ_.set(g[0].x, g[0].y, di);
+    if (!suppressed) {
+        const int rof = d.vet.base.rof > 0 ? d.vet.base.rof : d.w_rof;   // raw weapon ROF (W7-08-18)
+        d.w7.paralysed_until = F + 3 * std::max(1, rof);
+        d.frozen = true;
+    }
+    ability_events_.push_back({AbilityEvent::Kind::DroneExit, di, host_idx, g[0].x, g[0].y, false});
+    return true;
+}
+
 // W2-SK-22 Mirage Tank [RE: rulesmd [MGTK] CanDisguise=yes DisguiseWhenStill=yes;
-// [General] DefaultMirageDisguises=TREE01..]: a Mirage that has stood still
-// and not fired for a moment turns into a tree -- enemies do not auto-acquire
-// it (the disguise skip in step_combat) -- and drops the disguise the moment
-// it moves or fires. [RE-FALLBACK: 15 frames still. PARTIAL: it is still
-// drawn as the tank -- the tree is terrain art the unit renderer cannot
-// draw.] Dogs (DetectDisguise) still reveal it.
+// [General] DefaultMirageDisguises=TREE01..]. W7-03-04 [RE: UnitClass::Fire
+// wrapper FUN_00740150, UnitClass::UpdateDisguise FUN_007456F0]:
+//   * a moving locomotor clears the disguise (vt+0x470);
+//   * a shot does NOT clear it: it starts a fake blink (+0x1EC timer =
+//     the weapon's DisguiseFakeBlinkTime, MirageGun 15 / MirageGunE 5) during
+//     which the tank is drawn -- auto-acquire still skips it;
+//   * every 8 frames a NOT-allied infantry in one of the 8 adjacent cells
+//     (CellClass::FindInfantry) clears it and starts the re-disguise delay
+//     (+0x1E0 = InfantryBlinkDisguiseTime, 20) -- "a logic blink so others
+//     will join in the shooting";
+//   * standing still with the delay over, it disguises AT ONCE as
+//     DefaultMirageDisguises[Random(0, n-1)].
+// Dogs (DetectDisguise) see through it in their own scan.
 void World::step_disguises() {
+    const std::uint64_t F = ability_frame_;
     for (Unit& u : units_) {
         if (!u.disguise_when_still || !u.alive || u.die_time >= 0.0) continue;
-        if (u.moving() || u.fire_flash > 0.0 || u.cargo_of >= 0) {
+        if (u.w7.blink_left > 0) --u.w7.blink_left;
+        if (u.w7.redisguise_left > 0) --u.w7.redisguise_left;
+        const bool shot = u.fire_flash > 0.0 && !u.w7.flash_seen;
+        u.w7.flash_seen = u.fire_flash > 0.0;
+        if (u.moving() || u.cargo_of >= 0) {
             u.still_frames = 0;
             if (u.disguised) u.disguised = false;
             continue;
         }
-        if (++u.still_frames >= 15 && !u.disguised) {
+        if (shot && u.disguised) {
+            const bool elite = vet_any_ && u.vet.recv && is_elite(u.vet.veterancy);
+            u.w7.blink_left = elite ? u.w7.t.fake_blink_elite : u.w7.t.fake_blink;
+        }
+        if (F % 8u == 0u && u.disguised) {
+            bool seen = false;
+            for (int dy = -1; dy <= 1 && !seen; ++dy)
+                for (int dx = -1; dx <= 1 && !seen; ++dx) {
+                    if (!dx && !dy) continue;
+                    for (const Unit& o : units_) {
+                        if (!o.alive || o.die_time >= 0.0 || o.cargo_of >= 0 || o.is_vehicle || o.is_aircraft ||
+                            o.is_naval)
+                            continue;
+                        if (o.cell_x != u.cell_x + dx || o.cell_y != u.cell_y + dy) continue;
+                        if (are_allied(u.house, o.house)) continue;
+                        seen = true;
+                        break;
+                    }
+                }
+            if (seen) {
+                u.disguised = false;
+                u.w7.redisguise_left = infantry_blink_disguise_;
+                u.w7.blink_left = 0;
+                continue;
+            }
+        }
+        ++u.still_frames;
+        if (!u.disguised && u.w7.redisguise_left <= 0) {
             u.disguised = true;
             // Drawn as itself (the tree art is terrain, not a unit SHP).
             u.disguised_as_type = u.image;
-            u.disguised_as_house = u.house;
+            u.disguised_as_house = u.house;   // a tree fools every non-ally (disguise_when_still in disguise_fools)
             // Wave-5 (R-047) [RE: abilities-w5.md §9, UnitClass::UpdateDisguise
             // FUN_007456F0 0x745870]: DisguisedAsType = DefaultMirageDisguises
             // [Random(0, n-1)] (a TerrainType), DisguisedAsHouse = none. The
@@ -2689,20 +2994,24 @@ void World::step_capture(double dt) {
             if (best >= 0 && best <= 1) {
                 const int eng_house = u.house;
                 bool consumed = false;
-                if (b.type >= 0 && b.type < static_cast<int>(btypes().size()) &&
-                    btypes()[b.type].bridge_repair_hut) {
+                // Wave-7: one rule for the cursor, the order and the arrival
+                // (engineer_action): hut only for a broken bridge (W7-08-19),
+                // neutral CanBeOccupied repair (W7-08-20), no capture of a
+                // building being sold (W7-01-16).
+                const EngineerAct act = engineer_action(static_cast<int>(i), bi);
+                if (act == EngineerAct::Hut) {
                     // G16 (agent G) [RE: world-depth.md §B4, FUN_00519449]: an engineer
                     // entering a BridgeRepairHut repairs the bridge and is consumed;
-                    // the hut itself is never captured.
-                    repair_bridge_near(bi);
-                    consumed = true;
-                    note_entered(EnteredEvent::BridgeHut, (int)i, bi, eng_house, true);
-                } else if (!are_allied(eng_house, b.house) && !building_capturable(bi)) {
+                    // the hut itself is never captured. W7-08-19: only when a
+                    // bridge section was actually restored.
+                    consumed = repair_bridge_near(bi) > 0;
+                    if (consumed) note_entered(EnteredEvent::BridgeHut, (int)i, bi, eng_house, true);
+                } else if (act == EngineerAct::None || act == EngineerAct::Defuse) {
                     // W2-SK-12 [RE: capture.md §A3]: Capturable=false (pillbox,
                     // tesla coil, prism tower, SAM, superweapons...) refuses the
                     // engineer, who is NOT consumed.
                     consumed = false;
-                } else if (!are_allied(eng_house, b.house)) {
+                } else if (act == EngineerAct::Capture) {
                     // Capture ENEMY *and NEUTRAL* buildings (neutral is not an
                     // enemy but IS capturable -- the oil-derrick case); own/ally
                     // -> repair. are_allied(eng, neutral) is false -> captured.
@@ -2824,20 +3133,11 @@ void World::step_tech_structures(double dt) {
     // 2) Blackout decay (index 2 inert -- never armed).
     for (int h = 0; h < house_count(); ++h)
         if (blackout_frames_[h] > 0) blackout_frames_[h] = std::max(0, blackout_frames_[h] - frames);
-    // 3) Disguise detection [RE: capture.md §C4 CONFIRMED - DetectDisguise sees
-    //    through PermaDisguise; deterministic, no RNG]. A disguised unit within
-    //    kDetectDisguiseRange cells of an alive, non-dying ENEMY detector is
-    //    revealed (disguise cleared). Ascending index order. NO reveal-on-attack
-    //    -- the spy is PermaDisguise-exempt (§C6); a dog is the only defeat.
-    for (Unit& d : units_) {
-        if (!d.alive || d.die_time >= 0.0 || !d.detect_disguise) continue;
-        for (Unit& s : units_) {
-            if (!s.disguised || !s.alive || !is_enemy(d.house, s.house)) continue;  // detected only by an ENEMY observer
-            const double dx = s.fx - d.fx, dy = s.fy - d.fy;
-            if (dx * dx + dy * dy <= kDetectDisguiseRange * kDetectDisguiseRange)
-                s.disguised = false;
-        }
-    }
+    // 3) W7-01-02 [RE: TechnoClass::Evaluate_Object 0x6F71D0 L455-467]: there
+    //    is no detection radius and no flag clear. A DetectDisguise scanner
+    //    (the dogs) simply ignores the disguise in its own threat scan
+    //    (disguise_fools + Unit::detect_disguise at every scan site); the
+    //    disguise stays on for everybody else.
 }
 
 void World::enable_shroud(bool on) {
@@ -3174,7 +3474,7 @@ void World::step_ai_houses(double dt) {
             if (!intruders.empty())
                 for (const IdleUnitView& iv : ai_idle_units(h, rec)) {
                     const Unit& u = units_[(std::size_t)iv.unit];
-                    if (u.w_damage <= 0 || u.deploys_into >= 0 || u.image == "ENGINEER" || u.image == "SPY")
+                    if (u.w_damage <= 0 || u.deploys_into >= 0 || unit_is_engineer(u) || unit_is_spy(u))   // W7-01-33
                         continue;
                     int best = -1;
                     long long bd = 0;
@@ -3632,6 +3932,10 @@ void World::ai_note_damage(bool building, int victim, int attacker_house, int dm
         const int t = ai_unit_type_of(rec, u);
         strength = u.max_hp;
         cost = (t >= 0) ? rec.cfg.team.unit_roster[(std::size_t)t].cost : u.max_hp;
+        // W7-04-18: a hit ToProtect unit asks for help (ai_unit.cpp).
+        if (t >= 0 && t < (int)rec.cfg.roster_to_protect.size() && rec.cfg.roster_to_protect[(std::size_t)t] &&
+            attacker_house != vh)
+            ai_protect_reqs_.push_back(AiProtectReq{victim, attacker_house});
     }
     if (strength <= 0) strength = 1;
     const int delta = om::ftol(((double)cost * ((double)dmg / (double)strength)));
@@ -3803,8 +4107,8 @@ int World::ai_sw_score_unit(const HouseAiRec& rec, const Unit& u) const {
     if (u.deploys_into >= 0 && u.deploys_into < (int)bts.size() && bts[u.deploys_into].conyard)
         return ai.sw_value_mcv;
     if (u.is_vehicle) return u.passengers_max > 0 ? ai.sw_value_apc : ai.sw_value_unit;
-    if (u.image == "ENGINEER" || u.image == "SENGINEER") return ai.sw_value_engineer;
-    if (u.image == "SPY" || u.image == "THIEF") return ai.sw_value_thief;
+    if (unit_is_engineer(u)) return ai.sw_value_engineer;   // W7-01-33: by the type flags
+    if (unit_is_spy(u) || u.image == "THIEF") return ai.sw_value_thief;
     return ai.sw_value_unit;
 }
 
@@ -3853,9 +4157,17 @@ int World::ai_unit_producing(int house, int iv01) const {
 }
 
 int World::ai_unit_type_of(const HouseAiRec& rec, const Unit& u) const {
-    // Units carry no roster index — map via the resolved combat image
-    // (unique per producible type; deterministic).
+    // Units carry no roster index -- map via the rules id (W7-09-17: the
+    // image is shared by distinct types -- the civilian TRUCKA and the
+    // Demolition Truck DTRUCK both draw TRUCKA, CTECH and CIV3 both CIV3 -- so
+    // an AI-owned civilian truck used to be recruited as a DTRUCK). A unit
+    // with no rules id (hand-built test UnitCombat) falls back to the image.
     const std::vector<UnitTypeDef>& r = rec.cfg.team.unit_roster;
+    if (!u.tg.t.rules_id.empty()) {
+        for (int i = 0; i < (int)r.size(); ++i)
+            if (r[i].id == u.tg.t.rules_id) return i;
+        return -1;
+    }
     for (int i = 0; i < (int)r.size(); ++i)
         if (r[i].combat.image == u.image) return i;
     return -1;
@@ -4133,6 +4445,43 @@ void World::ai_fill_team_view(int house, const HouseAiRec& rec,
     }
 }
 
+// W7-06-01: the free water cell nearest (tx,ty) that a ship at (sx,sy) can
+// reach -- a 4-way flood fill over the water grid from (sx,sy) (bounded),
+// keeping the cell with the least squared distance to the target, ties to the
+// first found (deterministic). {-1,-1} when the start is not on water.
+Cellxy World::ai_nearest_reachable_water(int sx, int sy, int tx, int ty) const {
+    const std::vector<std::uint8_t>& wg = grid_for(MovementDomain::Water);
+    const int w = grid_w_, h = grid_h_;
+    auto ok = [&](int x, int y) {
+        if (x < 0 || y < 0 || x >= w || y >= h) return false;
+        const std::size_t i = (std::size_t)y * (std::size_t)w + (std::size_t)x;
+        return i < wg.size() && wg[i] != 0;
+    };
+    if (!ok(sx, sy)) return Cellxy{-1, -1};
+    std::vector<std::uint8_t> seen((std::size_t)w * (std::size_t)h, 0);
+    std::vector<Cellxy> q;
+    q.reserve(4096);
+    q.push_back(Cellxy{sx, sy});
+    seen[(std::size_t)sy * w + sx] = 1;
+    Cellxy best{-1, -1};
+    long long best_d2 = -1;
+    static const int kDx[4] = {1, -1, 0, 0}, kDy[4] = {0, 0, 1, -1};
+    for (std::size_t k = 0; k < q.size() && k < 65536; ++k) {
+        const Cellxy c = q[k];
+        if (occ_.is_free(c.x, c.y) || (c.x == sx && c.y == sy)) {
+            const long long dx = c.x - tx, dy = c.y - ty, d2 = dx * dx + dy * dy;
+            if (best_d2 < 0 || d2 < best_d2) { best_d2 = d2; best = c; }
+        }
+        for (int d = 0; d < 4; ++d) {
+            const int nx = c.x + kDx[d], ny = c.y + kDy[d];
+            if (!ok(nx, ny) || seen[(std::size_t)ny * w + nx]) continue;
+            seen[(std::size_t)ny * w + nx] = 1;
+            q.push_back(Cellxy{nx, ny});
+        }
+    }
+    return best;
+}
+
 void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& team,
                                     const TeamCommand& c) {
     switch (c.kind) {
@@ -4165,7 +4514,27 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
                 return Cellxy{-1, -1};
             };
             int gx = c.x, gy = c.y;
-            const Cellxy s = nearest_free(c.x, c.y, 8);
+            // W7-06-01: an all-ship team (every live, unloaded member in the
+            // Water domain) can only gather / move on its own water body. The
+            // focus is the reachable free water cell nearest the ideal cell (a
+            // flood fill over the water grid from the lead ship). Before, the
+            // land-only snap left the muster cell inside the base, the fleet
+            // could never be "within Stray" of it, and the stock naval teams
+            // stayed in Gathering for good (Depth Charge, 35 minutes).
+            int lead = -1;
+            bool naval = false;
+            for (int m : team.members) {
+                if (m < 0 || m >= (int)units_.size()) continue;
+                const Unit& u = units_[(std::size_t)m];
+                if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
+                if (u.movement_domain != MovementDomain::Water) { naval = false; lead = -1; break; }
+                if (lead < 0) lead = m;
+                naval = true;
+            }
+            Cellxy s{-1, -1};
+            if (naval) s = ai_nearest_reachable_water(units_[(std::size_t)lead].cell_x,
+                                                      units_[(std::size_t)lead].cell_y, c.x, c.y);
+            else s = nearest_free(c.x, c.y, 8);
             if (s.x >= 0) { gx = s.x; gy = s.y; }
             team.gather_x = gx;   // realized move focus (contract A)
             team.gather_y = gy;
@@ -4178,6 +4547,17 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
                 const Unit& u = units_[m];
                 if (!u.alive || u.die_time >= 0.0) continue;
                 if (u.cargo_of >= 0) continue;   // W2-SK-09: rides the transport
+                // W7-02-04 [RE: FUN_0051F370 -- a computer-owned deployed
+                // infantry (UndeployDelay < 0) given a move plays Undeploy
+                // first]: a deployed team Desolator packs up and follows (a GI
+                // undeploys inside order_unit_move already).
+                if (u.deployed && !u.deploy_fire && u.abil.deployer) order_deploy(m);
+                if (naval) {   // W7-06-01: each ship's ring cell snapped onto its water
+                    const Cellxy ws = ai_nearest_reachable_water(u.cell_x, u.cell_y, gx + dx[k % 9] * spread,
+                                                                 gy + dy[k % 9] * spread);
+                    if (ws.x >= 0) order_unit_move(m, ws.x, ws.y);
+                    continue;
+                }
                 order_unit_move(m, gx + dx[k % 9] * spread, gy + dy[k % 9] * spread);
             }
             break;
@@ -4212,14 +4592,14 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
                 // W2-SK-09: an engineer captures / a spy infiltrates the team's
                 // building target instead of "attacking" it (stock scripts
                 // 'Tech Oil Capture', 'Spy vs Power', 'Engineer vs Ally').
-                if (u.image == "ENGINEER" || u.image == "SPY") {
+                if (unit_is_engineer(u) || unit_is_spy(u)) {   // W7-01-33
                     if (u.capture_target >= 0 || u.infiltrate_target >= 0) continue;
                     int tb = team_tb;
                     if (tb < 0)
                         tb = ai_find_typed_building(house, rec, c.building_arg >= 0 ? c.building_arg : -1,
                                                     true, u.cell_x, u.cell_y);
                     if (tb < 0) continue;
-                    if (u.image == "ENGINEER") {
+                    if (unit_is_engineer(u)) {
                         if (building_capturable(tb)) order_engineer_capture(m, tb);
                     } else {
                         order_spy_infiltrate(m, tb, ai_infiltrate_purpose(tb), 0.5, 1000);
@@ -4420,15 +4800,8 @@ bool World::ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat) {
     const BuildingTypeDef& fdef = rec.cfg.roster[buildings_[fi].type];
     const int uidx = launch_unit(fi, fdef, tc.unit_roster[uslot].combat);
     if (uidx < 0) return false;  // exit blocked -> HOLD ready (retry next frame)
-    if (units_[(std::size_t)uidx].image == "SPY") {   // W2-SK-22: AI spies go out disguised
-        const int foe = rec.enemy_house;
-        std::string look;
-        int look_house = foe;
-        for (const Unit& e : units_)
-            if (e.alive && e.die_time < 0.0 && e.house == foe && !e.is_vehicle && !e.is_aircraft &&
-                e.image != "SPY") { look = e.image; break; }
-        if (!look.empty()) set_disguise(uidx, look, look_house);
-    }
+    // W7-01-03: the AI spy's invented enemy-colour look is gone -- every spy
+    // starts with its side's PermaDisguise (add_combat_unit).
     if (!tc.unit_roster[uslot].combat.deploys_into.empty()) {   // W2-SK-07: unfold it
         order_deploy_mcv(uidx);
         ai_econ(rec).queues.placed(cat);
@@ -4782,7 +5155,8 @@ void World::step_ai_teams(double dt) {
                 const int charge = std::max(1, om::ftol((cost * rec.cfg.mods.cost_mul)));
                 ai_econ(rec).queues.set_credits(ai_econ(rec).credits);
                 start(ai_econ(rec).queues.state(cat), cost, charge,
-                      rec.cfg.build_speed * rec.cfg.mods.build_time_mul);
+                      rec.cfg.build_speed * rec.cfg.mods.build_time_mul,
+                      tc.unit_roster[want].combat.w7.build_time_mult);   // W7-04-03
                 ai_econ(rec).queues.state(cat).slot.type = want;
                 ai_econ(rec).credits = ai_econ(rec).queues.credits();
             }
@@ -5006,6 +5380,7 @@ void World::step(double dt) {
         HitGuard(World* w, bool on) : saved(hit_log().sink) { hit_log().sink = on ? &w->w7_hits_ : nullptr; }
         ~HitGuard() { hit_log().sink = saved; }
     } hit_guard(this, w7_rules_.armed);
+    ai_protect_reqs_.clear();   // W7-04-18: transient, this step's hits only
     // W2-SK-15: tombstoned units keep their slot (every target / team member /
     // cargo / parasite / projectile owner is a stable unit INDEX, so slots are
     // never erased or reused), but a dead slot releases its heap storage: the
@@ -5112,6 +5487,7 @@ void World::step(double dt) {
     step_capture(dt);
     step_service_depots();   // W2-SK-19
     step_disguises();        // W2-SK-22
+    w7_step_deploy_timers(); // W7-10-06
 
     // gF MCV deploy [RE: docs/re/mcv-deploy.md]: the turn-then-unfold mission.
     // `if (!deploy_any_) return;` inside -- no gate issues a deploy order.
@@ -5469,8 +5845,13 @@ void World::step(double dt) {
 
         // W3-B: the live game's infantry sequence machine (inf_anim.cpp),
         // one step per 15 Hz logic tick of accumulated time.
-        if (inf_anims_ && !u.is_vehicle && !u.is_aircraft && !u.is_naval && u.cargo_of < 0) {
-            const InfTable* it = inf_table(u.image);
+        // W7-01-21: a jumpjet soldier (the Rocketeer, is_aircraft) runs the
+        // sequence machine too, with the airborne substitutions.
+        if (inf_anims_ && !u.is_vehicle && (!u.is_aircraft || u.is_infantry) && !u.is_naval && u.cargo_of < 0) {
+            // W7-09-02: the per-RULES-id table first (Fearless / Fraidycat /
+            // NotHuman are InfantryType fields: CTECH shares CIV3's image).
+            const InfTable* it = u.tg.t.rules_id.empty() ? nullptr : inf_table(u.tg.t.rules_id);
+            if (!it) it = inf_table(u.image);
             if (it) {
                 const int ui = static_cast<int>(&u - units_.data());
                 if (!u.ia.armed) {
@@ -5486,10 +5867,16 @@ void World::step(double dt) {
                 c.human = u.house == inf_human_ || human_commanded(u.house);   // L2: every human house
                 const std::size_t ci = static_cast<std::size_t>(u.cell_y) * grid_w_ + u.cell_x;
                 c.in_water = u.cell_x >= 0 && u.cell_y >= 0 && ci < water_passable_.size() && water_passable_[ci];
+                // W7-12-09 [RE: PlayAnim 0x51D4C0 -- the wet set runs on a
+                // cell whose LandType is Water (2) OR Beach (6); only types
+                // with the Swim set are affected (AmphibiousDestroyer)].
+                if (!c.in_water && land_speed_armed_ && speed_land_at(u.cell_x, u.cell_y) == 6) c.in_water = true;
                 c.has_target = u.target >= 0 || u.target_building >= 0;
                 c.dying = u.die_time >= 0.0;
                 c.deployed = u.deployed;
                 c.fire_flash = u.fire_flash;
+                c.fire_slot = u.w_active;   // W7-12-10 (presentation: sequence pick only)
+                c.airborne = u.is_aircraft && u.altitude > 0.0;   // W7-01-21
                 c.idle_frequency = inf_idle_freq_;
                 if (it->fraidycat) c.scatter = [this, ui]() { order_scatter(ui); };
                 u.ia.acc += dt * 15.0;
@@ -5554,6 +5941,7 @@ void World::step(double dt) {
         step_ai_houses(dt);
         step_ai_teams(dt);  // AFTER the base brain: base tick then team tick,
                             // fixed deterministic order [RE: ai-team.md; spec §5]
+        step_ai_unit_rules();   // W7: auto-deploy + ToProtect (ai_unit.cpp)
     }
 
     // Multi-house [RE: multihouse.md §5]: evaluate last-team-standing victory
@@ -5686,6 +6074,12 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
             u.wait_time = 0.0;
             continue;
         }
+
+        // W7-06-16 [RE: FUN_006B7400 (spawn nodes in state 1 + rockets in
+        // state 2) != 0 -> the move step returns "hold": ShipLoco FUN_006A1310
+        // @0x6A13E6, DriveLoco FUN_004B2550 @0x4B264C]: a Dreadnought / V3
+        // with its own rockets on the deck stays where it is.
+        if (u.an.launch_hold) continue;
 
         // Vehicle hull turn-then-move gate (docs/re/voxel-render.md §5): a
         // vehicle first rotates its body toward the next segment's direction
@@ -6180,6 +6574,21 @@ void World::launch_projectile(int attacker, int target_unit, int target_building
     p.launch_speed = lr.speed;
     p.max_z = src.z;
     p.weapon_slot = u.w_active;   // Gap fix C: detonate with the slot that fired
+    // W7-06-11 [RE: TechnoClass::Fire FUN_006FD210 @0x6FDF7F..0x6FE0A6]:
+    // RadialFireSegments (TechnoType +0x6A4) > 0 launches the bullet along the
+    // firer's facing (+0x388) turned back by k x (half a circle / segments),
+    // k = the shot counter (+0x43C) cycling 0..segments-1 -- the Aegis's fan.
+    if (u.an.t.radial_segments > 0 && p.kind == ProjKind::Homing) {
+        Unit& f = units_[static_cast<std::size_t>(attacker)];
+        const int seg = u.an.t.radial_segments;
+        const double face = (u.is_vehicle ? u.turret_facing : u.body_facing) + 2.0 -
+                            32768.0 * static_cast<double>(f.an.radial_counter) / seg;
+        const double a = face * (2.0 * kProjPi / 65536.0);
+        const double hv = om::hypot(p.vx, p.vy);
+        p.vx = om::sin(a) * hv;
+        p.vy = -om::cos(a) * hv;
+        if (++f.an.radial_counter >= seg) f.an.radial_counter = 0;
+    }
     if (p.kind == ProjKind::Homing) {
         init_homing(p, spec, lr.speed);
         p.target_air = target_unit >= 0 && unit_airborne(units_[target_unit]);

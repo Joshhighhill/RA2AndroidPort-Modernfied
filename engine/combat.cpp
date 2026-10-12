@@ -175,7 +175,14 @@ void try_fire(const World& world, std::vector<Unit>& units, std::vector<Building
     // Campaign mind control: the Controller shot captures (CampaignRuntime::
     // poll_mind_control), it never damages. Only campaign-armed units carry
     // the flag -> every gate / skirmish path below is unchanged.
-    if (u.w_mind_control) return;
+    // W7-10-04 [RE: BulletClass::Detonate 0x4690A0 @0x4692C0 -> Capture]: the
+    // capture rides THIS shot (its ROF, facing and range already applied);
+    // the runtime consumes Unit::w7.mc_shot. W7-08-13: only the Controller
+    // weapon (slot 0) -- a deployed Yuri's PsiWave (slot 1) does damage.
+    if (u.w_mind_control && u.w_active == 0) {
+        u.w7.mc_shot = victim_idx;
+        return;
+    }
     // W7-07-26 [RE: InfantryClass::Fire 0x5203E0 @0x5207A0..0x5207F7]: after
     // an infantry shot whose weapon Speed (+0xA8 [SUSPECTED]) is below
     // [CombatDamage] Incoming=10, CellClass::Incoming(shooter, 1, 0) warns the
@@ -234,8 +241,10 @@ void try_fire(const World& world, std::vector<Unit>& units, std::vector<Building
         Unit frag = u;
         frag.w_damage = u.shrapnel_damage;
         frag.w_verses = u.shrapnel_verses;
-        for (int k = 0; k < static_cast<int>(near.size()) && k < u.shrapnel_count; ++k)
+        for (int k = 0; k < static_cast<int>(near.size()) && k < u.shrapnel_count; ++k) {
+            world.note_fragment(attacker_idx, v.fx, v.fy, v.level, near[static_cast<std::size_t>(k)].second);   // W7-12-07
             deliver_hit_from(units, occ, frag, attacker_idx, -1, near[static_cast<std::size_t>(k)].second);
+        }
     }
 }
 
@@ -325,7 +334,8 @@ bool w7_greatest_threat(const World& world, std::vector<Unit>& units, std::vecto
     for (int by = by0; by <= by1; ++by)
         for (int bx = bx0; bx <= bx1; ++bx)
             for (int j : buckets[static_cast<std::size_t>(by) * bgw + bx]) {
-                if (j == i || !valid_target(units, world, u, j) || units[j].disguised ||
+                if (j == i || !valid_target(units, world, u, j) ||
+                    (!u.detect_disguise && world.disguise_fools(u.house, units[j])) ||   // W7-01-02
                     !(units[j].seen_by_mask & (1u << u.house)) || !world.legal_threat_unit(u.house, units[j]) ||
                     (u.w_mind_control && units[j].tg.t.immune_psionics))
                     continue;
@@ -352,7 +362,8 @@ bool w7_greatest_threat(const World& world, std::vector<Unit>& units, std::vecto
             if (!world.is_enemy(u.house, b.house) || !world.legal_threat_building(u.house, b) ||
                 !world.object_visible_at(u.house, b.cx, b.cy))
                 continue;
-            const int ws = unit_weapon_for_building(u, b.armor_ix, b.bomb_frame >= 0);
+            const int ws = unit_weapon_for_building(u, b.armor_ix, b.bomb_frame >= 0,
+                                                    world.an_victim_naval_cell(b.cx + b.fw / 2, b.cy + b.fh / 2));
             if (ws < 0 || slot_verses(u, ws, b.armor_ix) <= 0.02) continue;   // W7-07-04
             // the building path engages from weapon range only (it never
             // approaches an auto-acquired structure)
@@ -461,8 +472,15 @@ void deliver_hit_from(std::vector<Unit>& units, Occupancy& occ, const Unit& u, i
     int raw = u.w_damage;
     if (v.vet.recv) raw = vet_receive(raw, v.vet);
     raw = inf_prone_damage(v.ia, raw, u.w_prone_damage);   // W3-B ProneDamage (armed infantry only)
-    // W2-AN-04: an Iron-Curtained unit takes no damage.
-    const int dmg = v.an.iron_left_frames > 0.0 ? 0 : damage_vs(raw, u.w_verses, v.armor_ix);
+    // W7-04-14 [RE: FootClass::ReceiveDamage 0x4D7250]: a hit from anything
+    // but the riding parasite feeds its SuppressionTimer with the RAW damage
+    // (before Verses and the victim's armour); World::step_abilities reads it.
+    if (v.parasite_on_me >= 0 && v.parasite_on_me != attacker_idx)
+        v.w7.host_raw_hit = std::max(v.w7.host_raw_hit, u.w_damage);
+    // W2-AN-04: an Iron-Curtained unit takes no damage. W7-01-09 [RE:
+    // 0x700DA0 / 0x70BA30]: neither does one being erased (BeingWarpedOut
+    // +0x270).
+    const int dmg = (v.an.iron_left_frames > 0.0 || v.warp_remaining > 0) ? 0 : damage_vs(raw, u.w_verses, v.armor_ix);
     v.hp -= dmg;
     feed_damage(false, victim_idx, u.house, dmg);   // W6-03-04 anger
     if (dmg > 0)   // W3-B fear (FUN_00517db5; inert unless armed)
@@ -521,7 +539,7 @@ void deliver_building_hit(std::vector<Unit>& units, std::vector<Building>& build
     // (ArmorMultiplier, max 1, then Verses); false in every legacy World.
     int raw = u.w_damage;
     if (b->vet_recv) raw = receive_damage(raw, b->armor_mult, false, 1.0);
-    const int dmg = b->iron_left_frames > 0.0 ? 0 : damage_vs(raw, u.w_verses, b->armor_ix);   // W2-AN-04
+    const int dmg = (b->iron_left_frames > 0.0 || b->warp_remaining > 0) ? 0 : damage_vs(raw, u.w_verses, b->armor_ix);   // W2-AN-04, W7-01-09
     b->hp -= dmg;
     feed_damage(true, b_idx, u.house, dmg);   // W6-03-04 anger
     if (b->hp <= 0) {
@@ -570,7 +588,7 @@ void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ, const Unit& a
         // rules armed the splash hits the firer's own units too; the pre-W7
         // path spares them.
         if (w.house == attacker.house && (!hit_log().sink || !attacker.w_affects_allies)) continue;
-        if (w.an.iron_left_frames > 0.0) continue;                          // W2-AN-04 Iron Curtain
+        if (w.an.iron_left_frames > 0.0 || w.warp_remaining > 0) continue;   // W2-AN-04 Iron Curtain, W7-01-09 erase
         const double d = dist_leptons(center.fx, center.fy, w.fx, w.fy);
         if (d > radius_lept) continue;                               // outside the splash
         const double frac = radius_lept > 0.0 ? d / radius_lept : 0.0;
@@ -785,8 +803,8 @@ bool unit_in_weapon_range(const World& world, const Unit& u, const Unit& t) {
 
 bool can_crush(const Unit& u, const Unit& v) {
     if (v.is_aircraft || unit_airborne(v) || v.is_naval) return false;
-    // W7-07-29 [RE: IsCrushable 0x5F651A / 0x5F6567 -> vtbl+0x160
-    // FUN_0041BF70]: not while the Iron Curtain runs.
+    // W7-08-04 / W7-07-29 [RE: IsCrushable FUN_005F64C0 @0x5F651E / 0x5F656B,
+    // vt+0x160]: an Iron-Curtained object is never crushed (both branches).
     if (v.an.iron_left_frames > 0) return false;
     // W6-04-14 [RE-FALLBACK, rules semantics]: an OmniCrusher crushes any
     // ground unit that is not OmniCrushResistant (vehicles included).
@@ -925,7 +943,9 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
         if (!w.alive || w.die_time >= 0.0) continue;
         if (spared(w.house)) continue;
         if (shooter.w6.sonic && w.parasite_on_me >= 0) w.w6.sonic_hit = true;   // W6-04-09
-        if (w.an.iron_left_frames > 0.0) continue;                          // W2-AN-04 Iron Curtain
+        if (w.parasite_on_me >= 0 && w.parasite_on_me != src_unit)            // W7-04-14
+            w.w7.host_raw_hit = std::max(w.w7.host_raw_hit, shooter.w_damage);
+        if (w.an.iron_left_frames > 0.0 || w.warp_remaining > 0) continue;   // W2-AN-04 Iron Curtain, W7-01-09 erase
         // TechnoClass::ReceiveDamage: the house/veterancy armour multipliers on
         // the raw damage, floor 1 (P5 vet_receive; W3-B ProneDamage first).
         int raw = shooter.w_damage;
@@ -1006,7 +1026,7 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
                 }
                 if (d > radius) continue;
                 if (spared(b.house)) continue;
-                if (b.iron_left_frames > 0.0) continue;                     // W2-AN-04
+                if (b.iron_left_frames > 0.0 || b.warp_remaining > 0) continue;   // W2-AN-04, W7-01-09
                 int raw = shooter.w_damage;
                 if (b.vet_recv) raw = receive_damage(raw, b.armor_mult, false, 1.0);
                 if (raw < 1) raw = 1;
@@ -1156,7 +1176,8 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                 const int b_idx = u.target_building;
                 // Gap fix C: the slot that can hit this structure's armor (a
                 // pure-AA weapon or a 0 % Verses warhead cannot) [weapons.md §2].
-                const int ws = unit_weapon_for_building(u, b->armor_ix, b->bomb_frame >= 0);
+                const int ws = unit_weapon_for_building(u, b->armor_ix, b->bomb_frame >= 0,
+                                                        world.an_victim_naval_cell(b->cx + b->fw / 2, b->cy + b->fh / 2));   // W7-06-02
                 if (ws < 0 && !u.abil.c4 && u.abil.fire_kind == AbilityKind::None) {
                     u.target_building = -1;
                     u.attack_order = false;
@@ -1201,6 +1222,14 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                 const bool b_in_range = u.abil.c4 ? c4_reach_from(u.cell_x, u.cell_y)
                                                   : weapon_in_range(world, u, bax, bay, baz,
                                                                     (b->fw + b->fh) * 64);
+                // W7-04-07 [rules [V3Launcher] MinimumRange=5, GetFireError]:
+                // the primary's minimum range refuses a structure too (the
+                // launcher holds, as against a unit).
+                const bool b_too_close =
+                    u.w_active == 0 && u.an.t.min_range > 0.0 &&
+                    om::hypot(u.fx * kLeptonsPerCell - bax, u.fy * kLeptonsPerCell - bay) <
+                        u.an.t.min_range * kLeptonsPerCell;
+                if (b_in_range && b_too_close) continue;
                 if (b_in_range) {
                     if (u.rearm_frames <= 0) {
                         // Aim gate, mirroring the unit path exactly
@@ -1533,7 +1562,8 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                         // IsInPlayfield, campaign Insignificant) -- World::legal_threat_unit.
                         // W6-02-12: a mind-control shooter never picks an
                         // ImmuneToPsionics unit (map overrides merged).
-                        if (j == i || !valid_target(units, world, u, j) || units[j].disguised
+                        if (j == i || !valid_target(units, world, u, j)
+                            || (!u.detect_disguise && world.disguise_fools(u.house, units[j]))   // W7-01-02 [RE: 0x6F71D0]
                             || !(units[j].seen_by_mask & (1u << u.house)) || !world.legal_threat_unit(u.house, units[j])
                             || (u.w_mind_control && units[j].tg.t.immune_psionics))
                             continue;
@@ -1579,7 +1609,8 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                             if (!world.is_enemy(u.house, b.house)) continue;
                             if (!world.legal_threat_building(u.house, b)) continue;   // W6-02-07/08
                             if (!world.object_visible_at(u.house, b.cx, b.cy)) continue;
-                            const int ws = unit_weapon_for_building(u, b.armor_ix, b.bomb_frame >= 0);
+                            const int ws = unit_weapon_for_building(u, b.armor_ix, b.bomb_frame >= 0,
+                                                                    world.an_victim_naval_cell(b.cx + b.fw / 2, b.cy + b.fh / 2));   // W7-06-02
                             if (ws < 0) continue;
                             const double rng = slot_range(u, ws) * kLeptonsPerCell;
                             for (const Cellxy& cell : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
@@ -1644,7 +1675,11 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
             }
             const int dx = unit_lept_x(v) - unit_lept_x(u), dy = unit_lept_y(v) - unit_lept_y(u),
                       dz = unit_lept_z(v) - unit_lept_z(u);
-            if (may && om::sqrt(double(dx) * dx + double(dy) * dy + double(dz) * dz) <= cr.crush_leptons) {
+            // W7-04-10: a target already in the crusher's own cell gets no
+            // (empty) drive-over request -- the unit would freeze there; it
+            // falls through to the fire step instead.
+            const bool same_cell = v.cell_x == u.cell_x && v.cell_y == u.cell_y;
+            if (may && !same_cell && om::sqrt(double(dx) * dx + double(dy) * dy + double(dz) * dz) <= cr.crush_leptons) {
                 if (!u.crushing || u.path.empty() || u.path.back().x != v.cell_x ||
                     u.path.back().y != v.cell_y)
                     requests.push_back({i, v.cell_x, v.cell_y, /*approach=*/false});

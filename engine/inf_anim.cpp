@@ -40,7 +40,10 @@ int rnd(InfAnimState& s, int lo, int hi) {
     return lo + static_cast<int>(next_rng(s) % static_cast<std::uint32_t>(hi - lo + 1));
 }
 
-bool is_die(int q) { return (q >= kSqDie1 && q <= kSqDie5) || q == kSqWetDie1 || q == kSqWetDie2; }
+bool is_die(int q) {
+    return (q >= kSqDie1 && q <= kSqDie5) || q == kSqWetDie1 || q == kSqWetDie2 || q == kSqAirDeathStart ||
+           q == kSqAirDeathFalling || q == kSqAirDeathFinish;
+}
 bool is_deploy_group(int q) {   // 27..30 [FUN_00520810: Deploy/Deployed/DeployedFire/DeployedIdle]
     return q >= kSqDeploy && q <= kSqDeployedIdle;
 }
@@ -49,6 +52,29 @@ bool is_deploy_group(int q) {   // 27..30 [FUN_00520810: Deploy/Deployed/Deploye
 // soldier swaps to the Wet/Swim set; Walk becomes Panic above fear 199; and
 // (clone) a missing entry falls back to its nearest dry/standing kin.
 int resolve(const InfAnimState& s, const InfTable& t, int q, bool in_water) {
+    // W7-01-21 / W7-12-40 [RE: PlayAnim 0x51D4C0 -- Ready becomes Hover when
+    // airborne and Hover is defined; 0x520C70 -- moving with the jumpjet
+    // locomotor: Fly (Hover at <= 80 % speed); 0x5203E0 -- firing: FireFly;
+    // ReceiveDamage in the air: AirDeathStart]:
+    if (s.air) {
+        auto has = [&](int k) { return t.e[k].has && t.e[k].count > 0; };
+        switch (q) {
+            case kSqReady: case kSqGuard: case kSqProne: case kSqIdle1: case kSqIdle2:
+                if (has(kSqHover)) return kSqHover;
+                break;
+            case kSqWalk: case kSqCrawl: case kSqPanic:
+                if (has(kSqFly)) return kSqFly;
+                if (has(kSqHover)) return kSqHover;
+                break;
+            case kSqFireUp: case kSqFireProne: case kSqSecondaryFire: case kSqSecondaryProne:
+                if (has(kSqFireFly)) return kSqFireFly;
+                break;
+            case kSqDie1: case kSqDie2:
+                if (has(kSqAirDeathStart)) return kSqAirDeathStart;
+                break;
+            default: break;
+        }
+    }
     if (in_water && t.e[kSqSwim].has) {
         switch (q) {
             case kSqWalk: case kSqCrawl: q = kSqSwim; break;
@@ -67,7 +93,7 @@ int resolve(const InfAnimState& s, const InfTable& t, int q, bool in_water) {
         switch (q) {
             case kSqPanic: case kSqCrawl: case kSqSwim: q = kSqWalk; break;
             case kSqProne: case kSqTread: case kSqGuard: case kSqDeployed: case kSqDeployedIdle: q = kSqReady; break;
-            case kSqFireProne: case kSqWetAttack: case kSqDeployedFire: q = kSqFireUp; break;
+            case kSqFireProne: case kSqWetAttack: q = kSqFireUp; break;
             case kSqWetIdle1: q = kSqIdle1; break;
             case kSqWetIdle2: q = kSqIdle2; break;
             case kSqWetDie1: case kSqDie2: case kSqDie3: case kSqDie4: case kSqDie5: q = kSqDie1; break;
@@ -81,6 +107,12 @@ int resolve(const InfAnimState& s, const InfTable& t, int q, bool in_water) {
 void play(InfAnimState& s, const InfTable& t, int q, bool in_water, bool force) {
     q = resolve(s, t, q, in_water);
     if (q == s.seq) return;
+    // W7-12-36 [RE: FUN_0051d4c0 head -- `if (Sequence[q].CountFrames == 0)
+    // return 0`]: a sequence the art defines with no frames (GI/GGI
+    // DeployedIdle=0,0,0) or does not define at all (a deployed Yuri has no
+    // DeployedFire) is refused and the current one keeps playing. Deaths keep
+    // the clone's Die1 safety net (every stock soldier defines it).
+    if (!is_die(q) && s.seq >= 0 && (!t.e[q].has || t.e[q].count <= 0)) return;
     // [FUN_0051d4c0] a running non-interruptible sequence is kept unless forced.
     if (!force && s.seq >= 0 && !inf_do_control(s.seq).interrupt) return;
     if (q == kSqDown) {
@@ -97,10 +129,33 @@ void play(InfAnimState& s, const InfTable& t, int q, bool in_water, bool force) 
 // [FUN_00520810 default branch] what follows a finished sequence.
 void finished(InfAnimState& s, const InfTable& t, int& facing, const InfTickCtx& c) {
     const int q = s.seq;
+    // W7-12-40 [RE: 0x520810]: AirDeathStart -> AirDeathFalling (loops while
+    // falling) -> AirDeathFinish once on the ground.
+    if (q == kSqAirDeathStart || q == kSqAirDeathFalling) {
+        const int nq = (!s.air && t.e[kSqAirDeathFinish].has) ? kSqAirDeathFinish
+                       : t.e[kSqAirDeathFalling].has ? kSqAirDeathFalling : -1;
+        if (nq >= 0) {
+            s.seq = nq;
+            s.stage = 0;
+            s.stage_timer = 0;
+            return;
+        }
+    }
     if (is_die(q)) { s.stage = std::max(0, t.e[q].count - 1); return; }   // the body holds (tombstone soon)
     if (t.e[q].has && t.e[q].facing >= 0) {
         // SequenceFacing is clockwise from N; our blocks run counter-clockwise.
-        facing = (8 - t.e[q].facing) & 7;
+        // W7-12-39 [RE: the label parser 0x523A30 compares "N" 0x8248D8 = 0,
+        // "NE" = 1 .. "NW" 0x8248BC = 7; 0x520810 sets DirStruct(label << 13),
+        // a WORLD direction, and world dir8 d is screen block d+1 (the muzzle
+        // rule (d+1)&7 of 0x6FD210 -- world NW is screen up)].
+        facing = (8 - ((t.e[q].facing + 1) & 7)) & 7;
+    }
+    // W7-12-10 [RE: FUN_00520810 default branch]: while the slot-1 target
+    // lives, a finished SecondaryFire / SecondaryProne replays (forced) --
+    // Boris holding his flare on the building.
+    if ((q == kSqSecondaryFire || q == kSqSecondaryProne) && c.has_target && c.fire_slot == 1) {
+        s.stage = 0;
+        return;
     }
     int next;
     if (q == kSqDeploy || q == kSqDeployedFire) next = kSqDeployed;
@@ -153,6 +208,18 @@ int inf_anim_frame(const InfAnimState& s, const InfTable& t, int facing) {
 
 int inf_anim_tick(InfAnimState& s, const InfTable& t, int& facing, const InfTickCtx& c) {
     ++s.ticks;
+    // W7-01-21: a change of the airborne state re-resolves the running pose
+    // (take-off: Ready -> Hover; landing: Hover -> Ready).
+    if (c.airborne != s.air) {
+        s.air = c.airborne;
+        if (!c.dying && s.seq >= 0 && !is_die(s.seq)) {
+            const int base = (s.seq == kSqHover) ? kSqReady : (s.seq == kSqFly) ? kSqWalk : s.seq;
+            const int was = s.seq;
+            s.seq = -1;
+            play(s, t, base, c.in_water, true);
+            if (s.seq < 0) s.seq = was;
+        }
+    }
     const int seq0 = s.seq;
     if (s.seq < 0) {
         play(s, t, c.deployed ? kSqDeployed : kSqReady, c.in_water, true);
@@ -189,9 +256,21 @@ int inf_anim_tick(InfAnimState& s, const InfTable& t, int& facing, const InfTick
         else if (!c.deployed && s.was_deployed) play(s, t, kSqUndeploy, c.in_water, true);
         s.was_deployed = c.deployed;
         // ---- a shot ----
-        if (c.fire_flash > s.prev_fire + 1e-9) {
-            const int q = c.deployed ? kSqDeployedFire : s.prone ? kSqFireProne : kSqFireUp;
-            play(s, t, q, c.in_water, true);
+        // W7-12-10 [RE: 0x5203E0]: the sequence follows the weapon index
+        // SelectWeapon picked -- the deploy group fires DeployedFire; slot 0
+        // FireProne / FireUp; another slot SecondaryProne (prone, count != 0),
+        // else SecondaryFire (count != 0), else the FireUp/FireProne pair.
+        // W7-12-37: requested NOT forced (vt+0x558(q, 0)), so Deploy / Down /
+        // Up / Cheer / Undeploy finish first. W7-02-05: a Desolator eruption
+        // (InfAnimState::erupt) is a DeployedFire shot too.
+        if (c.fire_flash > s.prev_fire + 1e-9 || s.erupt) {
+            s.erupt = false;
+            int q = c.deployed ? kSqDeployedFire : s.prone ? kSqFireProne : kSqFireUp;
+            if (!c.deployed && c.fire_slot != 0) {
+                if (s.prone && t.e[kSqSecondaryProne].has && t.e[kSqSecondaryProne].count > 0) q = kSqSecondaryProne;
+                else if (t.e[kSqSecondaryFire].has && t.e[kSqSecondaryFire].count > 0) q = kSqSecondaryFire;
+            }
+            play(s, t, q, c.in_water, false);
         }
         // ---- cheer (MakeHouseCheer / victory) ----
         if (s.cheer) {
@@ -202,7 +281,7 @@ int inf_anim_tick(InfAnimState& s, const InfTable& t, int& facing, const InfTick
         const InfDoControl& dc = inf_do_control(s.seq);
         if (c.moving && !dc.mobile && s.seq != kSqDown && s.seq != kSqUp && !is_deploy_group(s.seq))
             play(s, t, s.prone ? kSqCrawl : kSqWalk, c.in_water, false);
-        else if (!c.moving && dc.mobile && s.seq != kSqDown && s.seq != kSqUp)
+        else if (!c.moving && dc.mobile && s.seq != kSqDown && s.seq != kSqUp && !(s.air && s.seq == kSqHover))
             play(s, t, s.prone ? kSqProne : kSqReady, c.in_water, true);
         else if (c.moving && (s.seq == kSqWalk || s.seq == kSqPanic))   // fear crossing 199 mid-walk
             play(s, t, kSqWalk, c.in_water, false);

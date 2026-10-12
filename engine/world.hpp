@@ -14,6 +14,7 @@
 #include "pathfind.hpp"  // Cellxy (path storage / find_path)
 #include "production.hpp"  // AI-1 base-planning: World owns per-house ProductionQueues
 #include "inf_anim.hpp"               // W3-B infantry sequence machine (Unit::ia)
+#include "ai_unit.hpp"                // W7 AI per-unit rules state (Unit::ai)
 #include "ra2assets/land_type.hpp"  // CB-3 Naval: LandType (build_water_passability)
 #include "repair_sell.hpp"  // Repair & Sell: RepairSellRules + the pure tick arithmetic
 #include "crate.hpp"  // P5 Crates: GameRandom/CrateRules/Powerup (pure)
@@ -396,10 +397,12 @@ struct Unit {
     UnitW5 w5;                       // wave-5 abilities (abil_w5.hpp)
     UnitW6 w6;                       // wave-6 #4 units/weapons (unit_w6.hpp)
     UnitTgt tg;                      // W6 fix #2: rules id, targeting data, IsInPlayfield, area guard (save v29)
+    UnitAi ai;                       // W7-01-08: AI auto-deploy guard clock (save v35)
     // R-210 [RE: CellClass::GetLevel +4 on a bridge cell, FootClass height gate
     // FUN_004D9B70]: 1 while the unit stands on a high-bridge deck (Level + 4),
     // 0 on the ground (or under the deck). Kept by step_units (save v30).
     std::uint8_t on_deck = 0;
+    UnitW7 w7;                       // wave-7 fix (units): unit_w7.hpp (save v35)
 };
 // G16: the cargo_of sentinel of a garrisoned infantry (never a unit index).
 constexpr int kGarrisonCargo = 0x3FFFFFFF;
@@ -736,6 +739,17 @@ struct AiHouseConfig {
     // anger toward the nearest house each AI tick (multiplayer sessions only).
     // -1 = never (the campaign and every synthetic config).
     int hate_delay_frames = -1;
+    // W7-01-08 [RE: InfantryClass FUN_00521050 @0x52128C -- Rules+0xE30 is
+    // [General] AIAutoDeployFrameDelay=15,25,100 ;h,m,e indexed by house+0x184]:
+    // frames a computer-owned Deployer+DeployFire infantry stands in Guard
+    // before it deploys by itself. -1 = off (the campaign and every synthetic
+    // gate config keep the old never-auto-deploy behaviour).
+    int auto_deploy_frames = -1;
+    // W7-04-18 [RE: TechnoClass::ReceiveDamage FUN_00700DA0 @0x701C43 ->
+    // FUN_00707500]: a damaged ToProtect= unit (HARV, CMIN, the navy) calls up
+    // to 6 idle units of its house onto the attacker. Per team.unit_roster
+    // index; empty = off.
+    std::vector<std::uint8_t> roster_to_protect;
 };
 
 // --- L2 per-house economy [RE: HouseClass / FactoryClass; docs/re/production.md
@@ -932,6 +946,10 @@ public:
                         const LandSpeedRules& r);
     bool land_speed_armed() const { return land_speed_armed_; }
     int speed_land_at(int x, int y) const;   // effective LandType (ore -> Tiberium)
+    // W7-06-02 [RE: GetFireError @0x6FBC86, SelectWeapon FUN_006F2890]: a
+    // target standing on this cell is a naval target (LandType Water 2 or
+    // Beach 6). Unarmed land speed: the water grid.
+    bool an_victim_naval_cell(int x, int y) const;
     int ramp_at(int x, int y) const {        // TMP ramp type (0 flat; unarmed 0)
         if (ramp_.empty() || x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return 0;
         return ramp_[static_cast<std::size_t>(y) * grid_w_ + x];
@@ -984,6 +1002,16 @@ public:
     }
     bool infantry_anims() const { return inf_anims_; }
     void set_inf_table(const std::string& image, const InfTable& t) { inf_tables_[image] = t; }
+    // W7-12-08 [RE: InfantryClass::ReceiveDamage 0x517DB5 switches on the
+    // warhead's InfDeath for EVERY damage source]: the InfDeath of the
+    // non-weapon kill paths -- [Radiation] RadSiteWarhead, the Nuke warhead,
+    // the Lightning Storm warhead. Presentation-only (Unit::ia.death picks the
+    // death sequence / anim); not saved, set by the host at setup.
+    void set_inf_deaths(int rad, int nuke, int storm) {
+        rad_inf_death_ = rad;
+        nuke_inf_death_ = nuke;
+        storm_inf_death_ = storm;
+    }
     const InfTable* inf_table(const std::string& image) const {
         auto it = inf_tables_.find(image);
         return it == inf_tables_.end() ? nullptr : &it->second;
@@ -1313,6 +1341,12 @@ public:
     // W4-SQ-03: a fixed-wing aircraft with no dock leaves over the nearest
     // map edge and is removed (not a loss: deployed_away).
     bool order_leave_map(int idx);
+    std::size_t an_waves_count() const { return an_.waves.size(); }   // W7-06-10 probe
+    // W7-05-04 [RE: FUN_0065D770 @0x65D9E1: a reinforcement team's loaded
+    // transport that is an AircraftClass gets techno +0x3D4 = 1 (a loaner)].
+    void set_loaner(int idx) {
+        if (idx >= 0 && idx < static_cast<int>(units_.size())) units_[static_cast<std::size_t>(idx)].an.loaner = true;
+    }
     int spawn_drop_plane(const std::string& plane_id, int house, int sx, int sy, int dx, int dy,
                          int ex, int ey);
     // Drain the board/refuse/eject events accumulated by step_cargo since
@@ -1876,6 +1910,10 @@ public:
     // destroyed. [RE-FALLBACK: the pad is part of the foundation in the
     // original; here the docked cell is any cell touching the footprint.]
     int depot_client(int b_idx) const;
+    void para_start(int unit_idx, double alt);   // W7-01-07 (world_an.cpp)
+    void w7_step_deploy_timers();                // W7-10-06 (world_abilities.cpp)
+    // W7-04-11..13: ParasiteClass::ExitUnit (see world.cpp).
+    bool parasite_exit(int host_idx, bool suppressed);
     bool depot_servicing(int house) const;
     void step_service_depots();
     void step_disguises();   // W2-SK-22 Mirage disguise-when-still
@@ -1934,6 +1972,38 @@ public:
     // (only the flag matters for render/detection).
     void set_disguise(int unit_idx, const std::string& as_type, int as_house);
     void clear_disguise(int unit_idx);
+    // --- wave-7 fix (units) --------------------------------------------------
+    // W7-01-33: the spy / engineer roles come from the type flags Agent= /
+    // Infiltrate= / Engineer= (a hand-built unit with no rules id falls back
+    // to the old image test so the legacy tests keep their meaning).
+    bool unit_is_spy(const Unit& u) const;
+    bool unit_is_engineer(const Unit& u) const;
+    // W7-01-02 [RE: 0x6F71D0 L455-467, 0x5224B0 / 0x522520]: does `u`'s
+    // disguise fool an observer of `viewer_house`? Fooled = the unit is
+    // disguised, not allied with the viewer, and its disguise house is (a tree
+    // disguise, as_house < 0, fools every non-ally). A DetectDisguise scanner
+    // is never fooled (the caller tests the scanner's own flag).
+    bool disguise_fools(int viewer_house, const Unit& u) const;
+    // W7-01-03 [RE: 0x6F34A0 L597-612; [General] AlliedDisguise /
+    // SovietDisguise / ThirdDisguise]: the PermaDisguise look per side (SHP
+    // image). Set by the host from the rules; defaults are this install's.
+    void set_infantry_blink_disguise(int frames) { infantry_blink_disguise_ = frames; }   // W7-03-04
+    void set_side_disguise(int side, const std::string& image) {
+        if (side >= 0 && side < static_cast<int>(side_disguise_.size())) side_disguise_[static_cast<std::size_t>(side)] = image;
+    }
+    // W7-08-01 / W7-04-06 [RE: BuildingClass::Mission_Repair 0x44B780]: send
+    // the issuer's damaged vehicles to an own / allied UnitRepair building.
+    // Returns the number of units ordered.
+    int group_depot(int issuer, const std::vector<int>& ids, int b_idx);
+    // Would group_depot take any of these units (the cursor / command test)?
+    bool depot_wants(int issuer, const std::vector<int>& ids, int b_idx) const;
+    // W7-01-04/14/16, W7-08-19/20 [RE: InfantryClass::What_Action 0x51E17C]:
+    // what an engineer would do to a building (the cursor, the command and the
+    // arrival all use this one rule).
+    enum class EngineerAct { None, Capture, Repair, Defuse, Hut };
+    EngineerAct engineer_action(int eng_idx, int b_idx) const;
+    // [RE: 0x51E17C L981-988]: a spy may infiltrate a non-allied Spyable building.
+    bool spy_can_infiltrate(int spy_idx, int b_idx) const;
     // Read-only Capture state for the gate (§gate) and the power path.
     double house_credits(int house) const {
         return (house >= 0 && house < house_count()) ? house_credits_[house] : 0.0;
@@ -2131,6 +2201,21 @@ public:
         std::string weapon;        // weapon id when known (defenses), else ""
     };
     std::vector<FireEvent> take_fire_events();
+    // W7-12-07 [RE: BulletClass shrapnel FUN_0046a230 @0x46a7cc/0x46aca1 --
+    // each fragment draws its weapon's laser / bolt from the impact point to
+    // its target]: one record per fragment hit, presentation-only (never
+    // hashed or saved). Written from combat.cpp's const World view.
+    struct FragEvent {
+        int attacker = -1;        // the unit whose shot split
+        double x0 = 0, y0 = 0;    // the impact point (cell space)
+        int level0 = 0;
+        int target = -1;          // the fragment's unit target
+    };
+    void note_fragment(int attacker, double x0, double y0, int level0, int target) const {
+        frag_events_.push_back(FragEvent{attacker, x0, y0, level0, target});
+    }
+    const std::vector<FragEvent>& frag_events() const { return frag_events_; }
+    void clear_frag_events() { frag_events_.clear(); }
     // W3-B: the not-yet-taken events (the presentation's per-tick observer).
     const std::vector<FireEvent>& pending_fire_events() const { return fire_events_; }
     // Stop / Guard / Scatter (unit_orders.cpp). B binds S / G / X to the
@@ -2257,6 +2342,8 @@ public:
     const DepthRules& depth_rules() const { return depth_rules_; }
     // Garrisons.
     bool can_occupy(int unit_idx, int b_idx) const;          // BuildingClass::CanBeOccupiedBy
+    bool garrison_red(const Building& b) const;              // W7-08-09: hp ratio <= ConditionRed
+    bool garrison_attack(int issuer, int b_idx, int unit_target, int bld_target);   // W7-02-10
     void order_occupy(int unit_idx, int b_idx);              // walk adjacent, then enter
     int group_occupy(int issuer, const std::vector<int>& ids, int b_idx);   // returns #ordered
     int group_occupy_count(int issuer, const std::vector<int>& ids, int b_idx) const;   // the same, dry run
@@ -2355,6 +2442,7 @@ public:
     int bridge_overlay_at(int x, int y) const;               // current runtime index, -1 none
     int bridge_explosion(int cx, int cy, int damage, bool wall_warhead);   // FUN_00489190 bridge part
     int repair_bridge_near(int b_idx);                       // engineer entered a BridgeRepairHut
+    bool bridge_needs_repair_near(int b_idx) const;          // W7-08-19: the hut's Enter test
     // W4-SQ-10 high bridges [RE: FUN_00586BB0 dispatch -> FUN_005766D0
     // (BRIDGE1/2 concrete) / FUN_00570FC0 (BRIDGEB1/B2 wood)]. `cells`: per
     // cell 0 none, 1 deck over water/cliff (passable only while intact), 2
@@ -2490,6 +2578,13 @@ private:
     void ai_pick_enemy_house(int house, HouseAiRec& rec);   // W2-SK-08 / W6-03-04
     void ai_note_damage(bool building, int victim, int attacker_house, int dmg);   // W6-03-04
     static void ai_damage_feed_cb(void* ctx, bool building, int victim, int attacker_house, int dmg);
+    // W7-01-08 / W7-02-04 / W7-04-18 (ai_unit.cpp): the computer houses'
+    // per-unit rules -- Deployer infantry auto-deploy / undeploy and the
+    // ToProtect call for help. Runs after step_ai_teams.
+    void step_ai_unit_rules();
+    void ai_protect(int house, const HouseAiRec& rec, int victim, int attacker_house);
+    struct AiProtectReq { int victim = -1; int attacker_house = -1; };
+    std::vector<AiProtectReq> ai_protect_reqs_;   // this step's ToProtect hits (transient)
     bool ai_house_out(int house) const;   // W6-03-04: house+0x1f5 (defeated)
     int ai_team_sw_state(int house, const HouseAiRec& rec, SuperweaponType t) const;   // W6-03-05
     void ai_raise_money(int house, HouseAiRec& rec);   // W6-03-08 (FUN_004fdb30)
@@ -2526,6 +2621,7 @@ private:
     // --- AI-2 offensive-teams phase [RE: ai-team.md] ---
     void step_ai_teams(double dt);
     int ai_unit_type_of(const HouseAiRec& rec, const Unit& u) const;
+    Cellxy ai_nearest_reachable_water(int sx, int sy, int tx, int ty) const;   // W7-06-01
     std::vector<IdleUnitView> ai_idle_units(int house, const HouseAiRec& rec) const;
     void ai_fill_team_view(int house, const HouseAiRec& rec, const TeamInstance& team,
                            TeamView& v) const;
@@ -2595,6 +2691,7 @@ private:
         double nuke_spread = 10.0;
         double nuke_pmax = 0.02;
         std::array<int, 11> nuke_verses{};
+        std::vector<SonicWave> waves;            // W7-06-10 Dolphin sonic waves (v35)
     };
     AnWorld an_;
     void an_event(int kind, int house, SuperweaponType type, int x, int y, int x2 = -1, int y2 = -1);
@@ -2604,6 +2701,15 @@ private:
     void an_step_spawners(double dt);
     void an_step_fixed_wing(double dt);
     void an_step_deaths(double dt);
+    // --- wave 7 (world_an.cpp) ---
+    void an_spawn_tick(int owner);                   // W7-06-03 SpawnManager AI (every 10 frames)
+    void an_spawn_owner_lost(int owner);             // W7-06-03 FUN_006B6780
+    void an_spawn_reset_target(int owner);           // W7-06-03 ResetTarget FUN_006B7230
+    void an_spawn_launch(int owner, int node);       // W7-06-03 node 0 -> 2
+    void an_crash_alive(int idx);                    // W7-05-04 vtbl+0x3DC FUN_004DEAC0
+    void an_step_waves();                            // W7-06-10 sonic waves
+    void an_step_distributed_fire();                 // W7-06-11
+    void an_step_pad_repair();                       // W7-05-07
     void an_step_strikes(double dt);
     void an_nuke_detonate(const SwStrike& s);
     void an_storm_bolt(SwStrike& s, int x, int y);
@@ -2613,12 +2719,13 @@ private:
     void an_chrono(int house, int sx, int sy, int dx, int dy);
     void an_iron_curtain(int house, int cx, int cy);
     int an_spawn(const std::string& id, int house, int x, int y);
-    void an_damage_unit(int idx, int dmg, int attacker);
+    void an_damage_unit(int idx, int dmg, int attacker, int inf_death = -1);
     void an_damage_building(int b, int dmg);
     void an_area_damage(int house, double cx, double cy, int damage, double spread, double pmax,
                         const std::array<int, 11>& verses, bool hit_air, bool spare_house,
                         double z = 0.0,    // W4: explosion height (0 = the 2-D test)
-                        int wall_flags = 0);   // W6-04-04: the warhead's Wall/Wood/WallAbsoluteDestroyer
+                        int wall_flags = 0,    // W6-04-04: the warhead's Wall/Wood/WallAbsoluteDestroyer
+                        int inf_death = -1);   // W7-12-08: the warhead's InfDeath (death sequence / anim)
     // W4 RocketLocomotion (world_an.cpp): target point, explosion.
     bool rocket_target_point(int tu, int tb, double& x, double& y, double& z) const;
     void rocket_explode(int i, int end);
@@ -2795,6 +2902,8 @@ private:
     int inf_human_ = 0;
     double inf_idle_freq_ = 0.15;
     std::map<std::string, InfTable> inf_tables_;
+    int rad_inf_death_ = -1, nuke_inf_death_ = -1, storm_inf_death_ = -1;   // W7-12-08 (not saved)
+    mutable std::vector<FragEvent> frag_events_;   // W7-12-07 (presentation feed; not saved)
 
     // --- Economy phase [RE: economy.md] ---
     OreField ore_;
@@ -2845,11 +2954,13 @@ private:
     std::map<std::string, AbilityProfile> ability_profiles_;  // by image
     RadField rad_;
     std::vector<int> no_c4_types_;
+    std::vector<std::string> side_disguise_{"GI", "CONS", "INIT"};   // wave-7 W7-01-03 (save v35)
+    int infantry_blink_disguise_ = 20;   // W7-03-04 [General] InfantryBlinkDisguiseTime (Rules+0x1014) (save v35)
     std::vector<AbilityEvent> ability_events_;
     // Teleport `idx` to the nearest free cell at/around (gx,gy) [§C1].
     void teleport_unit(int idx, int gx, int gy);
     // Start a unit's death the combat.cpp way (die_time=0, release occupancy).
-    void ability_kill_unit(int idx);
+    void ability_kill_unit(int idx, int inf_death = -1);   // W7-12-08: the warhead InfDeath (-1 unknown)
     // Remove a unit from the game without dying (erase, §C2).
     void ability_erase_unit(int idx);
     // DamageArea [§E/§F]: all houses, units + buildings, linear falloff.
@@ -2862,7 +2973,7 @@ private:
     void ability_fire_event(int idx);
     void ability_death_pass();
     // Weapon application to a unit/building with verses (no splash).
-    void ability_damage_unit(int victim, int dmg);
+    void ability_damage_unit(int victim, int dmg, int inf_death = -1);
     void ability_damage_building(int b_idx, int dmg);
     void ability_apply_weapon_fields(Unit& u, const WeaponSpec& w);
     void ability_bind_unit(Unit& u);

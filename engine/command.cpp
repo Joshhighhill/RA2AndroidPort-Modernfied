@@ -210,6 +210,11 @@ void apply_mega(World& w, const Command& c, CommandHost* host) {
             if (c.dest.is_cell()) w.group_move(H, ids, c.dest.cell_x(), c.dest.cell_y());
             return;
         case Mission::Attack:
+            // W7-02-10: an own firing garrison in the Whom takes the target.
+            for (const Target& t : c.whom)
+                if (t.is_building() && bld_ok(w, t.id))
+                    (void)w.garrison_attack(H, t.id, c.target.is_unit() ? c.target.id : -1,
+                                            c.target.is_building() ? c.target.id : -1);
             if (c.target.is_unit()) w.group_attack(H, ids, c.target.id);
             else if (c.target.is_building()) w.group_attack_building(H, ids, c.target.id);
             else if (c.target.is_cell()) w.group_attack_cell(H, ids, c.target.cell_x(), c.target.cell_y());
@@ -225,42 +230,48 @@ void apply_mega(World& w, const Command& c, CommandHost* host) {
                 // Dock: harvesters entering their own refinery return to it;
                 // anything else entering a building garrisons it.
                 if (b.alive && b.house == H && rules_of(host).is_refinery(b.type)) w.group_return(H, ids);
+                // W7-08-01 / W7-04-06 [RE: Mission_Repair 0x44B780]: damaged
+                // vehicles entering an own UnitRepair building dock for service.
+                else if (w.depot_wants(H, ids, c.target.id)) (void)w.group_depot(H, ids, c.target.id);
                 else w.group_occupy(H, ids, c.target.id);
             }
             return;
         case Mission::Capture: {
-            // A lone engineer: defuse an Ivan bomb (unit or building), else
-            // capture an enemy / neutral building or repair an own damaged one.
-            if (ids.size() != 1 || !unit_ok(w, ids[0])) return;
-            const int eng = ids[0];
-            const Unit& e = w.units()[static_cast<std::size_t>(eng)];
-            if (!w.can_command(H, e.house)) return;
-            if (c.target.is_unit()) {
-                (void)w.order_defuse(eng, c.target.id, -1);
-                return;
+            // Engineers: defuse an Ivan bomb (unit or building), else capture an
+            // enemy / neutral building or repair an own damaged one. W7-01-04
+            // [RE: Mouse_Left_Release 0x4AE660 -> Active_Click_With on every
+            // selected object]: each engineer of the Whom acts, not a lone one.
+            for (int eng : ids) {
+                if (!unit_ok(w, eng)) continue;
+                const Unit& e = w.units()[static_cast<std::size_t>(eng)];
+                if (!w.can_command(H, e.house) || !w.unit_is_engineer(e)) continue;
+                if (c.target.is_unit()) {
+                    (void)w.order_defuse(eng, c.target.id, -1);
+                    continue;
+                }
+                if (!c.target.is_building() || !bld_live(w, c.target.id)) return;
+                const int bi = c.target.id;
+                const World::EngineerAct act = w.engineer_action(eng, bi);
+                if (act == World::EngineerAct::Defuse) {
+                    (void)w.order_defuse(eng, -1, bi);
+                    continue;
+                }
+                if (act != World::EngineerAct::None) w.order_engineer_capture(eng, bi);
             }
-            if (!c.target.is_building() || !bld_live(w, c.target.id)) return;
-            const int bi = c.target.id;
-            const Building& tb = w.buildings()[static_cast<std::size_t>(bi)];
-            const int eh = e.house;
-            if (tb.bomb_frame >= 0 && w.are_allied(eh, tb.house) && w.order_defuse(eng, -1, bi)) return;
-            const bool hut = tb.type >= 0 && tb.type < static_cast<int>(w.btypes().size()) &&
-                             w.btypes()[static_cast<std::size_t>(tb.type)].bridge_repair_hut;
-            if (tb.house != eh && !w.are_allied(eh, tb.house) && !w.building_capturable(bi) && !hut) return;
-            if (tb.house != eh || tb.hp < tb.max_hp) w.order_engineer_capture(eng, bi);
             return;
         }
         case Mission::Sabotage: {
-            // A lone spy infiltrates an enemy / neutral building.
-            if (ids.size() != 1 || !unit_ok(w, ids[0]) || !c.target.is_building() || !bld_live(w, c.target.id))
-                return;
-            const int spy = ids[0];
-            const Unit& s = w.units()[static_cast<std::size_t>(spy)];
-            if (!w.can_command(H, s.house)) return;
+            // Spies infiltrate an enemy / neutral Spyable building (W7-01-04:
+            // every spy of the Whom; W7-01-14: never an allied or non-Spyable one).
+            if (!c.target.is_building() || !bld_live(w, c.target.id)) return;
             const Building& tb = w.buildings()[static_cast<std::size_t>(c.target.id)];
-            if (tb.house == s.house) return;
             const OrderRules& r = rules_of(host);
-            w.order_spy_infiltrate(spy, c.target.id, r.purpose_of(tb.type), r.spy_steal_pct, r.spy_blackout_frames);
+            for (int spy : ids) {
+                if (!unit_ok(w, spy)) continue;
+                const Unit& s = w.units()[static_cast<std::size_t>(spy)];
+                if (!w.can_command(H, s.house) || !w.unit_is_spy(s) || !w.spy_can_infiltrate(spy, c.target.id)) continue;
+                w.order_spy_infiltrate(spy, c.target.id, r.purpose_of(tb.type), r.spy_steal_pct, r.spy_blackout_frames);
+            }
             return;
         }
         case Mission::AreaGuard:

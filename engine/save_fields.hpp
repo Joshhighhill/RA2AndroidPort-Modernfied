@@ -98,6 +98,7 @@ struct SaveAccess {
         save::io(ar, a.nuke_spread);
         save::io(ar, a.nuke_pmax);
         save::io(ar, a.nuke_verses);
+        save::io(ar, a.waves);   // v35: W7-06-10
     }
     template <class Ar> static void tech_income(Ar& ar, World::TechIncome& t) {
         save::io(ar, t.building);
@@ -186,6 +187,12 @@ struct SaveAccess {
         save::io(ar, w.anims_); save::mark(ar, "anims_");
         save::io(ar, w.inf_anims_); save::mark(ar, "inf_anims_"); save::io(ar, w.inf_human_); save::io(ar, w.inf_idle_freq_);   // W3-B
         save::io(ar, w.inf_tables_); save::mark(ar, "inf_tables_");
+        // W7-12-08 / W7-12-07 (v35): InfDeath of the rad / nuke / storm kills
+        // and the per-tick fragment feed (presentation only).
+        save::io(ar, w.rad_inf_death_); save::mark(ar, "rad_inf_death_");
+        save::io(ar, w.nuke_inf_death_); save::mark(ar, "nuke_inf_death_");
+        save::io(ar, w.storm_inf_death_); save::mark(ar, "storm_inf_death_");
+        save::io(ar, w.frag_events_); save::mark(ar, "frag_events_");
         // Economy
         save::io(ar, w.ore_); save::mark(ar, "ore_");
         save::io(ar, w.ore_rng_); save::mark(ar, "ore_rng_");
@@ -227,6 +234,8 @@ struct SaveAccess {
         save::io(ar, w.ability_profiles_); save::mark(ar, "ability_profiles_");
         save::io(ar, w.rad_); save::mark(ar, "rad_");
         save::io(ar, w.no_c4_types_); save::mark(ar, "no_c4_types_");
+        save::io(ar, w.side_disguise_); save::mark(ar, "side_disguise_");   // v35: wave-7 W7-01-03
+        save::io(ar, w.infantry_blink_disguise_); save::mark(ar, "infantry_blink_disguise_");   // v35: W7-03-04
         save::io(ar, w.ability_events_); save::mark(ar, "ability_events_");
         save::io(ar, w.fire_events_); save::mark(ar, "fire_events_");   // Gap fix C
         save::io(ar, w.combat_rng_); save::mark(ar, "combat_rng_");
@@ -369,6 +378,7 @@ template <class Ar> void fields(Ar& ar, SwParams& v) {   // W2-AN (save v9)
     io(ar, v.repair_rate_frames); io(ar, v.repair_percent);
     io(ar, v.parachute_fall);   // W4-SQ-06 (save v16)
     io(ar, v.storm_wall_flags); io(ar, v.nuke_wall_flags);   // v25: W6-04-04
+    io(ar, v.c4_verses); io(ar, v.c4_spread); io(ar, v.c4_pmax);   // v35: W7-05-09
 }
 template <class Ar> void fields(Ar& ar, SwStrike& v) {   // W2-AN (save v9)
     io(ar, v.kind); io(ar, v.house); io(ar, v.x); io(ar, v.y); io(ar, v.ox); io(ar, v.oy);
@@ -388,6 +398,9 @@ template <class Ar> void fields(Ar& ar, AnType& v) {   // W2-AN (save v9)
     io(ar, v.spawns); io(ar, v.spawns_number); io(ar, v.spawn_regen_frames);
     io(ar, v.spawn_reload_frames); io(ar, v.landable); io(ar, v.missile_spread);
     io(ar, v.rocket_kind); io(ar, v.rocket_speed); io(ar, v.no_shadow);   // W4 (v15)
+    io(ar, v.airport_bound); io(ar, v.crash_weapon); io(ar, v.spawner_range);   // v35: wave 7
+    io(ar, v.sonic_ambient); io(ar, v.sonic_ambient_elite); io(ar, v.distributed_fire);
+    io(ar, v.radial_segments); io(ar, v.radar_invisible); io(ar, v.hover_attack);
 }
 template <class Ar> void fields(Ar& ar, AnUnit& v) {   // W2-AN (save v9)
     io(ar, v.t); io(ar, v.in_water); io(ar, v.submerged); io(ar, v.surface_left_frames);
@@ -401,6 +414,15 @@ template <class Ar> void fields(Ar& ar, AnUnit& v) {   // W2-AN (save v9)
     io(ar, v.drop_x); io(ar, v.drop_y); io(ar, v.exit_x); io(ar, v.exit_y);
     io(ar, v.rocket_elite); io(ar, v.rocket_end); io(ar, v.rocket);   // W4 (v15)
     io(ar, v.para_alt);   // W4-SQ-06 (save v16)
+    io(ar, v.sp_state); io(ar, v.sp_timer); io(ar, v.sp_unit); io(ar, v.sp_tick);   // v35: wave 7
+    io(ar, v.sp_launch); io(ar, v.sp_status); io(ar, v.sp_tgt_unit); io(ar, v.sp_tgt_bld);
+    io(ar, v.sp_next_unit); io(ar, v.sp_next_bld); io(ar, v.launch_hold); io(ar, v.loaner);
+    io(ar, v.crash_hp); io(ar, v.naval_cell); io(ar, v.shot_list); io(ar, v.radial_counter);
+}
+template <class Ar> void fields(Ar& ar, SonicWave& v) {   // v35: W7-06-10
+    io(ar, v.firer); io(ar, v.target_unit); io(ar, v.target_bld); io(ar, v.sx); io(ar, v.sy);
+    io(ar, v.tx); io(ar, v.ty); io(ar, v.head); io(ar, v.tail); io(ar, v.growing);
+    io(ar, v.tail_moving); io(ar, v.damage); io(ar, v.verses); io(ar, v.sonic_wh);
 }
 template <class Ar> void fields(Ar& ar, RocketWarhead& v) {   // W4 (v15)
     io(ar, v.id); io(ar, v.spread); io(ar, v.pmax); io(ar, v.verses);
@@ -455,6 +477,7 @@ template <class Ar> void fields(Ar& ar, RepairSellRules& v) {
     io(ar, v.allied_survivor_divisor);
     io(ar, v.soviet_survivor_divisor);
     io(ar, v.third_survivor_divisor);
+    io(ar, v.u_repair_rate);   // v35: W7-08-03
 }
 template <class Ar> void fields(Ar& ar, World::HouseRec& v) {
     io(ar, v.side); io(ar, v.color_ix); io(ar, v.country); io(ar, v.alliance_team); io(ar, v.combatant);
@@ -508,6 +531,9 @@ template <class Ar> void fields(Ar& ar, Projectile& v) {
     io(ar, v.giveup_n); io(ar, v.giveup_acc); io(ar, v.prev_dist); io(ar, v.lost); io(ar, v.target_air);
 }
 // Gap fix C: one shot event (World::FireEvent).
+template <class Ar> void fields(Ar& ar, World::FragEvent& v) {   // W7-12-07 (v35)
+    io(ar, v.attacker); io(ar, v.x0); io(ar, v.y0); io(ar, v.level0); io(ar, v.target);
+}
 template <class Ar> void fields(Ar& ar, World::FireEvent& v) {
     io(ar, v.unit); io(ar, v.building); io(ar, v.target_unit); io(ar, v.target_building);
     io(ar, v.slot); io(ar, v.weapon);
@@ -535,6 +561,7 @@ template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
     io(ar, v.wall_flags);   // v25: W6-04-04
     io(ar, v.shrapnel_count); io(ar, v.shrapnel_damage); io(ar, v.shrapnel_range); io(ar, v.shrapnel_verses);   // v25: W6-04-02
     io(ar, v.min_range);   // v25: W6-04-22
+    io(ar, v.never_use);   // v35: W7-01-01
 }
 // G16 world depth (agent G)
 template <class Ar> void fields(Ar& ar, World::DepthRules& v) {
@@ -597,6 +624,7 @@ template <class Ar> void fields(Ar& ar, InfAnimState& v) {
     io(ar, v.idle_timer); io(ar, v.rng); io(ar, v.fear); io(ar, v.prone); io(ar, v.armed);
     io(ar, v.fearless); io(ar, v.fraidycat); io(ar, v.death); io(ar, v.vanish); io(ar, v.was_deployed);
     io(ar, v.prev_fire); io(ar, v.cheer);
+    io(ar, v.erupt); io(ar, v.air);   // W7-02-05 / W7-01-21 (v35)
 }
 template <class Ar> void fields(Ar& ar, UnitVet& v) {
     io(ar, v.veterancy);
@@ -745,6 +773,7 @@ template <class Ar> void fields(Ar& ar, BldTypeW5& v) {
     io(ar, v.gap_radius); io(ar, v.inf_self_heal); io(ar, v.unit_self_heal); io(ar, v.cloning);
     io(ar, v.psychic_radius); io(ar, v.sensors_sight); io(ar, v.delayed_fire_delay);
     io(ar, v.explodes); io(ar, v.delay_kill_eligible); io(ar, v.death);   // P4 (v23)
+    io(ar, v.can_c4);   // v35: W7-01-22
 }
 template <class Ar> void fields(Ar& ar, UnitTypeW5& v) {
     io(ar, v.requires_stolen); io(ar, v.base_tech_level);
@@ -766,6 +795,23 @@ template <class Ar> void fields(Ar& ar, UnitTgt& v) {
     io(ar, v.amove_x); io(ar, v.amove_y); io(ar, v.help_frame); io(ar, v.team_aggressive); io(ar, v.team_suicide); io(ar, v.crush_warn);
     io(ar, v.w7_rof); io(ar, v.rof_raw); io(ar, v.house_rof); io(ar, v.house_fp); io(ar, v.rof_vet);
 }
+// --- wave-7 fix (units) (unit_w7.hpp), save v35 ---
+template <class Ar> void fields(Ar& ar, UnitTypeW7& v) {
+    io(ar, v.agent); io(ar, v.infiltrate); io(ar, v.engineer); io(ar, v.perma_disguise);
+    io(ar, v.detect_disguise); io(ar, v.selectable_combatant); io(ar, v.move_to_shroud);
+    io(ar, v.default_to_guard_area); io(ar, v.has_turret); io(ar, v.fake_blink); io(ar, v.fake_blink_elite);
+    io(ar, v.deploy_area_fire); io(ar, v.undeploy_delay); io(ar, v.mc_capacity); io(ar, v.mc_infinite);
+    io(ar, v.build_time_mult);
+}
+template <class Ar> void fields(Ar& ar, UnitW7& v) {
+    io(ar, v.t); io(ar, v.blink_left); io(ar, v.redisguise_left); io(ar, v.flash_seen); io(ar, v.hull_aiming);
+    io(ar, v.paralysed_until); io(ar, v.host_raw_hit); io(ar, v.deploy_ready_at); io(ar, v.undeploy_at); io(ar, v.erased_by);
+    io(ar, v.depot_target); io(ar, v.mc_controller); io(ar, v.mc_victims); io(ar, v.mc_shot); io(ar, v.missile_holds);
+}
+template <class Ar> void fields(Ar& ar, BldW7& v) {
+    io(ar, v.depot_next); io(ar, v.depot_client); io(ar, v.warp_unpowered); io(ar, v.garrison_target_building);
+}
+template <class Ar> void fields(Ar& ar, UnitAi& v) { io(ar, v.guard_since); }   // W7 (save v35)
 template <class Ar> void fields(Ar& ar, BldTgt& v) {
     io(ar, v.in_playfield); io(ar, v.insignificant); io(ar, v.legal_target);
 }
@@ -903,6 +949,7 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.an);   // W2-AN (save v9)
     io(ar, v.w6);   // v25: wave-6 #4
     io(ar, v.tg);   // W6 fix #2 (save v29)
+    io(ar, v.w7);   // v35: wave-7 fix (units)
 }
 template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
     io(ar, v.id);
@@ -1126,6 +1173,8 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.w6);   // v25: wave-6 #4
     io(ar, v.tg);   // W6 fix #2 (save v29)
     io(ar, v.on_deck);   // R-210 (save v30)
+    io(ar, v.w7);        // v35: wave-7 fix (units)
+    io(ar, v.ai);        // W7-01-08 AI guard clock (save v35)
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.type);
@@ -1181,6 +1230,7 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.power_off);   // W5-E2 power-down (save v21)
     io(ar, v.w6);          // v25: wave-6 #4
     io(ar, v.tg);          // W6 fix #2 (save v29)
+    io(ar, v.w7);          // v35: wave-7 fix (units)
 }
 
 // --- production ---
@@ -1375,6 +1425,8 @@ template <class Ar> void fields(Ar& ar, AiHouseConfig& v) {
     io(ar, v.fire_superweapons);  // W5-A IQ gate (v22)
     io(ar, v.virtual_purifiers);  // W6-03-03 (v25)
     io(ar, v.hate_delay_frames);  // W6-03-04 (v25)
+    io(ar, v.auto_deploy_frames); // W7-01-08 (v35)
+    io(ar, v.roster_to_protect);  // W7-04-18 (v35)
 }
 
 // --- skirmish config (the 'CONF' section: rebuilds the scene's assets) ---

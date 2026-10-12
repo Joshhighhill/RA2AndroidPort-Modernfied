@@ -106,6 +106,7 @@ void World::enter_idle_mode(int idx) {
     if (!armed_unit(u)) return;
     // [RE: 0x737B90..0x737BD0 / 0x51CB0E..0x51CB45]
     const bool ga = house_iq(u.house) >= w7_rules_.iq_guard_area || u.tg.t.default_to_guard_area ||
+                    u.w7.t.default_to_guard_area ||
                     has_ability(u.vet.veterancy, u.vet.vet_abilities, u.vet.elite_abilities, Ability::GuardArea);
     if (!ga) return;
     u.tg.area_guard = true;
@@ -360,7 +361,11 @@ void World::step_missions_w7() {
         }
         // W7-07-09 [RE: TechnoClass::ReceiveDamage 0x701C43 -> FUN_00707500]:
         // a computer ToProtect=yes techno calls for help.
-        if (v.tg.t.to_protect && h.attacker >= 0) call_for_help(v.house, h.victim, -1, h.attacker);
+        // (a skirmish AI house's ToProtect units are answered by ai_protect,
+        // ai_unit.cpp W7-04-18; this covers the campaign / other computer
+        // houses and every computer building)
+        if (v.tg.t.to_protect && h.attacker >= 0 && !ai_enabled(v.house))
+            call_for_help(v.house, h.victim, -1, h.attacker);
         // W7-07-24 / W7-02-09 / W7-04-20 / W7-09-11 [RE: 0x701ED5..0x702196,
         // InfantryClass::ReceiveDamage 0x518A6C]: the damage scatter. Not after
         // a retaliation; the mission must allow it; a unit with a target (a

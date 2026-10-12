@@ -71,6 +71,7 @@ struct MixerSound {
     int fshift_lo = 0, fshift_hi = 0;
     bool all = false;
     bool attack = false, decay = false;
+    int attack_n = 0, decay_n = 0;   // W7-12-24 soundmd Attack= / Decay= counts (0 -> 1 with the Control bit)
     bool loop = false;
     // W5-E [RE: FUN_004055c0 voice start, audio-playback.md §4]: Control
     // PREDELAY (0x8) or AMBIENT (0x80) waits RandomRanged(lo, Delay max) ms
@@ -239,6 +240,7 @@ private:
         std::size_t delay = 0;       // W5-E predelay samples still to wait
         bool predelay = false, ambient = false;
         int delay_lo = 0, delay_hi = 0;
+        std::size_t loop_start = 0;  // W7-12-24: LOOP+ALL restarts here (after the intro)
     };
 
     std::uint32_t next_rand_();

@@ -150,6 +150,8 @@ target_sources(ra2assets_tests PRIVATE engine/weapon.cpp engine/weapon_unit.cpp
 target_sources(ra2assets_tests PRIVATE tests/test_w5_combat.cpp)
 # Wave-6 #4: units and weapons (docs/gap/wave6/04-units.md).
 target_sources(ra2assets_tests PRIVATE tests/test_w6_units.cpp)
+target_sources(ra2assets_tests PRIVATE tests/test_w7_units.cpp)   # wave-7 fix (units)
+target_sources(ra2assets_tests PRIVATE tests/test_w7_airnav.cpp)   # wave-7 air/naval
 # G16 world depth (agent G): bridges (pure) + the World garrison/bridge members.
 target_sources(ra2assets_tests PRIVATE engine/inf_anim.cpp tests/test_inf_anim.cpp)   # W3-B
 target_sources(ra2assets_tests PRIVATE engine/bridges.cpp engine/world_depth.cpp
@@ -289,7 +291,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_roster2.cpp engine/roster2.cpp
 # ability pass + orders (engine/world_abilities.cpp, a World member TU split out
 # of world.cpp), exercised by test_abilities.cpp.
 target_sources(ra2assets_tests PRIVATE tests/test_abilities.cpp tests/test_abilities_world.cpp engine/abilities.cpp engine/world_abilities.cpp engine/world_w5.cpp engine/world_w6.cpp engine/world_w7.cpp tests/test_w6_missions.cpp tests/test_w7_combat.cpp engine/abil_w5_rules.cpp tests/test_abil_w5.cpp engine/world_mcv.cpp tests/test_mcv_deploy.cpp
-                 engine/world_sw.cpp engine/world_an.cpp)
+                 engine/world_sw.cpp engine/world_an.cpp engine/ai_unit.cpp tests/test_ai_w7.cpp)
 
 # Skirmish Shell: the PURE config->World core (SkirmishConfig/configure_skirmish_
 # houses/default_skirmish_config). engine/world.cpp is already on test_world's

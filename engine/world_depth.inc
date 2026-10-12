@@ -65,6 +65,18 @@ void depth_arm_rules(ra2engine::World& world, const Rules& rules) {
                            rules.section_flag("MultiplayerDialogSettings", "BridgeDestruction", true);
     r.armed = true;
     world.set_depth_rules(r);
+    // Wave-7 fix (units): W7-01-03 the PermaDisguise look per side ([General]
+    // AlliedDisguise / SovietDisguise / ThirdDisguise -> their SHP image) and
+    // W7-03-04 InfantryBlinkDisguiseTime.
+    const char* keys[3] = {"AlliedDisguise", "SovietDisguise", "ThirdDisguise"};
+    const char* defs[3] = {"E1", "E2", "INIT"};
+    for (int s = 0; s < 3; ++s) {
+        const std::string id = rules.general_string(keys[s], defs[s]);
+        const std::string img = rules.image(id);
+        world.set_side_disguise(s, img.empty() ? id : img);
+    }
+    world.set_infantry_blink_disguise(
+        static_cast<int>(rules.general_double("InfantryBlinkDisguiseTime", 20.0)));
 }
 
 // Is `id` a building the World must own for G16 (garrisonable or a bridge

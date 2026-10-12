@@ -251,14 +251,12 @@
     // screen; a second press when they are all already selected widens to the
     // whole map (DAT_00B0EDC4).
     void hotkey_combatant_select() {
-        // W7-01-13 / W7-02-07 [RE: 0x731690 -- WhatAmI != building && TechnoType
-        // +0xDBC IsSelectableCombatant (loader @0x714B09, default no)]: the
-        // type flag, not "has a weapon" (Engineers, Spies, Terrorists are no).
-        // A hand-built unit without a rules id keeps the weapon test.
+        // W7-01-13 / W7-02-07 [RE: FUN_00731690 / 0x7316A7]: the predicate is
+        // the type's IsSelectableCombatant (+0xDBC) -- Engineers, Spies and
+        // Terrorists say no -- and an armed unit (vtbl+0x13C).
         auto combatant = [&](const ra2engine::Unit& u) {
-            if (!own_live(u)) return false;
-            if (!u.tg.t.rules_id.empty()) return u.tg.t.selectable_combatant;
-            return u.w_damage > 0 && !u.is_harvester;
+            if (u.tg.t.rules_id.empty()) return own_live(u) && u.w_damage > 0 && !u.is_harvester;
+            return own_live(u) && u.w7.t.selectable_combatant && u.w_damage > 0;
         };
         bool all_sel = true, any = false;
         for (const ra2engine::Unit& u : world_.units())
@@ -413,13 +411,18 @@
             const bool current = lq().producing(cat) == type;
             const bool held = world_.econ_held(lh, cat);
             if (right) {
-                if (shift) { issue_type_event(ET::AbandonAll, false, type); return; }   // ABANDON_ALL
+                if (shift) {   // ABANDON_ALL
+                    issue_type_event(ET::AbandonAll, false, type);
+                    pres_.note_eva("EVA_Canceled");   // W7-12-01 [RE: FUN_006AA390 @6AA4C4]
+                    return;
+                }
                 if (current && !held && !lq().ready(cat)) {   // SUSPEND
                     issue_type_event(ET::Suspend, false, type);
                     pres_.note_eva("EVA_OnHold");   // W5-E [RE: FUN_006AA390 @6AA692]
                     return;
                 }
                 issue_type_event(ET::Abandon, false, type);   // a queued copy, else the current
+                pres_.note_eva("EVA_Canceled");   // W7-12-01 [RE: FUN_006AA390 @6AA4C4]
                 return;
             }
             issue_type_event(ET::Produce, false, type);   // resume / start / queue one more
@@ -439,6 +442,7 @@
                 return;
             }
             issue_type_event(ET::Abandon, true, type);                   // ABANDON
+            pres_.note_eva("EVA_Canceled");   // W7-12-01 [RE: FUN_006AA390 @6AA4C4]
             return;
         }
         if (current && bq.slot.ready) {

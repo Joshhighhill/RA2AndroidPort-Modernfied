@@ -347,7 +347,7 @@ public:
                     usmoke_[i] = 0;
                 } else if (cond > prev && (!usmoke_[i] || !system_alive(usmoke_[i]))) {
                     const double z = u.level * 104.0 + (u.is_aircraft ? u.altitude : 0.0);
-                    usmoke_[i] = damage_smoke(unit_id(u.image), u.fx * 256.0, u.fy * 256.0, z,
+                    usmoke_[i] = damage_smoke(pres_type_id(u), u.fx * 256.0, u.fy * 256.0, z,
                                               Owner{1, static_cast<int>(i)});
                 }
             }
@@ -509,7 +509,7 @@ public:
             std::string wid;
             if (p.attacker >= 0 && p.attacker < static_cast<int>(w.units().size())) {
                 const ra2engine::Unit& u = w.units()[static_cast<std::size_t>(p.attacker)];
-                wid = weapon_of(unit_ids_.count(u.image) ? unit_ids_[u.image] : u.image, p.weapon_slot);
+                wid = weapon_of(pres_type_id(u), p.weapon_slot);
             } else if (p.attacker_building >= 0 && p.attacker_building < static_cast<int>(w.buildings().size())) {
                 const ra2engine::Building& b = w.buildings()[static_cast<std::size_t>(p.attacker_building)];
                 if (b.type >= 0 && b.type < static_cast<int>(ba.roster.size()))
@@ -543,7 +543,10 @@ public:
             const ra2engine::Unit& u = us[i];
             if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
             // Ship wake: every 8 frames while moving on water.
-            if (!wake_.empty() && u.is_naval && u.moving() && frame_ % 8 == 0 &&
+            // W7-06-04 [RE: ShipLocomotion Process FUN_0069F2A0 @0x69F4C9 --
+            // Type->Underwater (+0xD69) never spawns a wake; nor on a bridge]:
+            // subs, dolphins and squids leave none.
+            if (!wake_.empty() && u.is_naval && !u.an.t.underwater && !u.on_deck && u.moving() && frame_ % 8 == 0 &&
                 on_water(w, u.cell_x, u.cell_y) && w.object_visible_at(g_local_house, u.cell_x, u.cell_y)) {
                 // WAKE1 is Flat / Layer=ground: PresFx draws it in its ground
                 // pass under the ships (agent B's shared anim drawing).
@@ -600,7 +603,7 @@ public:
     std::string projectile_weapon(const ra2engine::World& w, const ra2engine::Projectile& p) {
         if (p.attacker >= 0 && p.attacker < static_cast<int>(w.units().size())) {
             const ra2engine::Unit& u = w.units()[static_cast<std::size_t>(p.attacker)];
-            return weapon_of(unit_ids_.count(u.image) ? unit_ids_[u.image] : u.image, p.weapon_slot);
+            return weapon_of(pres_type_id(u), p.weapon_slot);
         }
         if (proj_ba_ && p.attacker_building >= 0 && p.attacker_building < static_cast<int>(w.buildings().size())) {
             const ra2engine::Building& b = w.buildings()[static_cast<std::size_t>(p.attacker_building)];

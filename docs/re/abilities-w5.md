@@ -39,7 +39,11 @@ Consequences in the clone:
   dispatch. The old id list mapped `GACHRO` (no such type; the Chronosphere
   is `GACSPH`) and treated the Battle Labs as radars.
 - The Naval Yard is `Factory=UnitType`, so it sets the same flag as a War
-  Factory (vehicles and ships become veterans).
+  Factory. **Corrected (wave 7, W7-01-15):** that flag makes only non-Naval,
+  Trainable vehicles veteran (UnitClass Init 0x734490 @0x734717); ships and
+  aircraft never read it. Naval yards are not `Spyable` in stock rulesmd
+  anyway. The flags are tested when every infantry / vehicle the house
+  creates is initialised (W7-08-21: paradrops, reinforcements, crates too).
 - The SW reset now resets only the infiltrated building's superweapon.
 - `RequiresStolen*` types stay in the producible rosters (player and AI) with
   TechLevel 0 until `World::apply_stolen_tech_gate` sees the stolen bits.

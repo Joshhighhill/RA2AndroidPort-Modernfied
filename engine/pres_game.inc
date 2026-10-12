@@ -12,6 +12,8 @@ public:
               const std::vector<const std::vector<ra2engine::UnitTypeDef>*>& defs, int side_ix) {
         audio_ = &audio;
         g_bld_events.clear();   // W2-GA-14 per-building anim state is per game
+        g_pres_crushed.clear();  // W7-04-25
+        g_pres_sinkers.clear();  // W7-12-11
         g_pres_tick = 0;        // W3-B: the logic-tick anim clock restarts per game
         // G-83: the effects layer (muzzle / impact / death anims, projectile art).
         fx_.init(dir, ra2, rules_ini, art_ini);
@@ -19,6 +21,18 @@ public:
             for (const ra2engine::UnitTypeDef& d : *list) fx_.add_unit(d.id, d.combat.image);
         for (const char* id : {"E1", "E2", "HTNK", "HARV", "CMIN"}) fx_.add_unit(id, rules.image(id));
         g_fx = &fx_;
+        fx_.split_light_ = true;   // W7-12-33
+        {   // W7-12-06: [Radiation] RadColor / [AudioVisual] ChronoBeamColor, read once.
+            auto rgb = [&](const std::string& v, SDL_Color d) {
+                std::stringstream ss(pres_clean(v));
+                std::string t;
+                int c[3] = {d.r, d.g, d.b}, k = 0;
+                while (k < 3 && std::getline(ss, t, ',')) c[k++] = std::clamp(std::atoi(pres_clean(t).c_str()), 0, 255);
+                return k == 3 ? SDL_Color{Uint8(c[0]), Uint8(c[1]), Uint8(c[2]), 255} : d;
+            };
+            fx_.set_beam_colors(rgb(rules_ini.get("Radiation", "RadColor"), SDL_Color{0, 255, 0, 255}),
+                                rgb(rules_ini.get("AudioVisual", "ChronoBeamColor"), SDL_Color{128, 200, 255, 255}));
+        }
         // W3-FX: particles, debris, trails, wakes, twinkles (pres_effects.inc).
         effects_.init(fx_, rules_ini, ra2, dir);
         for (const auto* list : defs)
@@ -30,9 +44,13 @@ public:
         snd_.set_side(side_ix);
         // [G-81] Every producible / AI / crew unit gets its voice, death and
         // primary-weapon Report keys, keyed by image like the existing table.
+        // W7-12-27/28, W7-09-01: keyed by RULES id; every other type (map
+        // civilians, animals, cars, campaign / trigger / cheat spawns) is
+        // registered the first time voices_of() meets it.
+        rules_ = &rules;
         for (const auto* list : defs)
-            for (const ra2engine::UnitTypeDef& d : *list) add_voices(rules, d.id, d.combat.image);
-        for (const char* id : {"E1", "E2", "HTNK", "HARV", "CMIN"}) add_voices(rules, id, rules.image(id));
+            for (const ra2engine::UnitTypeDef& d : *list) add_voices(rules, d.id);
+        for (const char* id : {"E1", "E2", "HTNK", "HARV", "CMIN"}) add_voices(rules, id);
         auto av = [&](const char* k) { return pres_clean(rules_ini.get("AudioVisual", k)); };
         // G-88: health-bar colours from [AudioVisual] ConditionYellow/Red ("50%").
         auto pct = [&](const char* k, double d) {
@@ -227,6 +245,7 @@ public:
         for (std::size_t i = std::min(fire_seen_, fe.size()); i < fe.size(); ++i) fresh.push_back(fe[i]);
         fire_seen_ = fe.size();
         defense_fire_tick(w, fresh);   // muzzle / beam / report on the tick of the shot
+        fragment_fx(w);                // W7-12-07 shrapnel beams
         pres_bld_anim_tick(w, ba, fx_, g_pres_tick, fresh, units_seen_, bld_seen_,
                            [&](int h) { return w.credits(h); });   // L2: every house's wallet
         (void)player_credits;
@@ -235,6 +254,7 @@ public:
         w5_tick(w, ba);                // W5-E sounds observed per logic tick (pres_audio_events.inc)
         g_walk_rules = rules_ini_;
         pres_walk_tick(w, g_pres_tick); // W3-B walk stage (SHP vehicle frames, HVA frames)
+        sinker_tick();                  // W7-12-11
     }
     std::size_t fire_seen_ = 0, bld_seen_ = 0;   // W3-B
     void projectile_fx(const ra2engine::World& w, const std::vector<ra2engine::ProjectileEvent>& pev) {
@@ -259,7 +279,7 @@ private:
         kDefault = 0x00, kScrollN = 0x01, kNoScrollN = 0x09, kSelect = 0x11, kMove = 0x12,
         kNoMove = 0x13, kAttack = 0x14, kAttackOutOfRange = 0x15, kEnter = 0x19, kNoEnter = 0x1A,
         kDeploy = 0x1B, kNoDeploy = 0x1C, kNuke = 0x35, kIronCurtain = 0x39, kChronosphere = 0x3A,
-        kLightningStorm = 0x32,
+        kLightningStorm = 0x32, kAirstrike = 0x52,
     };
     // W2-AN-04 [RE: presentation.md §3 ConvertAction: 0x14 Nuke -> 0x35,
     // 0x25 IronCurtain -> 0x39, 0x26 LightningStorm -> 0x32, 0x27/0x28 Chrono
@@ -325,11 +345,14 @@ private:
         static const CursorDesc kIronD{394, 10, 4, 12345, 12345};     // 0x39 [table [57]]
         static const CursorDesc kChronoD{404, 9, 4, 12345, 12345};    // 0x3A
         static const CursorDesc kStormD{279, 20, 4, 12345, 12345};    // 0x32
+        // W7-02-06 [RE: table 0x0082C038 entry 0x52 = {480, 8, 4, -1, -1, C, M}]
+        static const CursorDesc kAirD{480, 8, 4, 12345, 12345};       // 0x52 airstrike
         if (id >= 0 && id < static_cast<int>(sizeof kTable / sizeof kTable[0])) return kTable[id];
         if (id == kNuke) return kNukeD;
         if (id == kIronCurtain) return kIronD;
         if (id == kChronosphere) return kChronoD;
         if (id == kLightningStorm) return kStormD;
+        if (id == kAirstrike) return kAirD;
         if (id == 0x30) return kRallyD;
         return kTable[0];
     }
@@ -413,6 +436,17 @@ private:
             case A::NoMove: return kNoMove;
             case A::Attack: {
                 if (shrouded) return kMove;
+                // W7-02-06 [RE: InfantryClass::What_Action 0x51E81E -- a weapon
+                // with MigAttackCursor (+0x13A) on a building -> action 0x47;
+                // ConvertAction 0x4AADA0 case 0x47 -> MouseCursorType 0x52]: Boris
+                // designating an airstrike.
+                if (in.building_under(mx, my) >= 0)
+                    for (const ra2engine::Unit& s : w.units())
+                        if (in.selection().has(static_cast<int>(&s - w.units().data())) && s.house == g_local_house &&
+                            s.alive && s.die_time < 0.0 && s.w2.valid && rules_ini_) {
+                            const std::string m = pres_lower(pres_clean(rules_ini_->get(s.w2.id, "MigAttackCursor")));
+                            if (!m.empty() && (m[0] == 'y' || m[0] == 't' || m[0] == '1')) return kAirstrike;
+                        }
                 for (const ra2engine::Unit& s : w.units())
                     if (in.selection().has(static_cast<int>(&s - w.units().data())) && s.house == g_local_house && s.alive &&
                         s.die_time < 0.0)
@@ -587,7 +621,8 @@ private:
     // to the list (bigger hits -> later, larger anims).
     void impact(const ra2engine::Unit& shooter, int damage, double fx, double fy, int level,
                 double lift_px) {
-        const FxWeapon* wp = fx_.weapon(shooter.image);
+        // W7-12-30: the warhead of the weapon that fired (secondary / elite).
+        const FxWeapon* wp = world_ ? &fx_.weapon_fx(fired_weapon(*world_, shooter)) : fx_.weapon(shooter.image);
         if (!wp || wp->anim_list.empty()) return;
         // W3-FX [RE: FUN_0048a400 SelectDamageAnimation]: a Conventional
         // warhead landing low on a water cell shows SplashList[min(damage,
@@ -623,7 +658,7 @@ private:
         const double lift = u.altitude * kFxLepPx;
         if (u.an.rocket_end == 2 || (u.alive && u.an.rocket_end == 0)) {
             // Shot down (killed this tick; World marks rocket_end next step): the ordinary death -- a random Explosion= entry, in the air.
-            const auto* ex = fx_.explosions(u.image);
+            const auto* ex = fx_.explosions(pres_type_id(u));
             if (ex && !ex->empty()) {
                 const uint32_t h = (static_cast<uint32_t>(u.cell_x * 131 + u.cell_y) * 2654435761u) ^
                                    (static_cast<uint32_t>(g_pres_tick) * 40503u);
@@ -665,46 +700,155 @@ private:
             ++explosions_;
         }
     }
+    // W7-12-30 / W7-03-06 [RE: TechnoClass::Fire FUN_006fd210 -- the fired
+    // WeaponTypeClass]: the weapon id this unit's current shot uses, by the
+    // TechnoType slot rule (FUN_00711510): a Gunner (IFV) fires Weapon<n> of
+    // its current mode, a WeaponCount type (Prism Tank) Weapon1, else the
+    // active slot's Primary / Secondary; elite (rank 2) takes the Elite*
+    // variant when the type defines one.
+    std::string fired_weapon(const ra2engine::World& w, const ra2engine::Unit& u) {
+        const std::string id = pres_type_id(u);
+        const bool elite = w.veterancy_enabled() ? ra2engine::vet_rank(u.vet.veterancy) >= 2 : false;
+        const int wc = std::atoi(pres_clean(rules_ini_->get(id, "WeaponCount")).c_str());
+        const bool gunner = u.abil.gunner && !u.abil.ifv_weapons.empty();
+        char key[64];
+        const int slot = gunner ? std::max(0, u.ifv_current) : (wc > 0 ? 0 : (u.w_active == 1 ? 1 : 0));
+        std::snprintf(key, sizeof key, "%s|%d|%d|%d", id.c_str(), slot, elite ? 1 : 0, (gunner || wc > 0) ? 1 : 0);
+        auto it = fired_cache_.find(key);
+        if (it != fired_cache_.end()) return it->second;
+        auto get = [&](const std::string& k) { return pres_clean(rules_ini_->get(id, k)); };
+        std::string wid, flh_key, flh_def;
+        if (gunner || wc > 0) {
+            const std::string n = std::to_string(slot + 1);
+            if (elite) wid = get("EliteWeapon" + n);
+            if (wid.empty()) wid = get("Weapon" + n);
+        } else {
+            const char* base = slot == 1 ? "Secondary" : "Primary";
+            if (elite) wid = get(std::string("Elite") + base);
+            if (wid.empty()) wid = get(base);
+            if (wid.empty()) wid = get(slot == 1 ? "Weapon2" : "Weapon1");
+        }
+        return fired_cache_[key] = wid;
+    }
+    std::map<std::string, std::string> fired_cache_;
+    // W7-12-15 [RE: TechnoTypeClass::LoadFromINI 0x711510 art block
+    // @0x714EB7-0x715338]: the fired weapon's FLH -- PrimaryFireFLH /
+    // SecondaryFireFLH, ElitePrimaryFireFLH (default PrimaryFireFLH) /
+    // EliteSecondaryFireFLH (default SecondaryFireFLH), or Weapon%dFLH /
+    // EliteWeapon%dFLH (default Weapon%dFLH) for a WeaponCount type. Leptons.
+    std::array<double, 3> fire_flh(const ra2engine::World& w, const ra2engine::Unit& u) {
+        const std::string id = pres_type_id(u);
+        const std::string& img = u.image;
+        const bool elite = w.veterancy_enabled() ? ra2engine::vet_rank(u.vet.veterancy) >= 2 : false;
+        const int wc = std::atoi(pres_clean(rules_ini_->get(id, "WeaponCount")).c_str());
+        const bool gunner = u.abil.gunner && !u.abil.ifv_weapons.empty();
+        const int slot = gunner ? std::max(0, u.ifv_current) : (wc > 0 ? 0 : (u.w_active == 1 ? 1 : 0));
+        char key[80];
+        std::snprintf(key, sizeof key, "%s|%d|%d|%d", img.c_str(), slot, elite ? 1 : 0, (gunner || wc > 0) ? 1 : 0);
+        auto it = flh_cache_.find(key);
+        if (it != flh_cache_.end()) return it->second;
+        auto art = [&](const std::string& k) { return w5_art_ini_ ? pres_clean(w5_art_ini_->get(img, k)) : std::string(); };
+        std::string v;
+        if (gunner || wc > 0) {
+            const std::string n = std::to_string(slot + 1);
+            if (elite) v = art("EliteWeapon" + n + "FLH");
+            if (v.empty()) v = art("Weapon" + n + "FLH");
+        } else {
+            const char* base = slot == 1 ? "SecondaryFireFLH" : "PrimaryFireFLH";
+            if (elite) v = art(std::string("Elite") + base);
+            if (v.empty()) v = art(base);
+        }
+        std::array<double, 3> f{0, 0, 0};
+        std::stringstream ss(v);
+        std::string t;
+        for (int k = 0; k < 3 && std::getline(ss, t, ','); ++k) f[static_cast<std::size_t>(k)] = std::atof(pres_clean(t).c_str());
+        return flh_cache_[key] = f;
+    }
+    std::map<std::string, std::array<double, 3>> flh_cache_;
+    // The muzzle point of the current shot in screen terms (ox, lift px) --
+    // voxel-render.md §6 projection [RE: GetFLH 0x6F3030 -- L negated on
+    // every other burst shot; 0x6F32C0 -- the turret origin is
+    // T(TurretOffset) along the BODY facing, then the turret yaw].
+    void muzzle_point(const ra2engine::World& w, const ra2engine::Unit& u, double& ox, double& lift) {
+        std::array<double, 3> flh = fire_flh(w, u);
+        const int burst = std::max(1, u.w6.burst);
+        const int shot = (u.w6.burst_index + burst - 1) % burst;
+        if (shot & 1) flh[1] = -flh[1];
+        const bool turret = u.is_vehicle && !u.is_aircraft;
+        double facing = u.is_vehicle ? (turret ? u.turret_facing : u.body_facing) : 0.0;
+        if (!u.is_vehicle) {
+            // Infantry block k: screen direction 45k degrees counter-clockwise
+            // from screen-up (infantry-anim.md §4) -> a cell delta -> the
+            // render u16 space (0 = cell north, clockwise).
+            const double a = (u.facing & 7) * 3.14159265358979 / 4.0;
+            const double sx = -std::sin(a), sy = -std::cos(a);
+            facing = ra2engine::facing_u16_from_delta(sx / 60.0 + sy / 30.0, sy / 30.0 - sx / 60.0);
+        }
+        const double yaw = ra2engine::index_to_yaw(ra2engine::facing_to_index(facing, ra2engine::kVehicleFacings),
+                                                   ra2engine::kVehicleFacings);
+        double mx = (flh[0] * std::cos(yaw) - flh[1] * std::sin(yaw)) / 256.0;
+        double my = (flh[0] * std::sin(yaw) + flh[1] * std::cos(yaw)) / 256.0;
+        if (u.is_vehicle) {
+            const std::string to = w5_art_ini_ ? pres_clean(w5_art_ini_->get(u.image, "TurretOffset")) : std::string();
+            if (!to.empty()) {
+                const double byaw = ra2engine::index_to_yaw(
+                    ra2engine::facing_to_index(u.body_facing, ra2engine::kVehicleFacings), ra2engine::kVehicleFacings);
+                const double f = std::atof(to.c_str()) / 256.0;
+                mx += f * std::cos(byaw);
+                my += f * std::sin(byaw);
+            }
+        }
+        ox = (mx + my) * 30.0;
+        lift = -((mx - my) * 15.0) + (flh[2] / 256.0) * 36.74;
+        if (u.is_aircraft && u.altitude > 0.0) lift += ra2engine::altitude_to_screen_dy(u.altitude);
+    }
     // Muzzle Anim= at the firing point; an instant (no flying projectile)
-    // weapon also lands its impact on the target now.
+    // weapon also lands its impact on the target now. W7-12-30: everything
+    // comes from the weapon that fired.
     void fire_fx(const ra2engine::World& w, const ra2engine::Unit& u) {
-        const FxWeapon* wp = fx_.weapon(u.image);
+        const FxWeapon* wp = &fx_.weapon_fx(fired_weapon(w, u));
+        if (wp->id.empty()) wp = fx_.weapon(u.image);
         if (!wp) return;
+        double ox = 0, lift = 0;
+        muzzle_point(w, u, ox, lift);
         if (!wp->muzzle.empty()) {
             std::string name = wp->muzzle.front();
-            double ox = 0, lift = 0;
-            if (u.is_vehicle) {
-                // W3-B: 8 facing-ordered muzzle anims (N, NE .. NW, clockwise)
-                // pick by the turret facing [RE-FALLBACK: the 8-way rounding of
-                // the u16 facing as the SHP/voxel facing rule].
-                if (wp->muzzle.size() >= 8)
-                    name = wp->muzzle[static_cast<std::size_t>((((static_cast<int>(u.turret_facing) & 0xFFFF) >> 12) + 1 >> 1) & 7)];
-                // FLH muzzle point, the projection draw_vehicle_unit uses
-                // (voxel-render.md §6).
-                const double yaw = ra2engine::index_to_yaw(
-                    ra2engine::facing_to_index(u.turret_facing, ra2engine::kVehicleFacings),
-                    ra2engine::kVehicleFacings);
-                const double fc = u.w_proj.flh[0] / 256.0, lc = u.w_proj.flh[1] / 256.0;
-                const double mx = fc * std::cos(yaw) - lc * std::sin(yaw);
-                const double my = fc * std::sin(yaw) + lc * std::cos(yaw);
-                ox = (mx + my) * 30.0;
-                lift = -((mx - my) * 15.0) + (u.w_proj.flh[2] / 256.0) * 36.74;
-            } else {
-                // Infantry: the 8 facing-ordered anims N,NE,E,SE,S,SW,W,NW;
-                // Unit::facing is 0=N counter-clockwise (infantry-anim.md §4).
-                if (wp->muzzle.size() >= 8) name = wp->muzzle[(8 - (u.facing & 7)) % 8];
-                lift = 15.0;   // [RE-FALLBACK: infantry PrimaryFireFLH not applied]
+            if (wp->muzzle.size() >= 8) {
+                if (u.is_vehicle) {
+                    // W7-12-29 [RE: FUN_006fd210 muzzle block -- Anim[(((d >> 12)
+                    // + 1 >> 1 & 7) + 1) & 7], d = the turret facing for a
+                    // Turret=yes type, else the body (UnitClass 0x73fd90)]: the
+                    // lists are named by screen compass, map-north = "NE".
+                    const double d = u.is_aircraft ? u.body_facing : u.turret_facing;
+                    const int k = ((((static_cast<int>(d) & 0xFFFF) >> 12) + 1) >> 1 & 7);
+                    name = wp->muzzle[static_cast<std::size_t>((k + 1) & 7)];
+                } else {
+                    // Infantry: the 8 facing-ordered anims N,NE,E,SE,S,SW,W,NW;
+                    // Unit::facing is 0=N counter-clockwise (infantry-anim.md §4).
+                    name = wp->muzzle[(8 - (u.facing & 7)) % 8];
+                }
             }
+            // W7-12-38: at the weapon's FLH (infantry too), [RE-FALLBACK: the
+            // anim is not attached to the firer (SetOwnerObject 0x424ad0)].
             fx_.spawn(name, u.fx, u.fy, u.level, lift, ox);
         }
-        // W6-04-24: a slot-1 shot draws the Secondary's beam (Boris's Flare).
-        const FxWeapon* bw = u.w_active == 1 ? fx_.weapon2(u.image) : wp;
-        if (bw && (bw->bolt || bw->laser || bw->rad_beam || bw->line)) {   // W2-GA-15 Tesla / Prism beams
+        // W6-04-24: a slot-1 shot draws the Secondary's beam (Boris's Flare);
+        // W7-12-30: the fired weapon's own beam flags.
+        if (wp->bolt || wp->laser || wp->rad_beam || wp->line) {   // W2-GA-15 Tesla / Prism beams
             double tx = 0, ty = 0, tl = 0;
             int tlev = 0;
-            if (target_point(w, u.target, u.target_building, tx, ty, tlev, tl))
-                fx_.add_beam(u.fx, u.fy, u.level, u.is_vehicle ? 18.0 : 15.0, tx, ty, tlev, tl, *bw,
-                             house_color(w, u.house));
+            if (target_point(w, u.target, u.target_building, tx, ty, tlev, tl)) {
+                fx_.add_beam(u.fx, u.fy, u.level, std::max(lift, u.is_vehicle ? 18.0 : 15.0), tx, ty, tlev, tl, *wp,
+                             house_color(w, u.house), ox);
+                // W7-12-31 [RE: EBolt::Fire 0x4c2980 -- ParticleSystem([General]
+                // DefaultSparkSystem=SparkSys) at the bolt end].
+                if (wp->bolt) {
+                    static std::string spark;
+                    if (spark.empty() && rules_ini_) spark = pres_clean(rules_ini_->get("General", "DefaultSparkSystem"));
+                    if (!spark.empty())
+                        effects_.spawn_system(spark, tx * 256.0, ty * 256.0, tlev * 104.0 + tl / kFxLepPx);
+                }
+            }
         }
         if (!u.w_proj.flies()) {
             // W3-FX: an instant shot whose projectile art has a line trail.
@@ -712,8 +856,8 @@ private:
                 double tx = 0, ty = 0, tl = 0;
                 int tlev = 0;
                 if (target_point(w, u.target, u.target_building, tx, ty, tlev, tl))
-                    effects_.instant_line(effects_.unit_weapon(u.image, 0), u.fx * 256.0, u.fy * 256.0,
-                                          u.level * 104.0 + 60.0, tx * 256.0, ty * 256.0, tlev * 104.0 + 40.0);
+                    effects_.instant_line(wp->id.empty() ? effects_.unit_weapon(u.image, 0) : wp->id, u.fx * 256.0,
+                                          u.fy * 256.0, u.level * 104.0 + 60.0, tx * 256.0, ty * 256.0, tlev * 104.0 + 40.0);
             }
             const auto& us = w.units();
             if (u.target >= 0 && u.target < static_cast<int>(us.size())) {
@@ -724,6 +868,47 @@ private:
                 const ra2engine::Building& b = w.buildings()[u.target_building];
                 impact(u, u.w_damage, b.cx + (b.fw - 1) / 2.0, b.cy + (b.fh - 1) / 2.0, building_level(w, b), 20.0);
             }
+        }
+    }
+    // W7-12-07 [RE: BulletClass shrapnel FUN_0046a230 -- CreateLaser
+    // 0x6fc6d0 / CreateEBolt 0x6fc920 per fragment, from the impact point to
+    // the fragment's target]: the Prism split lasers / elite Tesla bounces.
+    // W7-12-11: the sinking hulls' wakes (every 4th frame, +-170 leptons) and
+    // their end after 400 leptons (80 frames).
+    void sinker_tick() {
+        const std::string wake = rules_ini_ ? pres_clean(rules_ini_->get("General", "Wake")) : std::string();
+        for (auto it = g_pres_sinkers.begin(); it != g_pres_sinkers.end();) {
+            const long age = g_pres_tick - it->start;
+            if (age * 5 > 400) { it = g_pres_sinkers.erase(it); continue; }
+            if ((g_pres_tick & 3) == 0 && !wake.empty()) {
+                sink_rng_ = sink_rng_ * 1664525u + 1013904223u;
+                const double dx = (static_cast<int>((sink_rng_ >> 8) % 341) - 170) / 256.0;
+                sink_rng_ = sink_rng_ * 1664525u + 1013904223u;
+                const double dy = (static_cast<int>((sink_rng_ >> 8) % 341) - 170) / 256.0;
+                fx_.spawn(wake, it->fx + dx, it->fy + dy, it->level, 0.0);
+            }
+            ++it;
+        }
+    }
+    std::uint32_t sink_rng_ = 0x51C4u;   // render-only RNG
+    void fragment_fx(const ra2engine::World& w) {
+        const auto& fe = w.frag_events();   // cleared by GameScene after every logic tick
+        for (std::size_t i = 0; i < fe.size(); ++i) {
+            const auto& e = fe[i];
+            ++w5_counts_["fragment event"];
+            if (e.attacker < 0 || e.attacker >= static_cast<int>(w.units().size())) continue;
+            const ra2engine::Unit& a = w.units()[static_cast<std::size_t>(e.attacker)];
+            const FxWeapon& main_w = fx_.weapon_fx(fired_weapon(w, a));
+            if (main_w.shrapnel.empty()) continue;
+            const FxWeapon& fw = fx_.weapon_fx(main_w.shrapnel);
+            if (!(fw.bolt || fw.laser || fw.rad_beam || fw.line)) continue;
+            double tx = 0, ty = 0, tl = 0;
+            int tlev = 0;
+            if (!target_point(w, e.target, -1, tx, ty, tlev, tl)) continue;
+            if (!w.object_visible_at(g_local_house, static_cast<int>(std::lround(e.x0)), static_cast<int>(std::lround(e.y0))))
+                continue;
+            fx_.add_beam(e.x0, e.y0, e.level0, 10.0, tx, ty, tlev, tl, fw, house_color(w, a.house));
+            ++w5_counts_["fragment beam"];
         }
     }
     bool target_point(const ra2engine::World& w, int tu, int tb, double& x, double& y, int& level,
@@ -764,9 +949,17 @@ private:
             }
     }
 
-    void add_voices(const Rules& rules, const std::string& id, const std::string& image) {
-        if (image.empty() || audio_->voices.count(image)) return;
+    // [G-81] One type's voice / death / Report / MoveSound / CrushSound keys,
+    // read from the type's own rules section [RE: FUN_00711510] and stored
+    // under its RULES id (W7-12-27: ENGINEER / SENGINEER / YENGINEER share an
+    // image but not their lines). Idempotent.
+    void add_voices(const Rules& rules, const std::string& id_in) {
+        const std::string id = pres_upper(id_in);
+        if (id.empty() || !audio_) return;
+        auto found = audio_->voices.find(id);
+        if (found != audio_->voices.end() && found->second.registered) return;
         UnitVoices v;
+        v.registered = true;
         v.select = pres_clean(rules.voice_select(id));
         v.move = pres_clean(rules.voice_move(id));
         v.attack = pres_clean(rules.voice_attack(id));
@@ -786,11 +979,37 @@ private:
         v.move_sound = pres_clean(rules_ini_->get(id, "MoveSound"));
         v.crush = pres_clean(rules_ini_->get(id, "CrushSound"));
         add_w5_voices(id, v);   // W5-E (pres_audio_events.inc)
-        audio_->voices[image] = v;
+        audio_->voices[id] = v;
         for (const std::string& k : {v.select, v.move, v.attack, v.die, v.move_sound, v.crush}) snd_.ensure_sound(k);
         std::stringstream rs(v.report);
         for (std::string tok; std::getline(rs, tok, ',');) snd_.ensure_sound(pres_clean(tok));
     }
+    // The voice set of `u`'s type, registered on first sight (W7-09-01: map
+    // civilians, cows, Einstein, civilian cars and any runtime-created type).
+    const UnitVoices& voices_of(const ra2engine::Unit& u) {
+        const std::string& id = pres_type_id(u);
+        auto it = audio_->voices.find(id);
+        if (it != audio_->voices.end() && it->second.registered) return it->second;
+        if (rules_) add_voices(*rules_, id);
+        return audio_->voices[pres_upper(id)];
+    }
+public:
+    // --play evidence (W7-12-03 / W7-09-01): a registered voice key of a type.
+    std::string voice_key(const std::string& id, const std::string& field) {
+        if (!audio_) return std::string();
+        if (rules_) add_voices(*rules_, id);
+        const UnitVoices& v = audio_->voices[pres_upper(id)];
+        if (field == "select") return v.select;
+        if (field == "die") return v.die;
+        if (field == "deploy") return v.deploy_snd;
+        if (field == "feedback") return v.feedback;
+        if (field == "move_sound") return v.move_sound;
+        if (field == "crush") return v.crush;
+        if (field == "report") return v.report;
+        return std::string();
+    }
+private:
+    const Rules* rules_ = nullptr;
 
     std::string pick_report(const std::string& list) {
         if (list.find(',') == std::string::npos) return list;
@@ -824,30 +1043,25 @@ private:
         return std::max(std::abs(sx), 2.0 * std::abs(sy)) / 60.0;
     }
 
-    // [G-80] Production lines, observed from the four queue slots [RE:
-    // presentation.md §1.3]: Building/Training when production starts
-    // (FUN_006aa390), ConstructionComplete when a structure finishes
-    // (FUN_006a81c0), UnitReady when a finished unit exits its factory
-    // (FUN_004faf00, gated by RadarEvent 6 UnitProduced), Canceled when an
-    // unfinished slot empties. InsufficientFunds (FUN_004f8350): local house,
-    // money < 100 with production running, repeated every SpeakDelay.
+    // [G-80] Production lines [RE: presentation.md §1.3]: Building/Training
+    // when production starts (FUN_006aa390, every queue: W7-12-01 covers the
+    // Naval and Aircraft queues too), ConstructionComplete when a structure
+    // finishes (FUN_006a81c0). UnitReady and Canceled are NOT slot edges any
+    // more (W7-12-01): the ready slot lives for zero frames (tick_all sets it,
+    // econ_launch_ready_units launches it in the same step), so UnitReady is
+    // spoken from the launch list (note_launches) and Canceled from the
+    // player's abandon click (note_eva). InsufficientFunds (FUN_004f8350):
+    // local house, money < 100 with production running, every SpeakDelay.
     void production_eva(const ra2engine::World& w, const ra2engine::ProductionQueues& q, double credits) {
+        (void)w;
         bool producing = false;
-        for (int c = 0; c < 4; ++c) {
+        for (int c = 0; c < ra2engine::kQueueCats; ++c) {
             const ra2engine::QueueCat cat = static_cast<ra2engine::QueueCat>(c);
             const ra2engine::QueueSlot& s = q.state(cat).slot;
             Slot& p = slots_[c];
             const bool structure = c < 2;
             if (p.type < 0 && s.type >= 0) snd_.eva(structure ? "EVA_Building" : "EVA_Training");
             if (!p.ready && s.ready && structure) snd_.eva("EVA_ConstructionComplete");
-            if (p.type >= 0 && s.type != p.type) {
-                if (p.ready && !structure) {
-                    const auto& us = w.units();
-                    const bool ok = us.empty() || radar_event(6, us.back().fx, us.back().fy);
-                    if (ok) snd_.eva("EVA_UnitReady");
-                }
-                else if (!p.ready) snd_.eva("EVA_Canceled");
-            }
             if (s.type >= 0 && !s.ready) producing = true;
             p.type = s.type;
             p.ready = s.ready;
@@ -857,6 +1071,20 @@ private:
             next_funds_frame_ = frame_ + speak_delay_frames_;
         }
     }
+public:
+    // W7-12-01 [RE: FUN_004faf00 @4FB45F -- a produced unit leaving its
+    // factory, local house only, gated by RadarEvent::Create(6 UnitProduced;
+    // 2 cells, 200 frames)]: EVA_UnitReady per launched unit. GameScene hands
+    // over World::take_econ_launches() every logic tick.
+    void note_launches(const ra2engine::World& w, const std::vector<std::pair<int, int>>& launched) {
+        for (const auto& hl : launched) {
+            if (hl.first != g_local_house) continue;
+            if (hl.second < 0 || hl.second >= static_cast<int>(w.units().size())) continue;
+            const ra2engine::Unit& u = w.units()[static_cast<std::size_t>(hl.second)];
+            if (radar_event(6, u.fx, u.fy)) snd_.eva("EVA_UnitReady");
+        }
+    }
+private:
 
     // [G-80] Low power once per low-power episode (drain > output edge,
     // construction.md §8), only while the house owns a construction yard
@@ -1021,8 +1249,17 @@ private:
                 }
             return;
         }
+        // W7-04-25: a crushed soldier leaves no corpse. W7-12-35 [RE:
+        // 0x520810 -- WetDie1/2 (0x14/0x15) and AirDeathFinish (0x24) UnInit
+        // with no DeadBodies; only Die1-5 leave a corpse].
+        const std::size_t ui = static_cast<std::size_t>(&u - w.units().data());
+        if (ui < crushed_.size() && crushed_[ui]) return;
+        if (u.ia.seq == ra2engine::kSqWetDie1 || u.ia.seq == ra2engine::kSqWetDie2 ||
+            u.ia.seq == ra2engine::kSqAirDeathStart || u.ia.seq == ra2engine::kSqAirDeathFalling ||
+            u.ia.seq == ra2engine::kSqAirDeathFinish)
+            return;
         if (!u.alive && was_alive && u.die_time >= 0.0 && !u.ia.vanish) {
-            std::string list = pres_clean(rules_ini_->get(u.image, "DeadBodies"));
+            std::string list = pres_clean(rules_ini_->get(pres_type_id(u), "DeadBodies"));   // W7-12-28
             const ra2engine::InfTable* it = w.inf_table(u.image);
             if (list.empty() && !(it && it->not_human))
                 list = pres_clean(rules_ini_->get("General", "DeadBodies"));
@@ -1035,6 +1272,83 @@ private:
             if (fx_.spawn(v[(corpse_rng_ >> 8) % v.size()], u.fx, u.fy, lvl, 0.0)) ++corpses_;
         }
     }
+    std::vector<std::uint8_t> crushed_, crash_pending_;   // W7-04-25 / W7-12-12
+    // The death Explosion= of a vehicle at its point [RE: FUN_007376C0]:
+    //  * W7-12-43: Explodes=yes with ammo left (Ammo -1 = unlimited) takes
+    //    the LAST entry, else a uniform pick;
+    //  * W7-12-14 [RE: UnitClass::ReceiveDamage death 0x736DC5 @0x736E3F]: a
+    //    unit dying low (< 11 leptons) on a Water cell without sinking shows
+    //    [General] Wake plus the LAST SplashList anim (z + 5) instead, and no
+    //    Explosion=;
+    //  then Min/MaxDebris (none low over water).
+    void vehicle_death_fx(const ra2engine::World& w, const ra2engine::Unit& u, std::size_t i) {
+        const double height = u.is_aircraft ? u.altitude : 0.0;
+        const bool water_death = !u.an.sinking && height < 11.0 && w.is_water_cell(u.cell_x, u.cell_y) &&
+                                 u.on_deck == 0;
+        if (water_death) {
+            const std::vector<std::string>& splash = effects_.splash_list();
+            const std::string wake = pres_clean(rules_ini_->get("General", "Wake"));
+            if (!wake.empty()) fx_.spawn(wake, u.fx, u.fy, u.level, 0.0);
+            if (!splash.empty())
+                if (const FxAnimType* t = fx_.spawn(splash.back(), u.fx, u.fy, u.level, 5.0 * kFxLepPx)) {
+                    snd_.play_at(t->report, u.fx, u.fy, "water explosion");
+                    ++explosions_;
+                    ++w5_counts_["water explosion"];
+                }
+        } else {
+            const auto* ex = fx_.explosions(pres_type_id(u));
+            if (ex && !ex->empty()) {
+                const uint32_t h = (static_cast<uint32_t>(i) * 2654435761u) ^ (static_cast<uint32_t>(g_pres_tick) * 40503u);
+                std::size_t pick = (h >> 7) % ex->size();
+                const std::string id = pres_type_id(u);
+                const std::string ex_key = pres_lower(pres_clean(rules_ini_->get(id, "Explodes")));
+                const std::string ammo = pres_clean(rules_ini_->get(id, "Ammo"));
+                const bool has_ammo = ammo.empty() || std::atoi(ammo.c_str()) < 0 || u.an.ammo > 0;
+                if (!ex_key.empty() && (ex_key[0] == 'y' || ex_key[0] == 't' || ex_key[0] == '1') && has_ammo)
+                    pick = ex->size() - 1;
+                if (const FxAnimType* t = fx_.spawn((*ex)[pick], u.fx, u.fy, u.level, height * kFxLepPx)) {
+                    snd_.play_at(t->report, u.fx, u.fy, "explosion");
+                    ++explosions_;
+                }
+            }
+        }
+        // W3-FX [RE: FUN_00700da0 death]: Min/MaxDebris debris (voxel
+        // DebrisTypes / DebrisAnims / MetallicDebris), none when low over water.
+        const double z = u.level * 104.0 + height;
+        effects_.spawn_debris(pres_type_id(u), u.fx * 256.0, u.fy * 256.0, z, on_water(u.fx, u.fy) && height < 11.0);
+    }
+    // W7-12-13 [RE: FireDeathWeapon FUN_0070CAC0 -> a bullet of the weapon's
+    // warhead detonates; its anim is SelectDamageAnimation(damage, WH)
+    // FUN_0048A400: AnimList[min(damage, n*25-1) / 25], SplashList for a
+    // Conventional warhead low over water]: the detonation anim + its Report.
+    bool death_weapon_fx(const std::string& wid, int damage, double fx, double fy, int level) {
+        if (wid.empty()) return false;
+        const std::string wh = pres_clean(rules_ini_->get(wid, "Warhead"));
+        if (wh.empty()) return false;
+        std::vector<std::string> list;
+        {
+            std::stringstream ss(pres_clean(rules_ini_->get(wh, "AnimList")));
+            for (std::string t; std::getline(ss, t, ',');)
+                if (!pres_clean(t).empty()) list.push_back(pres_clean(t));
+        }
+        const std::string conv = pres_lower(pres_clean(rules_ini_->get(wh, "Conventional")));
+        const std::vector<std::string>& splash = effects_.splash_list();
+        std::string name;
+        if (!conv.empty() && (conv[0] == 'y' || conv[0] == 't') && !splash.empty() && on_water(fx, fy)) {
+            const int ns = static_cast<int>(splash.size());
+            name = splash[static_cast<std::size_t>(std::min(std::max(damage, 0), ns * 35 - 1) / 35)];
+        } else if (!list.empty()) {
+            const int n = static_cast<int>(list.size());
+            name = list[static_cast<std::size_t>(std::min(std::max(damage, 0), n * 25 - 1) / 25)];
+        }
+        if (name.empty()) { pres_log(frame_, "fx death weapon " + wid + " (no anim)"); return false; }
+        const FxAnimType* t = fx_.spawn(name, fx, fy, level, 0.0);
+        if (!t) { pres_log(frame_, "fx death weapon " + wid + " " + name + " (no art)"); return false; }
+        snd_.play_at(t->report, fx, fy, "death weapon");
+        ++w5_counts_["death weapon"];
+        pres_log(frame_, "fx death weapon " + wid + " " + name);
+        return true;
+    }
     // W3-B: weapon Report + muzzle/impact anims on each shot and the death
     // sound/explosion, observed once per LOGIC tick (Presentation::logic_tick)
     // so an effect is born on the tick its event happened, whatever the
@@ -1045,55 +1359,91 @@ private:
         alive_prev_.resize(units.size(), 1);
         for (std::size_t i = 0; i < units.size(); ++i) {
             const auto& u = units[i];
-            const UnitVoices& v = audio_->voices[u.image];
+            const UnitVoices& v = voices_of(u);
             infantry_death_fx(w, u, prev_[i].second < 0.0, alive_prev_[i] != 0);   // W3-B
             alive_prev_[i] = u.alive ? 1 : 0;
             if (u.fire_flash > prev_[i].first && u.cargo_of < 0) {
-                snd_.play_at(pick_report(v.report), u.fx, u.fy, "report");
+                // W7-03-06 / W7-12-30: the FIRED weapon's Report (IFV modes,
+                // deployed GI Para / GGI MissileLauncher, elite weapons).
+                const std::string wid = fired_weapon(w, u);
+                const std::string rep = wid.empty() ? v.report : fx_.weapon_fx(wid).report;
+                snd_.play_at(pick_report(rep), u.fx, u.fy, "report");
                 if (u.house == g_local_house || w.object_visible_at(g_local_house, u.cell_x, u.cell_y)) fire_fx(w, u);
             }
             if (u.die_time >= 0.0 && prev_[i].second < 0.0) {
                 // W2-GA-25: crushed infantry (killed by an adjacent Crusher
                 // vehicle that ran into its cell) squish instead of dying.
+                // W7-04-25 [RE: per-cell crush 0x7406A2-0x740764]: only the
+                // VICTIM's CrushSound plays (InfantrySquish; a crushed tank's
+                // own CrushSound=TankCrush), no DieSound, and the body is
+                // removed outright -- no Die sequence, no corpse.
                 const int k = u.vet.killed_by;
                 const bool crushed = k >= 0 && k < static_cast<int>(units.size()) && u.crushable &&
-                                     !u.is_vehicle && units[k].is_vehicle && units[k].crusher &&
+                                     units[k].is_vehicle && units[k].crusher &&
                                      std::abs(units[k].fx - u.fx) <= 1.6 && std::abs(units[k].fy - u.fy) <= 1.6;
                 if (crushed) {
                     snd_.play_at(v.crush, u.fx, u.fy, "crushed");
-                    snd_.play_at(audio_->voices[units[k].image].crush, units[k].fx, units[k].fy, "crusher");
+                    if (crushed_.size() <= i) crushed_.resize(units.size(), 0);
+                    crushed_[i] = 1;
+                    pres_mark_crushed(static_cast<int>(i));
                 } else {
                     snd_.play_at(v.die, u.fx, u.fy, "die");
                 }
-                // Vehicle death: the Explosion= anim (drawn by draw_vehicle_unit)
-                // carries its own Report= sound.
-                // W3-B [RE: presentation.md §5 FUN_007376c0]: a uniformly
-                // random Explosion= entry, spawned here on the death tick.
+                // W7-12-12 [RE: from W7-05-09 -- fixed-wing FUN_004CD520 /
+                // BalloonHover FUN_00744F30 FireDeathWeapon, other crashable
+                // jumpjets FUN_007376C0 at the IMPACT point]: an aircraft killed
+                // in the air falls first; nothing explodes on the kill tick.
+                const bool will_crash = u.is_aircraft && u.altitude > 0.0 && !u.an.t.missile &&
+                                        (u.an.t.crashable || u.an.t.fixed_wing);
+                if (will_crash) {
+                    if (crash_pending_.size() <= i) crash_pending_.resize(units.size(), 0);
+                    crash_pending_[i] = 1;
+                }
+                // Vehicle death: the Explosion= anim carries its own Report=.
+                // W3-B [RE: presentation.md §5 FUN_007376c0]: spawned here on
+                // the death tick.
                 if (u.an.t.missile) {
                     // W4 [FUN_00662A70]: a rocket (detonated or shot down)
                     // explodes with its warhead's anim where it is -- in the
                     // air when it was hit in flight.
                     if (w.object_visible_at(g_local_house, u.cell_x, u.cell_y)) rocket_fx(w, u);
-                } else if (u.is_vehicle && !u.an.crashing && !u.an.sinking &&
-                    w.object_visible_at(g_local_house, u.cell_x, u.cell_y)) {
-                    const auto* ex = fx_.explosions(u.image);
-                    if (ex && !ex->empty()) {
-                        const uint32_t h = (static_cast<uint32_t>(i) * 2654435761u) ^
-                                           (static_cast<uint32_t>(g_pres_tick) * 40503u);
-                        const std::string& name = (*ex)[(h >> 7) % ex->size()];
-                        if (const FxAnimType* t = fx_.spawn(name, u.fx, u.fy, u.level, 0.0)) {
-                            snd_.play_at(t->report, u.fx, u.fy, "explosion");
-                            ++explosions_;
-                        }
-                    }
-                    // W3-FX [RE: FUN_00700da0 death]: Min/MaxDebris debris
-                    // (voxel DebrisTypes / DebrisAnims / MetallicDebris), none
-                    // when low over water.
-                    const double z = u.level * 104.0 + (u.is_aircraft ? u.altitude : 0.0);
-                    effects_.spawn_debris(effects_.unit_id(u.image), u.fx * 256.0, u.fy * 256.0, z,
-                                          on_water(u.fx, u.fy) && (!u.is_aircraft || u.altitude < 11.0));
                 }
-                if (u.house == g_local_house && radar_event(7, u.fx, u.fy)) snd_.eva("EVA_UnitLost");
+                // W2-AN-25: a ship heavy enough to sink (the sim flags it the
+                // next tick) does not explode [RE: 0x736DC5 sink branch].
+                const bool will_sink = u.is_naval && !u.an.t.underwater &&
+                                       u.an.t.weight >= w.sw_params().ship_sinking_weight;
+                if (!u.an.t.missile && u.is_vehicle && !will_crash && !will_sink && !u.an.crashing && !u.an.sinking &&
+                           w.object_visible_at(g_local_house, u.cell_x, u.cell_y)) {
+                    vehicle_death_fx(w, u, i);
+                }
+                // W7-12-02 [RE: Foot death 0x4D97D0 @4D981C -- EVA_UnitLost only
+                // when the type is not Spawned= (+0xD54); IsPlayerControl;
+                // RadarEvent 7]: no "Unit lost" for V3 / Dreadnought rockets,
+                // Hornets, ASW, MiGs, paradrop and spy planes.
+                if (u.house == g_local_house && (v.spawned || u.an.t.spawned || u.an.t.missile))
+                    ++w5_counts_["spawned no unit lost"];
+                else if (u.house == g_local_house && radar_event(7, u.fx, u.fy))
+                    snd_.eva("EVA_UnitLost");
+            }
+            // W7-12-12: the falling wreck reached the ground -> one blast there.
+            if (i < crash_pending_.size() && crash_pending_[i] && !u.an.crashing && u.altitude <= 0.0 &&
+                prev_[i].second >= 0.0) {
+                crash_pending_[i] = 0;
+                if (w.object_visible_at(g_local_house, u.cell_x, u.cell_y)) {
+                    if (u.an.t.fixed_wing || u.balloon_hover) {
+                        // FireDeathWeapon: DeathWeapon, else the Primary.
+                        const std::string id = pres_type_id(u);
+                        std::string wid = pres_clean(rules_ini_->get(id, "DeathWeapon"));
+                        if (wid.empty()) wid = pres_clean(rules_ini_->get(id, "Primary"));
+                        int dmg = std::atoi(pres_clean(rules_ini_->get(wid, "Damage")).c_str());
+                        const std::string mod = pres_clean(rules_ini_->get(id, "DeathWeaponDamageModifier"));
+                        if (!mod.empty()) dmg = static_cast<int>(dmg * std::atof(mod.c_str()));
+                        if (!death_weapon_fx(wid, dmg, u.fx, u.fy, u.level)) vehicle_death_fx(w, u, i);
+                    } else {
+                        vehicle_death_fx(w, u, i);
+                    }
+                    ++w5_counts_["crash impact"];
+                }
             }
             prev_[i] = {u.fire_flash, u.die_time};
         }
@@ -1104,13 +1454,43 @@ private:
         const auto& units = w.units();
         moving_prev_.resize(units.size(), 0);
         uhp_prev_.resize(units.size(), -1);
+        move_loop_.resize(units.size(), 0);
+        unpowered_prev_.resize(units.size(), 0);
         for (std::size_t i = 0; i < units.size(); ++i) {
             const auto& u = units[i];
-            const UnitVoices& v = audio_->voices[u.image];
+            const UnitVoices& v = voices_of(u);
             // W2-GA-25: a vehicle that starts moving plays its MoveSound.
+            // W7-04-30 [soundmd Control=loop: TerrorDroneMoveLoop]: a LOOP
+            // MoveSound is the unit's own controller -- it follows the unit
+            // and stops when it halts (the w6_flight pattern), instead of a
+            // one-shot pinned where the move started.
             const bool mv = u.alive && u.die_time < 0.0 && u.cargo_of < 0 && u.moving();
-            if (mv && !moving_prev_[i] && u.is_vehicle) snd_.play_at(v.move_sound, u.fx, u.fy, "move start");
+            // (the Terror Drone is a UnitType drawn as SHP: is_vehicle false)
+            if ((u.is_vehicle || !pres_rtti_infantry(u)) && !u.is_aircraft && !v.move_sound.empty()) {
+                const bool loops = snd_.sound_loops(v.move_sound);
+                if (mv && !moving_prev_[i]) {
+                    if (loops) {
+                        pres_log(frame_, "sound " + v.move_sound + " (move loop)");
+                        move_loop_[i] = snd_.loop_at(v.move_sound, u.fx, u.fy);
+                        if (!move_loop_[i]) move_loop_[i] = 1;   // deviceless: remember it runs
+                    } else {
+                        snd_.play_at(v.move_sound, u.fx, u.fy, "move start");
+                    }
+                } else if (!mv && move_loop_[i]) {
+                    if (move_loop_[i] != 1) snd_.stop_loop(move_loop_[i]);
+                    pres_log(frame_, "sound-stop " + v.move_sound + " (move loop)");
+                    move_loop_[i] = 0;
+                } else if (mv && move_loop_[i] > 1 && !snd_.update_loop(move_loop_[i], u.fx, u.fy)) {
+                    move_loop_[i] = snd_.loop_at(v.move_sound, u.fx, u.fy);   // keep it going
+                }
+            }
             moving_prev_[i] = mv ? 1 : 0;
+            // W7-03-10 [rules ActivateSound / DeactivateSound]: a PoweredUnit
+            // (Robot Tank) losing / regaining its Robot Control Center.
+            const std::uint8_t unp = (u.alive && u.die_time < 0.0 && u.w6.unpowered) ? 1 : 0;
+            if (unp != unpowered_prev_[i] && u.alive && u.die_time < 0.0)
+                snd_.play_at(unp ? v.deactivate : v.activate, u.fx, u.fy, unp ? "deactivate" : "activate");
+            unpowered_prev_[i] = unp;
             // W2-GA-26 [RE: presentation.md §1.3 FUN_00736d60]: the player's
             // harvester taking (non-lethal) damage -> RadarEvent 4
             // HarvesterAttacked (8 cells) -> EVA_OreMinerUnderAttack, no siren.
@@ -1119,14 +1499,151 @@ private:
                 snd_.eva("EVA_OreMinerUnderAttack");
             uhp_prev_[i] = u.hp;
         }
-        if (act.actor >= 0 && act.actor < static_cast<int>(units.size())) {
-            const auto& au = units[act.actor];
-            const UnitVoices& av = audio_->voices[au.image];
-            if (act.selected) snd_.play_at(av.select, au.fx, au.fy, "select");
-            else if (act.attack_ordered || act.move_ordered) order_voice(act, au, av);   // W5-E ClickedMission
+        // W7-12-26 [RE: TechnoClass::Select 0x6FB4C0 -- the object a click
+        // or box newly selects speaks; the order dispatch 0x4AE660 clears
+        // AllowVoice after CurrentObjects[0], so the FIRST selected answers].
+        int speaker = act.actor;
+        if (act.selected) {
+            if (!sel_new_.empty()) speaker = sel_new_.front();
+        } else if (act.attack_ordered || act.move_ordered) {
+            for (int k : sel_order_)
+                if (k >= 0 && k < static_cast<int>(units.size()) && units[static_cast<std::size_t>(k)].house == g_local_house) {
+                    speaker = k;
+                    break;
+                }
+        }
+        if (speaker >= 0 && speaker < static_cast<int>(units.size())) {
+            const auto& au = units[static_cast<std::size_t>(speaker)];
+            const UnitVoices& av = voices_of(au);
+            // [RE: 0x6FB4C0] VoiceSelect only for the player's own objects or
+            // a MultiplayPassive house's (civilians, cows, Einstein).
+            const bool may_speak = au.house == g_local_house || w.passive_house(au.house);
+            if (act.selected && may_speak) {
+                // W7-03-10: a de-powered Robot Tank answers VoiceSelectDeactivated.
+                const std::string& sel = (au.w6.unpowered && !av.select_deactivated.empty()) ? av.select_deactivated
+                                                                                             : av.select;
+                queue_voice(speaker, sel, "select");
+            } else if ((act.attack_ordered || act.move_ordered) && au.house == g_local_house) {
+                order_voice(w, act, speaker, au, av);   // W5-E ClickedMission
+            }
         }
         if (act.repair_clicked) snd_.eva("EVA_Repairing");
+        pump_voices();
     }
+    // W7-12-25 [RE: QueueVoice 0x708210 stores techno+0x4F0; TechnoClass::AI
+    // 0x6F9380 @6F9400 starts it with FUN_0074F740(1.0) -- NON-positional,
+    // full volume -- only when the unit's voice controller (+0x4DC) is idle;
+    // the same voice while busy is dropped, a different one waits; only the
+    // last request survives]. One controller per unit.
+    struct UVoice { std::uint32_t h = 0; std::string playing, queued; std::string why; };
+    std::map<int, UVoice> uvoice_;
+    void queue_voice(int unit, const std::string& key, const char* why) {
+        if (key.empty() || unit < 0) return;
+        UVoice& c = uvoice_[unit];
+        c.queued = key;
+        c.why = why;
+    }
+    void pump_voices() {
+        for (auto& kv : uvoice_) {
+            UVoice& c = kv.second;
+            if (c.queued.empty()) continue;
+            if (snd_.voice_alive(c.h)) {
+                if (c.queued == c.playing) c.queued.clear();   // same line while busy: dropped
+                continue;                                       // a different one waits
+            }
+            c.h = snd_.play_voice(c.queued, c.why.c_str());
+            c.playing = c.queued;
+            c.queued.clear();
+        }
+    }
+    std::vector<std::uint32_t> move_loop_;
+    std::vector<std::uint8_t> unpowered_prev_;
+    // W7-12-26: the selection in the order it was made (the clone's Selection
+    // is an index bitset). Units first selected in the same frame are taken
+    // in index order [RE-FALLBACK: the box select walks the tactical display
+    // list (0x6D9B30), not reproduced].
+    std::vector<int> sel_order_, sel_new_;
+    const ra2engine::Input* input_ = nullptr;
+public:
+    void observe_selection(const ra2engine::Selection& s, const ra2engine::Input& in) {
+        input_ = &in;
+        sel_new_.clear();
+        sel_order_.erase(std::remove_if(sel_order_.begin(), sel_order_.end(), [&](int i) { return !s.has(i); }),
+                         sel_order_.end());
+        for (int i : s.ids())
+            if (std::find(sel_order_.begin(), sel_order_.end(), i) == sel_order_.end()) {
+                sel_order_.push_back(i);
+                sel_new_.push_back(i);
+            }
+    }
+    int first_selected() const { return sel_order_.empty() ? -1 : sel_order_.front(); }
+    // W7-10-05 / W7-12-23 [RE: CaptureManager FUN_00471c80 / 0x471f20 /
+    // 0x472090 / 0x472570]: on capture the MINDANIM loop is attached to the
+    // victim (MINDANIMR for permanent control -- not modelled), the
+    // YuriMindControlSound plays (the player's unit taken) and the warhead's
+    // YURICNTL anim plays at the victim; the link line is drawn for
+    // MindControlAttackLineFrames (Rules+0x310, 20) after the capture and
+    // while the controller or the victim is selected; on release the
+    // victim's MindClearedSound (else the Rules one) plays.
+    std::map<int, int> mc_prev_;   // victim -> controller
+    std::map<int, long> mc_since_;  // victim -> capture tick
+    void observe_mind_control(const ra2engine::World& w, const std::vector<std::pair<int, int>>& pairs) {
+        if (!audio_ || !rules_ini_) return;
+        std::map<int, int> now;
+        for (const auto& p : pairs)
+            if (p.second >= 0 && p.second < static_cast<int>(w.units().size())) now[p.second] = p.first;
+        auto av = [&](const char* k) {
+            std::string v = pres_clean(rules_ini_->get("AudioVisual", k));
+            if (v.empty()) v = pres_clean(rules_ini_->get("General", k));
+            if (v.empty()) v = pres_clean(rules_ini_->get("CombatDamage", k));
+            return v;
+        };
+        for (const auto& kv : now) {
+            if (mc_prev_.count(kv.first) && mc_prev_[kv.first] == kv.second) continue;
+            const ra2engine::Unit& v = w.units()[static_cast<std::size_t>(kv.first)];
+            const int was = mc_was_house_.count(kv.first) ? mc_was_house_[kv.first] : -1;
+            if (was == g_local_house || v.house == g_local_house)
+                snd_.play_at(av("YuriMindControlSound"), v.fx, v.fy, "mind control");
+            fx_.attach(kv.first, av("ControlledAnimationType"), pres_rtti_infantry(v) ? 25.0 : 30.0);
+            mc_since_[kv.first] = g_pres_tick;
+            if (w.object_visible_at(g_local_house, v.cell_x, v.cell_y))
+                fx_.spawn("YURICNTL", v.fx, v.fy, v.level, 10.0);
+            ++w5_counts_["mind control"];
+        }
+        for (const auto& kv : mc_prev_) {
+            if (now.count(kv.first)) continue;
+            fx_.detach(kv.first);
+            mc_since_.erase(kv.first);
+            if (kv.first < static_cast<int>(w.units().size())) {
+                const ra2engine::Unit& v = w.units()[static_cast<std::size_t>(kv.first)];
+                if (v.alive && v.die_time < 0.0) {
+                    snd_.play_at(voices_of(v).mind_cleared, v.fx, v.fy, "mind cleared");
+                    ++w5_counts_["mind cleared"];
+                }
+            }
+        }
+        mc_was_house_.clear();
+        for (std::size_t i = 0; i < w.units().size(); ++i) mc_was_house_[static_cast<int>(i)] = w.units()[i].house;
+        mc_prev_ = now;
+        // The link lines.
+        static int line_frames = -1;
+        if (line_frames < 0) {
+            const std::string v = av("MindControlAttackLineFrames");
+            line_frames = v.empty() ? 20 : std::atoi(v.c_str());
+        }
+        fx_.links_.clear();
+        for (const auto& kv : now) {
+            const bool sel = std::find(sel_order_.begin(), sel_order_.end(), kv.first) != sel_order_.end() ||
+                             std::find(sel_order_.begin(), sel_order_.end(), kv.second) != sel_order_.end();
+            const long since = mc_since_.count(kv.first) ? g_pres_tick - mc_since_[kv.first] : 1 << 30;
+            if (!sel && since > line_frames) continue;
+            if (kv.second < 0 || kv.second >= static_cast<int>(w.units().size())) continue;
+            fx_.links_.push_back({kv.second, kv.first, house_color(w, w.units()[static_cast<std::size_t>(kv.second)].house)});
+        }
+    }
+    long mc_count() const { return static_cast<long>(mc_prev_.size()); }
+    std::map<int, int> mc_was_house_;
+private:
 
     // W2-GA-26: each superweapon type speaks its own lines (eva.ini
     // [EVA_*]): the player's READY line per type (Weather Control no longer
@@ -1234,7 +1751,7 @@ private:
         for (std::size_t i = 0; i < us.size(); ++i) {
             const ra2engine::Unit& u = us[i];
             if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
-            keep("u" + std::to_string(i), ambient_of(effects_.unit_id(u.image)), u.fx, u.fy);
+            keep("u" + std::to_string(i), ambient_of(pres_type_id(u)), u.fx, u.fy);
         }
         const auto& bs = w.buildings();
         for (std::size_t i = 0; i < bs.size(); ++i) {
@@ -1312,7 +1829,7 @@ private:
     double clock_ = 0.0;
     ra2engine::Camera cam_;
     int vw_ = 1280, vh_ = 720;
-    Slot slots_[4];
+    Slot slots_[ra2engine::kQueueCats];
     std::vector<Bld> bhp_;
     std::vector<std::pair<double, double>> prev_;
     bool low_power_ = false;

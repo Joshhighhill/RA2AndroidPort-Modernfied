@@ -1,0 +1,30 @@
+# SK-MAP-UNITS -- W7-09-05: the default skirmish map (hillbtwn.map) places its
+# own Neutral objects (77 vehicles: cars, trucks, a JEEP...) onto the civilian
+# house, next to the start forces, and the AI still builds and fields units.
+# W7-09-17: the probe reports the rules id (the civilian truck stays TRUCKA).
+set render_every 900
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click start
+until 120 scene == game
+require scene == game
+wait 3
+log t0
+assert country(2) == Civilian @W7-09-05
+assert units(2) >= 60 @W7-09-05
+assert units(2,CAR) >= 5 @W7-09-05
+assert units(2,PTRUCK) >= 5 @W7-09-05
+assert units(2,DTRUCK) == 0 @W7-09-17
+assert units(0) >= 1 @W7-09-05
+assert units(1) >= 1 @W7-09-05
+cheat reveal
+cheat view_unit CAR
+wait 2
+shot sk_map_units_car
+# The AI is unaffected: it unfolds its base and trains.
+until 4500 buildings(1) >= 4 @W7-09-05
+log t1
+assert units(2) >= 60 @W7-09-05
+end
