@@ -57,9 +57,13 @@ Ini load_ra2_rules_ini(const std::string& dir, const MixFile& ra2) {
     return load_ra2_local_ini(ra2, "rules.ini");
 }
 // The mix holding a RA2 campaign map (RE §1): Soviet maps in MAPS02.MIX, the
-// Allied/training/ending maps in Maps01.mix.
+// Allied/training/ending maps in Maps01.mix. W7-09-06: the Yuri's Revenge
+// campaign maps (all01umd.map ... sov07umd.map, the *MD.MAP names; YR's
+// [Campaigns] battles live in battlemd.ini) are in mapsmd03.mix, which the
+// clone never searched -- a referenced YR map now loads (no YR campaign UI).
 std::string mix_for_map(const std::string& map) {
     const std::string u = up(map);
+    if (u.size() > 6 && u.compare(u.size() - 6, 6, "MD.MAP") == 0) return "mapsmd03.mix";
     return u.rfind("SOV", 0) == 0 ? "MAPS02.MIX" : "Maps01.mix";
 }
 std::string lower(std::string s) {
@@ -156,9 +160,20 @@ public:
                 t.combat.speed_cps = speed_to_cps(ru.speed);
                 const std::string& img = t.combat.image;
                 if (!ua_.shps.count(img)) {
-                    MixFile conquer = ra2_.open_nested("conquer.mix");
-                    ua_.shps.emplace(img, load_unit_shp(conquer, img));
                     ua_.anims.emplace(img, anim_from_art(art_, img));
+                    // W7-09-15 (R-035): ALL04's [CIVBFM] Image=BeInvisibleHack
+                    // names an SHP that does not exist -- the original still
+                    // creates the object (the "1BeachMaleHack" team, script
+                    // BeAsleep) and simply draws nothing. A missing SHP no
+                    // longer drops the type: it exists, unrendered (the live
+                    // renderer still tries conquer/conqmd on first sight).
+                    try {
+                        MixFile conquer = ra2_.open_nested("conquer.mix");
+                        ua_.shps.emplace(img, load_unit_shp(conquer, img));
+                    } catch (const std::exception& ex) {
+                        std::cerr << "[campaign] unit type " << id << " has no SHP " << img << " (" << ex.what()
+                                  << "): placed unrendered\n";
+                    }
                 }
                 t.ok = true;
             } else if (index_of(vehicles_, id) >= 0 && !art_.voxel(rules_.image(id))) {
@@ -1620,8 +1635,11 @@ private:
     }
     // W7-10-03 / W7-08-11 [RE: CaptureManager::FreeUnit FUN_00471F20]: free
     // victim `v` of controller `ctl` back to the house it had at capture
-    // (stop and guard); a computer-owned unit then gets its fate (Hunt).
-    void mc_free(int ctl, int v) {
+    // (stop and guard). W7-08-12(c) [RE: Free @0x472013 -> DecideUnitFate]: a
+    // unit handed back to a computer house gets its fate (Hunt, or the
+    // releasing controller's team refused); a human owner keeps it standing.
+    // `fate` false for the capacity-1 swap (W5-A R-036), which gets no roll.
+    void mc_free(int ctl, int v, bool fate = true) {
         auto& us = w_.units();
         if (ctl >= 0 && ctl < (int)us.size()) {
             std::vector<int>& vv = us[(std::size_t)ctl].w7.mc_victims;
@@ -1632,13 +1650,93 @@ private:
         ra2engine::Unit& vu = us[(std::size_t)v];
         if (vu.w7.mc_controller != ctl) return;   // held by somebody else now
         vu.w7.mc_controller = -1;
-        if (vt.mc_orig >= 0 && live(vu)) {
-            w_.set_unit_owner(v, vt.mc_orig);
-            // W7-08-12(c) [RE: DecideUnitFate FUN_004722E0 after Free]: a
-            // computer-owned unit is put on Hunt (the roll's fallback).
-            if (w_.house_is_computer(vt.mc_orig)) vt.hunt = true;
-        }
+        const int orig = vt.mc_orig;
         vt.mc_orig = -1;
+        if (orig < 0 || !live(vu)) return;
+        w_.set_unit_owner(v, orig);
+        if (fate && !w_.human_commanded(orig) && ctl >= 0 && ctl < (int)utrack_.size()) {
+            if (vt.team >= 0 && vt.team < (int)teams_.size()) {
+                std::vector<int>& mm = teams_[(std::size_t)vt.team].members;
+                mm.erase(std::remove(mm.begin(), mm.end(), v), mm.end());
+            }
+            vt.team = -1;
+            vt.hunt = false;
+            decide_unit_fate(ctl, v, /*allow_team=*/false);
+        }
+    }
+    // W7-10-01 / W7-08-12(c) [RE: CaptureManagerClass::DecideUnitFate
+    // FUN_004722E0, called after Capture FUN_00471C80 for a computer new owner
+    // (+0x1EC IsHuman clear)]. The situation picks a rulesmd [General] weight
+    // list -- AICaptureLowMoney when the capturer's money is under
+    // AICaptureLowMoneyMark (Rules+0xEBC), else AICaptureLowPower when its power
+    // is short (FUN_004FCC50 < 1.0), else AICaptureNormal while the victim's
+    // health ratio is >= AICaptureWoundedMark (Rules+0xEC0), else
+    // AICaptureWounded -- and a 1..100 roll walks its four weights: 1 Add To
+    // Team, 2 Grinder, 3 Bio Reactor, 4 Hunt. The capturer's TeamType
+    // MindControlDecision (+0xC0) overrides the roll (5 = do nothing). Any
+    // option that fails ("AICapture: Naw, let's put him in hunt") becomes
+    // Mission Hunt (0xF). Grinder / Bio Reactor are Yuri-only structures, so in
+    // the clone they always fall through to Hunt. [RE-FALLBACK: the game
+    // Random is a deterministic per-capture hash here.]
+    // `allow_team` false on the release path (the team join is refused there:
+    // the flag tested @0x4724E8 before AddMember) [RE-FALLBACK: flag identity].
+    void decide_unit_fate(int ctl, int vi, bool allow_team = true) {
+        Track& ct = utrack_[(std::size_t)ctl];
+        Track& vt = utrack_[(std::size_t)vi];
+        const ra2engine::Unit& v = w_.units()[(std::size_t)vi];
+        const int h = w_.units()[(std::size_t)ctl].house;
+        auto gen = [&](const char* key, const char* def) {
+            return camp::trim_comment(rules_ini_.get("General", key, def));
+        };
+        const double money = w_.ai_enabled(h) ? w_.ai_credits(h) : w_.credits(h);
+        const char* list = "AICaptureNormal";
+        const char* list_def = "75,5,5,15";
+        if (money < std::atof(gen("AICaptureLowMoneyMark", "2000").c_str())) {
+            list = "AICaptureLowMoney"; list_def = "15,75,5,5";
+        } else if (w_.house_low_power(h)) {
+            list = "AICaptureLowPower"; list_def = "15,5,75,5";
+        } else if (v.max_hp > 0 && (double)v.hp / v.max_hp < std::atof(gen("AICaptureWoundedMark", ".25").c_str())) {
+            list = "AICaptureWounded"; list_def = "15,40,40,5";
+        }
+        std::vector<int> wts;
+        {
+            std::string cur;
+            for (char c : gen(list, list_def) + ",") {
+                if (c == ',') { if (!cur.empty()) wts.push_back(std::atoi(cur.c_str())); cur.clear(); }
+                else cur += c;
+            }
+        }
+        std::uint32_t r = (std::uint32_t)frame_ * 2654435761u ^ (std::uint32_t)vi * 40503u ^ 0x9E3779B9u;
+        r ^= r >> 15; r *= 0x2C1B3C6Du; r ^= r >> 12;
+        const int roll = 1 + (int)(r % 100u);
+        int decision = 0, acc = 0;
+        for (std::size_t k = 0; k < wts.size() && k < 6 && acc < roll; ++k) {
+            acc += wts[k];
+            decision = (int)k + 1;
+        }
+        // The capturer's TeamType MindControlDecision overrides the roll.
+        if (ct.team >= 0 && ct.team < (int)teams_.size()) {
+            const int tt = teams_[(std::size_t)ct.team].type;
+            if (tt >= 0 && tt < (int)teams_data_.teams.size()) {
+                const int o = std::atoi(camp::trim_comment(
+                    map_.get(teams_data_.teams[(std::size_t)tt].id, "MindControlDecision", "0")).c_str());
+                if (o != 0) decision = o;
+            }
+        }
+        const char* fate = "hunt";
+        if (decision == 5) {
+            fate = "none";
+        } else if (decision == 1 && allow_team && ct.team >= 0 && ct.team < (int)teams_.size()) {
+            teams_[(std::size_t)ct.team].members.push_back(vi);   // FUN_006E9A60 AddMember
+            vt.team = ct.team;
+            fate = "team";
+        } else {
+            vt.hunt = true;   // vtbl+0x1E8 QueueMission(Hunt)
+        }
+        char b[120];
+        std::snprintf(b, sizeof b, "[camp] f%ld capture fate unit=%d roll=%d decision=%d -> %s", frame_, vi, roll,
+                      decision, fate);
+        witness_.emplace_back(b);
     }
     // [RE: CaptureManager::FreeAll FUN_00472070]
     void mc_free_all(int ctl) {
@@ -1683,7 +1781,7 @@ private:
                         lst.erase(std::remove(lst.begin(), lst.end(), v), lst.end());
                         if (!live(vu) && v < (int)utrack_.size()) utrack_[(std::size_t)v].mc_orig = -1;
                         if (!live(vu) && vu.w7.mc_controller == ci) us[(std::size_t)v].w7.mc_controller = -1;
-                    } else if (vu.cargo_of >= 0) {
+                    } else if ((vu.cargo_of >= 0 && vu.cargo_of != ra2engine::kParachuteCargo) || vu.garrison_of >= 0) {   // W7-08-12(b)
                         mc_free(ci, v);
                     }
                 }
@@ -1720,7 +1818,7 @@ private:
             if (v.w7.mc_controller >= 0) continue;                                    // W7-10-03 / W7-08-11
             if (full) {
                 if (cap != 1 || infinite) continue;           // Max > 1: no room
-                mc_free(ci, u.w7.mc_victims.front());         // Max == 1: the old one goes
+                mc_free(ci, u.w7.mc_victims.front(), /*fate=*/false);   // Max == 1: the old one goes
             }
             Track& vt = utrack_[(std::size_t)vi];
             const int from = v.house;
@@ -1730,15 +1828,14 @@ private:
             // its target and move and guards where it stands.
             w_.set_unit_owner(vi, u.house);
             // [RE: Capture 0x471C80 -> 0x6E9DD0]: the victim always leaves its
-            // team; W7-10-01 [RE: DecideUnitFate FUN_004722E0]: a computer
-            // owner's victim hunts (the roll's fallback in a campaign without
-            // a Grinder / Bio Reactor).
+            // team (W7-10-01 [RE: DecideUnitFate FUN_004722E0 @0x4722FB]); a
+            // computer capturer then rolls its fate below.
             if (vt.team >= 0 && vt.team < (int)teams_.size()) {
                 std::vector<int>& mm = teams_[(std::size_t)vt.team].members;
                 mm.erase(std::remove(mm.begin(), mm.end(), vi), mm.end());
-                vt.team = -1;
             }
-            vt.hunt = w_.house_is_computer(u.house);
+            vt.team = -1;
+            vt.hunt = false;
             v.w7.mc_controller = ci;
             u.w7.mc_victims.push_back(vi);
             t.mc_victim = vi;
@@ -1748,6 +1845,7 @@ private:
             std::snprintf(b, sizeof b, "[camp] f%ld mind control unit=%d %s house %d -> %d", frame_, vi,
                           vt.type.c_str(), from, u.house);
             witness_.emplace_back(b);
+            if (!w_.human_commanded(u.house)) decide_unit_fate((int)i, vi);
         }
     }
     void poll_objects() {
@@ -2837,6 +2935,10 @@ private:
             if (!t.hunt || t.dead) continue;
             const ra2engine::Unit& u = w_.units()[i];
             if (!live(u) || u.moving() || u.target >= 0 || u.target_building >= 0) continue;
+            // W7-01-08 [RE: InfantryClass Mission_Hunt FUN_0051F250]: a deployed
+            // computer infantry hunting with no target plays Undeploy first.
+            if (u.deployed && (u.deploy_fire || u.abil.deployer) && !w_.human_commanded(u.house))
+                w_.order_deploy((int)i);
             bool isb = false;
             const int tg = nearest_enemy(u.house, u.cell_x, u.cell_y, 1, isb);
             if (tg >= 0) order_attack((int)i, tg, isb);

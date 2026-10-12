@@ -220,6 +220,8 @@ Keys reserved for later phases (scripts already assert them and report
 | `sk-s.play` | SK-S: Soviet vs 1 Allied AI — no Yuri, Soviet sidebar/roster, SMCV, Conscript/Rhino/Flak Track/War Miner, Tesla Coil, Allied AI builds GA\*, win path |
 | `sk-lobby.play` | The Skirmish page end to end: Customize Battle map pick, name edit, country/colour/AI dropdowns, exclusive colours, sliders, checkboxes, Back saves + restore, the two-players message, Start -> every choice asserted in the game probe |
 | `sk-end.play` | Fast lose path (`cheat kill_house 0`) -> LOST result -> main menu |
+| `sk-map-units.play` | W7-09-05 / W7-09-17: the default skirmish map spawns its own Neutral cars/trucks on the civilian house (`units(2) >= 60`, CAR/PTRUCK by rules id, no DTRUCK), the start forces stand and the AI still builds out |
+| `m-sov11-fate.play` | W7-10-01: units the enemy Yuris take in SOV11 get the DecideUnitFate result (`camp_log fate`: join the capturer's team or Hunt) instead of standing still |
 | `m-all01.play` | Allied mission 1 from the shell: loading screen, objectives arm, briefing, TechLevel 3 cap, Tanya, Esc |
 | `m-sov01.play` | Soviet mission 1: objectives, SMCV deploy, Soviet sidebar, TechLevel cap |
 | `shell-smoke.play` | Menus, Options round trip, lobby round trip, Esc in menu/lobby/game/placement, F10 menu, save -> load -> resume, Abort/Exit confirmation |

@@ -6731,6 +6731,13 @@ public:
             map_dressing_.for_each_ore_mine([&](int x, int y, int half, int rate, double prob) {
                 world_.add_ore_mine(x, y, half, rate, prob);
             });
+            // W7-09-05: the map's own cows, civilians and cars (skirmish_map_units.inc).
+            if (cfg_.campaign_map.empty()) {
+                int neutral = -1;
+                for (int h = 0; h < world_.house_count(); ++h)
+                    if (!world_.house_combatant(h)) { neutral = h; break; }
+                sk_place_map_units(map_ini, neutral);
+            }
             map_pals_[0] = &a_.pal;
             map_pals_[1] = ore_art_.has_pal ? &ore_art_.pal : &a_.pal;
             map_pals_[2] = &ba_.unit_pal;
@@ -6896,6 +6903,7 @@ public:
     }
 
 #include "gf_scene.inc"
+#include "skirmish_map_units.inc"   // W7-09-05 skirmish map [Units]/[Infantry]/[Aircraft]
     bool wants_quit() const override { return input_.wants_quit() || abort_; }
     // NET-PLAY: leaving a match first schedules EXIT (net_filter_next holds
     // the scene until it executed on every machine).
@@ -7397,8 +7405,11 @@ private:
     }
 
     // --- G0 --play probe helpers -------------------------------------------
-    // Rules id of a live unit (the roster def whose Image matches), else its image.
+    // Rules id of a live unit: its own rules id (W7-09-17: CTECH used to read
+    // as CIV3 and the civilian TRUCKA as DTRUCK, both sharing the image), else
+    // the roster def whose Image matches, else its image.
     std::string play_unit_id(const ra2engine::Unit& u) const {
+        if (!u.tg.t.rules_id.empty()) return u.tg.t.rules_id;
         for (const UnitRoster* r : {&ur_, &ur_ai_})
             for (const ra2engine::UnitTypeDef& d : r->defs)
                 if (d.combat.image == u.image) return d.id;

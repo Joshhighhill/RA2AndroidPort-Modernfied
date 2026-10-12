@@ -595,3 +595,45 @@ Easy/Normal/Difficult binding from `ai-base.md`.**
 
 - **[DEVIATION — single-slot queues]** Teams reuse the player/base FactoryClass
   queues as-is (`production.md`) — no team-owned production. Keep.
+
+## Wave 7 (2026-10): naval muster, per-unit AI rules, capture fate
+
+- **Naval teams muster on water (W7-06-01).** The pre-script muster at the own
+  base (W2-SK-06, itself a [RE-FALLBACK]) is a land cell for a Naval TaskForce,
+  so an all-ship team never satisfied the Stray predicate and sat in Gathering
+  for good. `ai_execute_team_command` (MoveTeam) now snaps the focus of a team
+  whose live members are all Water-domain to the free water cell, reachable from
+  the lead ship (4-way flood fill), nearest the ideal cell; each ship's ring cell
+  is snapped the same way. No RE shows a land muster for a naval team.
+- **Infantry auto-deploy (W7-01-08 / W7-02-04).** `InfantryClass FUN_00521050`
+  (called from the Guard / Area_Guard overrides 0x51F330 / 0x51F350): a
+  computer-owned infantry with `Deployer` (+0xEC8) and `DeployFire` (+0x6AC),
+  `UndeployDelay` (+0x6C4) < 0 and **not** `ImmuneToRadiation` (+0xD37) plays
+  Deploy (Sequence 0x1B) once `Frame > CurrentMissionStartTime (+0xC0) +
+  Rules+0xE30[house+0x184]` = `[General] AIAutoDeployFrameDelay=15,25,100`
+  (h,m,e). `FUN_00522070` (Attack): deploy when the target is in the
+  DeployFireWeapon's range, undeploy (0x1F) when not; a deploy weapon with
+  `AreaFire` (WeaponType +0x150) is excluded. `FUN_0051F250` (Hunt): a deployed
+  computer infantry with no target undeploys. `FUN_0051F370` (Move): it
+  undeploys first. **Correction to W7-02-04:** the Desolator is ImmuneToRadiation
+  and its RadEruptionWeapon is AreaFire, so neither branch deploys it -- a
+  computer Desolator deploys only through a team-script Deploy line; once
+  deployed, 0x521050 re-erupts while the cell's RadLevel is under
+  `Weapon[1].RadLevel/3`. Implemented in `engine/ai_unit.cpp` (skirmish AI
+  houses; the ArchiveTarget cell test @0x5210E0 is not modelled).
+- **ToProtect (W7-04-18).** `ReceiveDamage FUN_00700DA0 @0x701C43 ->
+  FUN_00707500`: a hit `ToProtect=yes` unit (HARV, CMIN, the navy) of a computer
+  house, attacked by a non-allied Infantry/Unit, calls up to six recruitable,
+  unteamed (or base-defense-team) objects of its house that can reach
+  (FUN_0056CC30, movement zone) and fire on the attacker, ranked by threat value
+  within the attacker-threat x Rules+0xB18 budget. The clone ranks by distance
+  [RE-FALLBACK].
+- **Capture fate (W7-10-01 / W7-08-12).** `CaptureManagerClass::DecideUnitFate
+  FUN_004722E0` (after Capture 0x471C80 and Free 0x471F20): the victim leaves its
+  team; for a computer owner the weights `[General] AICaptureNormal /
+  AICaptureWounded / AICaptureLowPower / AICaptureLowMoney` (chosen by
+  `AICaptureLowMoneyMark`, power, `AICaptureWoundedMark`) are walked by a 1..100
+  roll into 1 Add To Team, 2 Grinder, 3 Bio Reactor, 4 Hunt; the capturer
+  TeamType's `MindControlDecision` (+0xC0) overrides (5 = nothing); a failed
+  option is Mission Hunt. Implemented in `campaign_runtime.inc`
+  (`decide_unit_fate`).

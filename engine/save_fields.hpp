@@ -776,6 +776,7 @@ template <class Ar> void fields(Ar& ar, BldW7& v) {
     io(ar, v.depot_next); io(ar, v.depot_client); io(ar, v.warp_unpowered); io(ar, v.garrison_target_building);
 }
 template <class Ar> void fields(Ar& ar, UnitTgt& v) { io(ar, v.t); io(ar, v.in_playfield); io(ar, v.area_guard); }
+template <class Ar> void fields(Ar& ar, UnitAi& v) { io(ar, v.guard_since); }   // W7 (save v35)
 template <class Ar> void fields(Ar& ar, BldTgt& v) {
     io(ar, v.in_playfield); io(ar, v.insignificant); io(ar, v.legal_target);
 }
@@ -1138,6 +1139,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.tg);   // W6 fix #2 (save v29)
     io(ar, v.on_deck);   // R-210 (save v30)
     io(ar, v.w7);        // v35: wave-7 fix (units)
+    io(ar, v.ai);        // W7-01-08 AI guard clock (save v35)
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.type);
@@ -1388,6 +1390,8 @@ template <class Ar> void fields(Ar& ar, AiHouseConfig& v) {
     io(ar, v.fire_superweapons);  // W5-A IQ gate (v22)
     io(ar, v.virtual_purifiers);  // W6-03-03 (v25)
     io(ar, v.hate_delay_frames);  // W6-03-04 (v25)
+    io(ar, v.auto_deploy_frames); // W7-01-08 (v35)
+    io(ar, v.roster_to_protect);  // W7-04-18 (v35)
 }
 
 // --- skirmish config (the 'CONF' section: rebuilds the scene's assets) ---
