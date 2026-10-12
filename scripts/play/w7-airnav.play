@@ -79,20 +79,27 @@ until 900 unit_hp(0,DEST) >= 600                @W7-06-07
 assert credits < $c0                            @W7-06-07 # it used to be free
 shot dest_repaired
 
-# --- 4. a Kirov shot down over its own yard crashes with BlimpBomb x1, not
-#        Strength/4 = 500 (W7-05-09: FireDeathWeapon FUN_0070CAC0) -----------
-cheat spawn ZEP 0 building 0:GAYARD +0 +0
+# --- 4. a Kirov shot down over an enemy tank crashes with BlimpBomb x1
+#        (250 x BlimpHE, 35% vs heavy), not Strength/4 = 500 flat (W7-05-09:
+#        FireDeathWeapon FUN_0070CAC0) --------------------------------------
+cheat spawn ZEP 0 building 0:GACNST +6 -6
 wait 2
-click unit 0:DEST right
 click unit 0:ZEP
-click point yard_dock
-until 600 airborne(0) >= 1 and sel_moving == 0
-wait 60
-let k0 = bhp(0,GAYARD)
+click building 0:GACNST +10 -10
+until 120 airborne(0) >= 1
+until 900 sel_flight_goal == 0
+wait 10
+cheat spawn HTNK 1 building 0:GACNST +12 -8
+wait 2
+assert pos_x(1,HTNK) == pos_x(0,ZEP)
+assert pos_y(1,HTNK) == pos_y(0,ZEP)
+let k0 = unit_hp(1,HTNK)
 cheat w2 kill 0:ZEP
-until 900 crashing(0) == 0 and units(0,ZEP) == 0   @W7-05-09
+wait 1
+assert crashing(0) >= 1                         @W7-05-09
+until 300 crashing(0) == 0                      @W7-05-09
 wait 5
-assert bhp(0,GAYARD) < $k0                      @W7-05-09 # the death blast lands
-assert bhp(0,GAYARD) > $k0 - 300                @W7-05-09 # 250 x BlimpHE, not 500 flat
+assert unit_hp(1,HTNK) < $k0                    @W7-05-09 # the death blast lands
+assert unit_hp(1,HTNK) > 150                    @W7-05-09 # 250 x 35% (+ a parting bomb), not 500 flat at 100% (HTNK Strength 400)
 shot kirov_crash
 end
