@@ -294,3 +294,20 @@ TEST_CASE("W7-11-08: uniform step cost -- a diagonal costs what an orthogonal do
     REQUIRE(around.size() == 5);
     for (const Cellxy& c : around) CHECK_FALSE((c.x == 2 && c.y == 3));
 }
+
+TEST_CASE("W7-11-02: a slow-turning hover (LCRF ROT 5) still reaches its goal round bends") {
+    auto p = open_grid(20, 20);
+    Occupancy occ(20, 20);
+    std::vector<Unit> units{make_unit(2, 2, occ, 0)};
+    Unit& u = units[0];
+    u.is_vehicle = true;
+    u.loco.t.kind = static_cast<int>(LocoKind::Hover);
+    u.speed_cps = cps_of_lept(15);
+    u.rot_u16_per_sec = 5 * 256 * 15;
+    u.body_facing = 32768.0;   // facing South, path heads East then North
+    give_path(u, {{2, 2}, {3, 2}, {4, 2}, {5, 1}, {5, 0}, {6, 0}, {6, 1}, {7, 2}, {8, 3}});
+    const int f = frames_to_arrive(units, p, 20, 20, occ, 1500);
+    CHECK(f > 0);
+    CHECK(units[0].cell_x == 8);
+    CHECK(units[0].cell_y == 3);
+}

@@ -28,6 +28,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 #include "combat.hpp"      // can_crush
 #include "locomotion.hpp"
@@ -333,6 +335,18 @@ void on_blocked(StepEnv& e, Unit& u, int self, Cellxy bc, bool cliff) {
     L.accum = 0.0;   // [RE: FUN_004B0E50] not driving -> SpeedAccum 0
     L.hover = 0.0;   // [RE: FUN_00514130] SetSpeedPercentage(0)
     L.path_delay -= e.fr;
+    static const bool trace = std::getenv("RA2_LOCO_TRACE") != nullptr;   // diagnostics
+    if (trace && L.path_delay <= 0.0)
+        std::fprintf(stderr, "[loco] blocked u=%d %s at (%d,%d) next (%d,%d) occ=%d cliff=%d goal=(%d,%d) wait=%.1f\n", self,
+                     u.image.c_str(), u.cell_x, u.cell_y, bc.x, bc.y, e.occ.at(bc.x, bc.y), cliff ? 1 : 0,
+                     u.path.empty() ? -1 : u.path.back().x, u.path.empty() ? -1 : u.path.back().y, u.wait_time);
+    if (trace && L.path_delay <= 0.0) {
+        const int oo = e.occ.at(bc.x, bc.y);
+        if (oo >= 0 && oo < static_cast<int>(e.units.size()))
+            std::fprintf(stderr, "[loco]   occupant %s house=%d moving=%d wait=%.1f\n", e.units[(std::size_t)oo].image.c_str(),
+                         e.units[(std::size_t)oo].house, e.units[(std::size_t)oo].moving() ? 1 : 0,
+                         e.units[(std::size_t)oo].wait_time);
+    }
     // The blocking occupant (none -> terrain: a cliff, a closed cell).
     int o = Occupancy::kEmpty;
     if (!cliff) {
