@@ -97,7 +97,8 @@ TEST_CASE("flight: jumpjet ramp -- +Accel up to JumpjetSpeed, -1.5 Accel down [R
     CHECK(cur == doctest::Approx(30.0));               // capped at JumpjetSpeed
     // The rise caps at the TYPE speed, not the target, and the fall test runs
     // after it in the SAME frame: 24 -> 30 (> target 25) -> 30 - 18 = 12.
-    CHECK(jumpjet_ramp(24.0, 25.0, 30.0, 12.0) == doctest::Approx(12.0));
+    CHECK(jumpjet_ramp(24.0, 25.0, 30.0, 12.0) == doctest::Approx(25.0));   // floor at a non-zero target (RE-FALLBACK)
+    CHECK(jumpjet_ramp(0.0, 3.0, 30.0, 12.0) == doctest::Approx(3.0));      // no stall short of the goal
     CHECK(jumpjet_ramp(30.0, 0.0, 30.0, 12.0) == doctest::Approx(12.0));   // 30 - 18
     CHECK(jumpjet_ramp(12.0, 0.0, 30.0, 12.0) == doctest::Approx(0.0));
     // Kirov: Accel 10 > Speed 5 -> full speed in one frame.

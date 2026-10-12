@@ -68,7 +68,13 @@ double jumpjet_cruise_speed(double dist, int speed, int turn_rate, int facing_di
 
 double jumpjet_ramp(double cur, double target, double max_speed, double accel) {
     if (cur < target) cur = std::min(cur + accel, max_speed);   // capped at JumpjetSpeed
-    if (target < cur) cur = std::max(cur - accel * 1.5, 0.0);   // DAT_007E38F0 = 1.5
+    // DAT_007E38F0 = 1.5; the original floors the drop at 0 (DAT_007E1800).
+    // [RE-FALLBACK, w7fix-move]: taken literally that floor stalls a cruiser
+    // whose approach target (Speed/8, Speed/4 -- FUN_0054BD20) is below its
+    // JumpjetAccel (Night Hawk 30 / 12) at CurSpeed 0 short of the goal (each
+    // frame +Accel then -1.5 Accel); whatever moves the original on from there
+    // is not traced, so a non-zero target is the floor instead.
+    if (target < cur) cur = std::max(cur - accel * 1.5, target > 0.0 ? target : 0.0);
     return cur;
 }
 
