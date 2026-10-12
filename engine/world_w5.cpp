@@ -225,7 +225,21 @@ void World::step_w5(double dt) {
         const RulesW5& R = w5_.rules;
         for (int ti = 0; ti < nu; ++ti) {
             Unit& t = units_[(std::size_t)ti];
-            if (!t.w5.p.open_topped || t.cargo.empty() || !live(t)) continue;
+            if (!t.w5.p.open_topped || !live(t)) continue;
+            // W7-08-23 [RE: TechnoClass::GetWeaponRange 0x700760]: an OpenTopped
+            // transport's range is min(own weapon range, every passenger's
+            // weapon Range) -- without the +2 bonus -- so a Battle Fortress
+            // carrying GIs closes to their 4 cells.
+            if (t.w_active == 0 && t.vet.base.range > 0.0) {
+                const bool el = t.vet.recv && is_elite(t.vet.veterancy) && t.vet.has_elite;
+                double r = el ? t.vet.elite.range : t.vet.base.range;
+                for (int pi : t.cargo)
+                    if (pi >= 0 && pi < nu && units_[(std::size_t)pi].w_range > 0.0 &&
+                        units_[(std::size_t)pi].w_damage > 0)
+                        r = std::min(r, units_[(std::size_t)pi].w_range);
+                t.w_range = r;
+            }
+            if (t.cargo.empty()) continue;
             for (int pi : t.cargo) {
                 if (pi < 0 || pi >= nu) continue;
                 Unit& p = units_[(std::size_t)pi];
