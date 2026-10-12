@@ -106,18 +106,19 @@ inline int pres_jumpjet_wobble_px(int idx, const ra2engine::Unit& u) {
     if (!g_walk_rules || !u.is_aircraft || u.an.t.fixed_wing || u.altitude <= 0.0 || u.an.crashing) return 0;
     struct Wob { double per_sec = 0.15; double dev = 40.0; bool off = false; };
     static std::map<std::string, Wob> cache;
-    auto it = cache.find(u.image);
+    // W7-05-08: the keys live in the RULES id's section ([JUMPJET], not [ROCK]).
+    auto it = cache.find(pres_type_id(u));
     if (it == cache.end()) {
         auto num = [&](const char* sec, const char* k, double d) {
             const std::string v = pres_clean(g_walk_rules->get(sec, k));
             return v.empty() ? d : std::atof(v.c_str());
         };
         Wob w;
-        w.per_sec = num(u.image.c_str(), "JumpjetWobbles", num("JumpjetControls", "WobblesPerSecond", 0.15));
-        w.dev = num(u.image.c_str(), "JumpjetDeviation", num("JumpjetControls", "WobbleDeviation", 40.0));
-        const std::string nw = pres_lower(pres_clean(g_walk_rules->get(u.image, "JumpjetNoWobbles")));
+        w.per_sec = num(pres_type_id(u).c_str(), "JumpjetWobbles", num("JumpjetControls", "WobblesPerSecond", 0.15));
+        w.dev = num(pres_type_id(u).c_str(), "JumpjetDeviation", num("JumpjetControls", "WobbleDeviation", 40.0));
+        const std::string nw = pres_lower(pres_clean(g_walk_rules->get(pres_type_id(u), "JumpjetNoWobbles")));
         w.off = !nw.empty() && (nw[0] == 'y' || nw[0] == 't' || nw[0] == '1');
-        it = cache.emplace(u.image, w).first;
+        it = cache.emplace(pres_type_id(u), w).first;
     }
     const Wob& w = it->second;
     if (w.off || w.per_sec <= 0.0 || w.dev == 0.0) return 0;

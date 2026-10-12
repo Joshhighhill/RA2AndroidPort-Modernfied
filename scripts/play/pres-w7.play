@@ -1,0 +1,151 @@
+# pres-w7 -- wave-7 presentation fixes (docs/gap/wave7/12-presentation.md and
+# the presentation items of 01/02/03/04/05/06/09/10), through the REAL shell
+# -> lobby -> GameScene. Evidence: the snd()/why()/eva()/evareq() and pres()
+# counters, the voice(ID,field) table, beams_added, iseq(...), and the shots.
+set render_every 300
+set on_quit continue
+set cycle_max 100
+
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click start
+until 90 scene == game
+require scene == game
+
+# --- W7-12-27/28, W7-09-01, W7-12-03: voices keyed by RULES id, full entries ---
+assert voice(E1,deploy) == "GIDeploy"                          @W7-12-03
+assert voice(E1,feedback) != ""                                @W7-12-03
+assert voice(HTNK,move_sound) != ""                            @W7-12-03
+assert voice(E1,crush) != ""                                   @W7-12-03
+assert voice(SENGINEER,select) != voice(ENGINEER,select)       @W7-12-27
+assert voice(SENGINEER,die) != voice(ENGINEER,die)             @W7-12-27
+assert voice(CIV1,die) != ""                                   @W7-09-01
+assert voice(COW,die) != ""                                    @W7-09-01
+assert voice(CTECH,die) != voice(CIV3,die)                     @W7-09-01
+assert voice(DTRUCK,select) != ""                              @W7-12-28
+assert voice(ORCA,select) != ""                                @W7-05-03
+
+# --- MCV deploy, a base ---------------------------------------------------------
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+cheat credits 30000
+cheat w2 build GAPOWR
+cheat w2 build GAPOWR
+cheat w2 build GAPILE
+cheat w2 build GAREFN
+cheat w2 build GAWEAP
+wait 10
+view building 0:GACNST
+
+# --- W7-12-01: "Unit ready" when a trained unit leaves; "Canceled" only on abandon --
+click cameo:E1
+until 600 evareq(EVA_UnitReady) >= 1                            @W7-12-01
+assert evareq(EVA_Canceled) == 0                               @W7-12-01
+click cameo:E1
+wait 3
+click cameo:E1 right
+click cameo:E1 right
+until 30 evareq(EVA_Canceled) >= 1                             @W7-12-01
+
+# --- W7-12-04: a group number on a selected own unit (screenshot evidence) -----
+cheat spawn MTNK 0 building 0:GACNST +4 +4
+cheat spawn E1 0 building 0:GACNST +5 +4
+wait 2
+click unit 0:MTNK
+key 1 ctrl
+wait 2
+shot w7_group_number
+
+# --- W7-02-05: the Desolator eruption sounds and animates -----------------------
+cheat spawn DESO 0 building 0:GACNST -8 -2
+wait 2
+click unit 0:DESO
+key d
+until 200 why(eruption) >= 1                                   @W7-02-05
+until 200 iseq(DeployedFire) >= 1                              @W7-02-05
+
+# --- W7-03-10: a Robot Tank without a Robot Control Center goes offline ----------
+cheat spawn ROBO 0 building 0:GACNST +6 +8
+until 60 why(deactivate) >= 1                                  @W7-03-10
+cheat w2 build GAROBO
+until 120 why(activate) >= 1                                   @W7-03-10
+
+# --- W7-04-30: the Terror Drone's LOOP move sound follows the drone -------------
+cheat spawn DRON 0 building 0:GACNST +7 +7
+wait 2
+click unit 0:DRON
+click building 0:GACNST +10 +3
+until 60 why(move_loop) >= 1                                   @W7-04-30
+
+# --- W7-12-06: the Chrono Legionnaire's wavy light-blue beam ---------------------
+cheat spawn CLEG 0 building 0:GACNST +2 +10
+cheat spawn E2 1 building 0:GACNST +5 +12
+wait 2
+let b0 = beams_added
+click unit 0:CLEG
+click unit 1:E2
+until 120 beams_added > $b0                                    @W7-12-06
+shot w7_chrono_beam
+
+# --- W7-12-07: the Prism Tank's split lasers --------------------------------------
+cheat spawn SREF 0 building 0:GACNST -2 +12
+cheat spawn E2 1 building 0:GACNST -2 +17
+cheat spawn E2 1 building 0:GACNST -1 +17
+cheat spawn E2 1 building 0:GACNST -3 +17
+cheat spawn E2 1 building 0:GACNST -2 +18
+wait 2
+click unit 0:SREF
+click unit 1:E2
+until 300 pres(fragment_beam) >= 1                             @W7-12-07
+shot w7_prism_split
+
+# --- W7-01-21: the Rocketeer uses its flight sequences --------------------------
+cheat spawn JUMPJET 0 building 0:GACNST +8 +2
+wait 2
+click unit 0:JUMPJET
+click building 0:GACNST +12 -2
+until 200 iseq(Hover) >= 1 or iseq(Fly) >= 1                   @W7-01-21
+shot w7_rocketeer
+
+# --- W7-12-02: no "Unit lost" for the V3's own rockets ---------------------------
+let lost0 = evareq(EVA_UnitLost)
+let ulost0 = units_lost(0)
+cheat spawn V3 0 building 0:GACNST +3 -3
+cheat spawn HARV 1 building 0:GACNST +3 -16
+wait 2
+click unit 0:V3
+click unit 1:HARV
+until 900 why(rocket_explosion) >= 1 or why(rocket_shot_down) >= 1
+wait 300
+# the V3 rockets (Spawned=yes) died; any other own loss may speak once
+assert why(rocket_explosion) >= 1                              @W7-12-02
+assert pres(spawned_no_unit_lost) >= 1                         @W7-12-02
+if units_lost(0) == $ulost0 then assert evareq(EVA_UnitLost) == $lost0
+# --- W7-12-12: a Kirov shot down falls first and blasts where it lands ---------
+cheat spawn ZEP 0 building 0:GACNST -4 -4
+wait 2
+click unit 0:ZEP
+click building 0:GACNST -10 -10
+until 200 airborne(0) >= 1
+wait 60
+let ex0 = veh_explosions
+cheat w2 kill 0:ZEP
+wait 1
+assert crashing(0) >= 1                                        @W7-12-12
+assert pres(crash_impact) == 0                                 @W7-12-12
+until 400 crashing(0) == 0
+wait 2
+assert pres(crash_impact) >= 1                                 @W7-12-12
+shot w7_kirov_impact
+
+# --- W7-12-13: the Demo Truck's death weapon draws its DEMTEXP blast ------------
+cheat spawn DTRUCK 0 building 0:GACNST +14 -12
+view building 0:GACNST +14 -12
+wait 2
+cheat w2 kill 0:DTRUCK
+until 30 pres(death_weapon) >= 1                               @W7-12-13
+shot w7_demo_blast
+
+end

@@ -1019,6 +1019,14 @@ private:
 public:
     // W2-CA-07: the GameScene's AI roster (unit defs the map teams can field).
     void set_ai_roster(const UnitRoster* r) { ai_roster_ = r; }
+    // W7-10-05 / W7-12-23 (presentation): every live (controller, victim)
+    // mind-control pair.
+    std::vector<std::pair<int, int>> mind_control_pairs() const {
+        std::vector<std::pair<int, int>> v;
+        for (std::size_t i = 0; i < utrack_.size(); ++i)
+            if (utrack_[i].mc_victim >= 0) v.push_back({static_cast<int>(i), utrack_[i].mc_victim});
+        return v;
+    }
 private:
     int engine_house_of_name(const std::string& name) const {
         const std::string u = camp::up(name);

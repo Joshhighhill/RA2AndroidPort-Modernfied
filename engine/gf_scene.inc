@@ -121,7 +121,7 @@ private:
                        e.unit < static_cast<int>(world_.units().size())) {
                 // [AMCV] DeploySound=PlaceBuilding (the building slam sound) --
                 // W5-E: through the presentation (positional + [pres] log).
-                pres_.on_mcv_deployed(world_, world_.units()[static_cast<std::size_t>(e.unit)].image, e.building);
+                pres_.on_mcv_deployed(world_, pres_type_id(world_.units()[static_cast<std::size_t>(e.unit)]), e.building);
             }
         }
         if (campaign_) return;   // campaigns end through their triggers

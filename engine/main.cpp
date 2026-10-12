@@ -201,6 +201,11 @@ extern double g_pip_yellow, g_pip_red;
 int g_hover_unit = -1;
 void draw_unit_pips(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u, int x, int y,
                     double yellow, double red, bool board = true);
+// W7-12-04/05/16/17/18/22/45 (hud_pips.inc): the DrawPips rows / marks.
+void draw_unit_overlays(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& world,
+                        const std::vector<ra2engine::Unit>& us, const ra2engine::Unit& u, int x, int y, int group,
+                        SDL_Color house, int inf_heal, int unit_heal, int heal_inf_frames, int heal_unit_frames);
+int pres_bracket_delta(const ra2engine::Unit& u);
 // W6-04-11 (hud_pips.inc): the flickering Ivan bomb over every bombed object.
 void draw_bomb_icons(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::World& world,
                      const std::vector<ra2engine::Unit>& us, const ra2engine::Camera& cam);
@@ -465,7 +470,17 @@ struct VehicleAssets {
         ra2assets::HvaModel hull_h, tur_h, barl_h;
         ra2assets::Vpl vpl;
         ra2assets::Palette pal;
+        // W7-03-05 / W7-03-07 [CONFIRMED-DATA fvtur1..3 / sreftur1..3]: the
+        // extra turret models of a TurretCount type, index n -> alt_tur[n-1].
+        std::vector<std::pair<ra2assets::VxlModel, ra2assets::HvaModel>> alt_tur;
+        // W7-06-12 / W7-04-27 [RE: ObjectType +0x1E8 NoSpawnAlt (loader
+        // 0x5F8C2E); rules: "uses the xxxxWO voxel when out of spawns"]: the
+        // V3 / Destroyer / Dreadnought hull without its rocket / Osprey.
+        bool has_wo = false;
+        ra2assets::VxlModel wo;
+        ra2assets::HvaModel wo_h;
     };
+    int shadow_index = 0;   // W7-12-44 art ShadowIndex= (+0x7FC): the one section the shadow uses
     std::shared_ptr<const VoxelSrc> vsrc;
     mutable std::map<int, std::shared_ptr<std::array<ra2engine::FacingSet, 3>>> color_sets;
     // W2-GA-12: hull ground-shadow masks per facing (colour-independent).
@@ -621,6 +636,16 @@ struct UnitVoices {
     std::string feedback, special, enter, capture, harvest, deploy_voice, deploy_snd, undeploy_snd,
         sinking, crashing, voice_sinking, voice_crashing, turret_rotate;
     bool c4 = false;
+    // W7-02-06 [RE: VoiceAttack picker 0x708520 -- TechnoType +0x580
+    // VoicePrimaryWeaponAttack, +0x584 VoicePrimaryEliteWeaponAttack, +0x588
+    // VoiceSecondaryWeaponAttack, +0x58C VoiceSecondaryEliteWeaponAttack, else
+    // VoiceAttack, by the weapon index SelectWeapon picks].
+    std::string attack_primary, attack_primary_elite, attack_secondary, attack_secondary_elite;
+    // W7-03-10 [rules ActivateSound / DeactivateSound / VoiceSelectDeactivated
+    // (ROBO)] and W7-10-05 MindClearedSound (else [AudioVisual] MindClearedSound).
+    std::string activate, deactivate, select_deactivated, mind_cleared;
+    bool spawned = false;      // W7-12-02 Spawned= (TechnoType +0xD54): no EVA_UnitLost
+    bool registered = false;   // W7-12-27: add_voices ran for this rules id
 };
 
 // Everything the audio wiring needs at runtime. `mixer` is a unique_ptr (not
@@ -638,7 +663,7 @@ struct AudioSystem {
     ra2engine::SoundBank bank;
     std::unique_ptr<ra2engine::Mixer> mixer;
     ra2engine::AudioOutput out;
-    std::map<std::string, UnitVoices> voices;  // by image ("GI","CONS")
+    std::map<std::string, UnitVoices> voices;  // W7-12-27: by RULES id ("E1","SENGINEER"), filled by the presentation
     int eva_unitlost = -1;                     // bank clip id, -1 if unavailable
     // Chrono Miner teleport sounds [RE: economy.md §3]: soundmd section names
     // from rulesmd [CMIN] ChronoOut/InSound ("" -> silent no-op on play).
@@ -745,7 +770,10 @@ void init_audio(AudioSystem& audio, const std::string& dir, const Rules& rules) 
         v.attack = rules.voice_attack(unit_id);
         v.die = rules.die_sound(unit_id);
         v.report = rules.weapon_report(rules.primary(unit_id));
-        audio.voices[image] = v;
+        // W7-12-03: NOT stored in audio.voices -- Presentation::add_voices
+        // builds the full entry (deploy / fear / move-start / crush ...) by
+        // rules id; a partial one here used to block it for GI/CONS/HTNK.
+        (void)image;
 
         for (const std::string& key : {v.select, v.move, v.attack, v.die, v.report}) {
             if (key.empty() || pending.count(key)) continue;
@@ -1485,7 +1513,8 @@ void enable_live_infantry_anims(ra2engine::World& world, const Ini& rules_ini, c
             ra2engine::InfSeqEntry& e = t.e[static_cast<std::size_t>(q)];
             e.has = true;
             e.first = std::atoi(f[0].c_str());
-            e.count = f.size() > 1 ? std::max(1, std::atoi(f[1].c_str())) : 1;
+            // W7-12-36: a 0 count stays 0 (PlayAnim refuses it).
+            e.count = f.size() > 1 ? std::max(0, std::atoi(f[1].c_str())) : 1;
             e.fmult = f.size() > 2 ? std::atoi(f[2].c_str()) : 0;
             if (f.size() > 3) {
                 std::string lab = f[3];
@@ -1498,8 +1527,25 @@ void enable_live_infantry_anims(ra2engine::World& world, const Ini& rules_ini, c
         t.fearless = yes(rules_ini, id, "Fearless", false);
         t.fraidycat = yes(rules_ini, id, "Fraidycat", false);
         t.not_human = yes(rules_ini, id, "NotHuman", false);
-        world.set_inf_table(image, t);
+        // W7-09-02: the sequence table is per image, the Fearless /
+        // Fraidycat / NotHuman flags per rules id -- the image entry keeps the
+        // FIRST type's flags, each id gets its own.
+        std::string uid = id;
+        for (char& ch : uid) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+        if (uid == image || !world.inf_table(image)) world.set_inf_table(image, t);
+        if (uid != image) world.set_inf_table(uid, t);
         ++n;
+    }
+    // W7-12-08: InfDeath of the radiation / nuke / storm warheads.
+    auto inf_death_of = [&](const std::string& wh) {
+        const std::string v = clean(rules_ini.get(clean(wh), "InfDeath"));
+        return clean(wh).empty() ? -1 : (v.empty() ? 0 : std::atoi(v.c_str()));
+    };
+    {
+        std::string nwh = clean(rules_ini.get("General", "NukeWarhead"));   // [General] NukeWarhead=Nuke
+        if (nwh.empty()) nwh = "NUKE";
+        world.set_inf_deaths(inf_death_of(rules_ini.get("Radiation", "RadSiteWarhead")), inf_death_of(nwh),
+                             inf_death_of(rules_ini.get("General", "LightningWarhead")));
     }
     const std::string f = clean(rules_ini.get("AudioVisual", "IdleActionFrequency"));
     world.enable_infantry_anims(human_house, f.empty() ? 0.15 : std::atof(f.c_str()));
@@ -1718,6 +1764,19 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
         ra2assets::Vpl vpl = ra2assets::Vpl::load(vpl_raw.data(), vpl_raw.size());
 
         art.fire_flh(image, va.flh);  // leaves {0,0,0} if absent/malformed
+        // W7-12-44 [RE: shadow FUN_00706710 flattens ShadowIndex alone].
+        va.shadow_index = std::atoi(art_ini.get(image, "ShadowIndex", "0").c_str());
+        // W7-03-05/07: tur1..tur{TurretCount-1}.
+        std::vector<std::pair<ra2assets::VxlModel, ra2assets::HvaModel>> alt_tur;
+        if (va.has_turret) {
+            const int tcount = static_cast<int>(rules.section_double(unit_id, "TurretCount", 0.0));
+            for (int n = 1; n < tcount; ++n) {
+                std::pair<ra2assets::VxlModel, ra2assets::HvaModel> t;
+                if (!load_part(base + "tur" + std::to_string(n), t.first, t.second)) break;
+                alt_tur.push_back(std::move(t));
+            }
+            if (!alt_tur.empty()) std::cerr << "[veh] " << image << " turrets=" << alt_tur.size() + 1 << "\n";
+        }
         // W3-B [art TurretOffset=, HARV 50, HTK -80 ...]: the turret sits that
         // many leptons forward of the hull centre along the body facing.
         va.turret_offset = std::atoi(art_ini.get(image, "TurretOffset", "0").c_str());
@@ -1742,6 +1801,9 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
             src->hull_h = hull_h; src->tur_h = tur_h; src->barl_h = barl_h;
             src->vpl = vpl;
             src->pal = unit_pal;
+            src->alt_tur = std::move(alt_tur);
+            if (rules.section_flag(unit_id, "NoSpawnAlt", false))
+                src->has_wo = load_part(base + "wo", src->wo, src->wo_h);
             va.vsrc = src;
         }
         for (int house = 0; house <= 1; ++house) {
@@ -3361,9 +3423,25 @@ const ra2engine::VoxelSprite* vxl_shadow(const VehicleAssets& va, int bi) {
     std::lock_guard<std::mutex> lk(g_vxl_mu);
     if (!va.shadow) {
         auto v = std::make_shared<std::vector<ra2engine::VoxelSprite>>();
+        // W7-12-44 [RE: 0x73A3A0 tail / 0x4144B0 -> FUN_004DAFE0(body,
+        // ShadowIndex) -> FUN_00706710: only that section, HVA frame 0]: the
+        // rotor-less DUMMY01 silhouette of SHAD / SCHP / SPYP.
+        const ra2assets::VxlModel* m = &va.vsrc->hull;
+        const ra2assets::HvaModel* h = &va.vsrc->hull_h;
+        ra2assets::VxlModel one;
+        ra2assets::HvaModel one_h;
+        const int si = va.shadow_index;
+        if (si > 0 && si < static_cast<int>(m->sections.size()) && !h->frames.empty() &&
+            si < static_cast<int>(h->frames[0].size())) {
+            one = *m;
+            one.sections = {m->sections[static_cast<std::size_t>(si)]};
+            one_h.frame_count = 1;
+            one_h.frames = {{h->frames[0][static_cast<std::size_t>(si)]}};
+            m = &one;
+            h = &one_h;
+        }
         for (int i = 0; i < ra2engine::kVehicleFacings; ++i)
-            v->push_back(ra2engine::rasterize_shadow(va.vsrc->hull, va.vsrc->hull_h,
-                                                     ra2engine::index_to_yaw(i, ra2engine::kVehicleFacings), 128));
+            v->push_back(ra2engine::rasterize_shadow(*m, *h, ra2engine::index_to_yaw(i, ra2engine::kVehicleFacings), 128));
         va.shadow = v;
     }
     if (bi < 0 || bi >= static_cast<int>(va.shadow->size())) return nullptr;
@@ -3388,10 +3466,70 @@ const ra2engine::VoxelSprite& vxl_frame_sprite(const VehicleAssets& va, int part
     return cache.emplace(key, ra2engine::rasterize_model(m, h, ra2engine::index_to_yaw(fi, ra2engine::kVehicleFacings),
                                                          s.vpl, hp, hf)).first->second;
 }
+// W7-03-05/07: turret model `n` >= 1 at facing `fi` (rasterised on first use).
+const ra2engine::VoxelSprite* vxl_alt_turret(const VehicleAssets& va, int n, int house, int fi, int hf) {
+    if (!va.vsrc || n < 1 || n > static_cast<int>(va.vsrc->alt_tur.size())) return nullptr;
+    static std::map<std::string, ra2engine::VoxelSprite> cache;
+    const std::string key = va.combat.image + ":t" + std::to_string(n) + ":" +
+                            std::to_string(ra2engine::house_draw_key(house)) + ":" + std::to_string(fi) + ":" +
+                            std::to_string(hf);
+    std::lock_guard<std::mutex> lk(g_vxl_mu);
+    auto it = cache.find(key);
+    if (it != cache.end()) return &it->second;
+    const VehicleAssets::VoxelSrc& s = *va.vsrc;
+    const auto& t = s.alt_tur[static_cast<std::size_t>(n - 1)];
+    const ra2assets::Palette hp = ra2engine::house_draw_palette(s.pal, house);
+    const int f = t.second.frames.empty() ? 0 : hf % static_cast<int>(t.second.frames.size());
+    return &cache.emplace(key, ra2engine::rasterize_model(t.first, t.second,
+                                                          ra2engine::index_to_yaw(fi, ra2engine::kVehicleFacings),
+                                                          s.vpl, hp, f)).first->second;
+}
+// The current turret model index of `u`:
+//  * W7-03-07 [RE: TechnoClass::AI 0x6F9380 -- IsChargeTurret (+0x810) and
+//    multiple turrets: CurrentTurretNumber = TurretCount (+0x808) * the
+//    RearmTimer's time left / its length, clamped to [0, TurretCount-1]];
+//  * W7-03-05 [rules [FV] <Mode>TurretIndex / <Mode>TurretWeapon]: a Gunner
+//    shows the turret its current weapon index maps to.
+int pres_turret_index(const ra2engine::Unit& u, const VehicleAssets& va) {
+    if (!va.vsrc || va.vsrc->alt_tur.empty() || !g_walk_rules) return 0;
+    const std::string id = pres_type_id(u);
+    struct TI { bool charge = false; int count = 1; std::map<int, int> by_weapon; };
+    static std::map<std::string, TI> cache;
+    auto it = cache.find(id);
+    if (it == cache.end()) {
+        TI t;
+        const std::string ct = pres_lower(pres_clean(g_walk_rules->get(id, "IsChargeTurret")));
+        t.charge = !ct.empty() && (ct[0] == 'y' || ct[0] == 't' || ct[0] == '1');
+        t.count = std::max(1, std::atoi(pres_clean(g_walk_rules->get(id, "TurretCount")).c_str()));
+        for (const auto& kv : g_walk_rules->section(id)) {
+            const std::string k = kv.first;
+            const std::string suf = "TurretWeapon";
+            if (k.size() > suf.size() && k.compare(k.size() - suf.size(), suf.size(), suf) == 0) {
+                const std::string mode = k.substr(0, k.size() - suf.size());
+                const std::string ix = pres_clean(g_walk_rules->get(id, mode + "TurretIndex"));
+                if (!ix.empty()) t.by_weapon[std::atoi(pres_clean(kv.second).c_str())] = std::atoi(ix.c_str());
+            }
+        }
+        it = cache.emplace(id, t).first;
+    }
+    const TI& t = it->second;
+    int n = 0;
+    if (t.charge) {
+        const int len = std::max(1, u.w_rof);
+        n = std::clamp(t.count * std::max(0, u.rearm_frames) / len, 0, t.count - 1);
+    } else if (u.abil.gunner) {
+        auto w = t.by_weapon.find(u.ifv_current);
+        if (w != t.by_weapon.end()) n = w->second;
+    }
+    return std::clamp(n, 0, static_cast<int>(va.vsrc->alt_tur.size()));
+}
 void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u,
                        const VehicleAssets& va, const ra2engine::Camera& cam, int W, int H) {
     // W2-AN-07/25: a crashing flier keeps its hull until impact; a sinking
     // ship (ShipSinkingWeight) slides under instead of exploding.
+    // W7-12-11: in the live game the sinking hull is the presentation's
+    // (draw_sinking_hulls), not the dying unit.
+    if (u.die_time >= 0.0 && u.an.sinking && g_fx && g_sink_drop_px == 0) return;
     if (u.die_time >= 0.0 && !u.an.crashing && !u.an.sinking) {
         // W3-B: in the live game the FX layer plays a RANDOM Explosion= entry
         // (Presentation::unit_fx_tick) [RE: presentation.md §5 FUN_007376c0].
@@ -3419,11 +3557,12 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
     // Guarded on is_aircraft && altitude > 0 -- no existing demo spawns an
     // aircraft, so no existing screenshot changes [spec §8].
     const int extra_dy =
-        (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) +
+        g_sink_drop_px > 0 ? -g_sink_drop_px   // W7-12-11: the presentation's sinking hull
+        : (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) +
                                                   pres_jumpjet_wobble_px(g_draw_unit_idx, u)   // W5-PRES wobble
         : (u.an.sinking && u.die_time >= 0.0) ? -static_cast<int>(u.die_time * 24.0)   // W2-AN-25
         : 0;
-    if (u.an.t.no_shadow) {
+    if (u.an.t.no_shadow || g_sink_drop_px > 0) {   // W7-12-11: no shadow while sinking
         // W4: NoShadow=yes (V3ROCKET / DMISL) -- no ground shadow at all.
     } else if (extra_dy > 0 && g_map_dressing && vxl_shadow(va, bi)) {
         // W5-PRES [RE: Shadow_Point 0x55A550 / AircraftClass::Draw 0x4144B0 /
@@ -3465,6 +3604,25 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
         ra2engine::draw_voxel_sprite(ren, tc, key, it->second, u.fx, u.fy, u.level, cam, W, H, extra_dy);
         return;
     }
+    // W7-06-12 / W7-04-27: out of spawns -> the xxxxWO hull [RE-FALLBACK: the
+    // draw consumer of NoSpawnAlt was not traced; spawn_ready == 0 = none docked].
+    if (va.vsrc && va.vsrc->has_wo && u.an.t.spawns_number > 0 && u.an.spawn_ready == 0) {
+        static std::map<std::string, ra2engine::VoxelSprite> wo_cache;
+        const std::string key = "vxl:" + img + ":wo:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" +
+                                std::to_string(bi);
+        const ra2engine::VoxelSprite* spr = nullptr;
+        {
+            std::lock_guard<std::mutex> lk(g_vxl_mu);
+            auto it = wo_cache.find(key);
+            if (it == wo_cache.end())
+                it = wo_cache.emplace(key, ra2engine::rasterize_model(
+                                               va.vsrc->wo, va.vsrc->wo_h,
+                                               ra2engine::index_to_yaw(bi, ra2engine::kVehicleFacings), va.vsrc->vpl,
+                                               ra2engine::house_draw_palette(va.vsrc->pal, u.house), 0)).first;
+            spr = &it->second;
+        }
+        ra2engine::draw_voxel_sprite(ren, tc, key, *spr, u.fx, u.fy, u.level, cam, W, H, extra_dy);
+    } else
     ra2engine::draw_voxel_sprite(
         ren, tc, "vxl:" + img + ":h:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(bi) + fkey,
         part_sprite(0, bi), u.fx, u.fy, u.level, cam, W, H, extra_dy);
@@ -3478,13 +3636,37 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
             tfx += f * std::cos(yaw);
             tfy -= f * std::sin(yaw);
         }
-        ra2engine::draw_voxel_sprite(
-            ren, tc, "vxl:" + img + ":t:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti) + fkey,
-            part_sprite(1, ti), tfx, tfy, u.level, cam, W, H, extra_dy);
-        if (va.has_barrel)
-            ra2engine::draw_voxel_sprite(
-                ren, tc, "vxl:" + img + ":b:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti) + fkey,
-                part_sprite(2, ti), tfx, tfy, u.level, cam, W, H, extra_dy);
+        const int tn = pres_turret_index(u, va);   // W7-03-05/07
+        const ra2engine::VoxelSprite* alt = tn > 0 ? vxl_alt_turret(va, tn, u.house, ti, hf) : nullptr;
+        auto draw_turret = [&]() {
+            if (alt)
+                ra2engine::draw_voxel_sprite(ren, tc,
+                                             "vxl:" + img + ":t" + std::to_string(tn) + ":" +
+                                                 std::to_string(ra2engine::house_draw_key(u.house)) + ":" +
+                                                 std::to_string(ti) + fkey,
+                                             *alt, tfx, tfy, u.level, cam, W, H, extra_dy);
+            else
+                ra2engine::draw_voxel_sprite(
+                    ren, tc, "vxl:" + img + ":t:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti) + fkey,
+                    part_sprite(1, ti), tfx, tfy, u.level, cam, W, H, extra_dy);
+        };
+        auto draw_barrel = [&]() {
+            if (va.has_barrel)
+                ra2engine::draw_voxel_sprite(
+                    ren, tc, "vxl:" + img + ":b:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti) + fkey,
+                    part_sprite(2, ti), tfx, tfy, u.level, cam, W, H, extra_dy);
+        };
+        // W7-12-41 [RE: 0x73A3A0 @0x73ACBB-0x73ADD4 -- q = ((turret facing
+        // >> 13) + 1 >> 1) & 3; q 0 (N) or 3 (W) draws the barrel BEFORE the
+        // turret, else after].
+        const int q = (((static_cast<int>(u.turret_facing) & 0xFFFF) >> 13) + 1 >> 1) & 3;
+        if (q == 0 || q == 3) {
+            draw_barrel();
+            draw_turret();
+        } else {
+            draw_turret();
+            draw_barrel();
+        }
     }
 
     // Muzzle flash at the FLH point while firing (voxel-render.md §6).
@@ -3671,15 +3853,30 @@ void draw_p5_chevrons(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2e
     if (!g_p5_art || !g_p5_art->has_pips) return;
     const ra2assets::Palette& pal = g_p5_art->has_pips_pal ? g_p5_art->pips_pal : fallback_pal;
     for (const ra2engine::Unit& u : world.units()) {
-        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.disguised) continue;
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
+        // W7-12-46 [RE: IsDisguisedAs(PlayerPtr) 0x745580 / 0x522520 is false
+        // for the viewer's own objects]: only a disguise seen by someone else
+        // hides the chevron.
+        if (u.disguised && u.house != g_local_house && !world.are_allied(g_local_house, u.house)) continue;
+        // W7-12-19 [RE: 0x6F46F0 @0x6F48C0 -- no chevron when VisualCharacter
+        // is Hidden (5): cloaked / submerged enemies], nor under shroud / fog.
+        if (world.unit_hidden_from(g_local_house, u)) continue;
+        if (u.house != g_local_house && !world.object_visible_at(g_local_house, u.cell_x, u.cell_y)) continue;
+        if (u.ia.vanish || pres_crushed(static_cast<int>(&u - world.units().data()))) continue;
         const int rank = world.veterancy_enabled() ? ra2engine::vet_rank(u.vet.veterancy)
                                                    : (u.veteran_rank > 0 ? 1 : 0);
         if (rank <= 0) continue;
         const int frame = rank >= 2 ? 15 : 14;
         const double ufx = u.fx + u.sub_x / 256.0, ufy = u.fy + u.sub_y / 256.0;   // W5-B sub-cell
+        // W7-12-20 [RE: 0x709E10 offsets from the same draw point as the
+        // health bar]: lifted by the flight altitude and a bridge deck.
+        const int up = (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) : 0;
+        const int lv = u.level + pres_unit_lift_levels(world, u);
         const int sx = static_cast<int>(std::lround((ufx - ufy) * 30.0)) + cam.x + 30;
-        const int sy = static_cast<int>(std::lround((ufx + ufy) * 15.0 - u.level * 15)) + cam.y + 15;
-        const int ox = u.is_vehicle ? 10 : 5, oy = u.is_vehicle ? 6 : 2;
+        const int sy = static_cast<int>(std::lround((ufx + ufy) * 15.0 - lv * 15)) + cam.y + 15 - up;
+        // W7-12-21: +(5,2) for InfantryClass only (the drone is a Unit).
+        const bool inf = pres_rtti_infantry(u);
+        const int ox = inf ? 5 : 10, oy = inf ? 2 : 6;
         draw_shp_centered(ren, tc, g_p5_art->pips, frame, pal, "pips", sx + ox, sy + oy, W, H);
     }
 }
@@ -3914,7 +4111,17 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         struct TintScope {
             explicit TintScope(const ra2engine::ObjTint* t) { ra2engine::set_obj_tint(t); }
             ~TintScope() { ra2engine::set_obj_tint(nullptr); }
-        } tint_scope(pres_unit_tint(world, idx, tint) ? &tint : nullptr);
+        } tint_scope([&]() -> const ra2engine::ObjTint* {
+            bool has = pres_unit_tint(world, idx, tint);
+            // W7-06-13 [RE-FALLBACK: the cloak shimmer (TechnoClass draw
+            // VisualType) not traced]: a submerged unit the player sees (own,
+            // or sonar-detected) is drawn half translucent, not as surfaced.
+            if (u.an.submerged && g_map_dressing) {
+                tint.alpha = static_cast<unsigned char>(std::min<int>(tint.alpha, 128));
+                has = true;
+            }
+            return has ? &tint : nullptr;
+        }());
         // Shroud/Fog [RE: shroud.md §5, W2-GA-03]: hide mobile objects in cells
         // house 0 cannot see (object_visible_at: explored, or visible with FogOfWar). Inert with shroud
         // off (visible_at returns true on empty grids) -> every existing render
@@ -3923,6 +4130,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         // W2-AN-13: a submerged enemy sub without our sonar contact is unseen.
         if (world.unit_hidden_from(0, u)) return;
         if (u.ia.vanish) return;   // W3-B: a death anim replaced the body
+        if (u.die_time >= 0.0 && pres_crushed(idx)) return;   // W7-04-25: crushed -> removed at once
         // W5-PRES R-047 [RE: abilities-w5.md §9]: an enemy viewer sees a still
         // Mirage as its DefaultMirageDisguises tree; owner and allies see the tank.
         if (u.house != g_local_house && world.is_enemy(g_local_house, u.house) && g_map_dressing) {
@@ -3936,7 +4144,35 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         // house's palette). When NOT disguised draw_image == u.image -> this is
         // byte-identical to the pre-Task-7 lookup.
         const std::string& draw_image = u.disguised ? u.disguised_as_type : u.image;
-        if (const VehicleAssets* va = va_for_image(vlist, draw_image)) {
+        const VehicleAssets* va_found = va_for_image(vlist, draw_image);
+        if (!va_found && g_map_dressing && !u.disguised && !u.tg.t.rules_id.empty()) {
+            // W7-09-16 / W7-10-10: a voxel type no roster / map preload
+            // resolved (trigger / team / cheat spawns, captured-factory
+            // output) loads on first sight instead of staying invisible.
+            static std::map<std::string, std::unique_ptr<VehicleAssets>> on_demand;
+            auto od = on_demand.find(draw_image);
+            if (od == on_demand.end()) {
+                std::unique_ptr<VehicleAssets> nv;
+                bool vehicle = false;
+                if (g_walk_rules)
+                    for (const char* sec : {"VehicleTypes", "AircraftTypes"})
+                        for (const auto& kv : g_walk_rules->section(sec))
+                            if (pres_upper(pres_clean(kv.second)) == u.tg.t.rules_id) vehicle = true;
+                if (vehicle && ua.shps.find(draw_image) == ua.shps.end()) {
+                    try {
+                        static const MixFile ra2m = MixFile::open_path(env_install_dir() + "ra2.mix");
+                        nv = std::make_unique<VehicleAssets>(load_vehicle_assets(env_install_dir(), ra2m, ua.pal,
+                                                                                 u.tg.t.rules_id));
+                        if (!nv->ok || nv->combat.image != draw_image) nv.reset();
+                    } catch (const std::exception&) { nv.reset(); }
+                    std::cerr << "[render] on-demand voxel " << u.tg.t.rules_id << " image=" << draw_image
+                              << (nv ? " ok" : " unavailable") << '\n';
+                }
+                od = on_demand.emplace(draw_image, std::move(nv)).first;
+            }
+            va_found = od->second.get();
+        }
+        if (const VehicleAssets* va = va_found) {
             g_draw_unit_idx = idx;   // W3-B: walk stage (HVA frame)
             // W3-B [RE: FUN_0073c1cc, Harvester=yes + unloading -> UnloadingClass]:
             // a harvester dumping at the refinery draws its UnloadingClass.
@@ -4064,6 +4300,38 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         std::stable_sort(air.begin(), air.end(), [](const DrawItem& x, const DrawItem& y) { return x.key < y.key; });
         for (const DrawItem& d : air) draw_one_unit(d.idx);
     }
+    // W7-12-11: sinking hulls, lowered 5 leptons per frame and clipped at
+    // their waterline [RE-FALLBACK: the waterline = the ground point + 10 px].
+    for (const PresSinker& sk : g_pres_sinkers) {
+        if (sk.unit < 0 || sk.unit >= static_cast<int>(us.size())) continue;
+        const VehicleAssets* va = va_for_image(vlist, sk.image);
+        if (!va) continue;
+        if (sk.house != g_local_house &&
+            !world.object_visible_at(g_local_house, static_cast<int>(std::lround(sk.fx)), static_cast<int>(std::lround(sk.fy))))
+            continue;
+        ra2engine::Unit tmp = us[static_cast<std::size_t>(sk.unit)];
+        tmp.fx = sk.fx;
+        tmp.fy = sk.fy;
+        tmp.sub_x = tmp.sub_y = 0;
+        tmp.level = sk.level;
+        tmp.body_facing = sk.body;
+        tmp.turret_facing = sk.turret;
+        tmp.house = sk.house;
+        tmp.die_time = -1.0;
+        tmp.alive = true;
+        tmp.an.sinking = false;
+        tmp.an.crashing = false;
+        tmp.is_aircraft = false;
+        const long age = g_pres_tick - sk.start;
+        g_sink_drop_px = std::max(1, static_cast<int>(std::lround(age * 5 * 36.74 / 256.0)));
+        const int wy = static_cast<int>(std::lround((sk.fx + sk.fy) * 15.0 - sk.level * 15)) + cam.y + 15 + 10;
+        SDL_Rect clip{0, 0, W, std::max(0, std::min(H, wy))};
+        SDL_RenderSetClipRect(ren, &clip);
+        g_draw_unit_idx = -1;
+        draw_vehicle_unit(ren, tc, tmp, *va, cam, W, H);
+        SDL_RenderSetClipRect(ren, nullptr);
+        g_sink_drop_px = 0;
+    }
     // W4-SQ-06: paratroopers under their parachutes (off the map until they
     // land: cargo_of == kParachuteCargo), raised by their height.
     for (int i = 0; i < static_cast<int>(us.size()); ++i) {
@@ -4087,6 +4355,8 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     if (g_fx3) g_fx3->draw(ren, tc, cam, W, H);   // W3-FX particles / debris / line trails
     // W2-GA-05: the map's ambient light over every world sprite (GameScene only).
     if (g_light) g_light->pass(ren, W, H, cam);   // W3-FIX-A: + light sources
+    // W7-12-33: UseNormalLight anims and the beams at full brightness, after the light.
+    if (g_fx && g_fx->split_light_) g_fx->draw(ren, tc, cam, W, H, 2);
     // G-84: fog + shroud over every object, under the HUD bars.
     draw_shroud_pass(ren, tc, a.map, world, cam, W, H);
     // HP bars after sprites, before the selection box: alive, non-dying,
@@ -4094,11 +4364,33 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // transport also shows its loaded pip row -- filled with the SIZE-SUM
     // (cargo_total_size), the pip-only metric [RE-GATE APPLIED:
     // transport-cargo.md §1]; capacity itself is the COUNT [spec §6].
+    // W7-12-22: the local house's Tech Hospital / Machine Shop counts.
+    int heal_inf = 0, heal_unit = 0;
+    if (ba)
+        for (const ra2engine::Building& b : world.buildings())
+            if (b.alive && b.state != ra2engine::Building::State::Dead && b.house == g_local_house && b.type >= 0 &&
+                b.type < static_cast<int>(ba->roster.size())) {
+                heal_inf += ba->roster[static_cast<std::size_t>(b.type)].w5.inf_self_heal;
+                heal_unit += ba->roster[static_cast<std::size_t>(b.type)].w5.unit_self_heal;
+            }
+    static int heal_inf_frames = -1, heal_unit_frames = -1;
+    if (heal_inf_frames < 0 && g_walk_rules) {
+        auto n = [&](const char* k, int d) {
+            const std::string v = pres_clean(g_walk_rules->get("General", k));
+            return v.empty() ? d : std::atoi(v.c_str());
+        };
+        heal_inf_frames = n("SelfHealInfantryFrames", 50);
+        heal_unit_frames = n("SelfHealUnitFrames", 75);
+    }
     for (const ra2engine::Unit& u : us) {
         if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
-        if (world.unit_hidden_from(0, u)) continue;   // W2-AN-13 submerged, no sonar contact
+        if (world.unit_hidden_from(g_local_house, u)) continue;   // W2-AN-13 submerged, no sonar contact
+        // W7-12-19: nothing over a unit the local player cannot see (shroud /
+        // fog), whatever the hover pick returned.
+        if (u.house != g_local_house && !world.object_visible_at(g_local_house, u.cell_x, u.cell_y)) continue;
         if (input && g_pips) {   // W2-UI-11: PIPBRD + PIPS on the selected units only
-            const bool hovered = g_hover_unit == static_cast<int>(&u - us.data());   // W6-05-07
+            const int idx = static_cast<int>(&u - us.data());
+            const bool hovered = g_hover_unit == idx;   // W6-05-07
             if (usel(u) || hovered) {
                 const int up = (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) : 0;
                 const double ufx = u.fx + u.sub_x / 256.0, ufy = u.fy + u.sub_y / 256.0;   // W5-B
@@ -4106,12 +4398,21 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                 const int lv = u.level + pres_unit_lift_levels(world, u);   // W5-PRES R-100 deck
                 const int sy = static_cast<int>(std::lround((ufx + ufy) * 15.0 - lv * 15)) + cam.y + 15 - up;
                 draw_unit_pips(ren, tc, u, sx, sy, g_pip_yellow, g_pip_red, usel(u));
+                // W7-12-04/05/16/17/18/22 [RE: DrawHealthBar 0x6F5A00 tail]: the
+                // pip rows, group number and self-heal mark, own objects only.
+                if (u.house == g_local_house) {
+                    const ra2assets::Rgba hc = world.house_palette(ua.pal, u.house)[16];
+                    draw_unit_overlays(ren, tc, world, us, u, sx, sy, input->group_of(idx),
+                                       SDL_Color{hc.r, hc.g, hc.b, 255}, heal_inf, heal_unit, heal_inf_frames,
+                                       heal_unit_frames);
+                }
             }
-        } else if (usel(u) || u.hp < u.max_hp)
-            ra2engine::draw_hp_bar(ren, u, cam, W, H, veh_width(u));
-        if (usel(u) && u.passengers_max > 0)
-            ra2engine::draw_cargo_pips(ren, u, ra2engine::cargo_total_size(us, u),
-                                       u.passengers_max, cam, W, H);
+        } else {
+            if (usel(u) || u.hp < u.max_hp) ra2engine::draw_hp_bar(ren, u, cam, W, H, veh_width(u));
+            if (usel(u) && u.passengers_max > 0)
+                ra2engine::draw_cargo_pips(ren, u, ra2engine::cargo_total_size(us, u),
+                                           u.passengers_max, cam, W, H);
+        }
     }
     // W6-04-11 [rules [AudioVisual] IvanIconFlickerRate=8 "this many frames
     // and the icon goes back and forth within one of the 6 2-frame anims";
@@ -6514,12 +6815,13 @@ public:
         campaign_audio_pump();   // W2-CA-12: trigger speech/sound/music
         campaign_visuals_pump();   // W3-FX: trigger anims/camera/radar/particles/flashes
         world_.step(dt);   // L2: every human house's production runs inside the step
-        (void)world_.take_econ_launches();   // L2: drained per tick (UnitReady is observed from the slots)
+        pres_.note_launches(world_, world_.take_econ_launches());   // W7-12-01: EVA_UnitReady per launch (drained per tick)
         r210_track_steps();   // R-210 --play probes (scene-side, never saved)
         // wave-5 (R-042): spy-stolen tech unlocks -- the sidebar's copy of the
         // local roster (the World gates each house's own copy in its step).
         world_.apply_stolen_tech_gate(ur_.defs, local_house_);
         pres_.logic_tick(world_, ba_, lcredits(), world_.take_projectile_events());   // W3-B: anim clock, building slots, effects per logic tick
+        world_.clear_frag_events();   // W7-12-07: the fragment beams were drawn by this tick's logic_tick
         rp_after_world_step();   // gap owner A: SW grant/revoke by building (G-25)
         gf_update(dt);   // gF: deploy EVA + skirmish game over
         // P10: the mission ended (BorrowedTime ran out) -> the result screen.
@@ -6634,6 +6936,9 @@ public:
         // G-80/G-81/G-82: voices, reports, deaths, EVA, music, effects -- one
         // observation pass over this frame's state (pres_game.inc). Logs even
         // when there is no audio device; pumps the sink when there is one.
+        pres_.observe_selection(input_.selection(), input_);   // W7-12-26 first-selected speaker / W7-12-04 groups
+        pres_.observe_mind_control(world_, campaign_ ? campaign_->mind_control_pairs()
+                                                     : std::vector<std::pair<int, int>>{});   // W7-10-05
         pres_.update(dt, world_, lq(), ba_, lcredits(), act, cam_, playfield_w_, kWinH,
                      pres_vet_, net_ ? net_take(net_proj_buf_) : world_.take_projectile_events());   // (W3-B: drained per tick; normally empty)
         pres_vet_.clear();
@@ -7398,6 +7703,7 @@ private:
     // --- G0 --play probe helpers -------------------------------------------
     // Rules id of a live unit (the roster def whose Image matches), else its image.
     std::string play_unit_id(const ra2engine::Unit& u) const {
+        if (!u.tg.t.rules_id.empty()) return u.tg.t.rules_id;   // W7-09-17: the rules id, not the image
         for (const UnitRoster* r : {&ur_, &ur_ai_})
             for (const ra2engine::UnitTypeDef& d : r->defs)
                 if (d.combat.image == u.image) return d.id;

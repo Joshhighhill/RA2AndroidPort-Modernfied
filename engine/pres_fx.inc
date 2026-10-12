@@ -35,6 +35,7 @@ struct FxAnimType {
     // Every AnimClass draw adds it -- FX, building slot anims, fires.
     int ydraw = 0;
     int detail = 0;            // W5-E DetailLevel= (shown only at that setting or higher)
+    bool normal_light = false; // W7-12-33 UseNormalLight= (drawn at full brightness, after the light pass)
     // [RE: presentation.md §5] Rate= stores 900/Rate game frames per anim
     // frame (no Rate -> 1); Start/End (End defaults to the image frames),
     // LoopStart/LoopEnd (LoopEnd defaults to End), LoopCount (0/1 = once,
@@ -107,6 +108,17 @@ struct FxWeapon {
     bool rad_beam = false, line = false;
     int laser_frames = 15;
     bool conventional = false;   // W3-FX warhead Conventional= (water -> SplashList)
+    // W7-12-30 [RE: TechnoClass::Fire FUN_006fd210 builds the bullet, muzzle
+    // anim, Report and beams from the FIRED WeaponTypeClass]: the per-weapon
+    // record (resolved once per weapon id).
+    std::string id;
+    std::string report;            // Report= (comma list; one picked per shot)
+    std::string warhead;
+    bool temporal = false;         // W7-12-06: warhead Temporal= (ChronoBeamColor)
+    bool alt_color = false;        // W7-12-31: IsAlternateColor= (weapon +0x153)
+    bool has_laser_colors = false; // W7-12-32: LaserInnerColor / LaserOuterColor
+    SDL_Color laser_inner{0, 0, 0, 255}, laser_outer{0, 0, 0, 255};
+    std::string shrapnel;          // W7-12-07: the projectile's ShrapnelWeapon=
 };
 // W2-GA-15: smudge hook (craters / scorch marks left by Crater=/Scorch=
 // explosion anims), set by GameScene to its map dressing.
@@ -153,23 +165,7 @@ public:
         std::string w = rget(id, "Primary");
         if (w.empty()) w = rget(id, "Weapon1");
         FxWeapon fw;
-        if (!w.empty()) fill_beam(fw, w);
-        if (!w.empty()) {
-            fw.muzzle = split(rget(w, "Anim"));
-            const std::string wh = rget(w, "Warhead");
-            if (!wh.empty()) fw.anim_list = split(rget(wh, "AnimList"));
-            if (!wh.empty()) {
-                const std::string c = pres_lower(rget(wh, "Conventional"));
-                fw.conventional = !c.empty() && (c[0] == 'y' || c[0] == 't' || c[0] == '1');
-            }
-            const std::string pj = rget(w, "Projectile");
-            if (!pj.empty()) {
-                const std::string img = rget(pj, "Image");
-                if (!img.empty() && pres_lower(img) != "none") fw.proj_image = img;
-                fw.proj_rotates = pres_lower(rget(pj, "Rotates")).rfind("y", 0) == 0 ||
-                                  pres_lower(rget(pj, "Rotates")).rfind("t", 0) == 0;
-            }
-        }
+        if (!w.empty()) fill_weapon(fw, w);
         weapons_[image] = fw;
         explosions_[image] = split(rget(id, "Explosion"));
         // W6-04-24: the Secondary's beam (Boris's Flare IsLine) for slot-1 shots.
@@ -178,6 +174,30 @@ public:
             FxWeapon f2;
             fill_beam(f2, w2);
             weapons2_[image] = f2;
+        }
+    }
+    // The whole per-weapon record (W7-12-30).
+    void fill_weapon(FxWeapon& fw, const std::string& w) {
+        fw.id = w;
+        fill_beam(fw, w);
+        fw.muzzle = split(rget(w, "Anim"));
+        fw.report = rget(w, "Report");
+        const std::string wh = rget(w, "Warhead");
+        fw.warhead = wh;
+        if (!wh.empty()) {
+            fw.anim_list = split(rget(wh, "AnimList"));
+            const std::string c = pres_lower(rget(wh, "Conventional"));
+            fw.conventional = !c.empty() && (c[0] == 'y' || c[0] == 't' || c[0] == '1');
+            const std::string t = pres_lower(rget(wh, "Temporal"));
+            fw.temporal = !t.empty() && (t[0] == 'y' || t[0] == 't' || t[0] == '1');
+        }
+        const std::string pj = rget(w, "Projectile");
+        if (!pj.empty()) {
+            const std::string img = rget(pj, "Image");
+            if (!img.empty() && pres_lower(img) != "none") fw.proj_image = img;
+            fw.proj_rotates = pres_lower(rget(pj, "Rotates")).rfind("y", 0) == 0 ||
+                              pres_lower(rget(pj, "Rotates")).rfind("t", 0) == 0;
+            fw.shrapnel = rget(pj, "ShrapnelWeapon");
         }
     }
     void fill_beam(FxWeapon& fw, const std::string& w) {
@@ -192,15 +212,33 @@ public:
         fw.line = yes("IsLine");
         const std::string ld = rget(w, "LaserDuration");
         if (!ld.empty()) fw.laser_frames = std::max(1, std::atoi(ld.c_str()));
+        fw.alt_color = yes("IsAlternateColor");   // W7-12-31 (weapon +0x153, loader 0x77148c)
+        // W7-12-32 [RE: 0x6fc6d0 -- without IsHouseColor the laser's inner /
+        // outer colours are LaserInnerColor (+0x120) / LaserOuterColor (+0x123)].
+        auto rgb = [&](const char* k, SDL_Color& c) {
+            const std::vector<std::string> v = split(rget(w, k));
+            if (v.size() < 3) return false;
+            c = SDL_Color{static_cast<Uint8>(std::clamp(std::atoi(v[0].c_str()), 0, 255)),
+                          static_cast<Uint8>(std::clamp(std::atoi(v[1].c_str()), 0, 255)),
+                          static_cast<Uint8>(std::clamp(std::atoi(v[2].c_str()), 0, 255)), 255};
+            return true;
+        };
+        const bool a = rgb("LaserInnerColor", fw.laser_inner);
+        const bool b = rgb("LaserOuterColor", fw.laser_outer);
+        fw.has_laser_colors = a || b;
+        if (a && !b) fw.laser_outer = SDL_Color{static_cast<Uint8>(fw.laser_inner.r / 2), static_cast<Uint8>(fw.laser_inner.g / 2),
+                                                static_cast<Uint8>(fw.laser_inner.b / 2), 255};
     }
     // A defence's weapon by id (Tesla Coil CoilBolt, Prism Tower PrismShot).
     const FxWeapon& weapon_def(const std::string& w) {
         auto it = weapon_defs_.find(w);
         if (it != weapon_defs_.end()) return it->second;
         FxWeapon fw;
-        fill_beam(fw, w);
+        if (!w.empty()) fill_weapon(fw, w);
         return weapon_defs_.emplace(w, fw).first->second;
     }
+    // W7-12-30: the FX record of the weapon that fired (by weapon id).
+    const FxWeapon& weapon_fx(const std::string& w) { return weapon_def(w); }
     // ---- W2-GA-15 beams ----------------------------------------------------
     struct Beam {
         double x0, y0, lift0, x1, y1, lift1;
@@ -210,28 +248,118 @@ public:
         long age = 0;      // W3-B: logic ticks
         SDL_Color inner, outer;
         uint32_t seed;
+        int kind = 0;      // 0 laser/line, 1 bolt, 2 rad beam (wave), 3 house laser
+        double ox0 = 0;    // screen-x offset of the start (the muzzle FLH)
+        double seg_lep = 20.0;   // W7-12-06 rad beam segment length (leptons)
+        double len_lep = 0.0;    // the beam's length in leptons
+        bool white_core = true;  // W7-12-31 bolt: one of the 3 arcs in PALETTE[15]
     };
+    // W7-12-06 / W7-12-32 colours, read once at init (Presentation::init).
+    void set_beam_colors(SDL_Color rad, SDL_Color chrono) {
+        rad_color_ = rad;
+        chrono_color_ = chrono;
+    }
+    // W7-12-32 [RE: HouseClass LaserColor 0x50b820 -- c * 240 / |c| per
+    // channel, clamped to 255, a channel below 96 becomes 0; c = the house
+    // colour RGB]: the IsHouseColor laser's core colour.
+    static SDL_Color laser_color(SDL_Color c) {
+        const double len = std::sqrt(double(c.r) * c.r + double(c.g) * c.g + double(c.b) * c.b);
+        if (len <= 0.0) return SDL_Color{0, 0, 0, 255};
+        auto ch = [&](Uint8 v) {
+            const int x = std::min(255, static_cast<int>(v * 240.0 / len));
+            return static_cast<Uint8>(x < 96 ? 0 : x);
+        };
+        return SDL_Color{ch(c.r), ch(c.g), ch(c.b), 255};
+    }
     void add_beam(double x0, double y0, int l0, double lift0, double x1, double y1, int l1, double lift1,
-                  const FxWeapon& fw, SDL_Color house) {
-        Beam b{x0, y0, lift0, x1, y1, lift1, l0, l1, fw.bolt, fw.bolt ? 8 : fw.laser_frames, 0,
-               SDL_Color{255, 255, 255, 255}, SDL_Color{110, 110, 255, 255}, beam_seed_++ * 2654435761u};
-        if (fw.rad_beam) {   // W6-04-24 [RE-FALLBACK: RadColor beam, 10 frames]
-            b.outer = rad_color_;
-            b.inner = SDL_Color{200, 255, 200, 255};
-            b.life = 10;
+                  const FxWeapon& fw, SDL_Color house, double ox0 = 0.0) {
+        // W7-12-31 [RE: EBolt 0x4c1d30 / 0x4c2750 -- +0x28 = 0x10000 shifted
+        // right once per frame: a bolt lives 17 frames; drawn as 3 lines, two
+        // in PALETTE.PAL[IsAlternateColor ? 5 : 10] and one in PALETTE.PAL[15]].
+        Beam b{x0, y0, lift0, x1, y1, lift1, l0, l1, fw.bolt, fw.bolt ? 17 : fw.laser_frames, 0,
+               SDL_Color{252, 252, 252, 255},
+               fw.alt_color ? SDL_Color{252, 252, 84, 255} : SDL_Color{80, 80, 252, 255}, beam_seed_++ * 2654435761u};
+        b.kind = fw.bolt ? 1 : 0;
+        b.ox0 = ox0;
+        b.len_lep = std::hypot(x1 - x0, y1 - y0) * 256.0;
+        if (fw.rad_beam) {
+            // W7-12-06 [RE: RadBeam 0x6fcae0 / 0x658b50.. -- kind 1 (Temporal
+            // warhead) ChronoBeamColor, else RadColor; Period 15, Amplitude 40,
+            // 10-lepton segments for chrono, 20 otherwise].
+            b.kind = 2;
+            b.outer = fw.temporal ? chrono_color_ : rad_color_;
+            b.inner = b.outer;
+            b.life = 15;
+            b.seg_lep = fw.temporal ? 10.0 : 20.0;
         } else if (fw.line) {   // W6-04-24 [RE-FALLBACK: a thin red designator line]
             b.outer = SDL_Color{160, 0, 0, 255};
             b.inner = SDL_Color{255, 40, 40, 255};
             b.life = 8;
         }
         if (fw.laser) {
-            // [RE-FALLBACK: LaserInner/OuterColor are commented out in rulesmd;
-            // IsHouseColor=yes -> the firing house's colour, white core]
-            b.outer = fw.laser_house ? house : SDL_Color{216, 0, 184, 255};
-            b.inner = SDL_Color{255, 255, 255, 255};
+            if (fw.laser_house) {
+                // W7-12-32 [RE: 0x6fc6d0 / 0x550680]: inner = LaserColor,
+                // outer = inner >> 1, thickness 2, house-colour draw path.
+                b.kind = 3;
+                b.inner = laser_color(house);
+                b.outer = SDL_Color{static_cast<Uint8>(b.inner.r >> 1), static_cast<Uint8>(b.inner.g >> 1),
+                                    static_cast<Uint8>(b.inner.b >> 1), 255};
+            } else if (fw.has_laser_colors) {
+                b.inner = fw.laser_inner;
+                b.outer = fw.laser_outer;
+            } else {
+                b.outer = SDL_Color{216, 0, 184, 255};
+                b.inner = SDL_Color{255, 255, 255, 255};
+            }
         }
         beams_.push_back(b);
     }
+    std::size_t beams_live() const { return beams_.size(); }
+    // W7-12-23 / W7-10-05 [RE: CaptureManager capture FUN_00471c80 @0x471e73
+    // -- new AnimClass(ControlledAnimationType, ...) attached to the victim
+    // (0x424ad0), removed on release]: looping anims that follow a unit, and
+    // the controller -> victim link lines (house colour).
+    struct Attached { const FxAnimType* t = nullptr; long age = 0; double lift = 0; };
+    std::map<int, Attached> attached_;
+    void attach(int unit, const std::string& name, double lift) {
+        const FxAnimType* t = type(name);
+        if (!t || t->frames <= 0) return;
+        attached_[unit] = Attached{t, 0, lift};
+    }
+    void detach(int unit) { attached_.erase(unit); }
+    struct Link { int from, to; SDL_Color c; };
+    std::vector<Link> links_;
+    void draw_attached(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Camera& cam, int W, int H) {
+        if (!world_for_pal_) return;
+        const auto& us = world_for_pal_->units();
+        auto pt = [&](const ra2engine::Unit& u, double lift, int& sx, int& sy) {
+            const double ufx = u.fx + u.sub_x / 256.0, ufy = u.fy + u.sub_y / 256.0;
+            const int up = (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) : 0;
+            sx = static_cast<int>(std::lround((ufx - ufy) * 30.0)) + cam.x + 30;
+            sy = static_cast<int>(std::lround((ufx + ufy) * 15.0 - u.level * 15 - lift)) + cam.y + 15 - up;
+        };
+        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+        for (const Link& l : links_) {
+            if (l.from < 0 || l.to < 0 || l.from >= static_cast<int>(us.size()) || l.to >= static_cast<int>(us.size())) continue;
+            int ax, ay, bx, by;
+            pt(us[static_cast<std::size_t>(l.from)], 20.0, ax, ay);
+            pt(us[static_cast<std::size_t>(l.to)], 10.0, bx, by);
+            SDL_SetRenderDrawColor(ren, l.c.r, l.c.g, l.c.b, 255);
+            SDL_RenderDrawLine(ren, ax, ay, bx, by);
+        }
+        for (const auto& kv : attached_) {
+            if (kv.first < 0 || kv.first >= static_cast<int>(us.size())) continue;
+            const ra2engine::Unit& u = us[static_cast<std::size_t>(kv.first)];
+            if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
+            if (u.house != g_local_house && !world_for_pal_->object_visible_at(g_local_house, u.cell_x, u.cell_y)) continue;
+            const FxAnimType& t = *kv.second.t;
+            const int fr = loop_frame(t, kv.second.age);
+            int sx, sy;
+            pt(u, kv.second.lift, sx, sy);
+            draw_anim_frame(ren, tc, t, fr, sx, sy + t.ydraw, W, H);
+        }
+    }
+    long beams_added() const { return static_cast<long>(beam_seed_) - 1; }
     void draw_beams(SDL_Renderer* ren, const ra2engine::Camera& cam) const {
         if (beams_.empty()) return;
         SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
@@ -242,9 +370,51 @@ public:
             };
             int ax, ay, bx, by;
             pt(b.x0, b.y0, b.l0, b.lift0, ax, ay);
+            ax += static_cast<int>(std::lround(b.ox0));
             pt(b.x1, b.y1, b.l1, b.lift1, bx, by);
             const double fade = 1.0 - static_cast<double>(b.age) / std::max(1, b.life);
             const Uint8 a = static_cast<Uint8>(std::clamp(fade, 0.0, 1.0) * 255.0);
+            if (b.kind == 2) {
+                // W7-12-06 [RE: RadBeam draw 0x659090 / 0x659500]: n segments of
+                // seg leptons; point k displaced (screen z) by sin(k/n * len*2
+                // degrees) * 40 * frame/Period leptons, colour jittered per
+                // segment; gone at frame >= Period (15).
+                const int n = std::max(2, static_cast<int>(b.len_lep / b.seg_lep));
+                const double amp = 40.0 * static_cast<double>(b.age) / 15.0 * (36.74 / 256.0);
+                uint32_t r = b.seed ^ static_cast<uint32_t>(beam_tick_ * 2246822519u);
+                int px = ax, py = ay;
+                for (int k = 1; k <= n; ++k) {
+                    const double f = static_cast<double>(k) / n;
+                    const double deg = f * b.len_lep * 2.0;
+                    const int qx = static_cast<int>(std::lround(ax + (bx - ax) * f));
+                    const int qy = static_cast<int>(std::lround(ay + (by - ay) * f - std::sin(deg * 3.14159265358979 / 180.0) * amp));
+                    r = r * 1664525u + 1013904223u;
+                    const int j = static_cast<int>((r >> 16) % 41) - 20;
+                    auto cj = [&](Uint8 c) { return static_cast<Uint8>(std::clamp(int(c) + j, 0, 255)); };
+                    SDL_SetRenderDrawColor(ren, cj(b.outer.r), cj(b.outer.g), cj(b.outer.b), a);
+                    SDL_RenderDrawLine(ren, px, py, qx, qy);
+                    SDL_RenderDrawLine(ren, px, py + 1, qx, qy + 1);
+                    px = qx;
+                    py = qy;
+                }
+                continue;
+            }
+            if (b.kind == 3) {
+                // W7-12-32 [RE: 0x550680]: the core in LaserColor, then
+                // `thickness` (2) parallel pairs, halving the brightness
+                // each step (stops once every channel is below 0x40).
+                SDL_Color c = b.inner;
+                SDL_SetRenderDrawColor(ren, c.r, c.g, c.b, a);
+                SDL_RenderDrawLine(ren, ax, ay, bx, by);
+                for (int o = 1; o <= 2; ++o) {
+                    c = SDL_Color{static_cast<Uint8>(c.r >> 1), static_cast<Uint8>(c.g >> 1), static_cast<Uint8>(c.b >> 1), 255};
+                    if (c.r < 0x40 && c.g < 0x40 && c.b < 0x40) break;
+                    SDL_SetRenderDrawColor(ren, c.r, c.g, c.b, a);
+                    SDL_RenderDrawLine(ren, ax, ay - o, bx, by - o);
+                    SDL_RenderDrawLine(ren, ax, ay + o, bx, by + o);
+                }
+                continue;
+            }
             if (!b.bolt) {
                 SDL_SetRenderDrawColor(ren, b.outer.r, b.outer.g, b.outer.b, static_cast<Uint8>(a / 2));
                 for (int o = -2; o <= 2; ++o) {
@@ -261,7 +431,7 @@ public:
             const double nx = len > 0 ? -(by - ay) / len : 0, ny = len > 0 ? (bx - ax) / len : 0;
             uint32_t r = b.seed ^ static_cast<uint32_t>(beam_tick_ * 2246822519u);
             for (int arc = 0; arc < 3; ++arc) {
-                const SDL_Color c = arc == 0 ? b.inner : b.outer;
+                const SDL_Color c = arc == 2 ? b.inner : b.outer;   // W7-12-31: 2 coloured + 1 PALETTE[15]
                 SDL_SetRenderDrawColor(ren, c.r, c.g, c.b, arc == 0 ? a : static_cast<Uint8>(a * 3 / 4));
                 int px = ax, py = ay;
                 for (int s = 1; s <= segs; ++s) {
@@ -307,6 +477,7 @@ public:
         SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
     }
     SDL_Color rad_color_{0, 255, 0, 255};
+    SDL_Color chrono_color_{128, 200, 255, 255};   // W7-12-06 [AudioVisual] ChronoBeamColor
     int rad_max_ = 0;
     void set_instant(const std::string& image, bool instant) {
         auto it = weapons_.find(image);
@@ -513,6 +684,7 @@ public:
         t.report = aget(key, "StartSound");
         if (t.report.empty()) t.report = aget(key, "Report");
         t.detail = std::atoi(aget(key, "DetailLevel").c_str());   // W5-E
+        t.normal_light = yes("UseNormalLight");                   // W7-12-33
         {   // RandomRate=a,b [RE: presentation.md §5]: each 900/x; W5-PRES R-123
             // [RE: reader FUN_00427c80] `if (max < min) min = max` -- a clamp,
             // NOT a swap: every artmd entry (a < b) ends up a fixed 900/b.
@@ -589,6 +761,7 @@ public:
     void tick() {
         ++rand_tick_;
         ++beam_tick_;
+        for (auto& kv : attached_) ++kv.second.age;   // W7-12-23
         for (Beam& b : beams_) ++b.age;
         beams_.erase(std::remove_if(beams_.begin(), beams_.end(),
                                     [](const Beam& b) { return b.age >= b.life; }),
@@ -607,13 +780,18 @@ public:
         anims_.insert(anims_.end(), next.begin(), next.end());
     }
     // pass 0: Flat / ground-layer anims, drawn after the ground overlays and
-    // before every object; pass 1 (default): the rest, over the objects
+    // before every object; pass 1 (default): the rest, over the objects;
+    // pass 2 (W7-12-33 [RE: AnimClass draw 0x422cc0 -- UseNormalLight=yes
+    // keeps intensity 1000, never the cell's light]): the UseNormalLight
+    // anims and the beams, drawn AFTER the ambient light pass. A caller that
+    // never asks for pass 2 gets them in pass 1 (the gates).
     // [RE-FALLBACK: Ground-layer anims are depth-sorted with objects in the
     // original (W2-GA-17 open); the clone draws them after the objects].
     void draw(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Camera& cam, int W,
               int H, int pass = 1) {
         for (const Anim& a : anims_) {
             if (a.t->flat != (pass == 0)) continue;
+            if (split_light_ && pass != 0 && a.t->normal_light != (pass == 2)) continue;
             int fr = a.t->frame_at(a.age, a.delay);
             if (fr < 0 && a.hold) fr = std::max(a.t->start, a.t->end - 1);
             if (fr < 0) continue;
@@ -626,8 +804,10 @@ public:
                 draw_anim_frame(ren, tc, *a.t, fr, cx, cy, W, H, a.t->altpal ? alt_palette(a.house) : nullptr,
                                 a.t->altpal ? ":h" + std::to_string(a.house) : std::string());
         }
-        if (pass == 1) draw_beams(ren, cam);   // W2-GA-15
+        if (pass == 1) draw_attached(ren, tc, cam, W, H);   // W7-12-23 mind-control rings / links
+        if (pass == (split_light_ ? 2 : 1)) draw_beams(ren, cam);   // W2-GA-15
     }
+    bool split_light_ = false;   // W7-12-33: the live game draws pass 2 after the light pass
     // W3-B: one anim frame with its Shadow (darken, under the body) and its
     // translucency; `pal` overrides anim.pal (AltPalette / building convert).
     void draw_anim_frame(SDL_Renderer* ren, ra2engine::TextureCache& tc, const FxAnimType& t, int fr, int cx,
@@ -730,6 +910,7 @@ public:
     // Base-defense shot (World::FireEvent with a weapon id): the weapon's
     // muzzle Anim= list and its first Report= sound, straight from rules.
     std::vector<std::string> weapon_muzzle(const std::string& wid) const { return split(rget(wid, "Anim")); }
+    std::string weapon_report_list(const std::string& wid) const { return rget(wid, "Report"); }
     std::string weapon_report(const std::string& wid) const {
         const std::vector<std::string> r = split(rget(wid, "Report"));
         return r.empty() ? std::string() : r.front();   // [RE-FALLBACK: multi-Report pick, as fire_fx]
@@ -811,7 +992,21 @@ bool pres_draw_projectile(SDL_Renderer* ren, ra2engine::TextureCache& tc,
                           const ra2engine::World& world, const ra2engine::Projectile& p, int gx,
                           int sy, int W, int H) {
     if (!g_fx || p.attacker < 0 || p.attacker >= static_cast<int>(world.units().size())) return false;
-    const FxWeapon* w = g_fx->weapon(world.units()[p.attacker].image);
+    // W7-12-30: the projectile art of the weapon in the slot that fired it
+    // (GGI deployed AAHeatSeeker2, APOC's AA missiles), elite when the
+    // firer is elite and the type has the Elite* weapon.
+    const ra2engine::Unit& au = world.units()[p.attacker];
+    const FxWeapon* w = nullptr;
+    {
+        const std::string id = pres_type_id(au);
+        const bool elite = world.veterancy_enabled() && ra2engine::vet_rank(au.vet.veterancy) >= 2;
+        const char* base = p.weapon_slot == 1 ? "Secondary" : "Primary";
+        std::string wid = elite ? g_fx->rules_value(id, std::string("Elite") + base) : std::string();
+        if (wid.empty()) wid = g_fx->rules_value(id, base);
+        if (wid.empty()) wid = g_fx->rules_value(id, p.weapon_slot == 1 ? "Weapon2" : "Weapon1");
+        if (!wid.empty()) w = &g_fx->weapon_fx(wid);
+    }
+    if (!w || w->proj_image.empty()) w = g_fx->weapon(au.image);
     if (!w || w->proj_image.empty()) return false;
     auto shp = g_fx->projectile_shp(w->proj_image);
     if (!shp || shp->count() <= 0) return false;
