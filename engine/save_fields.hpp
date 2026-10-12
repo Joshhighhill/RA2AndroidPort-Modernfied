@@ -186,6 +186,12 @@ struct SaveAccess {
         save::io(ar, w.anims_); save::mark(ar, "anims_");
         save::io(ar, w.inf_anims_); save::mark(ar, "inf_anims_"); save::io(ar, w.inf_human_); save::io(ar, w.inf_idle_freq_);   // W3-B
         save::io(ar, w.inf_tables_); save::mark(ar, "inf_tables_");
+        // W7-12-08 / W7-12-07 (v35): InfDeath of the rad / nuke / storm kills
+        // and the per-tick fragment feed (presentation only).
+        save::io(ar, w.rad_inf_death_); save::mark(ar, "rad_inf_death_");
+        save::io(ar, w.nuke_inf_death_); save::mark(ar, "nuke_inf_death_");
+        save::io(ar, w.storm_inf_death_); save::mark(ar, "storm_inf_death_");
+        save::io(ar, w.frag_events_); save::mark(ar, "frag_events_");
         // Economy
         save::io(ar, w.ore_); save::mark(ar, "ore_");
         save::io(ar, w.ore_rng_); save::mark(ar, "ore_rng_");
@@ -505,6 +511,9 @@ template <class Ar> void fields(Ar& ar, Projectile& v) {
     io(ar, v.giveup_n); io(ar, v.giveup_acc); io(ar, v.prev_dist); io(ar, v.lost); io(ar, v.target_air);
 }
 // Gap fix C: one shot event (World::FireEvent).
+template <class Ar> void fields(Ar& ar, World::FragEvent& v) {   // W7-12-07 (v35)
+    io(ar, v.attacker); io(ar, v.x0); io(ar, v.y0); io(ar, v.level0); io(ar, v.target);
+}
 template <class Ar> void fields(Ar& ar, World::FireEvent& v) {
     io(ar, v.unit); io(ar, v.building); io(ar, v.target_unit); io(ar, v.target_building);
     io(ar, v.slot); io(ar, v.weapon);
@@ -594,6 +603,7 @@ template <class Ar> void fields(Ar& ar, InfAnimState& v) {
     io(ar, v.idle_timer); io(ar, v.rng); io(ar, v.fear); io(ar, v.prone); io(ar, v.armed);
     io(ar, v.fearless); io(ar, v.fraidycat); io(ar, v.death); io(ar, v.vanish); io(ar, v.was_deployed);
     io(ar, v.prev_fire); io(ar, v.cheer);
+    io(ar, v.erupt); io(ar, v.air);   // W7-02-05 / W7-01-21 (v35)
 }
 template <class Ar> void fields(Ar& ar, UnitVet& v) {
     io(ar, v.veterancy);
