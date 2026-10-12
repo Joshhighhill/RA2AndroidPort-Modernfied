@@ -495,6 +495,16 @@ bool World::are_allied(int a, int b) const {
     return house_team(a) == house_team(b);
 }
 
+bool World::allied_with(int a, int b) const {
+    if (a == b) return true;                       // [RE: 0x4F98B0] the same house
+    if (!houses_configured_) return false;
+    const int n = (int)houses_.size();
+    if (a >= 0 && b >= 0 && a < n && b < n && ally_pairs_.size() == (std::size_t)n * n)
+        return ally_pairs_[(std::size_t)a * n + b] != 0;   // the house's own Allies view
+    if (!house_combatant(a) || !house_combatant(b)) return false;
+    return house_team(a) == house_team(b);
+}
+
 void World::set_pair_alliance(int a, int b, bool allied) {
     const int n = (int)houses_.size();
     if (a < 0 || b < 0 || a >= n || b >= n || a == b) return;
@@ -1201,6 +1211,14 @@ void World::order_unit_move(int idx, int gx, int gy) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     Unit& u = units_[idx];
     u.tg.area_guard = false;   // W6-02-11: a move order leaves Area_Guard
+    // w7fix-combat: a move order replaces the mission (Sleep / Harmless /
+    // Sticky / Attack Move, a retaliation's saved order, the area-guard home).
+    // Combat-internal moves restore these (World::step combat_move).
+    u.tg.mission = -1;
+    u.tg.overridden = false;
+    u.tg.opportunity = false;
+    u.tg.home_x = u.tg.home_y = -1;
+    u.tg.amove_x = u.tg.amove_y = -1;
     // P4 [RE: abilities.md §C1/§C2/§A]: a FROZEN unit (warping in, being
     // erased, deployed) takes no move; a Teleporter's move is a TELEPORT.
     // Both fields are inert (false) unless a P4 profile is bound, which no
@@ -1397,12 +1415,18 @@ void World::group_attack(int issuer, const std::vector<int>& ids, int target_idx
     const Unit& tgt = units_[target_idx];
     // Can't order an attack on a dead/dying target, or on a unit the issuer
     // commands itself (that would mean "attack a friendly").
-    if (!tgt.alive || tgt.die_time >= 0.0 || can_command(issuer, tgt.house)) return;   // W5-A: any player-commanded house
+    // W7-07-13 / W7-02-01 [RE: GetFireError FUN_006FB5D0 has no house test;
+    // What_Action FUN_006FF380 gives ACTION_ATTACK on any object with the
+    // force-fire key]: an own / allied / neutral target is legal (only the
+    // input layer decides when a click means "attack"). The pre-W7 world
+    // refused a target the issuer commands.
+    if (!tgt.alive || tgt.die_time >= 0.0 || (!w7_rules_.armed && can_command(issuer, tgt.house))) return;
 
     for (int ii : ids) {
         if (ii < 0 || ii >= static_cast<int>(units_.size())) continue;
         const std::size_t i = static_cast<std::size_t>(ii);
         Unit& u = units_[i];
+        if (ii == target_idx) continue;   // never the unit itself
         if (!can_command(issuer, u.house) || !u.alive || u.die_time >= 0.0) continue;   // W5-A: PlayerControl houses too
         // W2-SK-22 Spy disguise [RE: capture.md §C; [SPY] Primary=MakeupKit
         // "virtual weapon that picks disguise"]: a spy "attacking" an enemy
@@ -1462,13 +1486,36 @@ void World::group_attack_building(int issuer, const std::vector<int>& ids, int b
     const Building& tgt = buildings_[b_idx];
     // Can't order an attack on a dead/Dead-state/own (friendly) building
     // -- mirrors group_attack's own guard against a friendly target.
-    if (!tgt.alive || tgt.state == Building::State::Dead || can_command(issuer, tgt.house)) return;   // W5-A
+    // W7-07-13: force-fire on an own / allied building is legal (see group_attack).
+    if (!tgt.alive || tgt.state == Building::State::Dead || (!w7_rules_.armed && can_command(issuer, tgt.house))) return;
+    const bool coil = tgt.type >= 0 && tgt.type < static_cast<int>(btypes().size()) &&
+                      btypes()[static_cast<std::size_t>(tgt.type)].w5.overpowerable;
 
     for (int ii : ids) {
         if (ii < 0 || ii >= static_cast<int>(units_.size())) continue;
         const std::size_t i = static_cast<std::size_t>(ii);
         Unit& u = units_[i];
         if (!can_command(issuer, u.house) || !u.alive || u.die_time >= 0.0) continue;   // W5-A: PlayerControl houses too
+        // W7-02-02 [RE: SelectWeapon FUN_006F2890 @0x6F2B7F; FootClass::
+        // Mission_Guard 0x4D4F90 reads +0x158 ElectricAssault]: a Tesla Trooper
+        // ordered onto an own / allied Overpowerable building walks next to it
+        // and charges it (world_w5.cpp step (3)) instead of shooting it.
+        if (coil && u.w5.p.assault && allied_with(u.house, tgt.house)) {
+            int best = -1, bx = 0, by = 0;
+            for (int y = tgt.cy - 1; y <= tgt.cy + tgt.fh; ++y)
+                for (int x = tgt.cx - 1; x <= tgt.cx + tgt.fw; ++x) {
+                    if (x >= tgt.cx && x < tgt.cx + tgt.fw && y >= tgt.cy && y < tgt.cy + tgt.fh) continue;
+                    if (!walkable(x, y) || building_at_cell(x, y) >= 0) continue;
+                    const int d = (x - u.cell_x) * (x - u.cell_x) + (y - u.cell_y) * (y - u.cell_y);
+                    if (best < 0 || d < best) { best = d; bx = x; by = y; }
+                }
+            if (best >= 0) {
+                u.target = u.target_building = -1;
+                u.attack_order = false;
+                order_unit_move(ii, bx, by);
+            }
+            continue;
+        }
         u.attack_cell_x = u.attack_cell_y = -1;   // G16
         // Player guard kept above; shared mutation tail via commit_attack_target
         // [RE-GATE APPLIED: ai-team.md §5 — de-duplication].
@@ -3960,6 +4007,10 @@ void World::commit_attack_target(int unit_idx, int target_unit, int target_build
     u.target_building = target_building;
     u.attack_order = true;
     u.tg.area_guard = false;   // W6-02-11: an attack order leaves Area_Guard
+    u.tg.mission = -1;         // w7fix-combat: an order replaces the mission
+    u.tg.overridden = false;
+    u.tg.opportunity = false;
+    u.tg.amove_x = u.tg.amove_y = -1;
     // CB-1: an attack order supersedes a pending enter/unload [RE-GATE
     // APPLIED: transport-cargo.md §3/§4 -- kept: our order-model
     // convention; the hunt pinned no contrary rule].
@@ -4948,6 +4999,13 @@ void World::step(double dt) {
         }
         ~FeedGuard() { damage_feed() = saved; }
     } feed_guard(this, ai_any_);
+    // w7fix-combat: arm the hit log (combat.hpp) for this step while the W7
+    // rules are armed; disarmed on every exit.
+    struct HitGuard {
+        std::vector<HitRec>* saved;
+        HitGuard(World* w, bool on) : saved(hit_log().sink) { hit_log().sink = on ? &w->w7_hits_ : nullptr; }
+        ~HitGuard() { hit_log().sink = saved; }
+    } hit_guard(this, w7_rules_.armed);
     // W2-SK-15: tombstoned units keep their slot (every target / team member /
     // cargo / parasite / projectile owner is a stable unit INDEX, so slots are
     // never erased or reused), but a dead slot releases its heap storage: the
@@ -4981,6 +5039,7 @@ void World::step(double dt) {
             sc.condition_red = land_rules_.condition_red;
         }
         std::vector<int> scatter;
+        sc.world = this;   // w7fix-combat: alliance view / IQ / W7 rules
         if (occ_.subcells()) {
             sc.scatter_out = &scatter;
             if (!land_speed_armed_) sc.armed = false;
@@ -5159,6 +5218,15 @@ void World::step(double dt) {
     // next frame: bounded churn, accepted for this unit count.
     std::map<std::pair<int, int>, std::vector<int>> approach_groups;
     std::map<std::pair<int, int>, std::vector<int>> amphib_groups;   // W6-04-07
+    // w7fix-combat: a combat-internal move (approach, return home, resume) is
+    // not an order -- the unit keeps its mission state (W6-02-11's area guard
+    // used to be dropped by every approach).
+    auto combat_move = [&](int idx, int gx, int gy) {
+        if (!w7_rules_.armed) { order_unit_move(idx, gx, gy); return; }
+        const UnitTgt keep = units_[static_cast<std::size_t>(idx)].tg;
+        order_unit_move(idx, gx, gy);
+        units_[static_cast<std::size_t>(idx)].tg = keep;
+    };
     for (const MoveRequest& r : reqs) {
         if (r.unit < 0 || r.unit >= static_cast<int>(units_.size())) continue;
         const Unit& u = units_[r.unit];
@@ -5216,7 +5284,7 @@ void World::step(double dt) {
         else if (r.approach)
             approach_groups[{r.goal_x, r.goal_y}].push_back(r.unit);
         else
-            order_unit_move(r.unit, r.goal_x, r.goal_y);
+            combat_move(r.unit, r.goal_x, r.goal_y);
     }
     auto dispatch_groups = [&](const std::map<std::pair<int, int>, std::vector<int>>& groups,
                                const std::vector<std::uint8_t>& grid) {
@@ -5229,7 +5297,7 @@ void World::step(double dt) {
                 assign_formation({group.first.first, group.first.second}, cur, grid,
                                  grid_w_, grid_h_, occ_);
             for (std::size_t k = 0; k < movers.size(); ++k)
-                order_unit_move(movers[k], targets[k].x, targets[k].y);
+                combat_move(movers[k], targets[k].x, targets[k].y);
         }
     };
     dispatch_groups(approach_groups, passable_);
@@ -5237,6 +5305,9 @@ void World::step(double dt) {
         const std::vector<std::uint8_t> amphib = amphib_grid();   // cached buffer: copy once
         dispatch_groups(amphib_groups, amphib);
     }
+    // w7fix-combat: retaliation / call for help / damage scatter / Harmless
+    // wake from this step's hits, and the idle Area Guard default.
+    step_missions_w7();
 
     // Economy phase [RE: economy.md]: ore growth/spread + harvester mission
     // stepping, gated on set_economy having been called (types_ non-empty).
@@ -5404,7 +5475,8 @@ void World::step(double dt) {
                 InfTickCtx c;
                 c.moving = u.moving();
                 c.has_destination = !u.path.empty();
-                c.human = u.house == inf_human_ || is_human(u.house);   // L2: every human house
+                // W7-09-12 [RE: IsControlledByHuman 0x50B550 includes PlayerControl]
+                c.human = u.house == inf_human_ || human_commanded(u.house);   // L2: every human house
                 const std::size_t ci = static_cast<std::size_t>(u.cell_y) * grid_w_ + u.cell_x;
                 c.in_water = u.cell_x >= 0 && u.cell_y >= 0 && ci < water_passable_.size() && water_passable_[ci];
                 c.has_target = u.target >= 0 || u.target_building >= 0;
@@ -5659,15 +5731,37 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
             // (the infantry dies, the cell frees) instead of waiting for it.
             // W5-B R-061: with sub-cells, every crushable enemy infantry in the
             // cell's three spots is squashed.
+            // w7fix-combat W7-03-01 / W7-09-04 [RE: ObjectClass::IsCrushable
+            // 0x5F64C0 @0x5F650A/0x5F6557 -> IsAlliedWith 0x4F98B0]: never an
+            // ally of the crusher's owner (a neutral the map lists included).
+            // W7-07-21 [RE: Drive 0x4B3D85 -> UnitClass::Crush(cell, 1)
+            // 0x7404B0 @0x740564..0x74058A -> CellClass::Incoming(Empty, 1, 0)
+            // FUN_00481580; the squash Crush(cell, 0) runs on ARRIVAL,
+            // Per_Cell_Process FUN_00739AC0 @0x739FB9]: with the W7 rules the
+            // infantry is warned when the crusher commits to the cell and
+            // squashed only if still there when it arrives.
+            const World* W7 = speed ? speed->world : nullptr;
+            const bool w7crush = W7 && W7->combat_w7().armed && occ.subcells();
+            auto crush_ally = [&](const Unit& v) {
+                return W7 ? W7->allied_with(u.house, v.house) : v.house == u.house;
+            };
             if (u.crusher && u.is_vehicle) {
                 int victims[4] = {occ.at(tgt.x, tgt.y), -1, -1, -1};
                 if (occ.subcells())
                     for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s)
                         victims[s - 1] = occ.spot_unit(tgt.x, tgt.y, s);
+                const int cell_ix = tgt.y * w + tgt.x;
+                bool warn = false, elite = false;
                 for (int o : victims) {
                     if (o < 0 || o == self || o >= static_cast<int>(units.size())) continue;
                     Unit& v = units[o];
-                    if (can_crush(u, v) && v.house != u.house && v.alive &&   // W6-04-14/29
+                    elite = elite || is_elite(v.vet.veterancy);
+                    if (w7crush && occ.is_infantry(o) && can_crush(u, v) && !crush_ally(v) && v.alive &&
+                        v.die_time < 0.0 && v.cargo_of < 0) {
+                        warn = true;   // squashed on arrival (below)
+                        continue;
+                    }
+                    if (can_crush(u, v) && !crush_ally(v) && v.alive &&   // W6-04-14/29
                         v.die_time < 0.0 && v.cargo_of < 0) {
                         v.hp = 0;
                         v.die_time = 0.0;
@@ -5677,6 +5771,16 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                         v.path.clear();
                         v.path_idx = 0;
                         occ.release_all_of(o, -1, -1);
+                    }
+                }
+                if (warn && u.tg.crush_warn != cell_ix) {
+                    u.tg.crush_warn = cell_ix;
+                    for (int o : victims) {
+                        if (o < 0 || o == self || o >= static_cast<int>(units.size())) continue;
+                        const Unit& v = units[o];
+                        if (!v.alive || v.die_time >= 0.0 || v.moving() || v.is_vehicle) continue;
+                        if (speed->scatter_out && W7->incoming_scatters(v, elite, /*nokidding=*/false))
+                            speed->scatter_out->push_back(o);
                     }
                 }
             }
@@ -5714,7 +5818,27 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                     occ.set_spot(tgt.x, tgt.y, self, sp);
                 }
             } else if (occ.at(tgt.x, tgt.y) != self || !occ.can_enter(tgt.x, tgt.y, self)) {
-                if (occ.can_enter(tgt.x, tgt.y, self)) {
+                // W7-07-21: a cell held only by infantry this crusher may squash
+                // is entered (the squash happens on arrival).
+                bool crush_only = false;
+                if (w7crush && u.crusher && u.is_vehicle && !occ.can_enter(tgt.x, tgt.y, self)) {
+                    crush_only = true;
+                    for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s) {
+                        const int o = occ.spot_unit(tgt.x, tgt.y, s);
+                        if (o < 0 || o == self) continue;
+                        if (o >= static_cast<int>(units.size())) { crush_only = false; break; }
+                        const Unit& v = units[o];
+                        if (!(can_crush(u, v) && !crush_ally(v) && v.alive && v.die_time < 0.0)) crush_only = false;
+                    }
+                    // a vehicle owner (not us) still blocks
+                    const int own = occ.at(tgt.x, tgt.y);
+                    if (own >= 0 && own != self && (own >= static_cast<int>(units.size()) || !occ.is_infantry(own)))
+                        crush_only = false;
+                }
+                if (crush_only) {
+                    occ.set(tgt.x, tgt.y, self);
+                    if (speed) u.speed_mult = land_speed_mult(*speed, u, w, h, tgt.x, tgt.y);
+                } else if (occ.can_enter(tgt.x, tgt.y, self)) {
                     occ.set(tgt.x, tgt.y, self);  // reserve (now owns current + next)
                     if (speed) u.speed_mult = land_speed_mult(*speed, u, w, h, tgt.x, tgt.y);   // W5-B R-062
                 } else {
@@ -5732,6 +5856,27 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
                 u.cell_x = tgt.x;
                 u.cell_y = tgt.y;  // occ already owns this cell (reserved above)
                 if (terrain) u.on_deck = static_cast<std::uint8_t>(step_layer > 0 ? 1 : 0);   // R-210
+                // W7-07-21 [RE: Per_Cell_Process FUN_00739AC0 -> Crush(cell, 0)
+                // 0x7404B0]: the squash on arrival -- every crushable non-allied
+                // infantry still in the cell dies (kill credited to the crusher).
+                if (w7crush && u.crusher && u.is_vehicle) {
+                    for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s) {
+                        const int o = occ.spot_unit(tgt.x, tgt.y, s);
+                        if (o < 0 || o == self || o >= static_cast<int>(units.size())) continue;
+                        Unit& v = units[o];
+                        if (!(can_crush(u, v) && !crush_ally(v) && v.alive && v.die_time < 0.0 && v.cargo_of < 0))
+                            continue;
+                        v.hp = 0;
+                        v.die_time = 0.0;
+                        v.vet.killed_by = self;
+                        v.target = -1;
+                        v.target_building = -1;
+                        v.path.clear();
+                        v.path_idx = 0;
+                        occ.release_all_of(o, -1, -1);
+                    }
+                    u.tg.crush_warn = -1;
+                }
                 budget -= (dist <= 1e-9 ? 0.0 : dist);
                 ++u.path_idx;
                 u.wait_time = 0.0;
@@ -5759,7 +5904,53 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
             // W5-B R-050: a vehicle held up by idle infantry of its own house
             // asks them to scatter out of the way (the original's
             // Map[cell].Incoming -> Scatter for friendly occupants).
-            if (speed && speed->scatter_out && u.is_vehicle && occ.subcells() && u.wait_time == 0.0 &&
+            const World* W7 = speed ? speed->world : nullptr;
+            if (W7 && W7->combat_w7().armed && speed->scatter_out && occ.subcells() && u.wait_time == 0.0 &&
+                u.path_idx < u.path.size()) {
+                // w7fix-combat W7-07-22 [RE: UnitClass::Can_Enter_Cell 0x73DFA0
+                // -> MOVE_TEMP for an ALLIED stationary occupant (any Foot,
+                // vehicles too, whatever its target); Drive 0x4B2550 @0x4B2CE0 /
+                // 0x4B319D / 0x4B385A / 0x4B4357 and Walk 0x75A6B1]: within
+                // CloseEnough of its goal the mover STOPS (Assign_Destination(0));
+                // otherwise CellClass::Incoming(Empty, 1, 1) scatters every
+                // occupant of the cell.
+                const Cellxy bc = u.path[u.path_idx];
+                int occs[4] = {-1, -1, -1, -1};
+                {
+                    const int own = occ.at(bc.x, bc.y);
+                    if (own >= 0 && own < static_cast<int>(units.size()) && !occ.is_infantry(own)) occs[0] = own;
+                    for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s)
+                        occs[s - 1] = occ.spot_unit(bc.x, bc.y, s);
+                }
+                bool temp = false;
+                for (int o : occs) {
+                    if (o < 0 || o == self || o >= static_cast<int>(units.size())) continue;
+                    const Unit& v = units[o];
+                    if (v.alive && v.die_time < 0.0 && !v.moving() && W7->allied_with(u.house, v.house)) temp = true;
+                }
+                if (temp) {
+                    const Cellxy goal = u.path.back();
+                    const double gx = goal.x - u.cell_x, gy = goal.y - u.cell_y;
+                    if (om::sqrt(gx * gx + gy * gy) <= W7->combat_w7().close_enough) {
+                        u.path.clear();
+                        u.path_idx = 0;
+                        u.fx = u.cell_x;
+                        u.fy = u.cell_y;
+                        u.wait_time = 0.0;
+                        u.frame = seq_frame(seq.stand, u.facing, 0);
+                        occ.release_all_of(self, u.cell_x, u.cell_y);
+                        occ.set(u.cell_x, u.cell_y, self);
+                        continue;
+                    }
+                    for (int o : occs) {
+                        if (o < 0 || o == self || o >= static_cast<int>(units.size())) continue;
+                        const Unit& v = units[o];
+                        if (v.alive && v.die_time < 0.0 && !v.moving() && v.enter_target < 0 &&
+                            W7->incoming_scatters(v, false, /*nokidding=*/true))
+                            speed->scatter_out->push_back(o);
+                    }
+                }
+            } else if (speed && speed->scatter_out && u.is_vehicle && occ.subcells() && u.wait_time == 0.0 &&
                 u.path_idx < u.path.size()) {   // once per hold-up, not every frame
                 const Cellxy bc = u.path[u.path_idx];
                 for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s) {

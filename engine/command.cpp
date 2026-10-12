@@ -267,6 +267,10 @@ void apply_mega(World& w, const Command& c, CommandHost* host) {
         case Mission::Guard:
             w.group_guard(H, ids);
             return;
+        case Mission::AttackMove:   // W7-07-12 [RE: YR mission 29]
+            if (c.dest.is_cell()) w.group_attack_move(H, ids, c.dest.cell_x(), c.dest.cell_y());
+            else if (c.target.is_cell()) w.group_attack_move(H, ids, c.target.cell_x(), c.target.cell_y());
+            return;
         case Mission::Stop:
             w.group_stop(H, ids);
             return;

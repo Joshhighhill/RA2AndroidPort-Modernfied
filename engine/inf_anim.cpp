@@ -178,8 +178,10 @@ int inf_anim_tick(InfAnimState& s, const InfTable& t, int& facing, const InfTick
                     play(s, t, kSqUp, c.in_water, false);
                 }
             }
+            // W7-07-27 / W7-09-12 [RE: FUN_0051FDE0 tail 0x51FF0C]: the panic
+            // scatter has no human gate (only the idle-roll scatter does).
             if (t.fraidycat && s.fear > 50 && !c.moving && !c.has_destination && !is_deploy_group(s.seq) &&
-                !c.human && c.scatter)
+                c.scatter)
                 c.scatter();
         }
         // ---- deploy edges (GI / Guardian GI) ----

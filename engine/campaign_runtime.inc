@@ -758,6 +758,9 @@ private:
             }
             if (i == 0) player_side_ = rec.side;
             w_.set_house((int)i, rec);
+            // w7fix-combat [RE: house +0x24C IQ, FUN_00500960]: the map's IQ=
+            // (the AutoCrush / Scatter / GuardArea gates). A human house is 0.
+            w_.set_house_iq((int)i, (i == 0 || rec.player_control) ? 0 : house_iq((int)i));
             {   // W6-02-01/02 [RE: Start_Scenario FUN_00686560 0x6865B2..0x6865D5 --
                 // campaign Scen+0x60C = slider, Scen+0x610 = 2 - slider; FUN_005007D0
                 // 0x5008E7..: a house with IsHuman (+0x1EC) or IsInPlayerControl
@@ -825,7 +828,15 @@ private:
         // Tanya shot down the spy helicopter of a house that lists her.
         for (std::size_t a = 0; a < house_names_.size(); ++a)
             for (std::size_t b = 0; b < house_names_.size(); ++b) {
-                if (a == b || !w_.house_combatant((int)a) || !w_.house_combatant((int)b)) continue;
+                if (a == b) continue;
+                // W7-09-04 [RE: IsAlliedWith 0x4F98B0 reads the house's own
+                // Allies= bits, neutral houses included]: a non-combatant pair
+                // records its map view too (World::allied_with, the crush gate);
+                // are_allied() still answers false for a non-combatant.
+                if (!w_.house_combatant((int)a) || !w_.house_combatant((int)b)) {
+                    w_.set_ally_view((int)a, (int)b, lists(house_names_[a], house_names_[b]));
+                    continue;
+                }
                 const bool team0 = w_.house_team((int)a) == 0 && w_.house_team((int)b) == 0;
                 w_.set_ally_view((int)a, (int)b, team0 || lists(house_names_[a], house_names_[b]));
             }
@@ -1310,7 +1321,11 @@ private:
             if (mi == ra2engine::kMissionSleep || mi == 23 /* Harmless */) {
                 t.mission = mi == ra2engine::kMissionSleep ? 1 : 2;
                 set_dormant(idx, true);
+                // w7fix-combat W7-07-02: the World's mission model holds it.
+                w_.units()[(std::size_t)idx].tg.mission = mi;
             }
+            // W7-07-11: Mission=Sticky holds its ground (no approach, no scatter).
+            if (mi == 6) w_.units()[(std::size_t)idx].tg.mission = 6;
             // P1 [RE: campaign.md §4 -- campaign objects get their INI
             // mission (vtbl+0x1E8); economy.md §1 -- Mission_Harvest runs the
             // harvester FSM FUN_0073C560]: a map-placed miner with
@@ -1342,6 +1357,7 @@ private:
         const std::string& id = utrack_[(std::size_t)idx].type;
         u.an.t.no_passive_acquire = !rules_flag_default(id, "CanPassiveAquire", true);
         u.abil.no_retaliate = !rules_flag_default(id, "CanRetaliate", true);
+        if (u.tg.mission == 0 || u.tg.mission == 23) w_.wake_unit(idx);   // w7fix-combat
     }
     bool rules_flag_default(const std::string& id, const char* key, bool def) const {
         const std::string v = camp::up(camp::trim_comment(rules_ini_.get(id, key, def ? "yes" : "no")));
@@ -1358,7 +1374,10 @@ private:
             Track& t = utrack_[i];
             if (t.dead || t.mission == 0) continue;
             const ra2engine::Unit& u = w_.units()[i];
-            if (!live(u) || !(u.moving() || u.attack_order)) continue;
+            // w7fix-combat W7-09-08/09: the World woke it (hit while Harmless,
+            // an owner change) -- the dormant flags follow.
+            const bool woke = live(u) && u.tg.mission != 0 && u.tg.mission != 23;
+            if (!live(u) || !(u.moving() || u.attack_order || woke)) continue;
             t.mission = 0;
             set_dormant((int)i, false);
         }

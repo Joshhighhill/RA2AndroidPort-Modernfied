@@ -30,6 +30,16 @@ bool World::legal_threat_unit(int /*scanner_house*/, const Unit& v) const {
     // infantry capture/occupy case passes -- not modelled, the flag is
     // campaign-only here.]
     if (playfield_.campaign && v.tg.t.insignificant) return false;
+    // W7-07-10 / W7-09-07 [RE: Evaluate_Object 0x6F732F..0x6F733B]: a target
+    // whose mission has MissionControl NoThreat (Harmless, Selling).
+    if (v.tg.mission >= 0 && mission_control(v.tg.mission).no_threat) return false;
+    if (w7_rules_.armed) {
+        // W7-09-03 [RE: 0x6F7894..0x6F790E]: Insignificant is rejected in
+        // EVERY game mode; [0x6F779E] outside a campaign any object of a
+        // passive (civilian) house.
+        if (v.tg.t.insignificant) return false;
+        if (!playfield_.campaign && passive_house(v.house)) return false;
+    }
     return true;
 }
 
@@ -41,6 +51,12 @@ bool World::legal_threat_building(int /*scanner_house*/, const Building& b) cons
     // country is MultiplayPassive (+0x1A6) -- the civilian houses. ALL12:
     // 31 of the 32 Civie1 types, the Kremlin included.]
     if (playfield_.campaign && b.tg.insignificant && passive_house(b.house)) return false;
+    if (w7_rules_.armed) {
+        // W7-09-03: the Insignificant-building rule in every mode, and outside
+        // a campaign any object of a passive house.
+        if (b.tg.insignificant && passive_house(b.house)) return false;
+        if (!playfield_.campaign && passive_house(b.house)) return false;
+    }
     return true;
 }
 

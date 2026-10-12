@@ -265,6 +265,9 @@ struct SaveAccess {
         save::io(ar, w.land_rules_); save::mark(ar, "land_rules_");
         save::io(ar, w.crush_rules_); save::mark(ar, "crush_rules_");   // W5-B R-050 (v20)
         save::io(ar, w.elev_rules_); save::mark(ar, "elev_rules_");    // W5-B R-063 (v20)
+        save::io(ar, w.w7_rules_); save::mark(ar, "w7_rules_");    // w7fix-combat (v35)
+        save::io(ar, w.house_iq_); save::mark(ar, "house_iq_");
+        save::io(ar, w.w7_hits_); save::mark(ar, "w7_hits_");
         save::io(ar, w.wall_leak_); save::mark(ar, "wall_leak_");   // W5-A diagonal wall gaps (save v21)
         save::io(ar, w.crush_wall_); save::mark(ar, "crush_wall_");  // P4 crushable / crushed walls (save v23)
         save::io(ar, w.wall_ov_type_); save::mark(ar, "wall_ov_type_");    // W6-04-05 map wall overlays (v25; re-registered on load)
@@ -635,6 +638,17 @@ template <class Ar> void fields(Ar& ar, World::CrateEvent& v) {
 template <class Ar> void fields(Ar& ar, World::ElevationRules& v) {   // W5-B (v20)
     io(ar, v.armed); io(ar, v.increment); io(ar, v.bonus); io(ar, v.cap);
 }
+template <class Ar> void fields(Ar& ar, HitRec& v) {   // w7fix-combat (v35)
+    io(ar, v.victim); io(ar, v.building); io(ar, v.attacker); io(ar, v.attacker_building);
+    io(ar, v.attacker_house); io(ar, v.ax); io(ar, v.ay); io(ar, v.disguised); io(ar, v.incoming);
+}
+template <class Ar> void fields(Ar& ar, World::CombatW7Rules& v) {   // w7fix-combat (v35)
+    io(ar, v.armed); io(ar, v.player_return_fire); io(ar, v.player_scatter); io(ar, v.iq_guard_area);
+    io(ar, v.iq_auto_crush); io(ar, v.iq_scatter); io(ar, v.max_iq); io(ar, v.close_enough);
+    io(ar, v.normal_targeting_delay); io(ar, v.guard_area_targeting_delay); io(ar, v.incoming);
+    io(ar, v.my_eff); io(ar, v.tgt_eff); io(ar, v.tgt_special); io(ar, v.tgt_strength); io(ar, v.tgt_distance);
+    io(ar, v.enemy_house_bonus); io(ar, v.call_for_help_budget);
+}
 template <class Ar> void fields(Ar& ar, World::CrushRules& v) {   // W5-B (v20)
     io(ar, v.armed); io(ar, v.crush_leptons); io(ar, v.player_auto_crush); io(ar, v.ai_any_building);
 }
@@ -739,8 +753,19 @@ template <class Ar> void fields(Ar& ar, UnitTypeW5& v) {
 template <class Ar> void fields(Ar& ar, UnitTypeTgt& v) {
     io(ar, v.rules_id); io(ar, v.insignificant); io(ar, v.legal_target); io(ar, v.immune_psionics);
     io(ar, v.guard_range);
+    // w7fix-combat (save v35)
+    io(ar, v.default_to_guard_area); io(ar, v.opportunity_fire); io(ar, v.selectable_combatant);
+    io(ar, v.to_protect); io(ar, v.threat_posed); io(ar, v.special_threat_value);
+    io(ar, v.attack_cursor_on_friendlies); io(ar, v.prevent_attack_move); io(ar, v.cost);
 }
-template <class Ar> void fields(Ar& ar, UnitTgt& v) { io(ar, v.t); io(ar, v.in_playfield); io(ar, v.area_guard); }
+template <class Ar> void fields(Ar& ar, UnitTgt& v) {
+    io(ar, v.t); io(ar, v.in_playfield); io(ar, v.area_guard);
+    // w7fix-combat (save v35): the mission model
+    io(ar, v.mission); io(ar, v.scan_timer); io(ar, v.opportunity); io(ar, v.overridden);
+    io(ar, v.resume_x); io(ar, v.resume_y); io(ar, v.resume_area_guard); io(ar, v.home_x); io(ar, v.home_y);
+    io(ar, v.amove_x); io(ar, v.amove_y); io(ar, v.help_frame); io(ar, v.team_aggressive); io(ar, v.team_suicide); io(ar, v.crush_warn);
+    io(ar, v.w7_rof); io(ar, v.rof_raw); io(ar, v.house_rof); io(ar, v.house_fp); io(ar, v.rof_vet);
+}
 template <class Ar> void fields(Ar& ar, BldTgt& v) {
     io(ar, v.in_playfield); io(ar, v.insignificant); io(ar, v.legal_target);
 }

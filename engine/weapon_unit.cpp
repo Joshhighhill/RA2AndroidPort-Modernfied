@@ -82,11 +82,17 @@ void activate_weapon_slot(Unit& u, int slot, const VeterancyRules* vr) {
     auto has = [&](Ability a) {
         return has_ability(v.veterancy, v.vet_abilities, v.elite_abilities, a);
     };
+    // W7-07-15 [RE: 0x6FC460, 0x6FD800]: the house FirePower / ROF multipliers
+    // apply to every shot -- a slot switch keeps them (w7fix-combat, armed).
+    const double hfp = u.tg.w7_rof ? u.tg.house_fp : 1.0, hrof = u.tg.w7_rof ? u.tg.house_rof : 1.0;
     auto dmg = [&](int d) {
-        if (vet) return fire_damage(d, v.firepower_mult, has(Ability::Firepower), vr->combat);
+        if (vet) return fire_damage(d, v.firepower_mult, has(Ability::Firepower), vr->combat, hfp);
         return u.veteran_rank > 0 ? veteran_firepower(d, u.veteran_rank) : d;
     };
-    auto rof = [&](int r) { return vet ? rof_frames(r, has(Ability::Rof), vr->rof) : r; };
+    auto rof = [&](int r) {
+        if (u.tg.w7_rof) u.tg.rof_raw = r;   // W7-07-14: the active slot's raw ROF
+        return vet ? rof_frames(r, has(Ability::Rof), vr->rof, hrof) : r;
+    };
     if (slot == 0) {
         const bool el = vet && unit_is_elite(u) && v.has_elite;
         const WeaponStats& w = el ? v.elite : v.base;

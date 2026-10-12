@@ -149,11 +149,55 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
             return Action::Rally;
         return Action::None;   // [RE: FUN_004AB8C0] nothing selected + ground = no action
     }
+    // w7fix-combat: the selection's friendly-attack abilities.
+    auto sel_any = [&](auto pred) {
+        for (int si : sel_.ids()) {
+            if (si < 0 || si >= static_cast<int>(us.size())) continue;
+            const Unit& su = us[si];
+            if (world_.controllable(su.house) && su.alive && su.die_time < 0.0 && su.cargo_of < 0 && pred(su))
+                return true;
+        }
+        return false;
+    };
+    auto ivan_sel = [&] {
+        return sel_any([](const Unit& su) { return su.abil.fire_kind == AbilityKind::IvanBomb; });
+    };
+    // W7-02-11 [RE: InfantryClass::What_Action 0x51E89E]: an Ivan over an
+    // object that already carries a bomb gets NoIvanBomb (no order).
+    if (idx >= 0 && !sel_.has(idx) && us[idx].bomb_frame >= 0 && ivan_sel() &&
+        (ctrl || !world_.controllable(us[idx].house)))
+        return Action::NoMove;
+    // W7-07-12 [RE: YR mission 29 Attack Move, AttackMoveNav cursor; the
+    // modifier is SUSPECTED Ctrl+Shift]: Ctrl+Shift on the ground is an
+    // attack-move (the move cursor).
+    if (ctrl && shift && idx < 0 && b < 0) return cell_walkable(cx, cy) ? Action::Move : Action::NoMove;
     // Force-fire (Ctrl) on any object that is not part of the selection.
+    // W7-07-13 / W7-02-01 [RE: What_Action FUN_006FF380 -- with the force-fire
+    // key down any object other than the unit itself is ACTION_ATTACK,
+    // whatever its owner]: own and allied objects too.
     if (ctrl) {
-        if (idx >= 0 && !sel_.has(idx) && !world_.controllable(us[idx].house)) return Action::Attack;
-        if (b >= 0 && world_.buildings()[b].house != world_.order_issuer()) return Action::Attack;
+        if (idx >= 0 && !sel_.has(idx)) return Action::Attack;
+        if (b >= 0) return Action::Attack;
         if (idx < 0 && b < 0) return Action::Attack;   // G16: force-fire the ground cell
+    }
+    // W7-02-01 [RE: What_Action 0x6FF865, TechnoType +0x6C1
+    // AttackCursorOnFriendlies]: the Ivan's bomb cursor on own / allied
+    // objects without the force-fire key.
+    if (idx >= 0 && !sel_.has(idx) && !world_.is_enemy(world_.order_issuer(), us[idx].house) &&
+        sel_any([](const Unit& su) { return su.tg.t.attack_cursor_on_friendlies; }))
+        return Action::Attack;
+    if (idx < 0 && b >= 0 && !world_.is_enemy(world_.order_issuer(), world_.buildings()[b].house)) {
+        const Building& FB = world_.buildings()[b];
+        if (FB.bomb_frame < 0 && sel_any([](const Unit& su) { return su.tg.t.attack_cursor_on_friendlies; }))
+            return Action::Attack;
+        // W7-02-02 [RE: SelectWeapon FUN_006F2890 @0x6F2B7F -- an allied
+        // Overpowerable building and an ElectricAssault secondary]: Tesla
+        // Troopers ordered onto an own / allied Tesla Coil charge it.
+        const auto& bt = world_.btypes();
+        if (FB.type >= 0 && FB.type < static_cast<int>(bt.size()) && bt[FB.type].w5.overpowerable &&
+            world_.allied_with(world_.order_issuer(), FB.house) &&
+            sel_any([](const Unit& su) { return su.w5.p.assault; }))
+            return Action::Attack;
     }
     if (alt) return cell_walkable(cx, cy) ? Action::Move : Action::NoMove;   // force-move
     if (idx >= 0) {
@@ -313,7 +357,14 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
             return;
         }
         case Action::Attack:
-            if (mod_ctrl_) {   // force-fire: target regardless of the is_enemy gate
+            // w7fix-combat: a friendly target (AttackCursorOnFriendlies, the
+            // Tesla charge) takes the force-fire emission too.
+            if (mod_ctrl_ || [&] {
+                    const int fi = unit_under(px, py);
+                    if (fi >= 0) return !sel_.has(fi) && !world_.is_enemy(world_.order_issuer(), world_.units()[fi].house);
+                    const int fb = pick_building(px, py, ev_touch_);
+                    return fb >= 0 && !world_.is_enemy(world_.order_issuer(), world_.buildings()[fb].house);
+                }()) {   // force-fire: target regardless of the is_enemy gate
                 const int idx = unit_under(px, py);
                 const int actor = lowest_selected();
                 const std::vector<int> sel = sel_.ids();
@@ -338,6 +389,15 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
             return;
         case Action::Move:
         case Action::NoMove:
+            if (mod_ctrl_ && shift && a == Action::Move) {   // W7-07-12 attack-move
+                int cx = 0, cy = 0;
+                resolve_ground_cell(px, py, cx, cy);
+                const int actor = lowest_selected();
+                emit(make_mega(world_, sel_.ids(), Mission::AttackMove, Target{}, Target::cell(cx, cy)));
+                actions_.move_ordered = true;
+                actions_.actor = actor;
+                return;
+            }
             if (mod_alt_) {   // force-move: always a ground move
                 int cx = 0, cy = 0;
                 resolve_ground_cell(px, py, cx, cy);

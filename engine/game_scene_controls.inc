@@ -251,8 +251,14 @@
     // screen; a second press when they are all already selected widens to the
     // whole map (DAT_00B0EDC4).
     void hotkey_combatant_select() {
+        // W7-01-13 / W7-02-07 [RE: 0x731690 -- WhatAmI != building && TechnoType
+        // +0xDBC IsSelectableCombatant (loader @0x714B09, default no)]: the
+        // type flag, not "has a weapon" (Engineers, Spies, Terrorists are no).
+        // A hand-built unit without a rules id keeps the weapon test.
         auto combatant = [&](const ra2engine::Unit& u) {
-            return own_live(u) && u.w_damage > 0 && !u.is_harvester;
+            if (!own_live(u)) return false;
+            if (!u.tg.t.rules_id.empty()) return u.tg.t.selectable_combatant;
+            return u.w_damage > 0 && !u.is_harvester;
         };
         bool all_sel = true, any = false;
         for (const ra2engine::Unit& u : world_.units())

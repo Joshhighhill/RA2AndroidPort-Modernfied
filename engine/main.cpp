@@ -867,6 +867,16 @@ ra2engine::UnitTypeTgt resolve_unit_w6(const Rules& rules, const std::string& un
     w.legal_target = rules.section_flag(unit_id, "LegalTarget", true);
     w.immune_psionics = rules.section_flag(unit_id, "ImmuneToPsionics", false);
     w.guard_range = rules.section_double(unit_id, "GuardRange", 0.0);
+    // w7fix-combat: the wave-7 shared-combat type keys (target_w6.hpp).
+    w.default_to_guard_area = rules.section_flag(unit_id, "DefaultToGuardArea", false);
+    w.opportunity_fire = rules.section_flag(unit_id, "OpportunityFire", false);
+    w.selectable_combatant = rules.section_flag(unit_id, "IsSelectableCombatant", false);
+    w.to_protect = rules.section_flag(unit_id, "ToProtect", false);
+    w.threat_posed = static_cast<int>(rules.section_double(unit_id, "ThreatPosed", 0.0));
+    w.special_threat_value = rules.section_double(unit_id, "SpecialThreatValue", 0.0);
+    w.attack_cursor_on_friendlies = rules.section_flag(unit_id, "AttackCursorOnFriendlies", false);
+    w.prevent_attack_move = rules.section_flag(unit_id, "PreventAttackMove", false);
+    w.cost = rules.cost(unit_id);
     return w;
 }
 
