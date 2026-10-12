@@ -30,6 +30,11 @@ const WeaponSlot& secondary_view(const Unit& u) {
 namespace {
 int unit_weapon_for_unit_base(const Unit& u, const Unit& v) {
     if (u.deploy_fire && u.deployed) return u.deploy_fire_slot == 1 && u.w2.valid ? 1 : 0;
+    // W7-01-06 [RE: InfantryClass::SelectWeapon 0x521610]: an undeployed
+    // DeployFire infantry (GI, Guardian GI) has weapon 0 only -- the
+    // undeployed GGI never fires its anti-air MissileLauncher.
+    if (u.deploy_fire && u.is_infantry)
+        return slot_can_target(primary_view(u), unit_airborne(v), v.armor_ix) ? 0 : -1;
     if (!u.w2.valid) {
         // No secondary: the primary alone, gated like GetFireError.
         return slot_can_target(primary_view(u), unit_airborne(v), v.armor_ix) ? 0 : -1;
@@ -56,20 +61,27 @@ int unit_weapon_for_unit(const Unit& u, const Unit& v) {
     // W2-AN-14 [rules NavalTargeting/LandTargeting, defaults 0]: the water /
     // land / underwater split. A unit with all-default keys attacking a land
     // or surfaced target is unchanged (the rule returns `want`).
-    const int slot = an_naval_slot(u.an.t, want, u.w2.valid, v.an.in_water, v.an.submerged,
+    // W7-06-02/09 [RE: GetFireError @0x6FBC86, FUN_006F2D80]: the victim's
+    // CELL decides (Water/Beach, an.naval_cell); its TYPE's Underwater, its
+    // cloak, Organic and SpeedType Hover (3) pick the slot.
+    const int slot = an_naval_slot(u.an.t, want, u.w2.valid, v.an.naval_cell || (v.is_naval && v.an.in_water),
+                                   v.an.t.underwater, v.an.submerged,
                                    v.an.t.organic || (!v.is_vehicle && !v.is_aircraft && !v.is_naval),
-                                   unit_airborne(v), false);
+                                   v.speed_type == 3, unit_airborne(v), false);
     if (slot >= 0 && v.bomb_frame < 0 && slot_bomb_disarm(u, slot)) return -1;
     return slot;
 }
 
-int unit_weapon_for_building(const Unit& u, int armor_ix, bool target_bombed) {
+int unit_weapon_for_building(const Unit& u, int armor_ix, bool target_bombed, bool in_water) {
     int want;
     if (u.deploy_fire && u.deployed) want = u.deploy_fire_slot == 1 && u.w2.valid ? 1 : 0;
+    else if (u.deploy_fire && u.is_infantry) want = slot_can_target(primary_view(u), false, armor_ix) ? 0 : -1;   // W7-01-06
     else if (!u.w2.valid) want = slot_can_target(primary_view(u), false, armor_ix) ? 0 : -1;
     else want = choose_weapon(primary_view(u), secondary_view(u), false, armor_ix);
-    // W2-AN-14: LandTargeting=1 / UnderwaterOnly cannot hit a structure.
-    const int slot = an_naval_slot(u.an.t, want, u.w2.valid, false, false, false, false, true);
+    // W2-AN-14: LandTargeting=1 / UnderwaterOnly cannot hit a structure on
+    // land. W7-06-02: one standing on the water (a Naval Yard) is a naval
+    // target -- a Typhoon, Dolphin or Squid may attack it.
+    const int slot = an_naval_slot(u.an.t, want, u.w2.valid, in_water, false, false, false, false, false, true);
     if (slot >= 0 && !target_bombed && slot_bomb_disarm(u, slot)) return -1;
     return slot;
 }
@@ -82,11 +94,17 @@ void activate_weapon_slot(Unit& u, int slot, const VeterancyRules* vr) {
     auto has = [&](Ability a) {
         return has_ability(v.veterancy, v.vet_abilities, v.elite_abilities, a);
     };
+    // W7-07-15 [RE: 0x6FC460, 0x6FD800]: the house FirePower / ROF multipliers
+    // apply to every shot -- a slot switch keeps them (w7fix-combat, armed).
+    const double hfp = u.tg.w7_rof ? u.tg.house_fp : 1.0, hrof = u.tg.w7_rof ? u.tg.house_rof : 1.0;
     auto dmg = [&](int d) {
-        if (vet) return fire_damage(d, v.firepower_mult, has(Ability::Firepower), vr->combat);
+        if (vet) return fire_damage(d, v.firepower_mult, has(Ability::Firepower), vr->combat, hfp);
         return u.veteran_rank > 0 ? veteran_firepower(d, u.veteran_rank) : d;
     };
-    auto rof = [&](int r) { return vet ? rof_frames(r, has(Ability::Rof), vr->rof) : r; };
+    auto rof = [&](int r) {
+        if (u.tg.w7_rof) u.tg.rof_raw = r;   // W7-07-14: the active slot's raw ROF
+        return vet ? rof_frames(r, has(Ability::Rof), vr->rof, hrof) : r;
+    };
     if (slot == 0) {
         const bool el = vet && unit_is_elite(u) && v.has_elite;
         const WeaponStats& w = el ? v.elite : v.base;

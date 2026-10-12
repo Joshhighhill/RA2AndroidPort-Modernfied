@@ -36,6 +36,11 @@ bool can_load(const std::vector<Unit>& units, int transport_idx, int passenger_i
                                                // [spec Out-of-scope]
     if (t.cargo_of >= 0) return false;                             // carried transports
                                                // admit nobody
+    // W7-01-28 [RE: UnitClass::ReceiveMessage FUN_00736500 case 0xF]: a
+    // passenger that is mind-controlling something may not enter, and a
+    // transport being erased (warped out) admits nobody.
+    if (!p.w7.mc_victims.empty()) return false;
+    if (t.warp_remaining > 0) return false;
     if (p.size > t.size_limit) return false;   // PER-PASSENGER cap: Size <=
                                                // SizeLimit [RE-GATE APPLIED:
                                                // transport-cargo.md §1]

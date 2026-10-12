@@ -94,4 +94,26 @@ void w5_arm_combat(ra2engine::World& world, const Rules& rules, const ra2assets:
     er.bonus = rules.section_double("ElevationModel", "ElevationIncrementBonus", 2.0);
     er.cap = rules.section_double("ElevationModel", "ElevationBonusCap", 2.0);
     if (off.find("elev") == std::string::npos) world.arm_elevation(er);
+    // --- w7fix-combat: the wave-7 shared-combat rules ------------------------
+    ra2engine::World::CombatW7Rules w7;
+    w7.armed = off.find("w7") == std::string::npos;
+    w7.player_return_fire = rules.section_flag("General", "PlayerReturnFire", false) ||
+                            rules.section_flag("CombatDamage", "PlayerReturnFire", false);
+    w7.player_scatter = rules.section_flag("General", "PlayerScatter", false) ||
+                        rules.section_flag("CombatDamage", "PlayerScatter", false);
+    w7.iq_guard_area = static_cast<int>(rules.section_double("IQ", "GuardArea", 2.0));
+    w7.iq_auto_crush = static_cast<int>(rules.section_double("IQ", "AutoCrush", 2.0));
+    w7.iq_scatter = static_cast<int>(rules.section_double("IQ", "Scatter", 2.0));
+    w7.max_iq = static_cast<int>(rules.section_double("IQ", "MaxIQLevels", 5.0));
+    w7.close_enough = rules.general_double("CloseEnough", 2.25);
+    w7.normal_targeting_delay = static_cast<int>(rules.general_double("NormalTargetingDelay", 27.0));
+    w7.guard_area_targeting_delay = static_cast<int>(rules.general_double("GuardAreaTargetingDelay", 36.0));
+    w7.incoming = static_cast<int>(rules.section_double("CombatDamage", "Incoming", 10.0));
+    w7.my_eff = rules.general_double("MyEffectivenessCoefficientDefault", 200.0);
+    w7.tgt_eff = rules.general_double("TargetEffectivenessCoefficientDefault", -200.0);
+    w7.tgt_special = rules.general_double("TargetSpecialThreatCoefficientDefault", 200.0);
+    w7.tgt_strength = rules.general_double("TargetStrengthCoefficientDefault", -200.0);
+    w7.tgt_distance = rules.general_double("TargetDistanceCoefficientDefault", -10.0);
+    w7.enemy_house_bonus = rules.general_double("EnemyHouseThreatBonus", 400.0);
+    world.arm_combat_w7(w7);
 }

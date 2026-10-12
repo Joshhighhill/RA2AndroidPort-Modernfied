@@ -105,6 +105,39 @@ const VeterancyRules* vet_rules_of(const World& world) {
     return world.veterancy_enabled() ? &world.veterancy_rules() : nullptr;
 }
 
+// ---- w7fix-combat helpers -------------------------------------------------
+// W7-07-13 [RE: GetFireError FUN_006FB5D0 -- no house test]: an explicitly
+// ordered target (force-fire, retaliation) stays legal whatever its owner:
+// alive, on the map, seen, not the unit itself, and a weapon can engage it.
+bool forced_target_ok(const std::vector<Unit>& units, const World& world, const Unit& self, int self_idx,
+                      int idx) {
+    if (idx < 0 || idx >= static_cast<int>(units.size()) || idx == self_idx) return false;
+    const Unit& v = units[static_cast<std::size_t>(idx)];
+    return v.alive && v.die_time < 0.0 && v.cargo_of < 0 && !world.unit_hidden_from(self.house, v) &&
+           (unit_weapon_for_unit(self, v) >= 0 || self.abil.fire_kind != AbilityKind::None);
+}
+
+// The Verses fraction (percent / 100) of slot `slot` of u against armor `ai`.
+double slot_verses(const Unit& u, int slot, int ai) {
+    WeaponSlot other;
+    if (slot != u.w_active) other = slot == 1 ? secondary_view(u) : primary_view(u);
+    const std::vector<int>& use = (slot == u.w_active || other.verses.empty()) ? u.w_verses : other.verses;
+    if (use.empty()) return 1.0;
+    if (ai < 0 || ai >= static_cast<int>(use.size())) ai = 0;
+    return use[static_cast<std::size_t>(ai)] / 100.0;
+}
+
+// W7-07-06 [RE: Mission_Area_Guard FUN_004D41A0: (FUN_007072E0(2) >> 8) + 6;
+// FUN_007072E0(2) = 2 x (GuardRange, else the larger weapon range), clamped
+// to 0x700..0x1000 leptons]: the area-guard leash in cells, 13..22.
+int area_guard_leash_cells(const Unit& u) {
+    const double gr = u.tg.t.guard_range;
+    const double wr = std::max(slot_range(u, 0), slot_range(u, 1));
+    int l = om::ftol(2.0 * (gr > 0.0 ? gr : wr) * 256.0);
+    l = std::max(0x700, std::min(0x1000, l));
+    return (l >> 8) + 6;
+}
+
 // Fires `u`'s weapon at `v` (caller has already range/cooldown-checked).
 // Resets u's cooldown/fire_flash, applies damage_vs, handles idle-victim
 // retaliation, and starts death if the hit is lethal. `attacker_idx`/
@@ -142,7 +175,29 @@ void try_fire(const World& world, std::vector<Unit>& units, std::vector<Building
     // Campaign mind control: the Controller shot captures (CampaignRuntime::
     // poll_mind_control), it never damages. Only campaign-armed units carry
     // the flag -> every gate / skirmish path below is unchanged.
-    if (u.w_mind_control) return;
+    // W7-10-04 [RE: BulletClass::Detonate 0x4690A0 @0x4692C0 -> Capture]: the
+    // capture rides THIS shot (its ROF, facing and range already applied);
+    // the runtime consumes Unit::w7.mc_shot. W7-08-13: only the Controller
+    // weapon (slot 0) -- a deployed Yuri's PsiWave (slot 1) does damage.
+    if (u.w_mind_control && u.w_active == 0) {
+        u.w7.mc_shot = victim_idx;
+        return;
+    }
+    // W7-07-26 [RE: InfantryClass::Fire 0x5203E0 @0x5207A0..0x5207F7]: after
+    // an infantry shot whose weapon Speed (+0xA8 [SUSPECTED]) is below
+    // [CombatDamage] Incoming=10, CellClass::Incoming(shooter, 1, 0) warns the
+    // target cell (Grenade, RadEruption, PsiWave, ...).
+    if (!u.is_vehicle && !u.is_aircraft && !u.is_naval && u.w_proj.speed_cap > 0 &&
+        u.w_proj.speed_cap < om::ftol(world.combat_w7().incoming * 2.56)) {
+        HitRec r;
+        r.victim = victim_idx;
+        r.attacker = attacker_idx;
+        r.attacker_house = u.house;
+        r.ax = u.cell_x;
+        r.ay = u.cell_y;
+        r.incoming = true;
+        log_hit(r);
+    }
     if (launches && u.w_proj.flies()) {
         launches->push_back({attacker_idx, victim_idx, -1});
         return;
@@ -186,11 +241,165 @@ void try_fire(const World& world, std::vector<Unit>& units, std::vector<Building
         Unit frag = u;
         frag.w_damage = u.shrapnel_damage;
         frag.w_verses = u.shrapnel_verses;
-        for (int k = 0; k < static_cast<int>(near.size()) && k < u.shrapnel_count; ++k)
+        for (int k = 0; k < static_cast<int>(near.size()) && k < u.shrapnel_count; ++k) {
+            world.note_fragment(attacker_idx, v.fx, v.fy, v.level, near[static_cast<std::size_t>(k)].second);   // W7-12-07
             deliver_hit_from(units, occ, frag, attacker_idx, -1, near[static_cast<std::size_t>(k)].second);
+        }
     }
 }
 
+}  // namespace
+
+// W7-07-03 [RE: FUN_0070C190, called from Evaluate_Object 0x6F7C36 and
+// CanRetaliateToAttacker 0x707F09/0x707F1A]: the threat `u` sees in unit `v`.
+//   TgtEff * Verses[the weapon of v vs my armor] (sign flipped when v targets me)
+// + TgtSpecial * v.SpecialThreatValue
+// + EnemyHouseThreatBonus                     (the house of v is my Enemy)
+// + MyEff * Verses[my weapon vs the armor of v]
+// + TgtStrength * v.HealthRatio
+// + TgtDistance * max(0, dist_cells - my_range_cells)
+// + 100000, ftol'd, at least 1. Coefficients: the house-type defaults
+// ([General] *CoefficientDefault) [SUSPECTED: the HouseClass +0x1FB switch
+// between the per-type and the Rules "Dumb" set was not named; every house is
+// taken as using its type set]. The spread-warhead x0.5 per allied cell
+// (FUN_006F6ED0) is not modelled.
+int threat_value_unit(const World& world, const Unit& u, int self_idx, const Unit& v) {
+    const World::CombatW7Rules& R = world.combat_w7();
+    double t = 0.0;
+    const int vs = unit_weapon_for_unit(v, u);
+    if (vs >= 0) {
+        const double te = R.tgt_eff * slot_verses(v, vs, u.armor_ix);
+        t += (v.target == self_idx && self_idx >= 0) ? -te : te;
+    }
+    t += R.tgt_special * v.tg.t.special_threat_value;
+    const int enemy = world.ai_enemy_house(u.house);
+    if (enemy >= 0 && enemy == v.house) t += R.enemy_house_bonus;
+    const int ms = unit_weapon_for_unit(u, v);
+    if (ms >= 0) t += R.my_eff * slot_verses(u, ms, v.armor_ix);
+    t += R.tgt_strength * (v.max_hp > 0 ? static_cast<double>(v.hp) / v.max_hp : 0.0);
+    const int dx = unit_lept_x(v) - unit_lept_x(u), dy = unit_lept_y(v) - unit_lept_y(u),
+              dz = unit_lept_z(v) - unit_lept_z(u);
+    const int dist = om::ftol(om::sqrt(double(dx) * dx + double(dy) * dy + double(dz) * dz)) >> 8;
+    const int rng = om::ftol((ms >= 0 ? slot_range(u, ms) : u.w_range) * 256.0) >> 8;
+    t += R.tgt_distance * std::max(0, dist - rng);
+    const int r = om::ftol(t + 100000.0);
+    return r < 1 ? 1 : r;
+}
+
+int threat_value_building(const World& world, const Unit& u, const Building& b) {
+    const World::CombatW7Rules& R = world.combat_w7();
+    double t = 0.0;
+    const std::vector<BuildingTypeDef>& bt = world.btypes();
+    const BuildingTypeDef* T = (b.type >= 0 && b.type < static_cast<int>(bt.size())) ? &bt[static_cast<std::size_t>(b.type)]
+                                                                                    : nullptr;
+    if (T && T->armed && T->weapon[0].valid && !T->weapon[0].verses.empty()) {
+        int ai = u.armor_ix;
+        if (ai < 0 || ai >= static_cast<int>(T->weapon[0].verses.size())) ai = 0;
+        t += R.tgt_eff * (T->weapon[0].verses[static_cast<std::size_t>(ai)] / 100.0);
+    }
+    const int enemy = world.ai_enemy_house(u.house);
+    if (enemy >= 0 && enemy == b.house) t += R.enemy_house_bonus;
+    const int ms = unit_weapon_for_building(u, b.armor_ix, b.bomb_frame >= 0);
+    if (ms >= 0) t += R.my_eff * slot_verses(u, ms, b.armor_ix);
+    t += R.tgt_strength * (b.max_hp > 0 ? static_cast<double>(b.hp) / b.max_hp : 0.0);
+    int bx, by, bz;
+    building_aim_lept(b, world.cell_level(b.cx, b.cy), bx, by, bz);
+    const int dx = bx - unit_lept_x(u), dy = by - unit_lept_y(u);
+    const int dist = om::ftol(om::sqrt(double(dx) * dx + double(dy) * dy)) >> 8;
+    const int rng = om::ftol((ms >= 0 ? slot_range(u, ms) : u.w_range) * 256.0) >> 8;
+    t += R.tgt_distance * std::max(0, dist - rng);
+    const int r = om::ftol(t + 100000.0);
+    return r < 1 ? 1 : r;
+}
+
+namespace {
+// W7-07-03 [RE: Greatest_Threat FUN_006F8320 -> Evaluate_Object FUN_006F71D0 /
+// FUN_006F7E90]: one pass over units and buildings in the threat radius, the
+// highest threat_value kept (ties: the first in scan order). The scan stops at
+// radius/4, then radius/2, as soon as a band holds a candidate. Evaluate_Object
+// rejects: not an enemy, hidden / disguised / unseen, not a legal threat
+// (LegalTarget, IsInPlayfield, Insignificant, NoThreat missions), Verses
+// <= 2% (W7-07-04 [RE: 0x6F7270..0x6F727C]: "1% means no passive acquire").
+// `in_range_only`: Sticky picks only what its weapon reaches.
+template <class BucketOf>
+bool w7_greatest_threat(const World& world, std::vector<Unit>& units, std::vector<Building>& buildings, Unit& u,
+                        int i, bool in_range_only, const std::vector<std::vector<int>>& buckets, int bgw, int bgh,
+                        BucketOf bucket_of) {
+    const double acq = acquire_radius(u);
+    const double rmax = std::max(std::max(slot_range(u, 0), slot_range(u, 1)), acq) + 1.0;
+    struct Cand { double d; int score; int unit; int bld; };
+    std::vector<Cand> cands;
+    const int bx0 = bucket_of(u.fx - rmax, bgw), bx1 = bucket_of(u.fx + rmax, bgw);
+    const int by0 = bucket_of(u.fy - rmax, bgh), by1 = bucket_of(u.fy + rmax, bgh);
+    for (int by = by0; by <= by1; ++by)
+        for (int bx = bx0; bx <= bx1; ++bx)
+            for (int j : buckets[static_cast<std::size_t>(by) * bgw + bx]) {
+                if (j == i || !valid_target(units, world, u, j) ||
+                    (!u.detect_disguise && world.disguise_fools(u.house, units[j])) ||   // W7-01-02
+                    !(units[j].seen_by_mask & (1u << u.house)) || !world.legal_threat_unit(u.house, units[j]) ||
+                    (u.w_mind_control && units[j].tg.t.immune_psionics))
+                    continue;
+                const Unit& v = units[static_cast<std::size_t>(j)];
+                const int ws = unit_weapon_for_unit(u, v);
+                if (ws < 0 || slot_verses(u, ws, v.armor_ix) <= 0.02) continue;   // W7-07-04
+                const double d = dist_leptons(u.fx, u.fy, v.fx, v.fy);
+                const double rng = (in_range_only || u.is_aircraft || (u.deploy_fire && u.deployed))
+                                       ? slot_range(u, ws) : acq;
+                if (d > rng * kLeptonsPerCell) continue;
+                cands.push_back({d, 0, j, -1});
+            }
+    if (u.abil.fire_kind == AbilityKind::None && !u.abil.c4) {
+        const std::vector<BuildingTypeDef>& bt = world.btypes();
+        for (int bj = 0; bj < static_cast<int>(buildings.size()); ++bj) {
+            const Building& b = buildings[static_cast<std::size_t>(bj)];
+            if (!b.alive || b.state == Building::State::Dead) continue;
+            // R-064 [RE: Evaluate_Object @0x6F7ADB]: a human unit skips an
+            // unarmed building, a computer unit may pick any.
+            if (b.type < 0 || b.type >= static_cast<int>(bt.size()) ||
+                (!bt[static_cast<std::size_t>(b.type)].armed &&
+                 !(world.house_is_computer(u.house) && world.ai_threat_any_building())))
+                continue;
+            if (!world.is_enemy(u.house, b.house) || !world.legal_threat_building(u.house, b) ||
+                !world.object_visible_at(u.house, b.cx, b.cy))
+                continue;
+            const int ws = unit_weapon_for_building(u, b.armor_ix, b.bomb_frame >= 0,
+                                                    world.an_victim_naval_cell(b.cx + b.fw / 2, b.cy + b.fh / 2));
+            if (ws < 0 || slot_verses(u, ws, b.armor_ix) <= 0.02) continue;   // W7-07-04
+            // the building path engages from weapon range only (it never
+            // approaches an auto-acquired structure)
+            const double rng = slot_range(u, ws) * kLeptonsPerCell;
+            double bd = -1.0;
+            for (const Cellxy& cell : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
+                const double d = dist_leptons(u.fx, u.fy, cell.x, cell.y);
+                if (bd < 0.0 || d < bd) bd = d;
+            }
+            if (bd < 0.0 || bd > rng) continue;
+            cands.push_back({bd, 0, -1, bj});
+        }
+    }
+    if (cands.empty()) return false;
+    const double radius = acq * kLeptonsPerCell;
+    double band = radius / 4.0;
+    bool any = false;
+    for (const Cand& c : cands) any = any || c.d <= band;
+    if (!any) {
+        band = radius / 2.0;
+        for (const Cand& c : cands) any = any || c.d <= band;
+    }
+    if (!any) band = 1e300;
+    int best = -1, best_score = 0;
+    for (std::size_t k = 0; k < cands.size(); ++k) {
+        Cand& c = cands[k];
+        if (c.d > band) continue;
+        c.score = c.unit >= 0 ? threat_value_unit(world, u, i, units[static_cast<std::size_t>(c.unit)])
+                              : threat_value_building(world, u, buildings[static_cast<std::size_t>(c.bld)]);
+        if (best < 0 || c.score > best_score) { best = static_cast<int>(k); best_score = c.score; }
+    }
+    if (best < 0) return false;
+    if (cands[static_cast<std::size_t>(best)].unit >= 0) u.target = cands[static_cast<std::size_t>(best)].unit;
+    else u.target_building = cands[static_cast<std::size_t>(best)].bld;
+    return true;
+}
 }  // namespace
 
 // Gap fix C (G-50) [RE: veterancy.md V7, FUN_006FC460 0x6FC55E..0x6FC60C --
@@ -216,6 +425,25 @@ int burst_rearm_frames(int& burst_index, int burst, int rof_frames, ProjRng* rng
 }
 
 int unit_rearm_frames(Unit& u, ProjRng* rng) {
+    if (u.tg.w7_rof && u.tg.rof_raw > 0) {
+        // W7-07-14 [RE: FUN_006FC460 0x6FC55E..0x6FC60C]: r = ftol(ROF *
+        // houseROF + Random(0,2)); with the ROF ability r = ftol(r *
+        // VeteranROF) -- the jitter BEFORE the veteran multiply (a veteran GI,
+        // ROF 20: {12,12,13}, not {12,13,14}).
+        int& bi = u.w6.burst_index;
+        const int burst = std::max(1, u.w6.burst);
+        ++bi;
+        int frames;
+        if (bi < burst) {
+            frames = rng ? rng->random(3, 5) : 3;
+        } else {
+            const int j = rng ? rng->random(0, 2) : 0;
+            frames = om::ftol(u.tg.rof_raw * u.tg.house_rof + j);
+            if (u.tg.rof_vet != 1.0) frames = om::ftol(frames * u.tg.rof_vet);
+        }
+        bi %= burst;
+        return frames;
+    }
     return burst_rearm_frames(u.w6.burst_index, u.w6.burst, u.w_rof, rng);
 }
 
@@ -244,8 +472,15 @@ void deliver_hit_from(std::vector<Unit>& units, Occupancy& occ, const Unit& u, i
     int raw = u.w_damage;
     if (v.vet.recv) raw = vet_receive(raw, v.vet);
     raw = inf_prone_damage(v.ia, raw, u.w_prone_damage);   // W3-B ProneDamage (armed infantry only)
-    // W2-AN-04: an Iron-Curtained unit takes no damage.
-    const int dmg = v.an.iron_left_frames > 0.0 ? 0 : damage_vs(raw, u.w_verses, v.armor_ix);
+    // W7-04-14 [RE: FootClass::ReceiveDamage 0x4D7250]: a hit from anything
+    // but the riding parasite feeds its SuppressionTimer with the RAW damage
+    // (before Verses and the victim's armour); World::step_abilities reads it.
+    if (v.parasite_on_me >= 0 && v.parasite_on_me != attacker_idx)
+        v.w7.host_raw_hit = std::max(v.w7.host_raw_hit, u.w_damage);
+    // W2-AN-04: an Iron-Curtained unit takes no damage. W7-01-09 [RE:
+    // 0x700DA0 / 0x70BA30]: neither does one being erased (BeingWarpedOut
+    // +0x270).
+    const int dmg = (v.an.iron_left_frames > 0.0 || v.warp_remaining > 0) ? 0 : damage_vs(raw, u.w_verses, v.armor_ix);
     v.hp -= dmg;
     feed_damage(false, victim_idx, u.house, dmg);   // W6-03-04 anger
     if (dmg > 0)   // W3-B fear (FUN_00517db5; inert unless armed)
@@ -259,7 +494,15 @@ void deliver_hit_from(std::vector<Unit>& units, Occupancy& occ, const Unit& u, i
     // R3: a flyer cruising to a flight goal (Kirov, Rocketeer) is under a
     // move order too -- the same gate as auto-acquire [aircraft.md §6: a Move
     // order overrides auto-attack]; it used to stop on the first IFV that hit it.
-    if (v.target == -1 && !v.moving() && !v.has_flight_goal && !u.disguised && !v.abil.no_retaliate) {
+    // w7fix-combat: with the W7 rules armed the World resolves the hit
+    // (CanRetaliateToAttacker 0x707C40 + Override_Mission, call-for-help,
+    // damage scatter) -- the inline idle-only rule below is the pre-W7 path.
+    if (hit_log().sink) {
+        if (dmg > 0 && (attacker_idx >= 0 || attacker_building >= 0))
+            log_hit({victim_idx, false, attacker_idx, attacker_building, u.house,
+                     attacker_idx >= 0 ? units[attacker_idx].cell_x : u.cell_x,
+                     attacker_idx >= 0 ? units[attacker_idx].cell_y : u.cell_y, u.disguised});
+    } else if (v.target == -1 && !v.moving() && !v.has_flight_goal && !u.disguised && !v.abil.no_retaliate) {
         // Idle victim retaliates (docs/re/combat.md §7) and records ITS OWN
         // guard anchor at its current position (retaliation is a form of
         // auto-acquire: attack_order stays false).
@@ -296,7 +539,7 @@ void deliver_building_hit(std::vector<Unit>& units, std::vector<Building>& build
     // (ArmorMultiplier, max 1, then Verses); false in every legacy World.
     int raw = u.w_damage;
     if (b->vet_recv) raw = receive_damage(raw, b->armor_mult, false, 1.0);
-    const int dmg = b->iron_left_frames > 0.0 ? 0 : damage_vs(raw, u.w_verses, b->armor_ix);   // W2-AN-04
+    const int dmg = (b->iron_left_frames > 0.0 || b->warp_remaining > 0) ? 0 : damage_vs(raw, u.w_verses, b->armor_ix);   // W2-AN-04, W7-01-09
     b->hp -= dmg;
     feed_damage(true, b_idx, u.house, dmg);   // W6-03-04 anger
     if (b->hp <= 0) {
@@ -340,8 +583,12 @@ void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ, const Unit& a
         // an airborne target hits airborne units, a ground blast ground units
         // (the original's 3-D distance; the clone has no shared Z scale).
         if (unit_airborne(w) != unit_airborne(center)) continue;
-        if (w.house == attacker.house) continue;                     // enemies only
-        if (w.an.iron_left_frames > 0.0) continue;                          // W2-AN-04 Iron Curtain
+        // w7fix-combat (W7-07-17) [RE: DamageArea FUN_00489190 -- only an
+        // AffectsAllies=no warhead spares the firer's own house]: with the W7
+        // rules armed the splash hits the firer's own units too; the pre-W7
+        // path spares them.
+        if (w.house == attacker.house && (!hit_log().sink || !attacker.w_affects_allies)) continue;
+        if (w.an.iron_left_frames > 0.0 || w.warp_remaining > 0) continue;   // W2-AN-04 Iron Curtain, W7-01-09 erase
         const double d = dist_leptons(center.fx, center.fy, w.fx, w.fy);
         if (d > radius_lept) continue;                               // outside the splash
         const double frac = radius_lept > 0.0 ? d / radius_lept : 0.0;
@@ -556,6 +803,9 @@ bool unit_in_weapon_range(const World& world, const Unit& u, const Unit& t) {
 
 bool can_crush(const Unit& u, const Unit& v) {
     if (v.is_aircraft || unit_airborne(v) || v.is_naval) return false;
+    // W7-08-04 / W7-07-29 [RE: IsCrushable FUN_005F64C0 @0x5F651E / 0x5F656B,
+    // vt+0x160]: an Iron-Curtained object is never crushed (both branches).
+    if (v.an.iron_left_frames > 0) return false;
     // W6-04-14 [RE-FALLBACK, rules semantics]: an OmniCrusher crushes any
     // ground unit that is not OmniCrushResistant (vehicles included).
     if (u.w6.t.omni_crusher) return !v.w6.t.omni_crush_resistant;
@@ -693,7 +943,9 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
         if (!w.alive || w.die_time >= 0.0) continue;
         if (spared(w.house)) continue;
         if (shooter.w6.sonic && w.parasite_on_me >= 0) w.w6.sonic_hit = true;   // W6-04-09
-        if (w.an.iron_left_frames > 0.0) continue;                          // W2-AN-04 Iron Curtain
+        if (w.parasite_on_me >= 0 && w.parasite_on_me != src_unit)            // W7-04-14
+            w.w7.host_raw_hit = std::max(w.w7.host_raw_hit, shooter.w_damage);
+        if (w.an.iron_left_frames > 0.0 || w.warp_remaining > 0) continue;   // W2-AN-04 Iron Curtain, W7-01-09 erase
         // TechnoClass::ReceiveDamage: the house/veterancy armour multipliers on
         // the raw damage, floor 1 (P5 vet_receive; W3-B ProneDamage first).
         int raw = shooter.w_damage;
@@ -709,9 +961,20 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
         if (res.first_unit < 0 || h.idx < res.first_unit) res.first_unit = h.idx;
         inf_on_hit(w.ia, src_unit >= 0 || src_building >= 0,   // W3-B fear
                    w.max_hp > 0 ? static_cast<double>(w.hp) / w.max_hp : 0.0);
+        // w7fix-combat: the W7 World resolves retaliation from the hit log.
+        if (src_unit >= 0 || src_building >= 0) {
+            HitRec r{h.idx, false, src_unit, src_building, shooter.house,
+                     src_unit >= 0 ? units[static_cast<std::size_t>(src_unit)].cell_x : lept_cell(ix),
+                     src_unit >= 0 ? units[static_cast<std::size_t>(src_unit)].cell_y : lept_cell(iy),
+                     shooter.disguised};
+            if (log_hit(r)) {
+                if (w.hp <= 0) start_unit_death(units, occ, h.idx, shooter, src_unit);
+                continue;
+            }
+        }
         // Idle retaliation (combat.md §7) -- only against an enemy firer: a
         // unit caught in friendly splash does not turn on its own side.
-        if (w.target == -1 && !w.moving() && !w.has_flight_goal && !shooter.disguised &&
+        if (!hit_log().sink && w.target == -1 && !w.moving() && !w.has_flight_goal && !shooter.disguised &&
             !w.abil.no_retaliate &&
             world.is_enemy(w.house, shooter.house)) {
             if (src_unit >= 0) {
@@ -763,7 +1026,7 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
                 }
                 if (d > radius) continue;
                 if (spared(b.house)) continue;
-                if (b.iron_left_frames > 0.0) continue;                     // W2-AN-04
+                if (b.iron_left_frames > 0.0 || b.warp_remaining > 0) continue;   // W2-AN-04, W7-01-09
                 int raw = shooter.w_damage;
                 if (b.vet_recv) raw = receive_damage(raw, b.armor_mult, false, 1.0);
                 if (raw < 1) raw = 1;
@@ -773,6 +1036,9 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
                 if (building_hook && *building_hook && (*building_hook)(bi, dmg, d)) continue;
                 b.hp -= dmg;
                 feed_damage(true, bi, shooter.house, dmg);   // W6-03-04 anger
+                if (src_unit >= 0)   // w7fix-combat: BuildingClass::ReceiveDamage call-for-help
+                    log_hit({bi, true, src_unit, -1, shooter.house, units[static_cast<std::size_t>(src_unit)].cell_x,
+                             units[static_cast<std::size_t>(src_unit)].cell_y, shooter.disguised});
                 res.damage += dmg;
                 if (b.hp <= 0) {
                     b.killed_by = src_unit;              // P5 [V3]
@@ -791,6 +1057,11 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
 DamageFeed& damage_feed() {   // W6-03-04
     static DamageFeed f;
     return f;
+}
+
+HitLog& hit_log() {   // w7fix-combat
+    static HitLog h;
+    return h;
 }
 
 int armor_index(const std::string& armor) {
@@ -824,6 +1095,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                                      std::vector<ProjectileLaunch>* launches, ProjRng* rof_rng) {
     std::vector<MoveRequest> requests;
     const int n = static_cast<int>(units.size());
+    const bool w7 = world.combat_w7().armed;   // w7fix-combat
 
     // W2-SK-15: spatial buckets for the auto-acquire scan (was O(U^2): every
     // idle unit walked every unit). kBucket x kBucket cells, filled in
@@ -904,7 +1176,8 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                 const int b_idx = u.target_building;
                 // Gap fix C: the slot that can hit this structure's armor (a
                 // pure-AA weapon or a 0 % Verses warhead cannot) [weapons.md §2].
-                const int ws = unit_weapon_for_building(u, b->armor_ix, b->bomb_frame >= 0);
+                const int ws = unit_weapon_for_building(u, b->armor_ix, b->bomb_frame >= 0,
+                                                        world.an_victim_naval_cell(b->cx + b->fw / 2, b->cy + b->fh / 2));   // W7-06-02
                 if (ws < 0 && !u.abil.c4 && u.abil.fire_kind == AbilityKind::None) {
                     u.target_building = -1;
                     u.attack_order = false;
@@ -949,6 +1222,14 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                 const bool b_in_range = u.abil.c4 ? c4_reach_from(u.cell_x, u.cell_y)
                                                   : weapon_in_range(world, u, bax, bay, baz,
                                                                     (b->fw + b->fh) * 64);
+                // W7-04-07 [rules [V3Launcher] MinimumRange=5, GetFireError]:
+                // the primary's minimum range refuses a structure too (the
+                // launcher holds, as against a unit).
+                const bool b_too_close =
+                    u.w_active == 0 && u.an.t.min_range > 0.0 &&
+                    om::hypot(u.fx * kLeptonsPerCell - bax, u.fy * kLeptonsPerCell - bay) <
+                        u.an.t.min_range * kLeptonsPerCell;
+                if (b_in_range && b_too_close) continue;
                 if (b_in_range) {
                     if (u.rearm_frames <= 0) {
                         // Aim gate, mirroring the unit path exactly
@@ -1084,166 +1365,272 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
             continue;
         }
 
-        // (d) Target validation: drop a stale target (gone from the vector,
-        // dead, dying, or no longer hostile). Clearing also resets
-        // attack_order -- an explicit order dies with its target, so a
-        // fresh acquisition below starts clean rather than inheriting a
-        // stale "pursue indefinitely" flag for a target it hasn't picked
-        // yet.
-        if (u.target != -1 && !valid_target(units, world, u, u.target)) {
-            // An AUTO-acquired target that vanishes (killed, out of sight,
-            // loaded into a transport) while the unit is walking its approach
-            // path: the target is dropped and the unit FINISHES the walk to the
-            // firing cell, then guards there (its guard anchor becomes the path's
-            // end -- Enter_Idle_Mode at the destination).
-            // [RE: the Guard mission approaches through FootClass::Approach_Target
-            // FUN_004D55B0 (via UnitClass FUN_007402F0, vtbl+0x53C), whose
-            // Destination is a CELL (SetDestination(MapClass::GetCellAt(..)),
-            // vtbl+0x480); only a TechnoType +0xD27 / VehicleThief (+0xEC6)
-            // infantry heads for the object itself. When the target expires,
-            // TechnoClass::PointerExpired FUN_00706C50 clears TarCom (+0x2B4) and
-            // FootClass::PointerExpired FUN_004D9870 clears Destination (+0x5A4)
-            // only if it IS the expired object -- a cell destination stays, and
-            // UnitClass::Enter_Idle_Mode FUN_00737990 picks Mission_Move while a
-            // Destination remains. Nothing walks the unit back to where it
-            // acquired.] fv-a's walk back to the guard anchor (RE-FALLBACK) is
-            // gone: it broke the SOV01 and SOV09 real-order wins.
-            const bool chasing = !u.attack_order && u.moving() && !u.path.empty();
-            u.target = -1;
-            u.attack_order = false;
-            if (chasing) {
-                u.guard_x = u.path.back().x;
-                u.guard_y = u.path.back().y;
-            }
-        }
-
-        // (e) Auto-acquire: nearest hostile within weapon range, ties ->
-        // lowest index. Only runs when idle (no current target survived
-        // validation, and no explicit order or retaliation set one this
-        // call). Records the guard anchor at the unit's OWN current cell --
-        // the post it should return to if the target strays too far (§7,
-        // ModEnc fallback, Low).
-        // Only IDLE/guarding units auto-acquire (spec wording): a unit
-        // executing a move order walks on without stopping to fight; it will
-        // acquire on arrival if a hostile is still in range.
-        if (u.target == -1) {
-            // No auto-acquire while under a move order. A ground unit's move is
-            // its A* path (moving()); an aircraft cruising or taking off toward
-            // a flight goal (has_flight_goal, with an empty ground path) is the
-            // flight analog -- it flies its route without stopping to fight,
-            // exactly as a ground unit walks on [RE-GATE APPLIED: aircraft.md §6
-            // -- a Move order overrides auto-attack; an explicit order_attack
-            // sets u.target and skips this block, so air-to-ground attack is
-            // unaffected]. Cannot change the 9 ground-only gates: has_flight_goal
-            // is always false there.
-            // P4 [RE: abilities.md §F]: CanPassiveAquire=no (the terrorist)
-            // never auto-acquires. Inert: false unless a P4 profile is bound.
-            // W2-AN-14: CanPassiveAquire=no (Carrier, Dreadnought) likewise.
-            if (u.moving() || u.has_flight_goal || u.abil.no_passive_acquire ||
-                u.an.t.no_passive_acquire) { /* no auto-acquire */ }
-            else {
-                int best = -1;
-                double best_d = 0.0;
-                // W6-02-11 (supersedes the W2-SK-25 max(weapon range, Sight)
-                // fallback): the threat-scan radius of acquire_radius.
-                const double acq = acquire_radius(u);
-                const double rmax = std::max(std::max(slot_range(u, 0), slot_range(u, 1)), acq) + 1.0;
-                const int bx0 = bucket_of(u.fx - rmax, bgw), bx1 = bucket_of(u.fx + rmax, bgw);
-                const int by0 = bucket_of(u.fy - rmax, bgh), by1 = bucket_of(u.fy + rmax, bgh);
-                for (int by = by0; by <= by1; ++by)
-                for (int bx = bx0; bx <= bx1; ++bx)
-                for (int j : buckets[static_cast<std::size_t>(by) * bgw + bx]) {
-                    // Engineer/Spy Capture [RE: capture.md §Design 6]: a still-
-                    // disguised unit is treated as FRIENDLY -- never auto-
-                    // acquired (a disguised spy walks through enemy territory
-                    // unfired-upon). Byte-identity: Unit::disguised defaults
-                    // false and no gate ever calls set_disguise (capture_any_
-                    // stays false), so this clause is false for every candidate
-                    // in every gate -> inert (combat 78 / tank 144 unchanged).
-                    // The skip lives ONLY in this AUTO-acquire scan, NOT in
-                    // valid_target (which also gates the explicit-attack /
-                    // stale-target-drop path (d)) -- an explicit order_attack on
-                    // a known spy is never blocked. A dog's DetectDisguise clears
-                    // `disguised` -> the spy is targetable again next scan (no
-                    // extra code needed).
-                    // Shroud/Fog [RE: shroud.md §6]: a candidate whose cell is
-                    // NOT visible to the scanning house cannot be auto-acquired
-                    // (mirrors the disguise precedent above). seen_by_mask
-                    // defaults 0xFF and only step_visibility (behind shroud_any_)
-                    // ever changes it, so with shroud off
-                    // (0xFF & (1<<u.house)) != 0 -> the clause is always false ->
-                    // combat 78 / tank 144 byte-identical. This lives ONLY in the
-                    // AUTO-acquire scan, NOT valid_target (an explicit
-                    // order_attack on a known unit is never blocked, §6).
-                    // W6-02-07/08: the Evaluate_Object rejects (LegalTarget,
-                    // IsInPlayfield, campaign Insignificant) -- World::legal_threat_unit.
-                    // W6-02-12: a mind-control shooter never picks an
-                    // ImmuneToPsionics unit (map overrides merged).
-                    if (j == i || !valid_target(units, world, u, j) || units[j].disguised
-                        || !(units[j].seen_by_mask & (1u << u.house)) || !world.legal_threat_unit(u.house, units[j])
-                        || (u.w_mind_control && units[j].tg.t.immune_psionics))
-                        continue;
-                    const Unit& v = units[j];
-                    const double d = dist_leptons(u.fx, u.fy, v.fx, v.fy);
-                    // Gap fix C: in range of the weapon that WOULD engage v; a
-                    // ground unit scans its whole threat radius (W6-02-11).
-                    const double rng = (u.is_aircraft || (u.deploy_fire && u.deployed))
-                                           ? slot_range(u, unit_weapon_for_unit(u, v))
-                                           : acq;
-                    if (d <= rng * kLeptonsPerCell &&
-                        (best == -1 || d < best_d || (d == best_d && j < best))) {
-                        best = j;
-                        best_d = d;
-                    }
+        // ==== w7fix-combat: the mission model's targeting layer ===========
+        // docs/gap/wave7/07-shared-combat.md W7-07-02..12. Armed only with the
+        // real rulesmd (World::arm_combat_w7); every synthetic gate keeps the
+        // legacy block below.
+        if (w7) {
+            if (u.tg.scan_timer > 0) --u.tg.scan_timer;
+            if (u.tg.opportunity && !u.moving()) u.tg.opportunity = false;   // arrived: a guard target now
+            // (d) W7-07-13 [RE: GetFireError FUN_006FB5D0 has no house test]:
+            // an EXPLICIT target (the player's force-fire on an own, allied or
+            // neutral object; a retaliation Override_Mission) needs no
+            // hostility; only an auto target must stay an enemy.
+            if (u.target != -1 && !(u.attack_order ? forced_target_ok(units, world, u, i, u.target)
+                                                   : valid_target(units, world, u, u.target))) {
+                const bool chasing = !u.attack_order && u.moving() && !u.path.empty() && !u.tg.opportunity;
+                u.target = -1;
+                u.attack_order = false;
+                u.tg.opportunity = false;
+                if (u.tg.overridden) {
+                    // W7-07-01 [RE: FootClass::Override_Mission 0x4D8E60 /
+                    // Restore_Mission]: the retaliation is over -- back to the
+                    // saved order (its move goal, its area guard).
+                    u.tg.overridden = false;
+                    u.tg.area_guard = u.tg.resume_area_guard;
+                    if (u.tg.resume_x >= 0 && (u.tg.resume_x != u.cell_x || u.tg.resume_y != u.cell_y))
+                        requests.push_back({i, u.tg.resume_x, u.tg.resume_y});
+                    u.tg.resume_x = u.tg.resume_y = -1;
+                } else if (chasing) {   // R-212 (plain Guard): finish the walk, guard there
+                    u.guard_x = u.path.back().x;
+                    u.guard_y = u.path.back().y;
                 }
-                if (best != -1) {
-                    u.target = best;
-                    u.guard_x = u.cell_x;
-                    u.guard_y = u.cell_y;
-                    u.attack_order = false;
-                } else if (u.target_building == -1 && u.abil.fire_kind == AbilityKind::None &&
-                           !u.abil.c4) {
-                    // Gap fix C (G-46): no unit in range -> an idle unit engages
-                    // an enemy BASE DEFENSE (an armed structure) in range.
-                    // [RE-FALLBACK: RE-W4 open -- Greatest_Threat's structure
-                    // flags were not unwound; armed structures carry threat,
-                    // plain buildings (zero threat) are left to explicit
-                    // orders.] Nearest foundation cell, lowest index on ties.
-                    const std::vector<BuildingTypeDef>& bt = world.btypes();
-                    int bbest = -1;
-                    double bbest_d = 0.0;
-                    for (int bj = 0; bj < static_cast<int>(buildings.size()); ++bj) {
-                        const Building& b = buildings[bj];
-                        if (!b.alive || b.state == Building::State::Dead) continue;
-                        // W5-B R-064 [RE: Greatest_Threat FUN_006F8320 ->
-                        // Evaluate_Object FUN_006F71D0 @0x6F7ADB]: a HUMAN
-                        // house's unit skips a building with no weapon; a
-                        // computer house's unit may pick any enemy building.
-                        if (b.type < 0 || b.type >= static_cast<int>(bt.size()) ||
-                            (!bt[b.type].armed && !(world.house_is_computer(u.house) && world.ai_threat_any_building())))
-                            continue;
-                        if (!world.is_enemy(u.house, b.house)) continue;
-                        if (!world.legal_threat_building(u.house, b)) continue;   // W6-02-07/08
-                        if (!world.object_visible_at(u.house, b.cx, b.cy)) continue;
-                        const int ws = unit_weapon_for_building(u, b.armor_ix, b.bomb_frame >= 0);
-                        if (ws < 0) continue;
-                        const double rng = slot_range(u, ws) * kLeptonsPerCell;
-                        for (const Cellxy& cell : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
-                            const double d = dist_leptons(u.fx, u.fy, cell.x, cell.y);
-                            if (d <= rng && (bbest == -1 || d < bbest_d)) {
-                                bbest = bj;
-                                bbest_d = d;
-                            }
+            }
+            const int mission = world.unit_mission(u);
+            const World::MissionCtl mc = World::mission_control(mission);
+            // W7-07-07 [RE: 0x6F9B8A..0x6F9C1E, TargetSomethingNearby
+            // 0x708CA0]: at each targeting tick a scan-acquired Guard / Move
+            // target out of weapon range (GetFireError RANGE) is dropped and
+            // the unit rescans from its CURRENT cell -- no anchor, no walk back.
+            // W7-07-11 [RE: 0x4D5636..0x4D5660]: a Sticky unit drops it too.
+            if (u.target != -1 && !u.attack_order && u.tg.scan_timer <= 0 &&
+                (mission == 5 || mission == 2 || mission == 10 || mission == 6 || mission == 29 ||
+                 u.tg.opportunity) &&
+                !unit_in_weapon_range(world, u, units[u.target])) {
+                u.target = -1;
+                u.tg.opportunity = false;
+            }
+            // (e) W7-07-02 [RE: TechnoClass::AI 0x6F9BC7 / FUN_00708710]: the
+            // scan runs in Guard and Area Guard; in Move / Harvest only for an
+            // OpportunityFire type (W7-03-03) or an Aggressive team member
+            // (W7-04-19); Attack Move scans on the move (W7-07-12). Sleep,
+            // Harmless, Attack, Hunt, Enter, ... never scan.
+            if (u.target == -1 && u.target_building == -1) {
+                bool may = mission == 5 || mission == 11 || mission == 29 || mission == 6;
+                if (mission == 2 || mission == 10) may = u.tg.t.opportunity_fire || u.tg.team_aggressive;
+                // (an ability weapon -- the dog's ParasiteDog jaw, the Ivan --
+                // scans like any other; only the structure pass skips them)
+                if (u.has_flight_goal || u.abil.no_passive_acquire || u.an.t.no_passive_acquire || mc.zombie)
+                    may = false;
+                // Engineer/spy/medic-type weapons (no damage) never scan.
+                if (u.w_damage <= 0 && !secondary_view(u).valid) may = false;
+                bool found = false;
+                if (may && u.tg.scan_timer <= 0) {
+                    const World::CombatW7Rules& R = world.combat_w7();
+                    u.tg.scan_timer = (mission == 11 ? R.guard_area_targeting_delay : R.normal_targeting_delay) +
+                                      (rof_rng ? rof_rng->random(0, 2) : 0);
+                    found = w7_greatest_threat(world, units, buildings, u, i, mission == 6,
+                                               buckets, bgw, bgh, bucket_of);
+                    if (found) {
+                        const bool on_move = u.moving();
+                        u.attack_order = false;
+                        u.guard_x = u.cell_x;
+                        u.guard_y = u.cell_y;
+                        if (mission == 11) { u.tg.home_x = u.cell_x; u.tg.home_y = u.cell_y; }
+                        if (on_move && mission == 29) {
+                            // W7-07-12 [RE: FootClass FUN_004DEFF0]: an attack-
+                            // moving unit stops to engage (finishing the cell it
+                            // is entering) and resumes the move afterwards.
+                            if (u.path_idx < u.path.size()) u.path.resize(u.path_idx + 1);
+                        } else if (on_move) {
+                            u.tg.opportunity = true;   // W7-03-03: fire at will, keep driving
                         }
                     }
-                    if (bbest != -1) {
-                        u.target_building = bbest;
+                }
+                if (!found && u.target == -1 && u.target_building == -1 && !u.moving()) {
+                    if (mission == 29) {
+                        // W7-07-12: nothing to fight -- carry on to the destination;
+                        // there, the unit idles (Guard).
+                        if (u.tg.amove_x < 0 || (u.cell_x == u.tg.amove_x && u.cell_y == u.tg.amove_y)) {
+                            u.tg.mission = -1;
+                            u.tg.amove_x = u.tg.amove_y = -1;
+                        } else if (u.tg.scan_timer > 0) {
+                            requests.push_back({i, u.tg.amove_x, u.tg.amove_y});
+                        }
+                    } else if (mission == 11 && may && u.tg.home_x >= 0 && u.tg.scan_timer > 0 &&
+                               (u.cell_x != u.tg.home_x || u.cell_y != u.tg.home_y)) {
+                        // W7-07-06 [RE: Mission_Area_Guard FUN_004D41A0]: the
+                        // target is lost and the rescan found nothing -- walk
+                        // back home (scanning on the way).
+                        requests.push_back({i, u.tg.home_x, u.tg.home_y});
+                    }
+                }
+            }
+        } else {
+            // (d) Target validation: drop a stale target (gone from the vector,
+            // dead, dying, or no longer hostile). Clearing also resets
+            // attack_order -- an explicit order dies with its target, so a
+            // fresh acquisition below starts clean rather than inheriting a
+            // stale "pursue indefinitely" flag for a target it hasn't picked
+            // yet.
+            if (u.target != -1 && !valid_target(units, world, u, u.target)) {
+                // An AUTO-acquired target that vanishes (killed, out of sight,
+                // loaded into a transport) while the unit is walking its approach
+                // path: the target is dropped and the unit FINISHES the walk to the
+                // firing cell, then guards there (its guard anchor becomes the path's
+                // end -- Enter_Idle_Mode at the destination).
+                // [RE: the Guard mission approaches through FootClass::Approach_Target
+                // FUN_004D55B0 (via UnitClass FUN_007402F0, vtbl+0x53C), whose
+                // Destination is a CELL (SetDestination(MapClass::GetCellAt(..)),
+                // vtbl+0x480); only a TechnoType +0xD27 / VehicleThief (+0xEC6)
+                // infantry heads for the object itself. When the target expires,
+                // TechnoClass::PointerExpired FUN_00706C50 clears TarCom (+0x2B4) and
+                // FootClass::PointerExpired FUN_004D9870 clears Destination (+0x5A4)
+                // only if it IS the expired object -- a cell destination stays, and
+                // UnitClass::Enter_Idle_Mode FUN_00737990 picks Mission_Move while a
+                // Destination remains. Nothing walks the unit back to where it
+                // acquired.] fv-a's walk back to the guard anchor (RE-FALLBACK) is
+                // gone: it broke the SOV01 and SOV09 real-order wins.
+                const bool chasing = !u.attack_order && u.moving() && !u.path.empty();
+                u.target = -1;
+                u.attack_order = false;
+                if (chasing) {
+                    u.guard_x = u.path.back().x;
+                    u.guard_y = u.path.back().y;
+                }
+            }
+
+            // (e) Auto-acquire: nearest hostile within weapon range, ties ->
+            // lowest index. Only runs when idle (no current target survived
+            // validation, and no explicit order or retaliation set one this
+            // call). Records the guard anchor at the unit's OWN current cell --
+            // the post it should return to if the target strays too far (§7,
+            // ModEnc fallback, Low).
+            // Only IDLE/guarding units auto-acquire (spec wording): a unit
+            // executing a move order walks on without stopping to fight; it will
+            // acquire on arrival if a hostile is still in range.
+            if (u.target == -1) {
+                // No auto-acquire while under a move order. A ground unit's move is
+                // its A* path (moving()); an aircraft cruising or taking off toward
+                // a flight goal (has_flight_goal, with an empty ground path) is the
+                // flight analog -- it flies its route without stopping to fight,
+                // exactly as a ground unit walks on [RE-GATE APPLIED: aircraft.md §6
+                // -- a Move order overrides auto-attack; an explicit order_attack
+                // sets u.target and skips this block, so air-to-ground attack is
+                // unaffected]. Cannot change the 9 ground-only gates: has_flight_goal
+                // is always false there.
+                // P4 [RE: abilities.md §F]: CanPassiveAquire=no (the terrorist)
+                // never auto-acquires. Inert: false unless a P4 profile is bound.
+                // W2-AN-14: CanPassiveAquire=no (Carrier, Dreadnought) likewise.
+                if (u.moving() || u.has_flight_goal || u.abil.no_passive_acquire ||
+                    u.an.t.no_passive_acquire) { /* no auto-acquire */ }
+                else {
+                    int best = -1;
+                    double best_d = 0.0;
+                    // W6-02-11 (supersedes the W2-SK-25 max(weapon range, Sight)
+                    // fallback): the threat-scan radius of acquire_radius.
+                    const double acq = acquire_radius(u);
+                    const double rmax = std::max(std::max(slot_range(u, 0), slot_range(u, 1)), acq) + 1.0;
+                    const int bx0 = bucket_of(u.fx - rmax, bgw), bx1 = bucket_of(u.fx + rmax, bgw);
+                    const int by0 = bucket_of(u.fy - rmax, bgh), by1 = bucket_of(u.fy + rmax, bgh);
+                    for (int by = by0; by <= by1; ++by)
+                    for (int bx = bx0; bx <= bx1; ++bx)
+                    for (int j : buckets[static_cast<std::size_t>(by) * bgw + bx]) {
+                        // Engineer/Spy Capture [RE: capture.md §Design 6]: a still-
+                        // disguised unit is treated as FRIENDLY -- never auto-
+                        // acquired (a disguised spy walks through enemy territory
+                        // unfired-upon). Byte-identity: Unit::disguised defaults
+                        // false and no gate ever calls set_disguise (capture_any_
+                        // stays false), so this clause is false for every candidate
+                        // in every gate -> inert (combat 78 / tank 144 unchanged).
+                        // The skip lives ONLY in this AUTO-acquire scan, NOT in
+                        // valid_target (which also gates the explicit-attack /
+                        // stale-target-drop path (d)) -- an explicit order_attack on
+                        // a known spy is never blocked. A dog's DetectDisguise clears
+                        // `disguised` -> the spy is targetable again next scan (no
+                        // extra code needed).
+                        // Shroud/Fog [RE: shroud.md §6]: a candidate whose cell is
+                        // NOT visible to the scanning house cannot be auto-acquired
+                        // (mirrors the disguise precedent above). seen_by_mask
+                        // defaults 0xFF and only step_visibility (behind shroud_any_)
+                        // ever changes it, so with shroud off
+                        // (0xFF & (1<<u.house)) != 0 -> the clause is always false ->
+                        // combat 78 / tank 144 byte-identical. This lives ONLY in the
+                        // AUTO-acquire scan, NOT valid_target (an explicit
+                        // order_attack on a known unit is never blocked, §6).
+                        // W6-02-07/08: the Evaluate_Object rejects (LegalTarget,
+                        // IsInPlayfield, campaign Insignificant) -- World::legal_threat_unit.
+                        // W6-02-12: a mind-control shooter never picks an
+                        // ImmuneToPsionics unit (map overrides merged).
+                        if (j == i || !valid_target(units, world, u, j)
+                            || (!u.detect_disguise && world.disguise_fools(u.house, units[j]))   // W7-01-02 [RE: 0x6F71D0]
+                            || !(units[j].seen_by_mask & (1u << u.house)) || !world.legal_threat_unit(u.house, units[j])
+                            || (u.w_mind_control && units[j].tg.t.immune_psionics))
+                            continue;
+                        const Unit& v = units[j];
+                        const double d = dist_leptons(u.fx, u.fy, v.fx, v.fy);
+                        // Gap fix C: in range of the weapon that WOULD engage v; a
+                        // ground unit scans its whole threat radius (W6-02-11).
+                        const double rng = (u.is_aircraft || (u.deploy_fire && u.deployed))
+                                               ? slot_range(u, unit_weapon_for_unit(u, v))
+                                               : acq;
+                        if (d <= rng * kLeptonsPerCell &&
+                            (best == -1 || d < best_d || (d == best_d && j < best))) {
+                            best = j;
+                            best_d = d;
+                        }
+                    }
+                    if (best != -1) {
+                        u.target = best;
                         u.guard_x = u.cell_x;
                         u.guard_y = u.cell_y;
                         u.attack_order = false;
+                    } else if (u.target_building == -1 && u.abil.fire_kind == AbilityKind::None &&
+                               !u.abil.c4) {
+                        // Gap fix C (G-46): no unit in range -> an idle unit engages
+                        // an enemy BASE DEFENSE (an armed structure) in range.
+                        // [RE-FALLBACK: RE-W4 open -- Greatest_Threat's structure
+                        // flags were not unwound; armed structures carry threat,
+                        // plain buildings (zero threat) are left to explicit
+                        // orders.] Nearest foundation cell, lowest index on ties.
+                        const std::vector<BuildingTypeDef>& bt = world.btypes();
+                        int bbest = -1;
+                        double bbest_d = 0.0;
+                        for (int bj = 0; bj < static_cast<int>(buildings.size()); ++bj) {
+                            const Building& b = buildings[bj];
+                            if (!b.alive || b.state == Building::State::Dead) continue;
+                            // W5-B R-064 [RE: Greatest_Threat FUN_006F8320 ->
+                            // Evaluate_Object FUN_006F71D0 @0x6F7ADB]: a HUMAN
+                            // house's unit skips a building with no weapon; a
+                            // computer house's unit may pick any enemy building.
+                            if (b.type < 0 || b.type >= static_cast<int>(bt.size()) ||
+                                (!bt[b.type].armed && !(world.house_is_computer(u.house) && world.ai_threat_any_building())))
+                                continue;
+                            if (!world.is_enemy(u.house, b.house)) continue;
+                            if (!world.legal_threat_building(u.house, b)) continue;   // W6-02-07/08
+                            if (!world.object_visible_at(u.house, b.cx, b.cy)) continue;
+                            const int ws = unit_weapon_for_building(u, b.armor_ix, b.bomb_frame >= 0,
+                                                                    world.an_victim_naval_cell(b.cx + b.fw / 2, b.cy + b.fh / 2));   // W7-06-02
+                            if (ws < 0) continue;
+                            const double rng = slot_range(u, ws) * kLeptonsPerCell;
+                            for (const Cellxy& cell : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
+                                const double d = dist_leptons(u.fx, u.fy, cell.x, cell.y);
+                                if (d <= rng && (bbest == -1 || d < bbest_d)) {
+                                    bbest = bj;
+                                    bbest_d = d;
+                                }
+                            }
+                        }
+                        if (bbest != -1) {
+                            u.target_building = bbest;
+                            u.guard_x = u.cell_x;
+                            u.guard_y = u.cell_y;
+                            u.attack_order = false;
+                        }
                     }
                 }
             }
+
         }
 
         if (u.target == -1) {   // nothing to engage this call
@@ -1271,12 +1658,28 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         // PlayerAutoCrush=yes or an AutoCrush=yes type.
         {
             const World::CrushRules& cr = world.crush_rules();
-            const bool may = cr.armed && u.crusher && u.is_vehicle && !u.is_aircraft &&
+            bool may = cr.armed && u.crusher && u.is_vehicle && !u.is_aircraft &&
                              can_crush(u, v) &&   // W6-04-14/29
                              (world.house_is_computer(u.house) || cr.player_auto_crush || u.auto_crush);
+            if (w7) {
+                // W7-03-09 [RE: ShouldCrush FUN_00742720: (!IsHuman ||
+                // PlayerAutoCrush || type AutoCrush) && (IsHuman || [IQ]
+                // AutoCrush <= house IQ)]; W7-03-01: never onto an ally (a
+                // force-fired friendly is shot, not run over); an opportunity
+                // target never pulls a unit off its move.
+                const bool human = world.human_commanded(u.house);
+                may = cr.armed && u.crusher && u.is_vehicle && !u.is_aircraft && can_crush(u, v) &&
+                      !world.allied_with(u.house, v.house) && !u.tg.opportunity &&
+                      (human ? (cr.player_auto_crush || u.auto_crush)
+                             : world.house_iq(u.house) >= world.combat_w7().iq_auto_crush);
+            }
             const int dx = unit_lept_x(v) - unit_lept_x(u), dy = unit_lept_y(v) - unit_lept_y(u),
                       dz = unit_lept_z(v) - unit_lept_z(u);
-            if (may && om::sqrt(double(dx) * dx + double(dy) * dy + double(dz) * dz) <= cr.crush_leptons) {
+            // W7-04-10: a target already in the crusher's own cell gets no
+            // (empty) drive-over request -- the unit would freeze there; it
+            // falls through to the fire step instead.
+            const bool same_cell = v.cell_x == u.cell_x && v.cell_y == u.cell_y;
+            if (may && !same_cell && om::sqrt(double(dx) * dx + double(dy) * dy + double(dz) * dz) <= cr.crush_leptons) {
                 if (!u.crushing || u.path.empty() || u.path.back().x != v.cell_x ||
                     u.path.back().y != v.cell_y)
                     requests.push_back({i, v.cell_x, v.cell_y, /*approach=*/false});
@@ -1320,6 +1723,28 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                                     v.fx, v.fy) > range_leptons;
             }
             if (need) requests.push_back({i, v.cell_x, v.cell_y, /*approach=*/true});
+        } else if (w7) {
+            // w7fix-combat: the mission model's chase rules.
+            const int mission = world.unit_mission(u);
+            if (u.tg.opportunity && u.moving()) {
+                // W7-03-03: fire at will on the move -- never approach.
+            } else if (mission == 6) {
+                // W7-07-11 [RE: Approach_Target 0x4D5636..0x4D5660]: Sticky
+                // never approaches (the per-tick range drop clears it).
+            } else if (mission == 11 && u.tg.home_x >= 0 &&
+                       dist_leptons(v.fx, v.fy, u.tg.home_x, u.tg.home_y) >=
+                           area_guard_leash_cells(u) * kLeptonsPerCell) {
+                // W7-07-06 [RE: Mission_Area_Guard FUN_004D41A0, FUN_0042D0F0]:
+                // the target has strayed a leash from home -- drop it (the
+                // rescan-or-walk-home runs next).
+                u.target = -1;
+            } else if (!u.moving() && !u.is_aircraft && !(u.deploy_fire && u.deployed) && !u.is_harvester &&
+                       u.w_damage > 0) {
+                // W7-07-07 [RE: Approach_Target 0x4D55B0 @0x4D5636..0x4D5679]:
+                // approach only with CanApproachTarget, else SetTarCom(0).
+                if (u.w6.t.can_approach_target) requests.push_back({i, v.cell_x, v.cell_y, /*approach=*/true});
+                else u.target = -1;
+            }
         } else {
             // Auto-acquired (or retaliation-acquired): leashed to the guard
             // anchor. Drop if EITHER the unit itself or its target has

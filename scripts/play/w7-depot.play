@@ -1,0 +1,40 @@
+# Wave-7 fix (units) W7-08-01/02/03, W7-04-06/11: a drone-infested Grizzly
+# is SENT to the own Service Depot by clicking the depot (enter cursor); the
+# depot repairs it on its own URepairRate clock and the Terror Drone dies on
+# the first paid step (ExitUnit with the suppression running, RE 0x6F4010).
+set render_every 3000
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Easy Enemy"
+click check:crates
+click slider:units=0
+click slider:speed=2
+click start
+until 120 scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+cheat reveal
+cheat credits 20000
+cheat w2 build GAPOWR
+cheat w2 build GAPOWR
+cheat place GADEPT 0 building 0:GACNST +10 0
+wait 2
+assert buildings(0,GADEPT) == 1
+cheat spawn MTNK 0 building 0:GACNST +4 +9
+cheat spawn DRON 1 building 0:GACNST +6 +9
+until 200 parasited == 1
+assert units(1,DRON) == 1
+click unit 0:MTNK
+move building 0:GADEPT
+wait 1
+assert cursor_name == enter
+click building 0:GADEPT
+until 900 units(1,DRON) == 0
+assert parasited == 0
+until 1500 uhpn(0,MTNK,0) == 300
+assert units(0,MTNK) == 1
+end

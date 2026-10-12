@@ -209,7 +209,9 @@ struct StepEnv {
             t.open_cells = &(*terrain->gates)[(std::size_t)u.house];
         return (t.level || t.open_cells) ? &t : nullptr;
     }
-    bool allied(int a, int b) const { return sc.world ? sc.world->are_allied(a, b) : a == b; }
+    // w7fix-combat: the alliance view IsAlliedWith (null World: same house).
+    bool allied(int a, int b) const { return sc.world ? sc.world->allied_with(a, b) : a == b; }
+    bool w7crush() const { return sc.world && sc.world->combat_w7().armed && occ.subcells(); }
     int base_speed(const Unit& u) const { return leptons_per_frame(u.speed_cps > 0.0 ? u.speed_cps : move_cps); }
 };
 
@@ -244,16 +246,32 @@ Reserve reserve_cell(StepEnv& e, Unit& u, int self, Cellxy from, int from_layer,
         if (t.cell_x == tgt.x && t.cell_y == tgt.y) return Reserve::Stop;
     }
     // Gap fix C (G-47): a Crusher vehicle driving into a cell held by enemy
-    // Crushable infantry squashes it (crush legality: can_crush, w7fix-combat).
+    // Crushable infantry squashes it. w7fix-combat W7-03-01 / W7-09-04 [RE:
+    // ObjectClass::IsCrushable 0x5F64C0 -> IsAlliedWith 0x4F98B0]: never an
+    // ally of the crusher's owner. W7-07-21 [RE: Drive 0x4B3D85 ->
+    // UnitClass::Crush(cell, 1) 0x7404B0 -> CellClass::Incoming FUN_00481580;
+    // the squash Crush(cell, 0) runs on ARRIVAL, FUN_00739AC0]: with the W7
+    // rules the infantry is warned when the crusher commits to the cell and
+    // squashed only if still there when it arrives (squash_on_arrival).
+    const bool w7crush = e.w7crush();
     if (u.crusher && u.is_vehicle) {
         int victims[4] = {e.occ.at(tgt.x, tgt.y), -1, -1, -1};
         if (e.occ.subcells())
             for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s)
                 victims[s - 1] = e.occ.spot_unit(tgt.x, tgt.y, s);
+        const int cell_ix = tgt.y * e.w + tgt.x;
+        bool warn = false, elite = false;
         for (int o : victims) {
             if (o < 0 || o == self || o >= static_cast<int>(e.units.size())) continue;
             Unit& v = e.units[static_cast<std::size_t>(o)];
-            if (can_crush(u, v) && v.house != u.house && v.alive && v.die_time < 0.0 && v.cargo_of < 0) {
+            elite = elite || is_elite(v.vet.veterancy);
+            if (w7crush && e.occ.is_infantry(o) && can_crush(u, v) && !e.allied(u.house, v.house) && v.alive &&
+                v.die_time < 0.0 && v.cargo_of < 0) {
+                warn = true;   // squashed on arrival
+                continue;
+            }
+            if (can_crush(u, v) && !e.allied(u.house, v.house) && v.alive && v.die_time < 0.0 &&
+                v.cargo_of < 0) {   // W6-04-14/29
                 v.hp = 0;
                 v.die_time = 0.0;
                 v.vet.killed_by = self;
@@ -262,6 +280,16 @@ Reserve reserve_cell(StepEnv& e, Unit& u, int self, Cellxy from, int from_layer,
                 v.path.clear();
                 v.path_idx = 0;
                 e.occ.release_all_of(o, -1, -1);
+            }
+        }
+        if (warn && u.tg.crush_warn != cell_ix) {
+            u.tg.crush_warn = cell_ix;
+            for (int o : victims) {
+                if (o < 0 || o == self || o >= static_cast<int>(e.units.size())) continue;
+                const Unit& v = e.units[static_cast<std::size_t>(o)];
+                if (!v.alive || v.die_time >= 0.0 || v.moving() || v.is_vehicle) continue;
+                if (e.sc.scatter_out && e.sc.world->incoming_scatters(v, elite, /*nokidding=*/false))
+                    e.sc.scatter_out->push_back(o);
             }
         }
     }
@@ -289,11 +317,50 @@ Reserve reserve_cell(StepEnv& e, Unit& u, int self, Cellxy from, int from_layer,
             e.occ.set_spot(tgt.x, tgt.y, self, sp);
         }
     } else if (e.occ.at(tgt.x, tgt.y) != self || !e.occ.can_enter(tgt.x, tgt.y, self)) {
-        if (!e.occ.can_enter(tgt.x, tgt.y, self)) return Reserve::Blocked;
+        // W7-07-21 (w7fix-combat): a cell held only by infantry this crusher
+        // may squash is entered (the squash happens on arrival).
+        bool crush_only = false;
+        if (w7crush && u.crusher && u.is_vehicle && !e.occ.can_enter(tgt.x, tgt.y, self)) {
+            crush_only = true;
+            for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s) {
+                const int o = e.occ.spot_unit(tgt.x, tgt.y, s);
+                if (o < 0 || o == self) continue;
+                if (o >= static_cast<int>(e.units.size())) { crush_only = false; break; }
+                const Unit& v = e.units[static_cast<std::size_t>(o)];
+                if (!(can_crush(u, v) && !e.allied(u.house, v.house) && v.alive && v.die_time < 0.0)) crush_only = false;
+            }
+            const int own = e.occ.at(tgt.x, tgt.y);   // a vehicle owner (not us) still blocks
+            if (own >= 0 && own != self && (own >= static_cast<int>(e.units.size()) || !e.occ.is_infantry(own)))
+                crush_only = false;
+        }
+        if (!crush_only && !e.occ.can_enter(tgt.x, tgt.y, self)) return Reserve::Blocked;
         e.occ.set(tgt.x, tgt.y, self);   // reserve (now owns current + next)
         if (e.have_speed) u.speed_mult = land_speed_mult(e.sc, u, e.w, e.h, tgt.x, tgt.y);   // W5-B R-062
     }
     return Reserve::Ok;
+}
+
+// W7-07-21 (w7fix-combat) [RE: Per_Cell_Process FUN_00739AC0 -> Crush(cell, 0)
+// 0x7404B0]: the squash on arriving in a cell -- every crushable non-allied
+// infantry still there dies (kill credited to the crusher).
+void squash_on_arrival(StepEnv& e, Unit& u, int self) {
+    if (!e.w7crush() || !u.crusher || !u.is_vehicle) return;
+    for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s) {
+        const int o = e.occ.spot_unit(u.cell_x, u.cell_y, s);
+        if (o < 0 || o == self || o >= static_cast<int>(e.units.size())) continue;
+        Unit& v = e.units[static_cast<std::size_t>(o)];
+        if (!(can_crush(u, v) && !e.allied(u.house, v.house) && v.alive && v.die_time < 0.0 && v.cargo_of < 0))
+            continue;
+        v.hp = 0;
+        v.die_time = 0.0;
+        v.vet.killed_by = self;
+        v.target = -1;
+        v.target_building = -1;
+        v.path.clear();
+        v.path_idx = 0;
+        e.occ.release_all_of(o, -1, -1);
+    }
+    u.tg.crush_warn = -1;
 }
 
 // A re-path from the unit's cell to its goal. mode 0: terrain only (the
@@ -405,7 +472,11 @@ void on_blocked(StepEnv& e, Unit& u, int self, Cellxy bc, bool cliff) {
     }
     if (L.path_delay > 0.0) return;
     L.path_delay = lr.path_delay_frames;
-    if (close_enough()) {
+    // (w7fix-combat: the stop ends a plain move; an attack approach keeps
+    // re-pathing -- the attack mission would re-issue the same approach every
+    // frame and livelock against the stop)
+    const bool plain_move = u.target < 0 && u.target_building < 0 && u.attack_cell_x < 0 && !u.crushing;
+    if (plain_move && close_enough()) {
         arrive(e, u, self);   // close enough: the move is done
         return;
     }
@@ -422,8 +493,13 @@ void on_blocked(StepEnv& e, Unit& u, int self, Cellxy bc, bool cliff) {
             for (int v : occs) {
                 if (v < 0 || v == self || v >= static_cast<int>(e.units.size())) continue;
                 const Unit& ov = e.units[static_cast<std::size_t>(v)];
+                // (a unit busy with a target keeps it: Scatter only moves an
+                // idle one -- w7fix-combat; IQ / PlayerScatter gate in
+                // World::incoming_scatters when the W7 rules are armed)
                 if (live_on_map(ov) && !ov.moving() && e.allied(u.house, ov.house) && ov.target < 0 &&
-                    ov.enter_target < 0)
+                    ov.target_building < 0 && ov.attack_cell_x < 0 && ov.enter_target < 0 &&
+                    (!e.sc.world || !e.sc.world->combat_w7().armed ||
+                     e.sc.world->incoming_scatters(ov, false, /*nokidding=*/true)))
                     e.sc.scatter_out->push_back(v);
             }
         }
@@ -483,6 +559,7 @@ void step_walk(StepEnv& e, Unit& u, int self, double cells_per_frame) {
             u.fy = tgt.y;
             u.cell_x = tgt.x;
             u.cell_y = tgt.y;
+            squash_on_arrival(e, u, self);   // W7-07-21
             if (e.terrain) u.on_deck = static_cast<std::uint8_t>(layer > 0 ? 1 : 0);   // R-210
             budget -= (dist <= 1e-9 ? 0.0 : dist);
             ++u.path_idx;
@@ -664,6 +741,7 @@ void step_track(StepEnv& e, Unit& u, int self) {
                 e.occ.release(u.cell_x, u.cell_y, self);
                 u.cell_x = L.trk_mx;
                 u.cell_y = L.trk_my;
+                squash_on_arrival(e, u, self);   // W7-07-21
                 if (e.terrain) u.on_deck = static_cast<std::uint8_t>(L.trk_layer_mid > 0 ? 1 : 0);
                 ++u.path_idx;
                 L.trk_in_mid = true;
@@ -681,6 +759,7 @@ void step_track(StepEnv& e, Unit& u, int self) {
         u.fy = L.trk_hy;
         u.cell_x = L.trk_hx;
         u.cell_y = L.trk_hy;
+        squash_on_arrival(e, u, self);   // W7-07-21
         u.body_facing = L.trk_face;
         if (e.terrain) u.on_deck = static_cast<std::uint8_t>(L.trk_layer_head > 0 ? 1 : 0);
         e.occ.set(u.cell_x, u.cell_y, self);
@@ -748,6 +827,7 @@ void step_hover(StepEnv& e, Unit& u, int self) {
         u.fy = t.y;
         u.cell_x = t.x;
         u.cell_y = t.y;
+        squash_on_arrival(e, u, self);   // W7-07-21
         if (e.terrain) u.on_deck = static_cast<std::uint8_t>(layer > 0 ? 1 : 0);
         u.path_idx = pi + 1;
         u.wait_time = 0.0;
@@ -848,6 +928,11 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
             u.loco.temp_tries = 0;
             continue;
         }
+        // W7-06-16 (w7fix-airnav) [RE: FUN_006B7400 != 0 -> the move step
+        // returns "hold": ShipLoco FUN_006A1310 @0x6A13E6, DriveLoco
+        // FUN_004B2550 @0x4B264C]: a Dreadnought / V3 with its own rockets on
+        // the deck stays where it is.
+        if (u.an.launch_hold) continue;
         if (track) {
             step_track(e, u, self);
         } else if (kind == LocoKind::Hover) {

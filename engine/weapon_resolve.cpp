@@ -26,6 +26,7 @@ WeaponSlot resolve_weapon_slot(const ra2assets::Rules& rules, const std::string&
     s.cell_spread = rules.section_double(wh, "CellSpread", 0.0);
     s.percent_at_max = rules.section_double(wh, "PercentAtMax", 1.0);
     s.affects_allies = rules.section_flag(wh, "AffectsAllies", true);   // W5-B R-060
+    s.never_use = rules.section_flag(weapon, "NeverUse", false);         // W7-01-01
     s.proj = resolve_projectile_spec(rules, weapon);
     // BulletType AA=/AG= [RE-FALLBACK defaults AA=no, AG=yes: the BulletType
     // loader sits in an unanalysed gap (voxel-render.md §7); these are the
@@ -172,6 +173,45 @@ void fill_unit_combat_extras(const ra2assets::Rules& rules, const std::string& t
     // back to the occupant's weapon 0 when the slot is empty, FUN_004526E0).
     if (!c.occupy_weapon.valid) c.occupy_weapon = tw.slot[0];
     if (!c.elite_occupy_weapon.valid) c.elite_occupy_weapon = c.occupy_weapon;
+    fill_unit_w7(rules, type_id, tw, c.w7);
+}
+
+// Wave-7 fix (units): the type keys unit_w7.hpp documents, each with the
+// TechnoTypeClass::LoadFromINI (FUN_00711510) / WeaponType loader address
+// recorded in docs/gap/wave7.
+void fill_unit_w7(const ra2assets::Rules& rules, const std::string& type_id, const TypeWeapons& tw,
+                  UnitTypeW7& w) {
+    w.agent = rules.section_flag(type_id, "Agent", false);
+    w.infiltrate = rules.section_flag(type_id, "Infiltrate", false);
+    w.engineer = rules.section_flag(type_id, "Engineer", false);
+    w.perma_disguise = rules.section_flag(type_id, "CanDisguise", false) &&
+                       rules.section_flag(type_id, "PermaDisguise", false);
+    w.detect_disguise = rules.section_flag(type_id, "DetectDisguise", false);
+    w.selectable_combatant = rules.section_flag(type_id, "IsSelectableCombatant", false);
+    w.move_to_shroud = rules.section_flag(type_id, "MoveToShroud", true);
+    w.default_to_guard_area = rules.section_flag(type_id, "DefaultToGuardArea", false);
+    w.has_turret = rules.section_flag(type_id, "Turret", false);
+    if (tw.slot[0].valid)
+        w.fake_blink = om::ftol(rules.section_double(tw.slot[0].id, "DisguiseFakeBlinkTime", 0.0));
+    w.fake_blink_elite = tw.elite[0].valid
+                             ? om::ftol(rules.section_double(tw.elite[0].id, "DisguiseFakeBlinkTime", 0.0))
+                             : w.fake_blink;
+    // [RE: InfantryClass Mission_Unload 0x51F3F0] an AreaFire deploy weapon.
+    {
+        const int ds = tw.deploy_fire_weapon == 0 ? 0 : 1;
+        if (rules.section_flag(type_id, "Deployer", false) && rules.section_flag(type_id, "DeployFire", false) &&
+            tw.slot[ds].valid && rules.section_flag(tw.slot[ds].id, "AreaFire", false))
+            w.deploy_area_fire = true;
+    }
+    w.undeploy_delay = om::ftol(rules.section_double(type_id, "UndeployDelay", -1.0));
+    w.build_time_mult = rules.section_double(type_id, "BuildTimeMultiplier", 1.0);   // W7-04-03
+    // [RE: CaptureManager ctor 0x4716F0 via 0x6F34A0]: Max = Damage, Infinite
+    // = InfiniteMindControl -- only for a primary whose warhead has MindControl.
+    if (tw.slot[0].valid &&
+        rules.section_flag(rules.section_string(tw.slot[0].id, "Warhead", ""), "MindControl", false)) {
+        w.mc_capacity = std::max(1, om::ftol(rules.section_double(tw.slot[0].id, "Damage", 1.0)));
+        w.mc_infinite = rules.section_flag(tw.slot[0].id, "InfiniteMindControl", false);
+    }
 }
 
 void fill_building_weapons(const ra2assets::Rules& rules, const std::string& type_id,

@@ -28,6 +28,9 @@ struct RepairSellRules {
     double repair_percent = 0.15;   // RepairPercent (Rules+0x16D0) [§A1]
     double repair_rate    = 0.016;  // RepairRate    (Rules+0x16E0) [§A1] minutes/step
     double refund_percent = 0.50;   // RefundPercent (Rules+0x1738) [§A1]
+    // W7-08-03 [RE: BuildingClass::Mission_Repair 0x44B780 @0x44BD38]: the
+    // Service Depot steps on its OWN accumulator every URepairRate minutes.
+    double u_repair_rate  = 0.016;  // URepairRate   (Rules+0x16E8) (save v35)
     int    allied_survivor_divisor = 500;   // Rules+0x14F8 [§B3]
     int    soviet_survivor_divisor = 250;   // Rules+0x14FC [§B3]
     int    third_survivor_divisor  = 750;   // Rules+0x1500 [§B3]

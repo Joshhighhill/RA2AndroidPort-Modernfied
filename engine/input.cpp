@@ -33,41 +33,17 @@ static constexpr int kDragThreshold = 6;
 static constexpr uint32_t kDblMs = 400;
 static constexpr int kDblSlop = 6;
 
-// Engineer/Spy Capture phase [RE-GATE APPLIED: capture.md §A3/§A5]: index of the
-// SINGLE selected ENGINEER (Unit::image == "ENGINEER"), or -1. Requires exactly
-// one selected, alive, non-dying, house-0 unit and that it be an engineer -- a
-// mixed selection (engineer + anything else) resolves to -1 so the right-click
-// falls through to the normal group move. Interactive-only: no demo selects an
-// engineer, so no gate exercises this.
+// W7-01-04 / W7-01-33: the first selected own engineer (Engineer= type
+// flag), whatever the selection size [RE: Mouse_Left_Release FUN_004AE660
+// gives every selected object its own What_Action], or -1.
 static int sel_engineer_idx(const World& world, const Selection& sel) {
-    int found = -1;
     for (int i : sel.ids()) {
         if (i >= static_cast<int>(world.units().size())) break;
         const Unit& u = world.units()[i];
-        if (!u.alive || u.die_time >= 0.0 || !world.controllable(u.house)) continue;
-        if (found >= 0) return -1;                 // more than one unit selected
-        found = i;
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || !world.controllable(u.house)) continue;
+        if (world.unit_is_engineer(u)) return i;
     }
-    if (found < 0) return -1;
-    return world.units()[found].image == "ENGINEER" ? found : -1;
-}
-
-// Engineer/Spy Capture phase [RE: capture.md §B]: index of the SINGLE selected
-// SPY (Unit::image == "SPY"), or -1. Same one-of-one, alive, non-dying, house-0
-// rule as sel_engineer_idx -- a mixed selection resolves to -1 so the right-
-// click falls through to the normal group move. Interactive-only: no demo
-// selects a spy, so no gate exercises this.
-static int sel_spy_idx(const World& world, const Selection& sel) {
-    int found = -1;
-    for (int i : sel.ids()) {
-        if (i >= static_cast<int>(world.units().size())) break;
-        const Unit& u = world.units()[i];
-        if (!u.alive || u.die_time >= 0.0 || !world.controllable(u.house)) continue;
-        if (found >= 0) return -1;                 // more than one unit selected
-        found = i;
-    }
-    if (found < 0) return -1;
-    return world.units()[found].image == "SPY" ? found : -1;
+    return -1;
 }
 
 // Would World::order_defuse accept (eng, unit_target, b_target)? (its own
@@ -506,6 +482,19 @@ void Input::issue_order(int px, int py) {
         if (selected_building_ >= static_cast<int>(blds.size()) ||
             !blds[selected_building_].alive) {
             selected_building_ = -1;   // stale selection: don't consume
+        } else if (world_.garrison_firing(selected_building_) && sel.empty()) {
+            // W7-02-10: a selected own firing garrison takes an attack order.
+            const int tu = unit_under(ev.x, ev.y);
+            const int tb = pick_building(ev.x, ev.y, ev_touch_);
+            const int gh = blds[selected_building_].house;
+            Command c = make_building_event(EventType::MegaMission, selected_building_);
+            c.mission = Mission::Attack;
+            if (tu >= 0 && !world_.are_allied(gh, world_.units()[tu].house)) c.target = Target::unit(world_, tu);
+            else if (tb >= 0 && tb != selected_building_ && !world_.are_allied(gh, blds[tb].house)) c.target = Target::building(tb);
+            else return;
+            emit(std::move(c));
+            actions_.attack_ordered = true;
+            return;
         } else if (is_unit_factory_type(blds[selected_building_].type)) {   // G-10: rally = factories only
             int rcx = 0, rcy = 0;
             resolve_ground_cell(ev.x, ev.y, rcx, rcy);
@@ -710,80 +699,48 @@ void Input::issue_order(int px, int py) {
                 }
             }
         }
-        const int spy = sel_spy_idx(world_, sel_);
-        if (spy >= 0) {
-            const int b_hit = pick_b;
-            if (b_hit >= 0) {
-                const Building& tb = world_.buildings()[b_hit];
-                const int spy_house = world_.units()[spy].house;
-                if (tb.house != spy_house) {   // enemy/neutral only
+        // W7-08-01 / W7-04-06 [RE: Mission_Repair 0x44B780]: damaged own
+        // vehicles clicked onto an own UnitRepair building dock for service.
+        if (pick_b >= 0 && world_.depot_wants(world_.order_issuer(), sel, pick_b)) {
+            const int actor = lowest_selected();
+            emit(make_mega(world_, sel, Mission::Enter, Target::building(pick_b), Target{}));
+            actions_.move_ordered = true;
+            actions_.actor = actor;
+            actions_.order = InputActions::Order::Enter;   // VoiceEnter
+            return;
+        }
+        // W7-01-04 [RE: Mouse_Left_Release FUN_004AE660 -> What_Action +
+        // Active_Click_With per selected object]: every selected spy /
+        // engineer acts on the building by its own rule; the rest of a mixed
+        // selection attacks an enemy building (below) or moves. W7-01-33: the
+        // roles come from the Agent / Infiltrate / Engineer type flags.
+        if (pick_b >= 0) {
+            std::vector<int> spies, engs, rest;
+            for (int i : sel) {
+                if (i < 0 || i >= static_cast<int>(world_.units().size())) continue;
+                const Unit& su = world_.units()[i];
+                if (!su.alive || su.die_time >= 0.0 || su.cargo_of >= 0 || !world_.controllable(su.house)) continue;
+                if (world_.unit_is_spy(su) && world_.spy_can_infiltrate(i, pick_b)) spies.push_back(i);   // W7-01-14
+                else if (world_.unit_is_engineer(su) &&
+                         world_.engineer_action(i, pick_b) != World::EngineerAct::None) engs.push_back(i);
+                else rest.push_back(i);
+            }
+            if (!spies.empty() || !engs.empty()) {
+                if (!spies.empty()) {
                     // The purpose / steal / blackout are resolved at the apply
                     // from the same OrderRules (Mission_Sabotage).
-                    emit(make_mega(world_, {spy}, Mission::Sabotage, Target::building(b_hit), Target{}));
-                    actions_.move_ordered = true;   // move-ack voice
-                    actions_.actor = spy;
+                    emit(make_mega(world_, spies, Mission::Sabotage, Target::building(pick_b), Target{}));
                     actions_.order = InputActions::Order::Enter;   // W5-E [RE-FALLBACK: spy mission]
-                    return;                          // handled: no attack/move
                 }
-                // own building -> not a spy target; fall through below.
-            }
-        }
-        // Engineer/Spy Capture gesture [RE-GATE APPLIED: capture.md
-        // §A3/§A5]: a SINGLE selected ENGINEER right-clicking a
-        // building ORDERS it to move adjacent and then capture it
-        // (enemy OR neutral) or repair it (own, damaged); the engineer
-        // is consumed on arrival, NOT on the click. Like the enter-
-        // transport sibling, the act (capture_building/repair_building
-        // + consume_unit) is deferred to step_capture when the engineer
-        // reaches adjacency -- an engineer no longer captures a
-        // building across the map on a single click. Resolved BEFORE
-        // the attack-building branch so an engineer never issues a
-        // plain attack, and BEFORE the move fall-through. Captures at
-        // ANY building health, always consumed on the successful act
-        // (no damage threshold -- EngineerCaptureLevel absent in
-        // YR-1.001 -> 1.0). building_at_cell returns only alive,
-        // non-Dead foundations; order_engineer_capture and the
-        // capture/repair calls it defers to re-guard internally. An
-        // OWN, UNDAMAGED building is not a capture/repair target, so
-        // the gesture falls through to the normal handling (a move) --
-        // the recovered graceful fall-through. ProduceCashStartup is 0
-        // here (a normal building grants none; the CAOILD=1000 roster
-        // value is wired in Task 4 via a main.cpp-side startup
-        // injection, mirroring set_refinery_types).
-        const int eng = sel_engineer_idx(world_, sel_);
-        if (eng >= 0) {
-            const int b_hit = pick_b;
-            if (b_hit >= 0) {
-                const Building& tb = world_.buildings()[b_hit];
-                const int eng_house = world_.units()[eng].house;
-                // Wave-5 (R-046): a bombed own/allied building -> defuse.
-                if (tb.bomb_frame >= 0 && world_.are_allied(eng_house, tb.house) &&
-                    defuse_possible(world_, eng, -1, b_hit)) {
-                    emit(make_mega(world_, {eng}, Mission::Capture, Target::building(b_hit), Target{}));
-                    actions_.move_ordered = true;
-                    actions_.actor = eng;
-                    return;
-                }
-                // W2-SK-12: an enemy Capturable=false structure shows the
-                // no-entry cursor in the original -- the click does nothing.
-                // W4-SQ-10: a BridgeRepairHut always takes the engineer (repair,
-                // never a capture) [RE: world-depth.md B4, FUN_00519449].
-                const bool hut = tb.type >= 0 && tb.type < static_cast<int>(world_.btypes().size()) &&
-                                 world_.btypes()[static_cast<std::size_t>(tb.type)].bridge_repair_hut;
-                if (tb.house != eng_house && !world_.are_allied(eng_house, tb.house) &&
-                    !world_.building_capturable(b_hit) && !hut)
-                    return;
-                const bool is_target =
-                    (tb.house != eng_house) ||   // enemy/neutral -> capture
-                    (tb.hp < tb.max_hp);         // own damaged -> repair
-                if (is_target) {
-                    emit(make_mega(world_, {eng}, Mission::Capture, Target::building(b_hit), Target{}));
-                    actions_.move_ordered = true;   // move-ack voice
-                    actions_.actor = eng;
+                if (!engs.empty()) {
+                    emit(make_mega(world_, engs, Mission::Capture, Target::building(pick_b), Target{}));
                     actions_.order = InputActions::Order::Capture;   // W5-E VoiceCapture
-                    return;                          // handled: no attack/move
                 }
-                // own & undamaged -> not a target; fall through below.
+                actions_.move_ordered = true;   // move-ack voice
+                actions_.actor = !engs.empty() ? engs.front() : spies.front();
+                if (!rest.empty() && world_.is_enemy(world_.order_issuer(), world_.buildings()[pick_b].house))
+                    emit(make_mega(world_, rest, Mission::Attack, Target::building(pick_b), Target{}));
+                return;                          // handled
             }
         }
         // Interactive attack-building (Task 4 machinery wired to the

@@ -26,6 +26,9 @@ PowerTotals power_totals(const std::vector<Building>& buildings,
         // power plant delivers less (drain does not scale, FUN_0044E880).
         // Building::max_hp carries Type.Strength (the map's health % lowers hp).
         const int st = b.max_hp;
+        // W7-01-11 [RE: TemporalClass::Fire 0x71A1A0 -> 0x4521B0 HasPower=0]: a
+        // plant being erased delivers nothing (LetGo 0x452200 restores it).
+        if (pw > 0 && b.w7.warp_unpowered) continue;
         if (pw > 0 && st > 0) p.output += om::ftol(((double)b.hp / (double)st * (double)pw));
         else if (pw >= 0) p.output += pw;
         else if (!b.power_off) p.drain -= pw;   // W5-E2: a powered-down building draws nothing
@@ -91,10 +94,15 @@ bool can_start(const ProductionState& ps, int type,
 // [RE-GATE: production.md §1.5] Scalar entry point shared by ALL categories.
 // Reproduces the old BuildingType start() math EXACTLY (same operations, same
 // order, after ps.slot = QueueSlot{}) — see start(ps,type,types,...) below.
-void start(ProductionState& ps, int cost, int charge, double build_speed) {
+void start(ProductionState& ps, int cost, int charge, double build_speed, double time_mult) {
     ps.slot = QueueSlot{};
     ps.slot.type = 0;   // caller (wrapper / queue) overwrites with the real roster index
-    ps.slot.total_frames = std::max(1, build_frames(cost, build_speed));
+    // W7-04-03 [RE: Time_To_Build FUN_006F3D00 @0x6F3D4E]: t = ftol(t x
+    // BuildTimeMultiplier) after the base (and the country multiplier, 1.0).
+    // A multiplier of exactly 1.0 keeps the old value bit-for-bit.
+    int t = build_frames(cost, build_speed);
+    if (time_mult != 1.0) t = om::ftol(static_cast<double>(t) * time_mult);
+    ps.slot.total_frames = std::max(1, t);
     // [RE-GATE: construction.md §10 FUN_004C9DC0] frames per production step.
     ps.slot.step_ticks = std::clamp(ps.slot.total_frames / kProductionSteps, 1, 255);
     // [RE-GATE: economy.md §6a] charge basis: the caller's FreeUnit-subtracted
@@ -166,7 +174,7 @@ bool can_start_unit(const ProductionState& ps, int unit_type,
 void ProductionQueues::start_unit(QueueCat c, int unit_type,
                                   const std::vector<UnitTypeDef>& unit_roster, double build_speed) {
     const UnitTypeDef& u = unit_roster[unit_type];
-    start(q_[(int)c], u.cost, u.cost, build_speed);   // §1.5: charge == cost (no FreeUnit)
+    start(q_[(int)c], u.cost, u.cost, build_speed, u.combat.w7.build_time_mult);   // §1.5: charge == cost (no FreeUnit); W7-04-03
     q_[(int)c].slot.type = unit_type;                 // roster index into the UNIT roster
 }
 

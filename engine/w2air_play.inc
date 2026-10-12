@@ -129,7 +129,8 @@
         for (const char* f : {"submerged", "sub_detected_by0", "iron_units", "chrono_units", "airborne",
                               "spawned_out", "planes", "planes_docked", "plane_ammo", "amphib_on_water",
                               "unit_hp", "cargo_total", "iron_buildings", "sw_has", "sw_ready_t",
-                              "sw_charge", "sunk", "crashing", "free"})
+                              "sw_charge", "sunk", "crashing", "free", "spawn_ready", "spawn_out",
+                              "spawn_pending", "spawn_regen", "launch_hold"})
             p.zero_families.insert(f);
         p.set("sw_armed", input_.sw_targeting() ? input_.sw_armed_type() : 0);
         p.set("sw_armed_phase", input_.sw_armed_phase());
@@ -201,7 +202,19 @@
                 }
             }
             if (u.cargo_of < 0) p.add("cargo_total(" + hs + ")", static_cast<double>(u.cargo.size()));
+            // W7-06-03/06/16: the spawn manager -- docked, out, reloading and
+            // rebuilding nodes, and owners holding still for their rockets.
+            if (!u.an.sp_state.empty()) {
+                p.add("spawn_ready(" + hs + ")", u.an.spawn_ready);
+                p.add("spawn_out(" + hs + ")", u.an.spawn_out);
+                p.add("spawn_pending(" + hs + ")", u.an.spawn_pending);
+                int dead = 0;
+                for (int st : u.an.sp_state) dead += st == ra2engine::kSpawnDead;
+                p.add("spawn_regen(" + hs + ")", dead);
+                if (u.an.launch_hold) p.add("launch_hold(" + hs + ")", 1);
+            }
         }
+        p.set("sonic_waves", static_cast<double>(world_.an_waves_count()));
         for (const ra2engine::Building& b : world_.buildings())
             if (b.alive && b.iron_left_frames > 0.0) p.add("iron_buildings(" + std::to_string(b.house) + ")", 1);
         // W4: RocketLocomotion rockets per house -- launched (ever spawned),

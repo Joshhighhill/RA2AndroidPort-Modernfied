@@ -69,6 +69,8 @@ struct InfAnimState {
     bool was_deployed = false;
     double prev_fire = 0.0;
     bool cheer = false;      // MakeHouseCheer / victory request
+    bool erupt = false;      // W7-02-05: a Desolator eruption fired this tick (DeployedFire)
+    bool air = false;        // W7-01-21: airborne this tick (jumpjet infantry)
 };
 
 // What the machine needs from the World for one unit and one tick.
@@ -81,6 +83,8 @@ struct InfTickCtx {
     bool dying = false;
     bool deployed = false;
     double fire_flash = 0.0;
+    int fire_slot = 0;              // W7-12-10: the active weapon slot (Unit::w_active)
+    bool airborne = false;          // W7-01-21: a jumpjet soldier in the air (Rocketeer)
     double idle_frequency = 0.15;   // rules [AudioVisual] IdleActionFrequency (minutes)
     std::function<void()> scatter;  // Fraidycat flight (World::order_scatter)
 };

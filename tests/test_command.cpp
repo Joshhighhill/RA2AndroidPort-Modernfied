@@ -355,10 +355,10 @@ TEST_CASE("command apply: MEGAMISSION Capture (engineer) and Sabotage (spy)") {
     const int bi = w.add_building(-1, x + 5, y + 5, 2, 2, 1, 500, 0, 0.0, true);   // untyped: capturable
     apply_command(w, make_mega(w, {e}, Mission::Capture, Target::building(bi), Target{}));
     CHECK(w.units()[e].capture_target == bi);
-    // A group (not a lone engineer) is refused.
+    // W7-01-04: every engineer of a group acts (not only a lone one).
     const int e2 = add_unit(w, x + 1, y, 0, eng);
     apply_command(w, make_mega(w, {e, e2}, Mission::Capture, Target::building(bi), Target{}));
-    CHECK(w.units()[e2].capture_target == -1);
+    CHECK(w.units()[e2].capture_target == bi);
     UnitCombat spyc = gi();
     spyc.image = "SPY";
     const int s = add_unit(w, x, y + 2, 0, spyc);

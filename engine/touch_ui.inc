@@ -410,6 +410,7 @@ void cameo_menu_do(int id) {
                     (active_tab_ == 1) ? ra2engine::QueueCat::Defense : ra2engine::QueueCat::Structure;
                 world_.econ_abandon(local_house_, bcat, type, /*all=*/false);
             }
+            pres_.note_eva("EVA_Canceled");   // W7-12-01 [RE: FUN_006AA390 @6AA4C4]
             return;
         default: return;
     }

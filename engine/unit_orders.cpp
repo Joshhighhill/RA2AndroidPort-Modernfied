@@ -57,6 +57,19 @@ void World::order_stop(int idx) {
     u.guard_x = post.x;
     u.guard_y = post.y;
     u.tg.area_guard = false;   // W6-02-11: Stop leaves Area_Guard
+    u.tg.mission = -1;         // w7fix-combat: Stop replaces the mission
+    u.tg.overridden = false;
+    u.tg.opportunity = false;
+    u.tg.amove_x = u.tg.amove_y = -1;
+    u.tg.home_x = u.tg.home_y = -1;
+    // W7-01-32 / W7-02-08 / W7-04-17 [RE: Enter_Idle_Mode 0x51CB2A / 0x737BB6]:
+    // a DefaultToGuardArea type (dogs, Terror Drone) idles in Area_Guard.
+    if (u.w7.t.default_to_guard_area && !u.is_aircraft) {
+        u.tg.area_guard = true;
+        u.tg.home_x = post.x;   // W7-07-06: the post it guards
+        u.tg.home_y = post.y;
+    }
+    enter_idle_mode(idx);      // W7-07-05: then Enter_Idle_Mode (computer IQ, GUARD_AREA)
 }
 
 // [RE: TechnoClass::SetOwningHouse FUN_00700940 (FootClass FUN_004DBDE0 /
@@ -71,6 +84,8 @@ void World::set_unit_owner(int idx, int house) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     if (units_[idx].house == house) return;   // FUN_00700940: same owner -> no-op
     units_[idx].house = house;
+    // W7-09-09 [RE: SetOwningHouse 0x700940 -> Assign_Mission(Guard)]: the
+    // new owner's unit leaves Sleep / Harmless (order_stop clears the mission).
     order_stop(idx);
 }
 
@@ -80,14 +95,21 @@ void World::order_guard(int idx) {
     order_stop(idx);
     // W6-02-11 [RE: GuardObject FUN_0072FE30 = MegaMission(Area_Guard)]: the
     // doubled area-guard threat radius.
-    if (idx >= 0 && idx < static_cast<int>(units_.size()) && orderable(units_[idx]) && !units_[idx].is_aircraft)
+    if (idx >= 0 && idx < static_cast<int>(units_.size()) && orderable(units_[idx]) && !units_[idx].is_aircraft) {
         units_[idx].tg.area_guard = true;
+        units_[idx].tg.home_x = units_[idx].cell_x;   // W7-07-06: guard this spot
+        units_[idx].tg.home_y = units_[idx].cell_y;
+    }
 }
 
 void World::order_scatter(int idx) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     Unit& u = units_[idx];
     if (!orderable(u) || u.frozen || u.is_aircraft) return;
+    // W7-01-19 [RE: ScatterObject 0x4C6BD0 -> TechnoClass::Scatter 0x51CEA0]:
+    // X is ignored for a human's deployed unit and for a unit on the move.
+    if (u.deployed && !house_is_computer(u.house)) return;
+    if (u.moving()) return;
     static const int kDx[8] = {0, 1, 1, 1, 0, -1, -1, -1};
     static const int kDy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
     const int start = combat_rng_.random(0, 7);   // deterministic sync-RNG pick
@@ -125,8 +147,15 @@ void World::group_guard(int issuer, const std::vector<int>& ids) {
         if (i >= 0 && i < static_cast<int>(units_.size()) && can_command(issuer, units_[i].house)) order_guard(i);
 }
 void World::group_scatter(int issuer, const std::vector<int>& ids) {
-    for (int i : ids)
-        if (i >= 0 && i < static_cast<int>(units_.size()) && can_command(issuer, units_[i].house)) order_scatter(i);
+    for (int i : ids) {
+        if (i < 0 || i >= static_cast<int>(units_.size()) || !can_command(issuer, units_[i].house)) continue;
+        // W7-07-25 [RE: EVENT_SCATTER 0x4C77D1, InfantryClass::Scatter
+        // 0x51CEB3..0x51CF18]: a human infantry in its Deploy / Deployed
+        // sequence ignores it, and a moving unit does not scatter.
+        const Unit& u = units_[static_cast<std::size_t>(i)];
+        if (w7_rules_.armed && ((u.deployed && !u.is_vehicle && human_commanded(u.house)) || u.moving())) continue;
+        order_scatter(i);
+    }
 }
 
 

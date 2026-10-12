@@ -73,6 +73,8 @@ SoundEntry Sounds::entry(const std::string& name) const {
     }
     for (const std::string& t : split_ws(ini_->get(name, "Control", "")))
         e.control.push_back(lower(t));
+    e.attack_n = ini_->get_int(name, "Attack", 0);   // W7-12-24
+    e.decay_n = ini_->get_int(name, "Decay", 0);
     const std::string ty = ini_->get(name, "Type", "");
     if (!ty.empty()) {
         e.type.clear();

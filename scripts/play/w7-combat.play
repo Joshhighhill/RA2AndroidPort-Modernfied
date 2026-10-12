@@ -1,0 +1,71 @@
+# w7fix-combat: target legality and the P hotkey in real play.
+# W7-02-01 / W7-07-13 force-fire on own units (Ivan bomb on an own tank,
+# AttackCursorOnFriendlies), W7-02-11 no bomb cursor on a bombed target,
+# W7-02-02 Tesla Troopers ordered onto an own coil charge it,
+# W7-01-13 / W7-02-07 Select Combatants reads IsSelectableCombatant.
+set render_every 900
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:country0
+click list:down
+click list:down
+click list:down
+click pick:Iraq
+click combo:ai1
+click "pick:Easy Enemy"
+click check:crates
+click slider:units=0
+click slider:speed=2
+click start
+until 120 scene == game
+click unit 0:SMCV
+key d
+until 450 built(0,NACNST) == 1
+cheat reveal
+# --- T1 Ivan over an own tank: the bomb (attack) cursor; a plain click plants
+cheat spawn IVAN 0 building 0:NACNST +6 +4
+cheat spawn HTNK 0 building 0:NACNST +8 +4
+wait 2
+click unit 0:IVAN
+wait 1
+move unit 0:HTNK
+wait 2
+assert cursor == 6 @W7-02-01
+click unit 0:HTNK
+until 120 bombs >= 1 @W7-02-01
+# --- T1c the bombed tank: no bomb cursor any more (NoIvanBomb)
+click unit 0:IVAN
+wait 1
+move unit 0:HTNK
+wait 2
+assert cursor != 6 @W7-02-11
+# --- T2 Tesla Troopers onto an own Tesla Coil: attack cursor, they charge it
+cheat place TESLA 0 building 0:NACNST -6 +6
+cheat spawn SHK 0 building 0:NACNST -2 +3
+wait 2
+# (a selected Ivan would bomb the trooper: AttackCursorOnFriendlies) -- deselect
+click unit 0:SHK right
+wait 1
+click unit 0:SHK
+wait 1
+move building 0:TESLA
+wait 2
+assert cursor == 6 @W7-02-02
+assert selected_type(SHK) >= 1
+click building 0:TESLA
+wait 2
+assert selected_type(SHK) >= 1 @W7-02-02
+until 300 overpowerers >= 1 @W7-02-02
+# --- T3 Select Combatants: engineers and terrorists stay out
+cheat spawn SENGINEER 0 building 0:NACNST +3 +3
+cheat spawn TERROR 0 building 0:NACNST +4 +3
+cheat spawn E2 0 building 0:NACNST +5 +3
+wait 2
+key p
+wait 2
+assert selected_type(SENGINEER) == 0 @W7-02-07
+assert selected_type(TERROR) == 0 @W7-02-07
+assert selected_type(E2) >= 1 @W7-01-13
+end

@@ -106,22 +106,19 @@ inline int pres_jumpjet_wobble_px(int idx, const ra2engine::Unit& u) {
     if (!g_walk_rules || !u.is_aircraft || u.an.t.fixed_wing || u.altitude <= 0.0 || u.an.crashing) return 0;
     struct Wob { double per_sec = 0.15; double dev = 40.0; bool off = false; };
     static std::map<std::string, Wob> cache;
-    // W7-05-08: the Jumpjet* keys live in the RULES section ([JUMPJET]), not
-    // the art Image= ([ROCK] does not exist): key by the rules id, falling
-    // back to the image for a hand-built unit with no rules id.
-    const std::string& sec = u.tg.t.rules_id.empty() ? u.image : u.tg.t.rules_id;
-    auto it = cache.find(sec);
+    // W7-05-08: the keys live in the RULES id's section ([JUMPJET], not [ROCK]).
+    auto it = cache.find(pres_type_id(u));
     if (it == cache.end()) {
         auto num = [&](const char* sname, const char* k, double d) {
             const std::string v = pres_clean(g_walk_rules->get(sname, k));
             return v.empty() ? d : std::atof(v.c_str());
         };
         Wob w;
-        w.per_sec = num(sec.c_str(), "JumpjetWobbles", num("JumpjetControls", "WobblesPerSecond", 0.15));
-        w.dev = num(sec.c_str(), "JumpjetDeviation", num("JumpjetControls", "WobbleDeviation", 40.0));
-        const std::string nw = pres_lower(pres_clean(g_walk_rules->get(sec, "JumpjetNoWobbles")));
+        w.per_sec = num(pres_type_id(u).c_str(), "JumpjetWobbles", num("JumpjetControls", "WobblesPerSecond", 0.15));
+        w.dev = num(pres_type_id(u).c_str(), "JumpjetDeviation", num("JumpjetControls", "WobbleDeviation", 40.0));
+        const std::string nw = pres_lower(pres_clean(g_walk_rules->get(pres_type_id(u), "JumpjetNoWobbles")));
         w.off = !nw.empty() && (nw[0] == 'y' || nw[0] == 't' || nw[0] == '1');
-        it = cache.emplace(sec, w).first;
+        it = cache.emplace(pres_type_id(u), w).first;
     }
     const Wob& w = it->second;
     if (w.off || w.per_sec <= 0.0 || w.dev == 0.0) return 0;

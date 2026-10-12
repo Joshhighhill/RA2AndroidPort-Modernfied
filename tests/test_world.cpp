@@ -2964,10 +2964,12 @@ TEST_CASE("World: cargo transport death tombstones its cargo; enter orders cance
     // Kill the transport the way combat does (die_time flips >= 0).
     world.units()[0].die_time = 0.0;
     world.step(dt);
-    CHECK_FALSE(world.units()[1].alive);                         // died WITH it
+    // W7-04-02 [RE: UnitClass::ReceiveDamage FUN_00736D60 KILLED branch]: the
+    // passenger escapes ALIVE beside the dead transport.
+    CHECK(world.units()[1].alive);
     CHECK(world.units()[1].cargo_of == -1);
-    CHECK(world.units()[1].cell_x == world.units()[0].cell_x);   // coords stamped
-    CHECK(world.units()[1].cell_y == world.units()[0].cell_y);
+    CHECK(std::abs(world.units()[1].cell_x - world.units()[0].cell_x) <= 1);
+    CHECK(std::abs(world.units()[1].cell_y - world.units()[0].cell_y) <= 1);
     CHECK(world.units()[0].cargo.empty());
     CHECK(world.units()[2].enter_target == -1);                  // cancelled cleanly
     CHECK(world.units()[2].alive);                               // ...and unharmed
@@ -4002,7 +4004,10 @@ TEST_CASE("World disguise: a dog reveals a disguised enemy spy; non-detector doe
     world.add_combat_unit(12, 10, /*house=*/1, dogc);
     world.units().back().detect_disguise = true;
     world.step(dt);
-    CHECK_FALSE(world.units()[spy_i].disguised);       // revealed
+    // W7-01-02 [RE: 0x6F71D0]: no radius, no flag clear -- the dog simply
+    // ignores the disguise in its own scan; it still fools the house it copies.
+    CHECK(world.units()[spy_i].disguised);
+    CHECK(world.disguise_fools(1, world.units()[spy_i]));
 }
 
 TEST_CASE("World disguise: spy STAYS disguised on attack; only a DetectDisguise dog reveals it "
@@ -4029,8 +4034,8 @@ TEST_CASE("World disguise: spy STAYS disguised on attack; only a DetectDisguise 
     dogc.image = "DOG"; dogc.strength = 100; dogc.armor = "none";
     ra2engine::Unit& dog = world.add_combat_unit(11, 10, /*house=*/1, dogc);
     dog.detect_disguise = true;
-    world.step(1.0 / 15.0);                               // step_tech_structures detection pass
-    CHECK_FALSE(world.units()[spy_i].disguised);          // dog defeats the disguise
+    world.step(1.0 / 15.0);
+    CHECK(world.units()[spy_i].disguised);                // W7-01-02: the dog does not clear it
 }
 
 TEST_CASE("World disguise: an idle enemy unit does NOT auto-acquire a disguised spy, "

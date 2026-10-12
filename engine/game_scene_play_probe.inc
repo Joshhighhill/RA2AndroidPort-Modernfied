@@ -77,6 +77,24 @@
             p.set_s("proj_last", who);
         }
         p.set("fx_anims", static_cast<double>(pres_.fx().live()));
+        {   // W7-12 presentation evidence: pres(<trigger>) counters, beams,
+            // mind-control pairs, sinking hulls, the voice table by rules id.
+            p.zero_families.insert("pres");
+            for (const auto& kv : pres_.w5_counts()) {
+                std::string k = kv.first;
+                for (char& c : k) if (c == ' ') c = '_';
+                p.set("pres(" + k + ")", static_cast<double>(kv.second));
+            }
+            p.set("beams_added", static_cast<double>(pres_.fx().beams_added()));
+            p.set("beams_live", static_cast<double>(pres_.fx().beams_live()));
+            p.set("mc_pairs", static_cast<double>(pres_.mc_count()));
+            p.set("sinking_hulls", static_cast<double>(g_pres_sinkers.size()));
+            p.set("first_selected", pres_.first_selected());
+            for (const char* id : {"E1", "E2", "HTNK", "ENGINEER", "SENGINEER", "CIV1", "CIV3", "CTECH", "COW", "JUMPJET",
+                                   "ORCA", "DTRUCK", "GHOST", "SAPC"})
+                for (const char* f : {"select", "die", "deploy", "feedback", "move_sound", "crush", "report"})
+                    p.set_s(std::string("voice(") + id + "," + f + ")", pres_.voice_key(id, f));
+        }
         p.set("radar_pings", static_cast<double>(g_radar_pings.size()));
         p.set("sw_strikes", static_cast<double>(world_.sw_strikes().size()));
         {

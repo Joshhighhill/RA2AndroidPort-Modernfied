@@ -1,0 +1,41 @@
+# pres-w7-mc -- W7-10-05 / W7-12-23: the mind-control ring (MINDANIM), the
+# link line, the capture sound and YURICNTL, on the SOV09 capture of
+# mc-range.play (same real orders).
+set render_every 900
+set on_quit continue
+set campaign sov09u.MAP Nod
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+until 600 airborne(6) >= 1
+until 2000 campaign_frame >= 980
+click unit 6:YURI:0
+click cell 36 74
+click unit 6:YURI:1
+click cell 37 74
+until 600 campaign_frame >= 1150
+click unit 6:YURI:0
+click cell 36 75
+click unit 6:YURI:1
+click cell 37 75
+# The x=37 IFV patrol (FV:1) runs y=52..75 past the Yuris' posts. Since
+# W6-02-11 an idle Yuri auto-acquires at its threat radius (range 8 + 1), so
+# the order is given on the IFV's way back south while it is still ~11 cells
+# out (y=64), past both the weapon range and the auto-acquire radius: Yuri 0
+# must walk in and take it.
+until 1500 ucy(1,FV,1) <= 56
+until 600 ucy(1,FV,1) >= 64
+# right-click first: clicking an already-selected Yuri deploys him (he then
+# holds his post and never closes in).
+click xy 500 400 right
+click unit 6:YURI:0
+click unit 1:FV:1
+until 600 units(6,FV) >= 1
+assert units(6,FV) >= 1 @R-205
+assert units(6,YURI) >= 2
+wait 3
+assert mc_pairs >= 1                                      @W7-10-05
+assert pres(mind_control) >= 1                            @W7-12-23
+view unit 6:FV
+shot w7_mind_control
+end expect RUNNING

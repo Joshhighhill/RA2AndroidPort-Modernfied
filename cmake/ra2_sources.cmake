@@ -133,10 +133,12 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/world_abilities.cpp
     ${RA2_ROOT}/engine/world_w5.cpp
     ${RA2_ROOT}/engine/world_w6.cpp
+    ${RA2_ROOT}/engine/world_w7.cpp
     ${RA2_ROOT}/engine/abil_w5_rules.cpp
     ${RA2_ROOT}/engine/world_mcv.cpp
     ${RA2_ROOT}/engine/world_sw.cpp      # W2-AN superweapons v2
     ${RA2_ROOT}/engine/world_an.cpp      # W2-AN naval / aircraft
+    ${RA2_ROOT}/engine/ai_unit.cpp       # W7 AI auto-deploy + ToProtect
     ${RA2_ROOT}/engine/savegame.cpp
     ${RA2_ROOT}/engine/bridges.cpp
     ${RA2_ROOT}/engine/world_depth.cpp

@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstdlib>
 
+#include "cargo.hpp"   // can_load (W7-01-30)
 #include "ra2assets/map.hpp"
 
 namespace ra2engine {
@@ -37,16 +38,42 @@ constexpr int kLevelPxO = 15;           // one height level in screen px (input.
 // [RE: FUN_00730290] TeamSelect re-press window: timeGetTime() delta < 800 ms.
 constexpr uint32_t kGroupRepeatMs = 800;
 
-int lone_selected_with_image(const World& w, const Selection& sel, const char* image) {
-    int found = -1;
+// W7-01-30 / W7-04-31: may any selected own unit board transport `ti`?
+bool can_board(const World& w, int ti, const Selection& sel) {
+    for (int si : sel.ids()) {
+        if (si >= static_cast<int>(w.units().size())) break;
+        const Unit& su = w.units()[si];
+        if (si == ti || !w.controllable(su.house) || !su.alive || su.die_time >= 0.0) continue;
+        if (can_load(w.units(), ti, si, [&w](int a, int b) { return w.are_allied(a, b); })) return true;
+    }
+    return false;
+}
+
+// W7-01-05: does any selected own unit take a ground move (a deployed
+// Deployer infantry of a human house does not)?
+bool selection_can_move(const World& w, const Selection& sel) {
+    bool any = false;
     for (int i : sel.ids()) {
         if (i >= static_cast<int>(w.units().size())) break;
         const Unit& u = w.units()[i];
-        if (!u.alive || u.die_time >= 0.0 || !w.controllable(u.house)) continue;
-        if (found >= 0) return -1;
-        found = i;
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || !w.controllable(u.house)) continue;
+        any = true;
+        if (!(u.deployed && !u.is_vehicle && (u.deploy_fire || u.abil.deployer))) return true;
     }
-    return (found >= 0 && w.units()[found].image == image) ? found : -1;
+    return !any;
+}
+
+// W7-01-04 [RE: Mouse_Left_Release FUN_004AE660 -> each selected object's
+// What_Action]: the first selected own spy / engineer (any selection size),
+// -1 if none. W7-01-33: by the Agent / Infiltrate / Engineer type flags.
+int first_selected_role(const World& w, const Selection& sel, bool spy) {
+    for (int i : sel.ids()) {
+        if (i >= static_cast<int>(w.units().size())) break;
+        const Unit& u = w.units()[i];
+        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || !w.controllable(u.house)) continue;
+        if (spy ? w.unit_is_spy(u) : w.unit_is_engineer(u)) return i;
+    }
+    return -1;
 }
 }  // namespace
 
@@ -147,28 +174,79 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
         if (selected_building_valid() &&
             is_unit_factory_type(world_.buildings()[selected_building_].type))
             return Action::Rally;
+        // W7-02-10: a selected own firing garrison attacks like a defence.
+        if (selected_building_valid() && world_.garrison_firing(selected_building_)) {
+            const int sb_house = world_.buildings()[selected_building_].house;
+            if (idx >= 0 && !world_.are_allied(sb_house, us[idx].house)) return Action::Attack;
+            if (b >= 0 && b != selected_building_ && !world_.are_allied(sb_house, world_.buildings()[b].house))
+                return Action::Attack;
+        }
         return Action::None;   // [RE: FUN_004AB8C0] nothing selected + ground = no action
     }
+    // w7fix-combat: the selection's friendly-attack abilities.
+    auto sel_any = [&](auto pred) {
+        for (int si : sel_.ids()) {
+            if (si < 0 || si >= static_cast<int>(us.size())) continue;
+            const Unit& su = us[si];
+            if (world_.controllable(su.house) && su.alive && su.die_time < 0.0 && su.cargo_of < 0 && pred(su))
+                return true;
+        }
+        return false;
+    };
+    auto ivan_sel = [&] {
+        return sel_any([](const Unit& su) { return su.abil.fire_kind == AbilityKind::IvanBomb; });
+    };
+    // W7-02-11 [RE: InfantryClass::What_Action 0x51E89E]: an Ivan over an
+    // object that already carries a bomb gets NoIvanBomb (no order).
+    if (idx >= 0 && !sel_.has(idx) && us[idx].bomb_frame >= 0 && ivan_sel()) return Action::NoMove;
+    // W7-07-12 [RE: YR mission 29 Attack Move, AttackMoveNav cursor; the
+    // modifier is SUSPECTED Ctrl+Shift]: Ctrl+Shift on the ground is an
+    // attack-move (the move cursor).
+    if (ctrl && shift && idx < 0 && b < 0) return cell_walkable(cx, cy) ? Action::Move : Action::NoMove;
     // Force-fire (Ctrl) on any object that is not part of the selection.
+    // W7-07-13 / W7-02-01 [RE: What_Action FUN_006FF380 -- with the force-fire
+    // key down any object other than the unit itself is ACTION_ATTACK,
+    // whatever its owner]: own and allied objects too.
     if (ctrl) {
-        if (idx >= 0 && !sel_.has(idx) && !world_.controllable(us[idx].house)) return Action::Attack;
-        if (b >= 0 && world_.buildings()[b].house != world_.order_issuer()) return Action::Attack;
+        if (idx >= 0 && !sel_.has(idx)) return Action::Attack;
+        if (b >= 0) return Action::Attack;
         if (idx < 0 && b < 0) return Action::Attack;   // G16: force-fire the ground cell
+    }
+    // W7-02-01 [RE: What_Action 0x6FF865, TechnoType +0x6C1
+    // AttackCursorOnFriendlies]: the Ivan's bomb cursor on own / allied
+    // objects without the force-fire key.
+    if (idx >= 0 && !sel_.has(idx) && !world_.is_enemy(world_.order_issuer(), us[idx].house) &&
+        sel_any([](const Unit& su) { return su.tg.t.attack_cursor_on_friendlies; }))
+        return Action::Attack;
+    if (idx < 0 && b >= 0 && !world_.is_enemy(world_.order_issuer(), world_.buildings()[b].house)) {
+        const Building& FB = world_.buildings()[b];
+        if (FB.bomb_frame < 0 && sel_any([](const Unit& su) { return su.tg.t.attack_cursor_on_friendlies; }))
+            return Action::Attack;
+        // W7-02-02 [RE: SelectWeapon FUN_006F2890 @0x6F2B7F -- an allied
+        // Overpowerable building and an ElectricAssault secondary]: Tesla
+        // Troopers ordered onto an own / allied Tesla Coil charge it.
+        const auto& bt = world_.btypes();
+        if (FB.type >= 0 && FB.type < static_cast<int>(bt.size()) && bt[FB.type].w5.overpowerable &&
+            world_.allied_with(world_.order_issuer(), FB.house) &&
+            sel_any([](const Unit& su) { return su.w5.p.assault; }))
+            return Action::Attack;
     }
     if (alt) return cell_walkable(cx, cy) ? Action::Move : Action::NoMove;   // force-move
     if (idx >= 0) {
         const Unit& u = us[idx];
         // Wave-5 (R-046): a lone engineer on a bombed unit -> disarm.
-        if (u.bomb_frame >= 0 && !sel_.has(idx) && lone_selected_with_image(world_, sel_, "ENGINEER") >= 0 &&
+        if (u.bomb_frame >= 0 && !sel_.has(idx) && first_selected_role(world_, sel_, false) >= 0 &&
             !world_.is_enemy(world_.order_issuer(), u.house))
             return Action::Capture;
         // Wave-5 (R-052): an ALLIED transport takes the selected infantry.
+        // W7-01-30 / W7-04-31 [RE: 0x51E17C -> ReceiveMessage(0xF) refuses ->
+        // NoEnter 0x1F]: only when one of them may actually board.
         if (!world_.controllable(u.house) && world_.are_allied(world_.order_issuer(), u.house) && u.passengers_max > 0) {
             for (int si : sel_.ids()) {
                 if (si >= static_cast<int>(us.size())) break;
                 const Unit& su = us[si];
                 if (world_.controllable(su.house) && su.alive && su.die_time < 0.0 && su.passengers_max <= 0)
-                    return Action::Enter;
+                    return can_board(world_, idx, sel_) ? Action::Enter : Action::NoMove;
             }
         }
         if (world_.controllable(u.house)) {
@@ -200,12 +278,27 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
                     if (!world_.controllable(su.house) || !su.alive || su.die_time >= 0.0 ||
                         si == idx || su.passengers_max > 0)
                         continue;
-                    return Action::Enter;
+                    return can_board(world_, idx, sel_) ? Action::Enter : Action::NoMove;   // W7-01-30
                 }
             }
             return Action::Select;
         }
-        if (world_.is_enemy(world_.order_issuer(), u.house)) return Action::Attack;
+        if (world_.is_enemy(world_.order_issuer(), u.house)) {
+            // W7-02-11 [RE: InfantryClass::What_Action 0x51E89E]: an Ivan over
+            // an already-bombed object gets NoIvanBomb (0x36), not Attack.
+            if (u.bomb_frame >= 0) {
+                bool all_ivan = false;
+                for (int si : sel_.ids()) {
+                    if (si >= static_cast<int>(us.size())) break;
+                    const Unit& su = us[si];
+                    if (!world_.controllable(su.house) || !su.alive || su.die_time >= 0.0) continue;
+                    if (su.abil.fire_kind != AbilityKind::IvanBomb) { all_ivan = false; break; }
+                    all_ivan = true;
+                }
+                if (all_ivan) return Action::NoMove;
+            }
+            return Action::Attack;
+        }
         // An ally / neutral unit: the click resolves to its ground cell.
     }
     bool harv = false;
@@ -226,15 +319,30 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
         for (int si : sel_.ids())
             if (si < static_cast<int>(us.size()) && world_.controllable(us[si].house) && world_.can_occupy(si, b))
                 return Action::Enter;
-        if (lone_selected_with_image(world_, sel_, "SPY") >= 0 && B.house != world_.order_issuer()) return Action::Infiltrate;
-        if (lone_selected_with_image(world_, sel_, "ENGINEER") >= 0) {
-            if (B.bomb_frame >= 0 && world_.are_allied(world_.order_issuer(), B.house)) return Action::Capture;   // wave-5 R-046
-            if (B.house != world_.order_issuer()) return Action::Capture;
-            if (B.hp < B.max_hp) return Action::EngineerRepair;
+        // W7-01-14: only a non-allied Spyable building takes a spy.
+        const int spy = first_selected_role(world_, sel_, true);
+        if (spy >= 0 && world_.spy_can_infiltrate(spy, b)) return Action::Infiltrate;
+        // W7-01-16 / W7-08-19 / W7-08-20: the engineer's own rule.
+        const int eng = first_selected_role(world_, sel_, false);
+        if (eng >= 0) {
+            switch (world_.engineer_action(eng, b)) {
+                case World::EngineerAct::Defuse:
+                case World::EngineerAct::Capture: return Action::Capture;
+                case World::EngineerAct::Repair:
+                case World::EngineerAct::Hut: return Action::EngineerRepair;
+                default: break;
+            }
         }
+        // W7-08-01 / W7-04-06: damaged own vehicles over an own UnitRepair
+        // building -> the enter (dock) cursor.
+        if (world_.depot_wants(world_.order_issuer(), sel_.ids(), b)) return Action::Enter;
         if (B.house == world_.order_issuer()) return shift ? Action::None : Action::SelectBuilding;
         if (world_.is_enemy(world_.order_issuer(), B.house)) return Action::Attack;
     }
+    // W7-01-05 [RE: InfantryClass::What_Action 0x51F510]: a human's deployed
+    // Deployer infantry answers a ground click with NoMove -- per unit, so a
+    // mixed selection still moves.
+    if (!selection_can_move(world_, sel_)) return Action::NoMove;
     return cell_walkable(cx, cy) ? Action::Move : Action::NoMove;
 }
 
@@ -313,7 +421,14 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
             return;
         }
         case Action::Attack:
-            if (mod_ctrl_) {   // force-fire: target regardless of the is_enemy gate
+            // w7fix-combat: a friendly target (AttackCursorOnFriendlies, the
+            // Tesla charge) takes the force-fire emission too.
+            if (mod_ctrl_ || [&] {
+                    const int fi = unit_under(px, py);
+                    if (fi >= 0) return !sel_.has(fi) && !world_.is_enemy(world_.order_issuer(), world_.units()[fi].house);
+                    const int fb = pick_building(px, py, ev_touch_);
+                    return fb >= 0 && !world_.is_enemy(world_.order_issuer(), world_.buildings()[fb].house);
+                }()) {   // force-fire: target regardless of the is_enemy gate
                 const int idx = unit_under(px, py);
                 const int actor = lowest_selected();
                 const std::vector<int> sel = sel_.ids();
@@ -338,6 +453,15 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
             return;
         case Action::Move:
         case Action::NoMove:
+            if (mod_ctrl_ && shift && a == Action::Move) {   // W7-07-12 attack-move
+                int cx = 0, cy = 0;
+                resolve_ground_cell(px, py, cx, cy);
+                const int actor = lowest_selected();
+                emit(make_mega(world_, sel_.ids(), Mission::AttackMove, Target{}, Target::cell(cx, cy)));
+                actions_.move_ordered = true;
+                actions_.actor = actor;
+                return;
+            }
             if (mod_alt_) {   // force-move: always a ground move
                 int cx = 0, cy = 0;
                 resolve_ground_cell(px, py, cx, cy);
@@ -539,7 +663,9 @@ bool Input::type_select() {
         if (matches(us[i]) && (all_on_screen_selected || on_screen(us[i]))) sel_.set(static_cast<int>(i));
     selected_building_ = -1;
     const int lo = lowest_selected();
-    if (lo >= 0) { actions_.selected = true; actions_.actor = lo; }
+    // W7-12-26 [RE: 0x7318A0 saves AllowVoice and forces it to 0]: the
+    // select-same-type sweep is SILENT -- no `selected` voice request.
+    if (lo >= 0) actions_.actor = lo;
     return lo >= 0;
 }
 

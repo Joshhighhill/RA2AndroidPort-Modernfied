@@ -47,7 +47,7 @@ Four load-bearing findings differ from the plan and need RE-GATE adjudication:
    passenger is put back (HOLD/retry).
 4. **The ownership gate is allied-or-same-house, not strictly same-house.**
 
-Items 5 (cargo dies with transport) and the same-cell boarding trigger match the
+Item 5 (cargo dies with transport) was WRONG -- corrected in wave 7 (§5: passengers escape alive). The same-cell boarding trigger matches the
 expected default / land as documented deviations.
 
 ## Recovered layout (offsets are content-verified)
@@ -252,31 +252,37 @@ a real timer CONFIRMED (`FUN_004A5150`); its exact application (deploy-start del
 vs per-eject throttle) is PROBABLE. Eject facing = ±90° scatter CONFIRMED
 structurally; the passenger's final facing is PROBABLE.**
 
-## §5 Transport-death passenger disposition — cargo dies with the transport
+## §5 Transport-death passenger disposition — passengers escape alive (corrected, wave 7)
 
-Three independent sweep sites all remove **and destroy** every passenger, with no
-`OpenTopped`/survival branch:
+**Correction (wave 7, W7-04-02).** The first version of this section read only
+the kill-all sweep sites and concluded that every passenger dies with its
+transport. That is wrong for vehicle transports.
 
-- `FUN_00700DA0` (TechnoClass death/Limbo handler):
-  ```c
-  while (this->FirstPassenger(+0x118) != 0) {
-      p = GetFirstPassenger(); if (p->+0x5d4) FUN_006E9DD0(p,-1,0);  // detach mgr
-      p = RemoveFirstPassenger();
-      p->vtbl+0xE0(transport);   // unlink / notify
-      p->vtbl+0x20(1);           // delete (dtor, arg 1)
-  }
-  ```
-- `FUN_00707130` — the same loop (a `KillPassengers`-style helper).
-- `FUN_00734850` (`~UnitClass`) — the same loop as final cleanup.
+`UnitClass::ReceiveDamage` (`FUN_00736D60`), KILLED branch
+`0x736FD1..0x7371D6` [CONFIRMED-RE, docs/gap/wave7/04-evidence/RE-B]: for a
+non-Crashable unit every passenger is removed, **unlimboed onto the transport's
+cell and scattered**. A passenger is killed only when
 
-Every path calls `passenger->vtbl+0x20(1)` (the delete/destroy slot). **No branch
-checks `OpenTopped` or any survival flag; there is no "eject survivors on death"
-default in this binary.** So the recovered default is: **passengers are destroyed
-with the transport.** (`OpenTopped` governs fire-*out* while alive, via
-`FUN_00700760`, not death survival — mapped for the later phase, §2.)
+- it cannot stand on that cell (a SAPC killed on water drowns its infantry),
+- the unlimbo fails, or
+- a prevent-escape flag is set.
 
-**Confidence: CONFIRMED** (three sweep sites, identical delete-each pattern, no
-survival branch).
+The kill-all loops below are separate and narrower paths:
+
+- `FUN_00700DA0` @`0x701A97` — the Explodes / Suicide death of the transport;
+- `FUN_00707130` — `KillPassengers`;
+- `FUN_00734850` (`~UnitClass`) — final cleanup of anything still aboard;
+- aircraft transports (Crashable) take their passengers down with them.
+
+Their loop is the delete-each pattern
+(`p = RemoveFirstPassenger(); p->vtbl+0x20(1)`).
+
+**Clone (wave 7):** `World::step_cargo` ejects the passengers last-in first-out
+onto free cells beside the dead transport; they die only for an aircraft,
+`Explodes=yes` or Suicide transport, a sinking one, a cell the passenger cannot
+use, or no free cell. `OpenTopped` still governs only fire-out while alive.
+
+**Confidence: CONFIRMED** (wave-7 RE of the UnitClass KILLED branch).
 
 ## §6 Deterministic ordering — LIFO container, deterministic tie-break
 
@@ -350,7 +356,7 @@ CONFIRMED (`FUN_007C4D00` = ftol by content).**
 | §4 | one passenger per unload tick | `FUN_00415EE0` (`if passengers: eject one; return`) | **CONFIRMED** |
 | §4 | no-free-cell → **HOLD** (AddPassenger back, retry) | `FUN_00415C60` put-back path | **CONFIRMED** |
 | §4 | DeployTime = timer (deploy-start delay) | `FUN_004A5150` | **CONFIRMED (timer); PROBABLE (per-eject vs start)** |
-| §5 | passengers **die with the transport**; no OpenTopped survival branch | `FUN_00700DA0`/`FUN_00707130`/`FUN_00734850`, all `vtbl+0x20(1)` | **CONFIRMED** |
+| §5 | passengers **escape alive** from a destroyed vehicle transport (UnitClass KILLED branch); the kill-all loops are the Explodes/Suicide, KillPassengers, dtor and aircraft paths | `FUN_00736D60` @`0x736FD1..0x7371D6`; `FUN_00700DA0`/`FUN_00707130`/`FUN_00734850` | **CONFIRMED** (corrected in wave 7) |
 | §6 | container = **LIFO** (head push/head pop) | `FUN_004732D0` head-insert + `FUN_00473360` head-pop + eject via RemoveFirst | **CONFIRMED** |
 | §6 | no RNG in ordering (deterministic) | `FUN_007C4D00` = ftol | **CONFIRMED** |
 
@@ -390,7 +396,7 @@ CONFIRMED (`FUN_007C4D00` = ftol by content).**
 - **[DEVIATION — §4 cadence].** One eject per logic tick (recovered) with a
   `DeployTime`-derived start delay; if we cannot reproduce the exact timer we use
   one-per-frame — same visible order and set.
-- **[PLAN OK — §5 death].** Cargo dies with the transport (the recovered default);
+- **[CORRECTED in wave 7 — §5 death].** Passengers escape alive (W7-04-02); the old note follows for history: cargo dies with the transport (the recovered default);
   `OpenTopped` does NOT grant death survival. Keep the tombstone-on-death model;
   `OpenTopped*` stays an RE-documented carry-forward for the fire-out phase.
 - **[DATA-UNREACHABLE — nested transports].** `SizeLimit` (HTK=2, FV=1) is below
