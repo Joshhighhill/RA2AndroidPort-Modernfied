@@ -5223,6 +5223,13 @@ void World::step(double dt) {
     // used to be dropped by every approach).
     auto combat_move = [&](int idx, int gx, int gy) {
         if (!w7_rules_.armed) { order_unit_move(idx, gx, gy); return; }
+        // the same goal again: keep the live path (a re-path every frame reset
+        // the blocked-wait clock, so a unit held up by a parked car never
+        // detoured -- SOV01's Rhinos before the Pentagon)
+        {
+            const Unit& cu = units_[static_cast<std::size_t>(idx)];
+            if (cu.moving() && cu.path.back().x == gx && cu.path.back().y == gy) return;
+        }
         const UnitTgt keep = units_[static_cast<std::size_t>(idx)].tg;
         order_unit_move(idx, gx, gy);
         units_[static_cast<std::size_t>(idx)].tg = keep;
