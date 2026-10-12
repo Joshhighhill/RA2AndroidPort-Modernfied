@@ -63,9 +63,25 @@ void resolve_an_type(const Rules& rules, const std::string& unit_id, const std::
     if (loco == kFly || a.missile || loco == kRocket) {
         r.combat.is_aircraft = true;
         r.combat.is_vehicle = true;
-        a.fly_speed_cps = speed_to_cps(static_cast<double>(r.speed));
+        // W7-05-14 [RE: FlyLocomotion Apparent_Speed FUN_004CFD40 =
+        // ftol(TechnoType+0x678 x CurrentSpeed), +0x678 = min(255,
+        // Speed*256/100)]: full throttle is the RAW lepton speed per frame, no
+        // GameSpeedBias (ORCA Speed=14 -> 35 leptons/frame).
+        a.fly_speed_cps = ra2engine::fly_full_speed_lpf(r.speed) * 15.0 / 256.0;
         r.combat.flight_speed = a.fly_speed_cps;
-        r.combat.flight_turn = rules.rot(unit_id) * 2.0 * 256.0 * 15.0;
+        // W7-05-02 [RE: AircraftClass FUN_00413F80 -> FacingClass::Set_ROT
+        // FUN_004C95A0(type+0x71C ROT) = min(ROT,127)<<8 u16/frame]: ROT, not x2.
+        r.combat.flight_turn = std::min(127, std::max(0, rules.rot(unit_id))) * 256.0 * 15.0;
+        // W7-05-02 [RE: Is_Strafe FUN_0041B820 / Is_Fighter FUN_0041B870,
+        // SlowdownDistance TechnoType +0x2F8 (default 500)].
+        {
+            const std::string proj = rules.section_string(primary, "Projectile", "");
+            a.strafe = !primary.empty() && !proj.empty() &&
+                       rules.section_double(proj, "ROT", 0.0) <= 1.0 &&
+                       !rules.section_flag(proj, "Inviso", false);
+            a.fighter = rules.section_flag(unit_id, "Fighter", false);
+            a.slowdown_distance = static_cast<int>(rules.section_double(unit_id, "SlowdownDistance", 500.0));
+        }
         r.combat.cruise_altitude = rules.general_double("FlightLevel", 1500.0);
         r.combat.climb_rate = 1500.0;
         r.combat.descend_rate = 1500.0;

@@ -614,33 +614,14 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                 if (u.bales_ore <= 0.0 && u.bales_gems <= 0.0) {
                     events.push_back({HarvestEvent::Kind::UnloadEnd, idx});
                     u.dock_refinery = -1;
-                    if (u.chrono_miner && u.has_harv_cell) {
-                        // [RE-GATE APPLIED §3: "warp back after unload, same
-                        // mechanics" -- the return warp is TIMED like the
-                        // outbound one; [RE-FALLBACK adjudicated]: HarvState
-                        // has no dedicated warp-back state, so the transit
-                        // stays parked in Unloading (dock_refinery == -1
-                        // marks it -- see the branch at the top of this
-                        // case): ChronoOut fires now, the teleport + ChronoIn
-                        // land once harv_timer >= kChronoWarpSecs.]
-                        //
-                        // Review Important-3: gated on has_harv_cell (a REAL
-                        // cell was stamped at least once) rather than firing
-                        // unconditionally. A CMIN manually returned (order_
-                        // return) with an empty hold and no ore ever found
-                        // has harv_cell_x/y stuck at their (0,0) default --
-                        // without this guard it would still play both chrono
-                        // sounds and warp toward (0,0)/whatever is nearest to
-                        // it, a no-op-unload-then-teleport-to-garbage
-                        // player-facing bug. Skip straight to SeekOre in
-                        // place instead (the `else` branch below), same as a
-                        // non-chrono HARV.
-                        events.push_back({HarvestEvent::Kind::ChronoOut, idx});
-                        u.harv_timer = 0.0;
-                    } else {
-                        u.harv = HarvState::SeekOre;
-                        u.harv_timer = 0.0;
-                    }
+                    // W7-11-13 [RE: UnitClass::SetDestination 0x740780]: the
+                    // Chrono Miner warps only when docking at a DockUnload
+                    // refinery; leaving it, it piggybacks a Drive locomotor
+                    // and DRIVES back to the ore like a HARV (the old timed
+                    // warp-back is gone; the transit branch at the top of this
+                    // case only finishes one restored from an older save).
+                    u.harv = HarvState::SeekOre;
+                    u.harv_timer = 0.0;
                 }
                 break;
             }

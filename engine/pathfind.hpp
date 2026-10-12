@@ -20,10 +20,11 @@ struct Cellxy { int x, y; };
 // either of the two orthogonal "corner" cells they would cut across is
 // impassable (prevents cutting through a wall's corner) -- unless that corner
 // cell is flagged in the optional `leak` mask (same size; W5-A: wall overlays,
-// whose corner-only contacts leave a gap). The heuristic is
-// the standard octile distance, scaled to integers (cardinal step cost 10,
-// diagonal step cost 14, i.e. 10*sqrt(2) rounded) to keep the search
-// deterministic.
+// whose corner-only contacts leave a gap). W7-11-08 [RE: FUN_00429A10 /
+// FUN_004297B0]: every step costs the same (diagonals included) plus a small
+// per-direction tie-break (N .001 .. NW .008, orthogonals cheapest), and the
+// heuristic is the Euclidean distance -- scaled x1000 to integers so the
+// search stays deterministic.
 //
 // Returns the sequence of cells from `start` to `goal` inclusive. Returns an
 // empty vector if: start or goal is out of [0,width)x[0,height) range,
@@ -76,12 +77,18 @@ int path_step_layer(const PathTerrain& t, int width, int sx, int sy, int sl, int
 std::vector<Cellxy> find_path_t(const std::vector<uint8_t>& passable, int width, int height,
                                 Cellxy start, Cellxy goal, const std::vector<uint8_t>* leak,
                                 const PathTerrain* terrain);
+// W7-11-08: `cost` (optional, one entry per cell) is the original's per-cell
+// Can_Enter cost the step into that cell pays -- 1 clear, 8 a parked friendly
+// (Temp), 1 / 4 / 1000 a moving block, 20 / 60 a destroyable blocker, 1000 a
+// cloaked cell [RE: DAT_0081770C] -- null = every cell costs 1.
 std::vector<Cellxy> find_path_bounded_t(const std::vector<uint8_t>& passable, int width, int height,
                                         Cellxy start, Cellxy goal, int max_expand,
-                                        const std::vector<uint8_t>* leak, const PathTerrain* terrain);
+                                        const std::vector<uint8_t>* leak, const PathTerrain* terrain,
+                                        const std::vector<std::uint16_t>* cost = nullptr);
 std::vector<Cellxy> find_path_nearest_t(const std::vector<uint8_t>& passable, int width, int height,
                                         Cellxy start, Cellxy goal, int max_expand,
-                                        const std::vector<uint8_t>* leak, const PathTerrain* terrain);
+                                        const std::vector<uint8_t>* leak, const PathTerrain* terrain,
+                                        const std::vector<std::uint16_t>* cost = nullptr);
 
 // W2-SK-16: find_path with an expansion budget (> 0): empty when the goal is
 // not reached within `max_expand` closed nodes (same path otherwise).

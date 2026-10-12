@@ -817,21 +817,22 @@ struct ResolvedUnit {
     int speed = 0;
 };
 
-// Gap fix C (G-42) [RE: docs/re/gamespeed.md §2-§4]: the original is frame-
-// locked -- Speed= is stored as min(255, clamp(Speed,0,100)*256/100) leptons
-// per logic frame (voxel-render.md §5) and the house's GroundspeedBias =
-// [Difficulty] Groundspeed (1.0) x [General] GameSpeedBias (1.6) multiplies
-// it (HouseClass::AssignHandicap FUN_004f6dd0). The engine's convention is 15
-// logic frames per engine second (kLogicFps, = GameSpeed 4), so
-//   cells/sec = trunc(Speed*256/100) * GameSpeedBias * 15 / 256.
-// Replaces the old feel-tuned 0.75 cells/s per Speed point (~3.2x too fast
-// relative to ROF). g_game_speed_bias is this install's value until
-// resolve_combat_unit reads the live [General] key.
-double g_game_speed_bias = 1.6;
+// Gap fix C (G-42) / W7-11-01 [RE: docs/re/gamespeed.md §4; TechnoType INI
+// FUN_00711510, FootClass::GetCurrentSpeed FUN_004DB0B0]: the original is
+// frame-locked -- Speed= is stored as min(255, clamp(Speed,0,100)*256/100)
+// leptons per logic frame (TechnoType+0x678) and GetCurrentSpeed multiplies
+// it only by the COUNTRY's SpeedUnitsMult / SpeedInfantryMult (1.0), the
+// SpeedMultiplier crate and VeteranSpeed. GameSpeedBias (house+0x190) is
+// written by AssignHandicap FUN_004F6DD0 and never read. The engine's
+// convention is 15 logic frames per engine second (kLogicFps, = GameSpeed 4):
+//   cells/sec = trunc(Speed*256/100) * 15 / 256   (raw leptons, no bias).
+// Walk and Hover units move these raw leptons; Drive and Ship units cover
+// ~1.6x the leptons through their track tables (world_loco.cpp), which is
+// where the old "x GameSpeedBias" figure came from.
 inline double speed_to_cps(double speed) {
     const double clamped = std::min(100.0, std::max(0.0, speed));
     const int lept = std::min(255, static_cast<int>(clamped * 256.0 / 100.0));
-    return lept * g_game_speed_bias * 15.0 / 256.0;
+    return lept * 15.0 / 256.0;
 }
 
 // Case-insensitive lowercasing (CB-2 Locomotor CLSID compare). File-local.
@@ -876,7 +877,6 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.speed = rules.speed(unit_id);
     // Gap fix C (G-42): every unit carries its own recovered speed (infantry
     // included -- they used to share World::move_cps).
-    g_game_speed_bias = rules.general_double("GameSpeedBias", g_game_speed_bias);
     r.combat.speed_cps = speed_to_cps(r.speed);
     r.combat.speed_type = w5_speed_type_index(rules.section_string(unit_id, "SpeedType", ""));   // W5-B R-062
     r.combat.strength = rules.strength(unit_id);
@@ -974,37 +974,35 @@ ResolvedUnit resolve_combat_unit(const Rules& rules, const std::string& unit_id)
     r.combat.size_limit = (int)rules.section_double(unit_id, "SizeLimit", 0.0);
     r.combat.size = (int)rules.section_double(unit_id, "Size", 1.0);
 
-    // CB-2 flight stats [RE-GATE APPLIED: aircraft.md §1/§2/§5]. is_aircraft iff
-    // the type carries the Jumpjet locomotor CLSID (CONFIRMED from [ZEP]
-    // Locomotor=). D1: flight_turn = ROT<<1 (ROT x2) -- the FacingClass rate
-    // Link_To_Object arms from TechnoType+0x71C; JumpJetTurnRate (+0xD70) is
-    // VESTIGIAL and NOT read. D2: flight_speed = JumpjetSpeed (fallback base
-    // Speed) via the engine's EXISTING vehicle-speed conversion
-    // (speed_to_cps -- the SAME recovered scale ground units use, G-42; the vanilla
-    // 12 leptons/frame is the documented divergence, voxel-render.md §5).
-    // climb/crash are per-frame Jumpjet floats x15 -> leptons/sec (the
-    // rot_u16_per_sec precedent). All default INERT for a ground unit.
+    // CB-2 flight stats. is_aircraft iff the type carries the Jumpjet
+    // locomotor CLSID (CONFIRMED from [ZEP] Locomotor=).
+    // W7-05-15 [RE: JumpjetLocomotionClass Link FUN_0054AA60 copies the type's
+    // +0xD70 JumpJetTurnRate, +0xD74 JumpjetSpeed, +0xD78 Climb, +0xD7C Crash,
+    // +0xD80 Height, +0xD84 Accel; the integrator FUN_0054CDA0 steps
+    // ftol(CurSpeed) leptons/frame @0x54D1FB]: JumpjetSpeed is RAW leptons per
+    // frame -- no *256/100, no GameSpeedBias (Kirov 5 -> ~0.29 cells/s) -- and
+    // the turn rate is JumpJetTurnRate<<8 u16/frame (FUN_004C9100: min(rate,
+    // 127)<<8), NOT ROT x2 (that is HoverLocomotion FUN_00513AD0). Absent keys
+    // take the [JumpjetControls] defaults (TurnRate=4 Speed=14 Climb=5
+    // CruiseHeight=500 Acceleration=2; "These are now merely defaults").
+    // flight_speed stays in cells/sec and flight_turn in u16/sec (x15 frames).
     static const std::string kJumpjetClsid = "{92612C46-F71F-11d1-AC9F-006008055BB5}";
     const std::string loco = rules.locomotor(unit_id);
     r.combat.is_aircraft =
         (!loco.empty() && to_lower(loco) == to_lower(kJumpjetClsid));
     if (r.combat.is_aircraft) {
-        // D2: JumpjetSpeed, falling back to base Speed (r.speed) when absent.
-        const double jjspeed = rules.section_double(unit_id, "JumpjetSpeed",
-                                                    static_cast<double>(r.speed));
-        const double jjclimb = rules.section_double(unit_id, "JumpjetClimb", 6.0);
+        auto jjc = [&](const char* k, double d) { return rules.section_double("JumpjetControls", k, d); };
+        const int jjspeed = static_cast<int>(rules.section_double(unit_id, "JumpjetSpeed", jjc("Speed", 14.0)));
+        const double jjclimb = rules.section_double(unit_id, "JumpjetClimb", jjc("Climb", 5.0));
         const double jjcrash = rules.section_double(unit_id, "JumpjetCrash", 12.0);
-        // D1: ROT is the turn source -- reuse the SAME resolver the voxel
-        // vehicle path uses (rules.rot), NOT JumpJetTurnRate.
-        const double rot = static_cast<double>(rules.rot(unit_id));
-        r.combat.cruise_altitude = rules.section_double(unit_id, "JumpjetHeight", 500.0);
-        // D2: same vehicle-speed conversion ground vehicles use (Speed 6 ->
-        // 4.5 cps); ZEP JumpjetSpeed=5 -> 3.75 cells/sec in engine scale.
-        r.combat.flight_speed = speed_to_cps(jjspeed);   // cells/sec
+        const int jjturn = std::min(127, std::max(0, static_cast<int>(
+            rules.section_double(unit_id, "JumpJetTurnRate", jjc("TurnRate", 4.0)))));
+        r.combat.cruise_altitude = rules.section_double(unit_id, "JumpjetHeight", jjc("CruiseHeight", 500.0));
+        r.combat.flight_speed = jjspeed * 15.0 / 256.0;           // cells/sec (raw lept/frame x15)
         r.combat.climb_rate   = jjclimb * 15.0;                   // leptons/sec
         r.combat.descend_rate = jjcrash * 15.0;
-        // D1: FacingClass rate = (ROT<<1)*256 u16/frame; x15 -> u16/sec.
-        r.combat.flight_turn  = (rot * 2.0) * 256.0 * 15.0;      // u16/sec
+        r.combat.flight_turn  = jjturn * 256.0 * 15.0;            // u16/sec
+        r.combat.an.jj_accel  = rules.section_double(unit_id, "JumpJetAccel", jjc("Acceleration", 2.0));
         r.combat.balloon_hover = rules.balloon_hover(unit_id);
         r.combat.omni_fire = rules.weapon_omnifire(primary);
     }

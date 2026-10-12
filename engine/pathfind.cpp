@@ -14,19 +14,30 @@ namespace ra2engine {
 namespace {
 
 // 8 directions in a fixed, stable order: 4 cardinal first (E, W, S, N), then
-// 4 diagonal (SE, SW, NE, NW). Costs are the standard scaled-integer octile
-// step costs: cardinal = 10, diagonal = 14 (~10*sqrt(2)).
+// 4 diagonal (SE, NE, SW, NW).
+// W7-11-08 [RE: A* FUN_00429A10, step cost FUN_004297B0, cost table
+// DAT_0081770C, tie-break DAT_0081772C]: every step costs the Can_Enter
+// result's cost (1 for a clear cell) PLUS a per-direction tie-break -- N .001,
+// NE .005, E .002, SE .006, S .003, SW .007, W .004, NW .008 -- so a diagonal
+// step costs the same as an orthogonal one (no sqrt2) and only the tie-break
+// prefers the orthogonals. Scaled x1000 to integers: cost*1000 + tie-break.
 constexpr int kDx[8]   = { 1, -1, 0, 0, 1, 1, -1, -1 };
 constexpr int kDy[8]   = { 0, 0, 1, -1, 1, -1, 1, -1 };
-constexpr int kCost[8] = { 10, 10, 10, 10, 14, 14, 14, 14 };
-constexpr int kCardinal = 10;
-constexpr int kDiagonal = 14;
+constexpr int kTie[8]  = { 2, 4, 3, 1, 6, 5, 7, 8 };   // E W S N SE NE SW NW
+constexpr long long kUnit = 1000;
+
+// [RE: FUN_00429A10] the heuristic is the straight-line (Euclidean) distance
+// in cells, x1000.
+inline long long euclid_h(int x, int y, Cellxy goal) {
+    const double dx = static_cast<double>(x - goal.x), dy = static_cast<double>(y - goal.y);
+    return static_cast<long long>(om::ftol(om::sqrt(dx * dx + dy * dy) * static_cast<double>(kUnit)));
+}
 
 // Node kept in the open set's binary heap.
 struct OpenNode {
-    int f;     // g + h
-    int h;     // heuristic (used only for tie-breaking)
-    int cell;  // y*width+x (used only for tie-breaking, for full determinism)
+    long long f;     // g + h
+    long long h;     // heuristic (used only for tie-breaking)
+    int cell;        // y*width+x (used only for tie-breaking, for full determinism)
 };
 
 // Min-heap by f, tie-broken by lower h, then by lower cell index -- makes the
@@ -44,7 +55,8 @@ struct OpenNodeGreater {
 // (was three full-grid allocations per call). A cell whose stamp != gen reads
 // as g = inf, came_from = -1, open (not closed) -- identical semantics.
 struct Scratch {
-    std::vector<int> g, came;
+    std::vector<long long> g;
+    std::vector<int> came;
     std::vector<std::uint32_t> stamp;
     std::vector<std::uint8_t> closed;
     std::uint32_t gen = 0;
@@ -71,21 +83,16 @@ enum class Mode { Exact, Nearest };
 // to the closed cell nearest the goal (lowest h, then lowest g, then index).
 std::vector<Cellxy> astar(const std::vector<uint8_t>& passable, int width, int height,
                           Cellxy start, Cellxy goal, int max_expand, Mode mode,
-                          const std::vector<uint8_t>* leak) {
+                          const std::vector<uint8_t>* leak, const std::vector<std::uint16_t>* cost) {
+    if (cost && cost->size() != passable.size()) cost = nullptr;
     if (leak && leak->size() != passable.size()) leak = nullptr;
     const int n = width * height;
     auto index_of = [&](int x, int y) { return y * width + x; };
     auto in_range = [&](int x, int y) { return x >= 0 && x < width && y >= 0 && y < height; };
     const int start_idx = index_of(start.x, start.y);
     const int goal_idx = index_of(goal.x, goal.y);
-    const int kInf = std::numeric_limits<int>::max();
-    auto octile_h = [&](int x, int y) {
-        int dx = std::abs(x - goal.x);
-        int dy = std::abs(y - goal.y);
-        int mn = std::min(dx, dy);
-        int mx = std::max(dx, dy);
-        return kDiagonal * mn + kCardinal * (mx - mn);
-    };
+    const long long kInf = std::numeric_limits<long long>::max();
+    auto octile_h = [&](int x, int y) { return euclid_h(x, y, goal); };
     Scratch& S = t_scratch;
     S.prepare(n);
     const std::uint32_t gen = S.gen;
@@ -103,9 +110,10 @@ std::vector<Cellxy> astar(const std::vector<uint8_t>& passable, int width, int h
     std::priority_queue<OpenNode, std::vector<OpenNode>, OpenNodeGreater> open;
     touch(start_idx);
     S.g[(size_t)start_idx] = 0;
-    const int h_start = octile_h(start.x, start.y);
+    const long long h_start = octile_h(start.x, start.y);
     open.push(OpenNode{ h_start, h_start, start_idx });
-    int best_cell = start_idx, best_h = h_start, best_g = 0;
+    int best_cell = start_idx;
+    long long best_h = h_start, best_g = 0;
     int expanded = 0;
     bool reached = false;
     while (!open.empty()) {
@@ -115,7 +123,7 @@ std::vector<Cellxy> astar(const std::vector<uint8_t>& passable, int width, int h
         if (cur.cell == goal_idx) { reached = true; break; }   // consistent heuristic -> optimal
         S.closed[(size_t)cur.cell] = 1;
         if (mode == Mode::Nearest) {
-            const int gc = S.g[(size_t)cur.cell];
+            const long long gc = S.g[(size_t)cur.cell];
             if (cur.h < best_h ||
                 (cur.h == best_h && (gc < best_g || (gc == best_g && cur.cell < best_cell)))) {
                 best_h = cur.h;
@@ -146,12 +154,13 @@ std::vector<Cellxy> astar(const std::vector<uint8_t>& passable, int width, int h
                 if (!passable[(size_t)c1] && !(leak && (*leak)[(size_t)c1])) continue;
                 if (!passable[(size_t)c2] && !(leak && (*leak)[(size_t)c2])) continue;
             }
-            const int tentative_g = S.g[(size_t)cur.cell] + kCost[dir];
+            const long long step = (cost ? static_cast<long long>((*cost)[(size_t)ncell]) : 1) * kUnit + kTie[dir];
+            const long long tentative_g = S.g[(size_t)cur.cell] + step;
             if (tentative_g < gval(ncell)) {
                 touch(ncell);
                 S.g[(size_t)ncell] = tentative_g;
                 S.came[(size_t)ncell] = cur.cell;
-                const int h = octile_h(nx, ny);
+                const long long h = octile_h(nx, ny);
                 open.push(OpenNode{ tentative_g + h, h, ncell });
             }
         }
@@ -186,7 +195,9 @@ Scratch& terrain_scratch() {
 
 std::vector<Cellxy> astar_terrain(const std::vector<uint8_t>& passable, int width, int height,
                                   Cellxy start, Cellxy goal, int max_expand, Mode mode,
-                                  const std::vector<uint8_t>* leak, const PathTerrain& t) {
+                                  const std::vector<uint8_t>* leak, const PathTerrain& t,
+                                  const std::vector<std::uint16_t>* cost) {
+    if (cost && cost->size() != passable.size()) cost = nullptr;
     if (leak && leak->size() != passable.size()) leak = nullptr;
     const int n = width * height;
     const bool decks = t.deck && t.deck->size() == passable.size();
@@ -198,14 +209,8 @@ std::vector<Cellxy> astar_terrain(const std::vector<uint8_t>& passable, int widt
         return layer == 0 ? deck_of(c) != 2 : deck_of(c) != 0;
     };
     auto in_range = [&](int x, int y) { return x >= 0 && x < width && y >= 0 && y < height; };
-    const int kInf = std::numeric_limits<int>::max();
-    auto octile_h = [&](int x, int y) {
-        int dx = std::abs(x - goal.x);
-        int dy = std::abs(y - goal.y);
-        int mn = std::min(dx, dy);
-        int mx = std::max(dx, dy);
-        return kDiagonal * mn + kCardinal * (mx - mn);
-    };
+    const long long kInf = std::numeric_limits<long long>::max();
+    auto octile_h = [&](int x, int y) { return euclid_h(x, y, goal); };
     const int start_cell = start.y * width + start.x;
     const int goal_cell = goal.y * width + goal.x;
     int start_layer = (decks && t.start_layer == 1 && deck_of(start_cell) != 0) ? 1 : 0;
@@ -228,9 +233,10 @@ std::vector<Cellxy> astar_terrain(const std::vector<uint8_t>& passable, int widt
     std::priority_queue<OpenNode, std::vector<OpenNode>, OpenNodeGreater> open;
     touch(start_idx);
     S.g[(size_t)start_idx] = 0;
-    const int h_start = octile_h(start.x, start.y);
+    const long long h_start = octile_h(start.x, start.y);
     open.push(OpenNode{ h_start, h_start, start_idx });
-    int best_state = start_idx, best_h = h_start, best_g = 0;
+    int best_state = start_idx;
+    long long best_h = h_start, best_g = 0;
     int expanded = 0;
     int reached_state = -1;
     while (!open.empty()) {
@@ -241,7 +247,7 @@ std::vector<Cellxy> astar_terrain(const std::vector<uint8_t>& passable, int widt
         if (cc == goal_cell) { reached_state = cur.cell; break; }
         S.closed[(size_t)cur.cell] = 1;
         if (mode == Mode::Nearest) {
-            const int gc = S.g[(size_t)cur.cell];
+            const long long gc = S.g[(size_t)cur.cell];
             if (cur.h < best_h ||
                 (cur.h == best_h && (gc < best_g || (gc == best_g && cur.cell < best_state)))) {
                 best_h = cur.h;
@@ -267,12 +273,13 @@ std::vector<Cellxy> astar_terrain(const std::vector<uint8_t>& passable, int widt
             if (nl < 0 || nl >= layers || !state_ok(ncell, nl)) continue;
             const int nstate = ncell + nl * n;
             if (is_closed(nstate)) continue;
-            const int tentative_g = S.g[(size_t)cur.cell] + kCost[dir];
+            const long long step = (cost ? static_cast<long long>((*cost)[(size_t)ncell]) : 1) * kUnit + kTie[dir];
+            const long long tentative_g = S.g[(size_t)cur.cell] + step;
             if (tentative_g < gval(nstate)) {
                 touch(nstate);
                 S.g[(size_t)nstate] = tentative_g;
                 S.came[(size_t)nstate] = cur.cell;
-                const int h = octile_h(nx, ny);
+                const long long h = octile_h(nx, ny);
                 open.push(OpenNode{ tentative_g + h, h, nstate });
             }
         }
@@ -406,8 +413,12 @@ std::uint64_t gates_hash(const PathTerrain* t) {
 
 std::vector<Cellxy> astar_memo(const std::vector<uint8_t>& passable, int width, int height, Cellxy start,
                                Cellxy goal, int max_expand, Mode mode, const std::vector<uint8_t>* leak,
-                               const PathTerrain* t = nullptr) {
+                               const PathTerrain* t = nullptr, const std::vector<std::uint16_t>* cost = nullptr) {
     if (leak && leak->size() != passable.size()) leak = nullptr;
+    // W7-11-08: an occupancy cost grid changes every frame -- never memoised.
+    if (cost && cost->size() == passable.size())
+        return t ? astar_terrain(passable, width, height, start, goal, max_expand, mode, leak, *t, cost)
+                 : astar(passable, width, height, start, goal, max_expand, mode, leak, cost);
     PathMemo& m = memo_for(passable, width, height);
     // Net L0: the other inputs are validated by content too; any change drops
     // every remembered path of this grid (they are pure functions of it all).
@@ -433,8 +444,8 @@ std::vector<Cellxy> astar_memo(const std::vector<uint8_t>& passable, int width, 
     }
     const auto it = m.paths.find(k);
     if (it != m.paths.end()) return it->second;
-    std::vector<Cellxy> r = t ? astar_terrain(passable, width, height, start, goal, max_expand, mode, leak, *t)
-                              : astar(passable, width, height, start, goal, max_expand, mode, leak);
+    std::vector<Cellxy> r = t ? astar_terrain(passable, width, height, start, goal, max_expand, mode, leak, *t, nullptr)
+                              : astar(passable, width, height, start, goal, max_expand, mode, leak, nullptr);
     if (m.paths.size() >= kMemoPaths) m.paths.clear();
     m.paths.emplace(k, r);
     return r;
@@ -508,18 +519,20 @@ std::vector<Cellxy> find_path_t(const std::vector<uint8_t>& passable, int width,
 
 std::vector<Cellxy> find_path_bounded_t(const std::vector<uint8_t>& passable, int width, int height,
                                         Cellxy start, Cellxy goal, int max_expand,
-                                        const std::vector<uint8_t>* leak, const PathTerrain* terrain) {
+                                        const std::vector<uint8_t>* leak, const PathTerrain* terrain,
+                                        const std::vector<std::uint16_t>* cost) {
     if (!basic_checks(passable, width, height, start, goal)) return {};
     const PathTerrain* t = terrain_of(terrain, passable);
     if (!cell_ok(passable, t, start.y * width + start.x)) return {};
     if (!cell_ok(passable, t, goal.y * width + goal.x)) return {};
     if (start.x == goal.x && start.y == goal.y) return { start };
-    return astar_memo(passable, width, height, start, goal, max_expand, Mode::Exact, leak, t);
+    return astar_memo(passable, width, height, start, goal, max_expand, Mode::Exact, leak, t, cost);
 }
 
 std::vector<Cellxy> find_path_nearest_t(const std::vector<uint8_t>& passable, int width, int height,
                                         Cellxy start, Cellxy goal, int max_expand,
-                                        const std::vector<uint8_t>* leak, const PathTerrain* terrain) {
+                                        const std::vector<uint8_t>* leak, const PathTerrain* terrain,
+                                        const std::vector<std::uint16_t>* cost) {
     if (!basic_checks(passable, width, height, start, goal)) return {};
     const PathTerrain* t = terrain_of(terrain, passable);
     if (!cell_ok(passable, t, start.y * width + start.x)) return {};
@@ -544,7 +557,7 @@ std::vector<Cellxy> find_path_nearest_t(const std::vector<uint8_t>& passable, in
         if (!found) return { start };
     }
     if (start.x == goal.x && start.y == goal.y) return { start };
-    return astar_memo(passable, width, height, start, goal, max_expand, Mode::Nearest, leak, t);
+    return astar_memo(passable, width, height, start, goal, max_expand, Mode::Nearest, leak, t, cost);
 }
 
 }  // namespace ra2engine

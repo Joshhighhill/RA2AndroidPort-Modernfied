@@ -93,6 +93,7 @@ bool World::order_fixed_wing(int idx, int unit_target, int building_target, int 
     u.path_idx = 0;
     u.has_flight_goal = false;
     if (unit_target >= 0 || building_target >= 0) {
+        u.an.strafe_left = 0;              // W7-05-02: a new order starts a fresh run
         if (u.an.ammo <= 0) return true;   // empty: stays docked until rearmed
         u.an.sortie = kOutbound;
     } else {
@@ -448,12 +449,27 @@ void World::an_step_fixed_wing(double dt) {
                     }
                 }
                 break;
-            case kOutbound:
-                if (!target_alive || u.an.ammo <= 0) { u.an.sortie = kReturn; break; }
+            case kOutbound: {
+                if (!target_alive || (u.an.ammo <= 0 && u.an.strafe_left <= 0)) {
+                    u.an.strafe_left = 0;
+                    u.an.sortie = kReturn;
+                    break;
+                }
                 goal_x = gx; goal_y = gy; fly = true;
                 // Attack pass: in weapon range -> fire one ammo point.
-                if (cdist(u.fx, u.fy, gx, gy) <= std::max(1.0, u.w_range) && u.rearm_frames <= 0.0 &&
+                // W7-05-02 [RE: Mission_Attack FUN_00417FE0 status 3]: a plane
+                // that is neither Fighter nor Strafe fires only when it is over
+                // the target (within 0xF leptons; it turns to face it inside
+                // 0x200); Fighter / Strafe planes go straight to status 4
+                // (fire when GetFireError allows: in range, rearmed).
+                const bool pass_ok = u.an.t.fighter || u.an.t.strafe ||
+                                     cdist(u.fx, u.fy, gx, gy) * kLept <= 15.0;
+                if (pass_ok && cdist(u.fx, u.fy, gx, gy) <= std::max(1.0, u.w_range) && u.rearm_frames <= 0.0 &&
                     u.altitude >= P.flight_level * 0.5) {
+                    // W7-05-02 [RE: FUN_00417FE0 statuses 6..9]: a Strafe
+                    // weapon's run fires FOUR more single shots, one per ROF,
+                    // through Fire (+0x3CC) without the fired flag -- no Ammo.
+                    const bool strafe_shot = u.an.strafe_left > 0;
                     // W4: a flying projectile (the Harrier / Black Eagle
                     // Maverick, the Hornet / Osprey bombs: ROT>0 homing) is
                     // launched behind the P2 firewall and hits at detonation.
@@ -466,7 +482,7 @@ void World::an_step_fixed_wing(double dt) {
                         const int slot = unit_weapon_for_unit(u, units_[tu]);
                         if (slot >= 0) {
                             activate_weapon_slot(u, slot, veterancy_enabled() ? &veterancy_rules() : nullptr);
-                            for (int k = 0; k < std::max(1, u.w6.burst); ++k) {
+                            for (int k = 0; k < (strafe_shot ? 1 : std::max(1, u.w6.burst)); ++k) {
                                 if (k > 0 && !live(units_[tu])) break;
                                 if (projectiles_enabled_ && u.w_proj.flies()) launch_projectile(i, tu, -1);
                                 else if (u.w_cell_spread >= 1.0) apply_spread_damage(units_, occ_, u, units_[tu]);
@@ -477,7 +493,7 @@ void World::an_step_fixed_wing(double dt) {
                         const int slot = unit_weapon_for_building(u, buildings_[tb].armor_ix, buildings_[tb].bomb_frame >= 0);
                         if (slot >= 0) {
                             activate_weapon_slot(u, slot, veterancy_enabled() ? &veterancy_rules() : nullptr);
-                            for (int k = 0; k < std::max(1, u.w6.burst); ++k) {
+                            for (int k = 0; k < (strafe_shot ? 1 : std::max(1, u.w6.burst)); ++k) {
                                 if (k > 0 && (!buildings_[tb].alive || buildings_[tb].hp <= 0)) break;
                                 if (projectiles_enabled_ && u.w_proj.flies()) launch_projectile(i, -1, tb);
                                 else if (buildings_[tb].iron_left_frames <= 0.0 &&
@@ -489,10 +505,20 @@ void World::an_step_fixed_wing(double dt) {
                     u.rearm_frames = std::max(1, u.w_rof);
                     u.fire_flash = 0.4;
                     fire_events_.push_back({i, -1, tu, tb, u.w_active, ""});
-                    --u.an.ammo;
-                    if (u.an.ammo <= 0) u.an.sortie = kReturn;
+                    if (strafe_shot) {
+                        --u.an.strafe_left;
+                    } else {
+                        --u.an.ammo;
+                        if (u.an.t.strafe) u.an.strafe_left = 4;
+                    }
+                    // W7-05-02 [RE: FUN_00417FE0 statuses 1/5/10]: a Fighter
+                    // re-attacks and any other plane turns and fires again
+                    // while it has Ammo; at 0 (and the strafe run done) it
+                    // returns to base.
+                    if (u.an.ammo <= 0 && u.an.strafe_left <= 0) u.an.sortie = kReturn;
                 }
                 break;
+            }
             case kMoveTo:
                 goal_x = u.an.attack_x; goal_y = u.an.attack_y; fly = true;
                 if (u.an.attack_x < 0 || cdist(u.fx, u.fy, goal_x, goal_y) < 0.3) {
@@ -584,25 +610,67 @@ void World::an_step_fixed_wing(double dt) {
                 break;
         }
         // --- altitude + translation ---
+        // W7-05-02 FlyLocomotionClass [RE: movement FUN_004CD520]: the plane
+        // moves ftol(type+0x678 x CurrentSpeed) leptons per frame along its
+        // CURRENT body facing (@0x4CD9A4) while the FacingClass turns it at
+        // ROT<<8 u16/frame toward the goal -- so it overflies and loops back
+        // instead of reversing on the spot. Height: climb min(d, 20), descend
+        // (cruise and landing) clamp(d/20, 20, 50) leptons/frame. The throttle
+        // ramps 0.1/frame; an IsTakingOff plane gets no throttle until it is
+        // at half the FlightLevel, and a plane not on an attack run slows over
+        // its SlowdownDistance (FUN_004D00A0).
+        const double fr = dt * 15.0;
         const double fl = P.flight_level;
+        bool stopped = false;
         if (u.an.sortie == kLanding) {
-            u.altitude = step_altitude(u.altitude, 0.0, kFlyClimbLps * dt);
+            u.altitude = fly_altitude_step(u.altitude, 0.0, fr);
             u.flight_state = u.altitude > 0.0 ? FlightState::Descending : FlightState::Grounded;
+            u.an.fly_throttle = 0.0;
             if (u.altitude <= 0.0) {
                 u.an.sortie = kDocked;
                 u.an.reload_timer = 0;
             }
         } else if (fly) {
-            u.altitude = step_altitude(u.altitude, fl, kFlyClimbLps * dt);
-            u.flight_state = u.altitude >= fl ? FlightState::Cruising : FlightState::TakingOff;
-            u.body_facing = heading_toward(u.body_facing, goal_x - u.fx, goal_y - u.fy,
-                                           std::max(u.flight_turn, 65536.0) * dt, false);
-            cruise_step(u.fx, u.fy, goal_x, goal_y, u.an.t.fly_speed_cps * dt);
+            const bool taking_off = u.flight_state == FlightState::TakingOff ||
+                                    u.flight_state == FlightState::Grounded;
+            u.altitude = fly_altitude_step(u.altitude, fl, fr);
+            if (u.altitude >= fl) u.flight_state = FlightState::Cruising;
+            else if (taking_off) u.flight_state = FlightState::TakingOff;
+            const double dist = cdist(u.fx, u.fy, goal_x, goal_y) * kLept;
+            const bool slow = u.an.sortie == kReturn || u.an.sortie == kMoveTo;
+            double tgt = fly_throttle_target(dist, u.an.t.slowdown_distance, slow, &stopped);
+            if (stopped) u.an.fly_throttle *= 0.5;            // DAT_007E0738 = 0.5
+            if (u.flight_state == FlightState::TakingOff && u.altitude < fl / 2.0) tgt = 0.0;
+            u.an.fly_throttle = fly_throttle_ramp(u.an.fly_throttle, tgt, fr);
+            if (dist > 0.0)
+                u.body_facing = heading_toward(u.body_facing, goal_x - u.fx, goal_y - u.fy,
+                                               u.flight_turn * dt, false);
+            const double full = u.an.t.fly_speed_cps * kLept / 15.0;   // type+0x678 (vet-scaled)
+            const double step = std::trunc(full * u.an.fly_throttle) * fr;
+            step_along_facing(u.fx, u.fy, u.body_facing, step);
+            // The plane may loop outside the map edge; it never leaves the grid.
+            u.fx = std::clamp(u.fx, -4.0, static_cast<double>(grid_w_ + 3));
+            u.fy = std::clamp(u.fy, -4.0, static_cast<double>(grid_h_ + 3));
+            // Arrival at a POINT the plane has slowed to a stop near (it can
+            // stop just outside the snap radius) counts as reached.
+            if ((u.an.sortie == kReturn || u.an.sortie == kMoveTo) && stopped &&
+                u.an.fly_throttle < 0.05) {
+                if (u.an.sortie == kReturn) {
+                    u.fx = hx;
+                    u.fy = hy;
+                } else {
+                    u.an.attack_x = u.an.attack_y = -1;
+                    u.an.sortie = kReturn;
+                }
+            }
         }
         u.cell_x = std::max(0, std::min(grid_w_ - 1, static_cast<int>(std::lround(u.fx))));
         u.cell_y = std::max(0, std::min(grid_h_ - 1, static_cast<int>(std::lround(u.fy))));
-        const int f = facing_from_delta(goal_x - u.fx, goal_y - u.fy);
-        if (f >= 0 && fly) u.facing = f;
+        if (fly) {
+            const double a = u.body_facing / 65536.0 * 6.283185307179586;
+            const int f = facing_from_delta(om::sin(a), -om::cos(a));
+            if (f >= 0) u.facing = f;
+        }
     }
 }
 
@@ -639,6 +707,17 @@ void World::an_step_deaths(double dt) {
                 const double a = u.body_facing / 65536.0 * 2.0 * 3.14159265358979;
                 u.fx += om::sin(a) * u.an.t.fly_speed_cps * 0.5 * dt;
                 u.fy -= om::cos(a) * u.an.t.fly_speed_cps * 0.5 * dt;
+                u.cell_x = std::max(0, std::min(grid_w_ - 1, static_cast<int>(std::lround(u.fx))));
+                u.cell_y = std::max(0, std::min(grid_h_ - 1, static_cast<int>(std::lround(u.fy))));
+            } else {
+                // W7-05-15 [RE: Jumpjet Crashing FUN_0054C7C0 -- desired facing
+                // = current + 0x2D00 every frame, so it spins at its
+                // JumpJetTurnRate<<8; the integrator FUN_0054CDA0 keeps moving
+                // ftol(CurSpeed) leptons along the facing while it falls].
+                const double fr = dt * 15.0;
+                u.body_facing = std::fmod(u.body_facing + std::min(u.flight_turn / 15.0, 11520.0) * fr,
+                                          65536.0);
+                step_along_facing(u.fx, u.fy, u.body_facing, std::trunc(u.an.jj_speed) * fr);
                 u.cell_x = std::max(0, std::min(grid_w_ - 1, static_cast<int>(std::lround(u.fx))));
                 u.cell_y = std::max(0, std::min(grid_h_ - 1, static_cast<int>(std::lround(u.fy))));
             }

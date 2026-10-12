@@ -70,6 +70,18 @@ struct AnType {
     // Explicit death delivery for missiles / crashes: the warhead verses used by
     // a missile detonation (V3WH) and its splash.
     double missile_spread = 0.0;
+    // W7-05-15 [RE: JumpjetLocomotionClass Link FUN_0054AA60]: JumpJetAccel
+    // (TechnoType +0xD84, float, leptons/frame per frame); the absent-key
+    // default is [JumpjetControls] Acceleration=2.
+    double jj_accel = 2.0;
+    // W7-05-02 [RE: AircraftClass Mission_Attack FUN_00417FE0]: Is_Strafe
+    // FUN_0041B820 (primary projectile ROT <= 1 and not Inviso -- HornetBomb,
+    // ASWBomb) and Is_Fighter FUN_0041B870 (Fighter=, AircraftType +0xE0E).
+    bool strafe = false;
+    bool fighter = false;
+    // SlowdownDistance= (TechnoType +0x2F8, ctor default 500 @0x70FF52): the
+    // FlyLocomotion approach throttle (FUN_004CD520).
+    int slowdown_distance = 500;
 };
 
 struct AnUnit {
@@ -117,6 +129,14 @@ struct AnUnit {
     // W4-SQ-06 (save v16): a paratrooper's height while it falls under its
     // parachute (cargo_of == kParachuteCargo); 0 on the ground.
     double para_alt = 0.0;
+    // W7 (save v35): the locomotor speed state. jj_speed = JumpjetLocomotion
+    // CurSpeed (loco +0x74, leptons/frame, FUN_0054CDA0); fly_throttle =
+    // FlyLocomotion CurrentSpeed (loco +0x48, fraction of type+0x678,
+    // FUN_004CD520); strafe_left = Mission_Attack strafe shots still to fire
+    // (statuses 6..9, FUN_00417FE0).
+    double jj_speed = 0.0;
+    double fly_throttle = 0.0;
+    int strafe_left = 0;
 };
 
 // --- Superweapons v2 (W2-AN-04/05/06/17/20) -----------------------------------

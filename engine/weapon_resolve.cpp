@@ -146,6 +146,15 @@ void fill_unit_combat_extras(const ra2assets::Rules& rules, const std::string& t
         std::string loco = rules.section_string(type_id, "Locomotor", "");
         for (char& ch : loco) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
         c.land_speed_loco = loco.empty() || loco.rfind("{4A582741", 0) == 0 || loco.rfind("{2BEA74E1", 0) == 0;
+        // W7 locomotion: the locomotor kind and the Drive/Ship acceleration
+        // keys [RE: TechnoType INI FUN_00711510 -- Accelerates +0xDBD (yes),
+        // AccelerationFactor +0x308 (.03), DeaccelerationFactor +0x300 (.002),
+        // SlowdownDistance +0x2F8 (500 leptons)].
+        c.loco.kind = static_cast<int>(loco_kind_from_clsid(loco.c_str(), c.is_infantry));
+        c.loco.accelerates = rules.section_flag(type_id, "Accelerates", true);
+        c.loco.accel_factor = rules.section_double(type_id, "AccelerationFactor", 0.03);
+        c.loco.decel_factor = rules.section_double(type_id, "DeaccelerationFactor", 0.002);
+        c.loco.slowdown_distance = static_cast<int>(rules.section_double(type_id, "SlowdownDistance", 500.0));
     }
     // Crushable defaults YES for infantry (Conscripts carry no key and are
     // crushed in the original), NO otherwise [RE-FALLBACK: InfantryTypeClass

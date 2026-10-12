@@ -63,6 +63,21 @@ void w5_arm_combat(ra2engine::World& world, const Rules& rules, const ra2assets:
         }
     }
     if (off.find("land") == std::string::npos) world.arm_land_speed(land, ramp, r);
+    // --- W7 locomotion rules [RE: Rules+0x1760 PathDelay (minutes, x900 ->
+    // frames, disasm 0x4D3F42), +0x1768 BlockagePathDelay (frames), +0x1718
+    // CloseEnough (cells -> leptons), +0x1700 ConditionYellow, +0x5E0/+0x5E8/
+    // +0x5D8 HoverAcceleration / HoverBrake / HoverBoost] -----------------------
+    {
+        ra2engine::LocoRules lr;
+        lr.path_delay_frames = static_cast<int>(rules.section_double("AI", "PathDelay", 0.01) * 900.0);
+        lr.blockage_path_delay = static_cast<int>(rules.section_double("AI", "BlockagePathDelay", 60.0));
+        lr.close_enough = static_cast<int>(rules.general_double("CloseEnough", 2.25) * 256.0);
+        lr.condition_yellow = w5_rules_fraction(rules, "AudioVisual", "ConditionYellow", 0.5);
+        lr.hover_accel = rules.general_double("HoverAcceleration", 0.02);
+        lr.hover_brake = rules.general_double("HoverBrake", 0.03);
+        lr.hover_boost = w5_rules_fraction(rules, "General", "HoverBoost", 1.5);
+        world.arm_loco_rules(lr);
+    }
     // --- R-050 crush steering ------------------------------------------------
     ra2engine::World::CrushRules cr;
     cr.armed = true;

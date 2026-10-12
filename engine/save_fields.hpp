@@ -263,6 +263,7 @@ struct SaveAccess {
         save::io(ar, w.ramp_); save::mark(ar, "ramp_");
         save::io(ar, w.level_grid_); save::mark(ar, "level_grid_");
         save::io(ar, w.land_rules_); save::mark(ar, "land_rules_");
+        save::io(ar, w.loco_rules_); save::mark(ar, "loco_rules_");   // W7 locomotion (v35)
         save::io(ar, w.crush_rules_); save::mark(ar, "crush_rules_");   // W5-B R-050 (v20)
         save::io(ar, w.elev_rules_); save::mark(ar, "elev_rules_");    // W5-B R-063 (v20)
         save::io(ar, w.wall_leak_); save::mark(ar, "wall_leak_");   // W5-A diagonal wall gaps (save v21)
@@ -385,6 +386,8 @@ template <class Ar> void fields(Ar& ar, AnType& v) {   // W2-AN (save v9)
     io(ar, v.spawns); io(ar, v.spawns_number); io(ar, v.spawn_regen_frames);
     io(ar, v.spawn_reload_frames); io(ar, v.landable); io(ar, v.missile_spread);
     io(ar, v.rocket_kind); io(ar, v.rocket_speed); io(ar, v.no_shadow);   // W4 (v15)
+    io(ar, v.jj_accel); io(ar, v.strafe); io(ar, v.fighter);              // W7 (v35)
+    io(ar, v.slowdown_distance);
 }
 template <class Ar> void fields(Ar& ar, AnUnit& v) {   // W2-AN (save v9)
     io(ar, v.t); io(ar, v.in_water); io(ar, v.submerged); io(ar, v.surface_left_frames);
@@ -398,6 +401,7 @@ template <class Ar> void fields(Ar& ar, AnUnit& v) {   // W2-AN (save v9)
     io(ar, v.drop_x); io(ar, v.drop_y); io(ar, v.exit_x); io(ar, v.exit_y);
     io(ar, v.rocket_elite); io(ar, v.rocket_end); io(ar, v.rocket);   // W4 (v15)
     io(ar, v.para_alt);   // W4-SQ-06 (save v16)
+    io(ar, v.jj_speed); io(ar, v.fly_throttle); io(ar, v.strafe_left);   // W7 (v35)
 }
 template <class Ar> void fields(Ar& ar, RocketWarhead& v) {   // W4 (v15)
     io(ar, v.id); io(ar, v.spread); io(ar, v.pmax); io(ar, v.verses);
@@ -644,6 +648,23 @@ template <class Ar> void fields(Ar& ar, World::LandSpeedRules& v) {   // W5-B (v
     io(ar, v.tracked_up); io(ar, v.tracked_down); io(ar, v.wheeled_up); io(ar, v.wheeled_down);
     io(ar, v.condition_red);
 }
+template <class Ar> void fields(Ar& ar, LocoRules& v) {   // W7 locomotion (v35)
+    io(ar, v.path_delay_frames); io(ar, v.blockage_path_delay); io(ar, v.close_enough);
+    io(ar, v.condition_yellow); io(ar, v.hover_accel); io(ar, v.hover_brake); io(ar, v.hover_boost);
+}
+template <class Ar> void fields(Ar& ar, LocoType& v) {   // W7 locomotion (v35)
+    io(ar, v.kind); io(ar, v.accelerates); io(ar, v.accel_factor); io(ar, v.decel_factor);
+    io(ar, v.slowdown_distance);
+}
+template <class Ar> void fields(Ar& ar, UnitLoco& v) {   // W7 locomotion (v35)
+    io(ar, v.t);
+    io(ar, v.pct); io(ar, v.pct_desired); io(ar, v.accum);
+    io(ar, v.trk); io(ar, v.trk_flags); io(ar, v.trk_idx); io(ar, v.trk_face);
+    io(ar, v.trk_hx); io(ar, v.trk_hy); io(ar, v.trk_mx); io(ar, v.trk_my);
+    io(ar, v.trk_two); io(ar, v.trk_in_mid); io(ar, v.trk_layer_mid); io(ar, v.trk_layer_head);
+    io(ar, v.hover);
+    io(ar, v.path_delay); io(ar, v.blockage); io(ar, v.temp_tries);
+}
 template <class Ar> void fields(Ar& ar, World::VetEvent& v) {
     io(ar, v.unit); io(ar, v.old_rank); io(ar, v.new_rank);
 }
@@ -878,6 +899,7 @@ template <class Ar> void fields(Ar& ar, UnitCombat& v) {
     io(ar, v.an);   // W2-AN (save v9)
     io(ar, v.w6);   // v25: wave-6 #4
     io(ar, v.tg);   // W6 fix #2 (save v29)
+    io(ar, v.loco);   // W7 locomotion (save v35)
 }
 template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
     io(ar, v.id);
@@ -1101,6 +1123,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.w6);   // v25: wave-6 #4
     io(ar, v.tg);   // W6 fix #2 (save v29)
     io(ar, v.on_deck);   // R-210 (save v30)
+    io(ar, v.loco);      // W7 locomotion (save v35)
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.type);

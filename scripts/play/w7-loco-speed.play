@@ -1,0 +1,38 @@
+# W7-11-01/04 (docs/gap/wave7/11-locomotion.md): unit speeds in the real game.
+# Skirmish with slider:speed=2 (GameSpeed 4): one logic frame per driver frame.
+#   E1 GI (Walk)       : 10 raw leptons/frame (was 16 with GameSpeedBias 1.6)
+#   MTNK Grizzly (Drive): 17 speed units/frame through the track tables
+#                         = 17 x 256/161 = 27.0 leptons/frame on a straight
+set render_every 0
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click combo:ai1
+click "pick:Easy Enemy"
+click slider:units=0
+click slider:speed=2
+click start
+until 120 scene == game
+cheat credits 300000
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+cheat spawn E1 0 building 0:GACNST +5 +4
+cheat spawn MTNK 0 building 0:GACNST +5 +6
+wait 3
+# ---- E1: walk 14 cells east, sample 20 frames once under way ----
+click unit 0:E1
+click unit 0:E1 +14 +0
+wait 10
+let e0 = ulx(0,E1,0)
+wait 20
+assert ulx(0,E1,0) >= $e0+190 and ulx(0,E1,0) <= $e0+210 @W7-11-01
+# ---- MTNK: straight run east ----
+click unit 0:MTNK
+click unit 0:MTNK +14 +0
+wait 40
+let m0 = ulx(0,MTNK,0)
+wait 20
+assert ulx(0,MTNK,0) >= $m0+510 and ulx(0,MTNK,0) <= $m0+570 @W7-11-01
+end

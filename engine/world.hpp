@@ -400,6 +400,9 @@ struct Unit {
     // FUN_004D9B70]: 1 while the unit stands on a high-bridge deck (Level + 4),
     // 0 on the ground (or under the deck). Kept by step_units (save v30).
     std::uint8_t on_deck = 0;
+    // W7 locomotion (docs/gap/wave7/11-locomotion.md): locomotor kind, speed
+    // percentage, Drive/Ship track, hover ramp, blocked-move timers (save v35).
+    UnitLoco loco;
 };
 // G16: the cargo_of sentinel of a garrisoned infantry (never a unit index).
 constexpr int kGarrisonCargo = 0x3FFFFFFF;
@@ -514,15 +517,16 @@ double turn_toward(double facing, double target, double max_step);
 // kAimToleranceU16 (rotation-complete gate).
 bool vehicle_aimed(const Unit& u, double target_facing);
 
-// Advance every moving unit toward its `path` by `dt` seconds at `move_cps`
-// cells/sec, using `occ` to enforce one-unit-per-cell: a unit reserves the next
-// path cell before entering it. While that cell is held by another unit the
-// unit waits (resuming the instant the cell frees) and attempts a re-path
-// around occupied cells on a seniority-staggered cadence -- a unit blocked by
-// a LOWER-index unit tries at kBlockedWait, one blocked by a HIGHER-index
-// unit one interval later (breaks the mirror-symmetric re-path livelock); it
-// abandons the order only after kGiveUpAfter seconds of continuous block
-// (boxed-in / sealed corridor).
+// Advance every moving unit along its `path` by `dt` seconds (engine/
+// world_loco.cpp): Drive/Ship units drive the original's track tables, Walk
+// units move raw leptons (`move_cps` cells/sec when the unit has no speed of
+// its own), Hover units ramp and drift. `occ` enforces one-unit-per-cell: a
+// unit reserves the next path cell before entering it. While that cell is held
+// by another unit the original's blocked-move rules apply (W7-11-03): re-path
+// every PathDelay (9 frames), around moving traffic after BlockagePathDelay
+// (60 frames), stop when within CloseEnough of the goal, otherwise ask the
+// parked friendly occupants to scatter -- units never abandon an order
+// because of other units; only a missing terrain route ends it.
 // Idle units re-assert ownership of their current cell and stand. Units are
 // processed in ascending index order (deterministic). `anims` resolves each
 // unit's per-image stand/walk sequence (anim_for_image) and its facing
@@ -538,6 +542,7 @@ bool vehicle_aimed(const Unit& u, double target_facing);
 // W5-B R-062 [RE: DriveLocomotionClass FUN_004B2550; GroundType table
 // DAT_0089D9B0 read by FUN_00673A40]: the per-cell land speed inputs. Null /
 // unarmed -> every unit keeps its flat speed (the pre-W5 behaviour).
+class World;   // W7: MoveSpeedCtx::world
 struct MoveSpeedCtx {
     bool armed = false;
     const std::vector<std::uint8_t>* land = nullptr;   // LandType per cell (tile + overlay)
@@ -550,9 +555,15 @@ struct MoveSpeedCtx {
     // lookup supplied by World (null = none).
     const OreField* ore = nullptr;
     const std::vector<std::uint8_t>* ramp = nullptr;   // TMP ramp type per cell
-    // W5-B R-050 [RE-FALLBACK: CellClass::Incoming scatter not unwound]: idle
-    // friendly infantry blocking a vehicle's next cell, asked to step aside.
+    // W7-11-09 [RE: FUN_004B2550 Move 6 -> CellClass::ScatterContent
+    // FUN_00481580 (force)]: the parked friendly occupants of a blocked next
+    // cell, ordered to scatter by World::step (order_scatter).
     std::vector<int>* scatter_out = nullptr;
+    // W7 locomotion: the locomotor rules, the infantry art tables (Crawls=)
+    // and the World (alliances) for the blocked-move state machine.
+    LocoRules loco;
+    const std::map<std::string, InfTable>* inf_tables = nullptr;
+    const World* world = nullptr;
 };
 // R-210 bridges and cliffs: the terrain step_units walks over -- the height
 // gate (FUN_004D9B70) on every step, the deck layer (Unit::on_deck) and the
@@ -563,8 +574,20 @@ struct StepTerrain {
     PathTerrain water;   // level / slope, no deck
     const std::vector<std::vector<int>>* gates = nullptr;   // open gate cells per house
 };
-// The speed multiplier for unit u entering cell (nx, ny) from its cell.
+// The speed multiplier for unit u entering cell (nx, ny) from its cell
+// (land / slope when armed; x0.75 at <= ConditionYellow for Drive/Ship).
 double land_speed_mult(const MoveSpeedCtx& c, const Unit& u, int w, int h, int nx, int ny);
+// W7 locomotion: the locomotor a ground unit moves with (its type's, else
+// Ship for a naval unit, Drive for a vehicle, Walk for infantry).
+LocoKind unit_loco_kind(const Unit& u);
+bool loco_is_track(const Unit& u);   // Drive or Ship (the track tables)
+// W7-11-08 [RE: Can_Enter costs, DAT_0081770C]: the per-cell A* cost the units
+// impose on mover `self` -- 8 a parked ally (Temp), 1 / 4 a moving unit (1000
+// in the blockage mode), 20 an enemy (Destroyable); 1 elsewhere.
+void build_occupancy_cost(const std::vector<Unit>& units, const Occupancy& occ, int w, int h, int self,
+                          bool blockage_mode, const World* world, std::vector<std::uint16_t>& out);
+// True when a cell of `path` after its first is held by a unit other than self.
+bool path_meets_units(const std::vector<Cellxy>& path, const Occupancy& occ, int self);
 
 void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable,
                 const std::vector<std::uint8_t>& water_passable, int w, int h,
@@ -862,6 +885,10 @@ public:
     }
     // Cells per second unit i moves at right now (flat speed x speed_mult).
     double unit_speed_cps(int i) const;
+    // W7 locomotion: the locomotor rules (rulesmd defaults until armed by
+    // w5_arm_combat from the install's [General] / [AI] / [AudioVisual]).
+    void arm_loco_rules(const LocoRules& r) { loco_rules_ = r; }
+    const LocoRules& loco_rules() const { return loco_rules_; }
 
     std::vector<Unit>& units() { return units_; }
     const std::vector<Unit>& units() const { return units_; }
@@ -2702,6 +2729,7 @@ private:
     std::vector<std::uint8_t> speed_land_, ramp_;
     std::vector<std::int8_t> level_grid_;
     LandSpeedRules land_rules_;
+    LocoRules loco_rules_;   // W7 locomotion: PathDelay / BlockagePathDelay / CloseEnough / ConditionYellow / Hover*
     CrushRules crush_rules_;   // W5-B R-050
     ElevationRules elev_rules_;   // W5-B R-063
     AnimTable anims_;  // Unit::image -> UnitAnimSeq (set_anim); unregistered -> default_anim()

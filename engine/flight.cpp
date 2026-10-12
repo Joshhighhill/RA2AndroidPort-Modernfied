@@ -1,6 +1,7 @@
 #include "flight.hpp"
 #include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 
+#include <algorithm>
 #include <cmath>
 
 namespace ra2engine {
@@ -48,6 +49,80 @@ FlightState advance_flight_state(FlightState state, double altitude,
     if (state == FlightState::Descending && altitude <= 0.0)
         return FlightState::Grounded;
     return state;
+}
+
+double jumpjet_cruise_speed(double dist, int speed, int turn_rate, int facing_diff) {
+    // [RE: FUN_0054BD20 @0x54BE5x-0x54BF9x; DAT_007E0718 = 1.0 floor]
+    const int tr = std::max(1, turn_rate);
+    if (dist < speed) return static_cast<double>(speed / 8);
+    if (dist < speed * 2) {
+        if (tr < facing_diff) return std::max(1.0, static_cast<double>(speed / 10));
+        return static_cast<double>(speed / 4);
+    }
+    if (dist < (speed * 50) / tr) {
+        if (tr * 5 < facing_diff) return std::max(1.0, static_cast<double>(speed / 5));
+        return static_cast<double>(speed / 2);
+    }
+    return static_cast<double>(speed);
+}
+
+double jumpjet_ramp(double cur, double target, double max_speed, double accel) {
+    if (cur < target) cur = std::min(cur + accel, max_speed);   // capped at JumpjetSpeed
+    if (target < cur) cur = std::max(cur - accel * 1.5, 0.0);   // DAT_007E38F0 = 1.5
+    return cur;
+}
+
+int facing_diff_256(double from, double to) {
+    int d = static_cast<int>(std::lround(to - from)) & 0xFFFF;
+    if (d >= 0x8000) d = 0x10000 - d;                // shortest arc, |d|
+    return ((d >> 7) + 1) >> 1;
+}
+
+void step_along_facing(double& fx, double& fy, double facing, double leptons) {
+    if (leptons == 0.0) return;
+    const double a = facing / 65536.0 * 6.283185307179586;
+    fx += om::sin(a) * leptons / 256.0;
+    fy -= om::cos(a) * leptons / 256.0;
+}
+
+double fly_altitude_step(double h, double target, double frames) {
+    if (h < target) {                                 // @0x4CDD9D: min(d, 20)
+        return std::min(target, h + std::min(target - h, 20.0) * frames);
+    }
+    if (h > target) {                                 // @0x4CDE74: clamp(d/20, 20, 50)
+        const double d = h - target;
+        double step = std::floor(d / 20.0);
+        if (step > d) step = d;
+        step = std::clamp(step, 20.0, 50.0);
+        return std::max(target, h - step * frames);
+    }
+    return h;
+}
+
+double fly_throttle_target(double dist, int slowdown_distance, bool slow, bool* stop) {
+    if (stop) *stop = false;
+    if (!slow) return 1.0;
+    const double sd = slowdown_distance > 0 ? slowdown_distance : 500.0;
+    double t = std::min(1.0, dist / sd);              // DAT_007E0718 = 1.0 cap
+    if (t < 0.1) {                                    // DAT_007E2860 = 0.1
+        if (dist < 0x56) {
+            if (stop) *stop = true;                   // cur *= 0.5, target 0
+            return 0.0;
+        }
+        t = 0.1;
+    }
+    return t;
+}
+
+double fly_throttle_ramp(double cur, double target, double frames) {
+    const double step = 0.1 * frames;
+    if (cur < target) return std::min(target, cur + step);
+    if (cur > target) return std::max(target, cur - step);
+    return cur;
+}
+
+int fly_full_speed_lpf(int speed_key) {
+    return std::min(255, std::max(0, std::min(100, speed_key)) * 256 / 100);
 }
 
 }  // namespace ra2engine
