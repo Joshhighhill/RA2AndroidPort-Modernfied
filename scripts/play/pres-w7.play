@@ -123,6 +123,19 @@ wait 300
 assert why(rocket_explosion) >= 1                              @W7-12-02
 assert pres(spawned_no_unit_lost) >= 1                         @W7-12-02
 if units_lost(0) == $ulost0 then assert evareq(EVA_UnitLost) == $lost0
+# --- W7-12-05 / W7-03-05: an IFV with a GI: PIPS2 passenger pip, MG turret ---
+cheat spawn FV 0 building 0:GACNST +6 -6
+cheat spawn SNIPE 0 building 0:GACNST +7 -6
+wait 2
+click unit 0:SNIPE
+click unit 0:FV
+until 300 why(enter_transport) >= 1                            @W7-12-05
+wait 5
+click unit 0:FV
+wait 2
+view unit 0:FV
+shot w7_ifv_pips
+
 # --- W7-12-12: a Kirov shot down falls first and blasts where it lands ---------
 cheat spawn ZEP 0 building 0:GACNST -4 -4
 wait 2
