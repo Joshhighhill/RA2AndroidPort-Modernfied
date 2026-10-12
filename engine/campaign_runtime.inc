@@ -1633,7 +1633,11 @@ private:
         mc_type_[type] = mc;
         return mc;
     }
-    void mc_release(Track& ctl) {
+    // `fate` false for the capacity-1 swap (W5-A R-036): that release exists only
+    // because the clone holds one victim per controller (YR gives SOV09's Yuris
+    // Damage=10 slots and never swaps, W7-10-02), so it gets no fate roll -- a
+    // swapped-out SOV09 IFV hunting the player's Yuris lost the mission.
+    void mc_release(Track& ctl, bool fate = true) {
         const int v = ctl.mc_victim;
         ctl.mc_victim = -1;
         if (v < 0 || v >= (int)utrack_.size()) return;
@@ -1646,7 +1650,7 @@ private:
         // W7-08-12(c) [RE: Free FUN_00471F20 @0x472013 -> DecideUnitFate]: a
         // unit handed back to a computer house gets its fate too (Hunt, or the
         // releasing controller's team); a human owner keeps it standing.
-        if (orig >= 0 && live(vu) && !w_.human_commanded(orig)) {
+        if (fate && orig >= 0 && live(vu) && !w_.human_commanded(orig)) {
             const int ci = (int)(&ctl - utrack_.data());
             if (ci >= 0 && ci < (int)utrack_.size()) {
                 if (vt.team >= 0 && vt.team < (int)teams_.size()) {
@@ -1788,7 +1792,7 @@ private:
             // range (no approach), the capture thought not, and the order died.
             if (!ra2engine::unit_in_weapon_range(w_, u, v)) continue;
             const int vi = u.target;
-            if (t.mc_victim >= 0 && t.mc_victim != vi) mc_release(t);
+            if (t.mc_victim >= 0 && t.mc_victim != vi) mc_release(t, /*fate=*/false);
             Track& vt = utrack_[(std::size_t)vi];
             const int from = v.house;
             if (vt.mc_orig < 0) vt.mc_orig = from;

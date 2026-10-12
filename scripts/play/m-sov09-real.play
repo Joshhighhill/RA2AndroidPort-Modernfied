@@ -45,10 +45,12 @@ wait 20
 until 1500 umov(6,YURI,0) == 0
 click xy 500 400 right
 click unit 6:YURI:0
-click unit 5:SENGINEER:0
-until 900 units(6,SENGINEER) >= 1
+# W7-09-17: the civilian house's engineer is rules id ENGINEER (the probe used to
+# report the image-matched Soviet SENGINEER).
+click unit 5:ENGINEER:0
+until 900 units(6,ENGINEER) >= 1
 click xy 500 400 right
-click unit 6:SENGINEER:0
+click unit 6:ENGINEER:0
 click building 2:GAPILE:0
 click xy 500 400 right
 click unit 6:YURI:0
