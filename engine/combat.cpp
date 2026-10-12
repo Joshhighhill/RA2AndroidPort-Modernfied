@@ -780,6 +780,14 @@ bool weapon_in_range(const World& world, const Unit& u, int tx, int ty, int tz, 
 
 bool weapon_in_range_from(const World& world, const Unit& u, int ux, int uy, int uz, int tx, int ty,
                           int tz, int extra) {
+    // W7-05-11 [WeaponType CellRangefinding=yes, e.g. the Kirov's BlimpBomb]:
+    // the range is measured between the CELL centres of shooter and target.
+    if (u.an.t.cell_rangefinding && u.w_active == 0) {
+        ux = lept_cell(ux) * 256;
+        uy = lept_cell(uy) * 256;
+        tx = lept_cell(tx) * 256;
+        ty = lept_cell(ty) * 256;
+    }
     int range = ftol_i(u.w_range * 256.0) + extra;
     if (u.w_proj.subject_to_elevation)
         range += elevation_bonus(world, world.cell_level(lept_cell(ux), lept_cell(uy)) -

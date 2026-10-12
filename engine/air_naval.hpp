@@ -83,6 +83,9 @@ struct AnType {
     // SlowdownDistance= (TechnoType +0x2F8, ctor default 500 @0x70FF52): the
     // FlyLocomotion approach throttle (FUN_004CD520).
     int slowdown_distance = 500;
+    // W7-05-11 [rules [BlimpBomb] CellRangefinding=yes; WeaponType key]: the
+    // primary weapon measures its range cell centre to cell centre.
+    bool cell_rangefinding = false;
     // --- wave 7 (save v35) ---
     // W7-05-04 [RE: AircraftType +0xE0D, read by Enter_Idle_Mode FUN_004176F0]:
     // AirportBound=yes -- no dock found when the plane goes idle -> it crashes.

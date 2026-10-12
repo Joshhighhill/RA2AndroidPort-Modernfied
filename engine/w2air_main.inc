@@ -30,6 +30,7 @@ void resolve_an_type(const Rules& rules, const std::string& unit_id, const std::
     a.weight = rules.section_double(unit_id, "Weight", 1.0);
     a.landable = rules.section_flag(unit_id, "Landable", false);
     a.min_range = rules.section_double(primary, "MinimumRange", 0.0);
+    a.cell_rangefinding = !primary.empty() && rules.section_flag(primary, "CellRangefinding", false);   // W7-05-11
     a.spawned = rules.section_flag(unit_id, "Spawned", false);
     a.missile = rules.section_flag(unit_id, "MissileSpawn", false);
     // Spawner weapon slot (Spawner=yes) + the Spawns= complement.

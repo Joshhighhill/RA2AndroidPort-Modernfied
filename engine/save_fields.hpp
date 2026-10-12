@@ -400,7 +400,7 @@ template <class Ar> void fields(Ar& ar, AnType& v) {   // W2-AN (save v9)
     io(ar, v.spawn_reload_frames); io(ar, v.landable); io(ar, v.missile_spread);
     io(ar, v.rocket_kind); io(ar, v.rocket_speed); io(ar, v.no_shadow);   // W4 (v15)
     io(ar, v.jj_accel); io(ar, v.strafe); io(ar, v.fighter);              // W7 (v35)
-    io(ar, v.slowdown_distance);
+    io(ar, v.slowdown_distance); io(ar, v.cell_rangefinding);   // W7-05-11
     io(ar, v.airport_bound); io(ar, v.crash_weapon); io(ar, v.spawner_range);   // v35: wave 7
     io(ar, v.sonic_ambient); io(ar, v.sonic_ambient_elite); io(ar, v.distributed_fire);
     io(ar, v.radial_segments); io(ar, v.radar_invisible); io(ar, v.hover_attack);

@@ -311,3 +311,17 @@ TEST_CASE("W7-11-02: a slow-turning hover (LCRF ROT 5) still reaches its goal ro
     CHECK(units[0].cell_x == 8);
     CHECK(units[0].cell_y == 3);
 }
+
+#include "combat.hpp"
+TEST_CASE("W7-05-11: CellRangefinding measures the range cell centre to cell centre") {
+    static ra2assets::MapFile map;
+    World w(map);
+    Unit u;
+    u.w_range = 1.5;
+    u.fx = 0.6;   // cell 1 (centre 1.0)
+    u.fy = 0.0;
+    const int tx = static_cast<int>(2.4 * 256.0), ty = 0;   // cell 2
+    CHECK_FALSE(weapon_in_range(w, u, tx, ty, 0));   // 1.8 cells apart: out of 1.5
+    u.an.t.cell_rangefinding = true;
+    CHECK(weapon_in_range(w, u, tx, ty, 0));         // cell 1 -> cell 2: 1.0 cell
+}
