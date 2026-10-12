@@ -2169,6 +2169,9 @@ private:
                 if (idx >= 0) { tm.members.push_back(idx); ++placed; }
                 else ++skipped;
             }
+            // W7-05-04 [RE: FUN_0065D770 @0x65D9C1..0x65D9E1]: the loaded
+            // transport, when it is an aircraft, is a loaner (+0x3D4).
+            if (load && carrier >= 0 && w_.units()[(std::size_t)carrier].is_aircraft) w_.set_loaner(carrier);
             if (load)
                 for (const Member& m : ms) {
                     if (m.transport) continue;

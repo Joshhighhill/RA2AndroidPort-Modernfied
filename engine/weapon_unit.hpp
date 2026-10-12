@@ -22,7 +22,9 @@ const WeaponSlot& secondary_view(const Unit& u);
 // DeployFireWeapon slot. A BombDisarm weapon (DefuseKit) is -1 unless the
 // target carries an Ivan bomb (`target_bombed` for a building).
 int unit_weapon_for_unit(const Unit& u, const Unit& v);
-int unit_weapon_for_building(const Unit& u, int armor_ix, bool target_bombed = false);
+// W7-06-02: `in_water` = the structure's cell is Water / Beach (a Naval Yard),
+// World::an_victim_naval_cell -- then the NavalTargeting switch applies.
+int unit_weapon_for_building(const Unit& u, int armor_ix, bool target_bombed = false, bool in_water = false);
 
 // Load slot `slot` into u.w_* (damage/rof/range/verses/spread/proj/AA/AG),
 // applying the veterancy multipliers when `vr` is non-null and u.vet.recv

@@ -1,0 +1,98 @@
+# w7-airnav.play -- wave-7 air/naval fixes (docs/gap/wave7/05-aircraft.md,
+# 06-naval.md) on Bay of Pigs: a Typhoon attacks an enemy Naval Yard (the
+# victim's CELL decides, W7-06-02), the Carrier puts its whole wing in the air
+# (W7-05-05/W7-06-03), the Naval Yard repair is paid for (W7-06-07), and a
+# shot-down Kirov crashes with its BlimpBomb death weapon (W7-05-09).
+set render_every 900
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click button "Customize Battle"
+click map:xbayopigs.map
+click button "Use Map"
+wait 2
+click combo:country0
+click pick:America
+click combo:country1
+click pick:France
+click combo:ai1
+click "pick:Easy Enemy"
+click check:crates
+click slider:units=0
+click start
+until 120 scene == game
+require scene == game
+cheat credits 300000
+click unit 0:AMCV
+key d
+until 600 built(0,GACNST) == 1
+cheat w2 build GAPOWR
+cheat w2 build GAREFN
+cheat w2 build GAPOWR
+cheat w2 build AMRADR
+cheat w2 build GATECH
+cheat w2 build GAPOWR
+cheat w2 build GAWEAP
+cheat w2 build GAYARD
+cheat w2 build GAYARD 1
+wait 10
+click tab:3
+click cameo:DEST
+until 2000 units(0,DEST) == 1
+wait 30
+
+# --- 1. a Typhoon may attack a Naval Yard: it stands on water (W7-06-02) -----
+click unit 0:DEST
+cheat spawn SUB 0 point water_near_sel +0 +0
+wait 2
+click unit 0:DEST right
+click unit 0:SUB
+let y0 = bhp(1,GAYARD)
+click building 1:GAYARD
+until 600 bhp(1,GAYARD) < $y0                   @W7-06-02
+shot sub_vs_yard
+click unit 0:SUB right
+click unit 0:SUB
+key s
+
+# --- 2. the Carrier launches its whole wing, 20 frames apart (W7-05-05) ------
+cheat spawn CARRIER 0 point water_near_sel +0 +0
+wait 2
+click unit 0:SUB right
+click unit 0:CARRIER
+click building 1:GAYARD
+until 300 spawned_out(0) >= 1                   @W7-06-03
+until 120 spawned_out(0) >= 3                   @W7-06-03 # one Hornet per 150 frames before
+shot carrier_wing
+click unit 0:CARRIER right
+click unit 0:CARRIER
+key s
+
+# --- 3. the Naval Yard repair costs money (W7-06-07) -------------------------
+cheat w2 damage 0:DEST 300
+click unit 0:CARRIER right
+click unit 0:DEST
+let c0 = credits
+click point yard_dock
+until 900 unit_hp(0,DEST) >= 600                @W7-06-07
+assert credits < $c0                            @W7-06-07 # it used to be free
+shot dest_repaired
+
+# --- 4. a Kirov shot down over its own yard crashes with BlimpBomb x1, not
+#        Strength/4 = 500 (W7-05-09: FireDeathWeapon FUN_0070CAC0) -----------
+cheat spawn ZEP 0 building 0:GAYARD +0 +0
+wait 2
+click unit 0:DEST right
+click unit 0:ZEP
+click point yard_dock
+until 600 airborne(0) >= 1 and sel_moving == 0
+wait 60
+let k0 = bhp(0,GAYARD)
+cheat w2 kill 0:ZEP
+until 900 crashing(0) == 0 and units(0,ZEP) == 0   @W7-05-09
+wait 5
+assert bhp(0,GAYARD) < $k0                      @W7-05-09 # the death blast lands
+assert bhp(0,GAYARD) > $k0 - 300                @W7-05-09 # 250 x BlimpHE, not 500 flat
+shot kirov_crash
+end

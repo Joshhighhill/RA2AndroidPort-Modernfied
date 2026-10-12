@@ -55,6 +55,57 @@ void resolve_an_type(const Rules& rules, const std::string& unit_id, const std::
         a.spawns_number = std::max(1, static_cast<int>(rules.section_double(unit_id, "SpawnsNumber", 1.0)));
         a.spawn_regen_frames = static_cast<int>(rules.section_double(unit_id, "SpawnRegenRate", 0.0));
     }
+    // --- wave 7 ---
+    // W7-05-04 [RE: Enter_Idle_Mode FUN_004176F0 reads AircraftType +0xE0D].
+    a.airport_bound = rules.section_flag(unit_id, "AirportBound", false);
+    // W7-05-09 [RE: FireDeathWeapon FUN_0070CAC0]: DeathWeapon (+0xD18), else
+    // the primary weapon (vtbl+0x3F4); Damage x DeathWeaponDamageModifier
+    // (+0xD1C, ftol @0x70CB1B); fired as a bullet of the weapon's warhead and
+    // detonated at once (FUN_0046AF70 -> BulletClass::Detonate FUN_004690A0).
+    {
+        const std::string dw = rules.section_string(unit_id, "DeathWeapon", "");
+        const std::string w = dw.empty() ? primary : dw;
+        if (!w.empty() && !rules.weapon_warhead(w).empty()) {
+            ra2engine::WeaponSpec& c = a.crash_weapon;
+            const std::string wh = rules.weapon_warhead(w);
+            c.valid = true;
+            c.damage = static_cast<int>(rules.weapon_damage(w) *
+                                        rules.section_double(unit_id, "DeathWeaponDamageModifier", 1.0));
+            c.range = rules.weapon_range(w);
+            c.verses = rules.verses(wh);
+            c.cell_spread = rules.section_double(wh, "CellSpread", 0.0);
+            c.percent_at_max = rules.section_double(wh, "PercentAtMax", 1.0);
+            c.affects_allies = rules.section_flag(wh, "AffectsAllies", true);
+            c.prone_damage = ra2engine::warhead_prone_damage(rules, wh);
+            c.inf_death = static_cast<int>(rules.section_double(wh, "InfDeath", 0.0));
+            c.wall_flags = ra2engine::warhead_wall_flags(rules, wh);
+        }
+    }
+    // W7-06-03 [RE: SpawnManager status 0 -> InRange(target, SelectWeapon)].
+    if (a.spawner_slot >= 0) {
+        const std::string sw = a.spawner_slot == 1 ? secondary : primary;
+        a.spawner_range = sw.empty() ? 0.0 : rules.weapon_range(sw);
+        if (a.spawner_range < 0.0) a.spawner_range = 30.0;   // Range=-2 "infinite" (ASWLauncher)
+    }
+    // W7-06-10 [RE: WeaponType IsSonic +0x130 (@0x770EF4), AmbientDamage +0x98
+    // (@0x770EDC); the wave reads GetWeapon(0) of the firer, FUN_0075E150].
+    if (!primary.empty() && rules.section_flag(primary, "IsSonic", false))
+        a.sonic_ambient = static_cast<int>(rules.section_double(primary, "AmbientDamage", 0.0));
+    {
+        const std::string ep = rules.section_string(unit_id, "ElitePrimary", "");
+        if (!ep.empty() && rules.section_flag(ep, "IsSonic", false))
+            a.sonic_ambient_elite = static_cast<int>(rules.section_double(ep, "AmbientDamage", 0.0));
+        else
+            a.sonic_ambient_elite = a.sonic_ambient;
+    }
+    // W7-06-11 [RE: TechnoType DistributedFire +0x6B0 (@0x713BF0),
+    // RadialFireSegments +0x6A4 (@0x713B54)].
+    a.distributed_fire = rules.section_flag(unit_id, "DistributedFire", false);
+    a.radial_segments = static_cast<int>(rules.section_double(unit_id, "RadialFireSegments", 0.0));
+    // W7-05-13 [RE: ObjectType RadarInvisible +0x22F (@0x5F8C6F); TechnoType
+    // HoverAttack +0x390 (FUN_00711510 @0x7118FA)].
+    a.radar_invisible = rules.section_flag(unit_id, "RadarInvisible", false);
+    a.hover_attack = rules.section_flag(unit_id, "HoverAttack", false);
     const std::string loco = to_lower(rules.locomotor(unit_id));
     // FlyLocomotion {4A582746} (ORCA/BEAG/HORNET/ASW/PDPLANE) [roster2.md §C].
     static const std::string kFly = "{4a582746-9839-11d1-b709-00a024ddafd1}";
@@ -129,6 +180,13 @@ ra2engine::SwParams resolve_sw_params(const Rules& rules) {
     p.repair_step = static_cast<int>(gd("RepairStep", 7.0));
     p.repair_rate_frames = std::max(1, static_cast<int>(gd("RepairRate", 0.016) * 900.0));
     p.repair_percent = gd("RepairPercent", 0.15);
+    {   // W7-05-09 [RE: Rules+0xFA8 = [CombatDamage] C4Warhead (Super)].
+        const std::string c4 = rules.section_string("CombatDamage", "C4Warhead", "Super");
+        const std::vector<int> v = rules.verses(c4);
+        if (!v.empty()) p.c4_verses = v;
+        p.c4_spread = rules.section_double(c4, "CellSpread", 0.0);
+        p.c4_pmax = rules.section_double(c4, "PercentAtMax", 1.0);
+    }
     const std::string payload = "NukePayload";
     p.nuke_rad_level = static_cast<int>(rules.section_double(payload, "RadLevel", 500.0));
     p.nuke_wall_flags = ra2engine::warhead_wall_flags(   // W6-04-04: [NUKE] WallAbsoluteDestroyer

@@ -25,7 +25,8 @@ constexpr double kFlyClimbLps = 100.0 * 15.0;   // [RE-FALLBACK roster2.md §C] 
 // spawn's coords on the launcher were not traced]; the safety lifetime.
 constexpr double kRocketDeckZ = 40.0;
 constexpr int kRocketMaxFrames = 1800;
-enum Sortie : int { kDocked = 0, kOutbound = 1, kMoveTo = 2, kReturn = 3, kLanding = 4, kParadrop = 5 };
+enum Sortie : int { kDocked = 0, kOutbound = 1, kMoveTo = 2, kReturn = 3, kLanding = 4, kParadrop = 5,
+                    kLoiter = 6 };   // W7-06-03: a launched spawn gathering by its owner
 bool live(const Unit& u) { return u.alive && u.die_time < 0.0 && u.cargo_of < 0; }
 double cdist(double ax, double ay, double bx, double by) { return om::hypot(ax - bx, ay - by); }
 }  // namespace
@@ -33,31 +34,55 @@ double cdist(double ax, double ay, double bx, double by) { return om::hypot(ax -
 // --------------------------------------------------------------- targeting --
 
 int an_naval_slot(const AnType& a, int want, bool has_secondary, bool victim_in_water,
-                  bool victim_submerged, bool victim_organic, bool victim_airborne,
-                  bool victim_is_building) {
+                  bool victim_underwater, bool victim_cloaked, bool victim_organic,
+                  bool victim_hover, bool victim_airborne, bool victim_is_building) {
+    (void)victim_is_building;   // W7-06-02: a structure takes the same cell test
     // "This has no impact on anti/not anti air weapons" (rules.ini comment).
     if (victim_airborne) return want;
-    if (victim_is_building || !victim_in_water) {
+    if (!victim_in_water) {
+        // [RE: GetFireError @0x6FBD7B] a target on the floor, off the water:
+        // LandTargeting=1 (+0x604) -> ILLEGAL.
         if (a.land_targeting == 1) return -1;                 // LAND_NOT_OKAY
         if (a.naval_targeting == kNavUnderwaterOnly) return -1;
         return want;
     }
+    // W7-06-02 [RE: NavalTargeting switch FUN_006F2D80 (vtbl+0x2E8)]: a FIXED
+    // slot, -1 = ILLEGAL in GetFireError. Cases 1/2 test the target TYPE's
+    // Underwater (+0xD69); case 0 refuses an Underwater type only while it is
+    // cloaked (+0x220); case 3 Organic (+0xD97) / Unnatural (+0x694, Yuri);
+    // case 4 (SEAL) the secondary only vs a non-Hover (SpeedType 3), non-Organic
+    // target (W7-06-09: the MP5 vs a hovercraft).
+    int slot = 0;
     switch (a.naval_targeting) {
-        case kNavNavalNone: return -1;
-        case kNavUnderwaterNever: return victim_submerged ? -1 : want;
-        case kNavUnderwaterSecondary:
-            if (victim_submerged) return has_secondary ? 1 : -1;
-            return want;
-        case kNavUnderwaterOnly: return victim_submerged ? (want >= 0 ? want : 0) : -1;
-        case kNavOrganicSecondary:
-            if (victim_organic && has_secondary) return 1;
-            return want;
-        case kNavSealSpecial:
-            if (victim_organic) return 0;
-            return has_secondary ? 1 : -1;
+        case kNavUnderwaterNever: slot = (victim_underwater && victim_cloaked) ? -1 : 0; break;
+        case kNavUnderwaterSecondary: slot = victim_underwater ? 1 : 0; break;
+        case kNavUnderwaterOnly: slot = victim_underwater ? 0 : -1; break;
+        case kNavOrganicSecondary: slot = victim_organic ? 1 : 0; break;
+        case kNavSealSpecial: slot = (!victim_hover && !victim_organic) ? 1 : 0; break;
+        case kNavNavalNone: slot = -1; break;
         case kNavNavalAll:
-        default: return want >= 0 ? want : 0;
+        default: slot = 0; break;
     }
+    if (slot < 0) return -1;
+    // [RE: SelectWeapon FUN_006F2890] a two-weapon unit uses the switch slot
+    // against a target on the water; a one-weapon unit fires its primary.
+    if (has_secondary) return slot;
+    if (slot == 1) return -1;
+    if (a.naval_targeting == kNavNavalAll) return want >= 0 ? want : 0;
+    return want;
+}
+
+// W7-06-02 [RE: GetFireError @0x6FBC86: Target->GetCell()->LandType (+0xEC)
+// is Water (2) or Beach (6); SelectWeapon @0x6F2B9F the same test]. The
+// clone's armed LandType is the per-cell TMP terrain type (R-062).
+bool World::an_victim_naval_cell(int x, int y) const {
+    if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return false;
+    if (land_speed_armed_) {
+        const int lt = speed_land_at(x, y);
+        return lt == 2 || lt == 6;
+    }
+    const std::size_t c = static_cast<std::size_t>(y) * grid_w_ + x;
+    return c < water_passable_.size() && water_passable_[c] != 0;
 }
 
 // ------------------------------------------------------------- spawning ----
@@ -108,12 +133,16 @@ bool World::order_fixed_wing(int idx, int unit_target, int building_target, int 
 // ------------------------------------------------------------------ naval ---
 
 void World::an_step_naval(double dt) {
+    (void)dt;
     const SwParams& P = an_.sw;
     const int n = static_cast<int>(units_.size());
     const auto& water = water_passable_;
     for (int i = 0; i < n; ++i) {
         Unit& u = units_[i];
         if (!u.alive) continue;
+        // W7-06-02 [RE: GetFireError @0x6FBC86]: on a Water / Beach cell, not
+        // in the air (IsInAir vtbl+0x54), not on a bridge (+0x8C).
+        u.an.naval_cell = !unit_airborne(u) && u.on_deck == 0 && an_victim_naval_cell(u.cell_x, u.cell_y);
         if (u.is_naval) {
             u.an.in_water = true;
         } else if (u.movement_domain == MovementDomain::Amphibious) {
@@ -162,8 +191,12 @@ void World::an_step_naval(double dt) {
     }
     // W2-AN-11 Naval Yard UnitRepair=yes: a damaged ship of the yard's house,
     // stopped within one cell of the yard, is repaired RepairStep hit points
-    // every RepairRate. [RE-FALLBACK: the service-depot cadence; the UnitRepair
-    // dock cost per step is not charged -- the ship repairs free.]
+    // every RepairRate. W7-06-07 [RE: the yard runs the depot's UnitRepair
+    // mission FUN_0044B780 -> radio 0x1C, TechnoClass::Receive_Message
+    // FUN_006F4010 case 0x1C: cost = GetRepairStepCost FUN_00711470, step =
+    // RepairStep (UnitType FUN_00746D50 -- an Organic Dolphin / Squid too, not
+    // IRepairStep); a house that cannot pay gets 0x20 and is released]: each
+    // step is paid from the same wallet the Service Depot uses.
     if (!an_.repair_btype.empty()) {
         const bool tick = (an_.frame % std::max(1, P.repair_rate_frames)) == 0;
         if (tick)
@@ -178,7 +211,16 @@ void World::an_step_naval(double dt) {
                     const int dx = u.cell_x < b.cx ? b.cx - u.cell_x : (u.cell_x >= b.cx + b.fw ? u.cell_x - (b.cx + b.fw - 1) : 0);
                     const int dy = u.cell_y < b.cy ? b.cy - u.cell_y : (u.cell_y >= b.cy + b.fh ? u.cell_y - (b.cy + b.fh - 1) : 0);
                     if (std::max(dx, dy) > 1) continue;
-                    u.hp = std::min(u.max_hp, u.hp + P.repair_step);
+                    const int h = b.house;
+                    if (h < 0 || h >= house_count()) continue;
+                    const int step = repair_rules_.repair_step > 0 ? repair_rules_.repair_step : P.repair_step;
+                    const int cost = repair_step_cost(u.vet.cost > 0 ? u.vet.cost : u.max_hp, u.max_hp, step,
+                                                      repair_rules_.repair_percent);
+                    double& pool = econ_active(h) ? econ_[static_cast<std::size_t>(h)].credits
+                                                  : house_credits_[static_cast<std::size_t>(h)];
+                    if (pool < static_cast<double>(cost)) continue;   // 0x20: broke, no free step
+                    pool -= static_cast<double>(cost);
+                    u.hp = std::min(u.max_hp, u.hp + step);
                     // W6-04-09 [RE-FALLBACK: the yard repair taken as a healing
                     // (negative) hit, which ejects a parasite in FUN_004D7250]
                     if (u.parasite_on_me >= 0) u.w6.heal_hit = true;
@@ -245,93 +287,410 @@ void World::rocket_explode(int i, int end) {
         r.alive = false;   // the rocket is spent (no wreck); DontScore
         r.die_time = 1.0;
     }   // (shot down: the kill already started its death)
-    const int ow = r.an.owner;
-    if (ow >= 0 && ow < static_cast<int>(units_.size()) && units_[ow].an.spawn_out > 0)
-        --units_[ow].an.spawn_out;
+    // W7-06-08: the launcher's node sees the unlinked rocket itself
+    // (an_step_spawners, Detach FUN_006B72E0).
+}
+
+// W7-06-03/06/08 [RE: SpawnManagerClass -- ctor FUN_006B6310, AI
+// FUN_006B68B0, SetTarget FUN_006B7210, ResetTarget FUN_006B7230, Detach
+// FUN_006B72E0, owner lost FUN_006B6780, launching count FUN_006B7400]. The
+// owner's spawner weapon only names the manager's target (TechnoClass::Fire
+// FUN_006FD210 @0x6FD333 -> FUN_006B7210); the manager AI, every 10 frames,
+// launches each docked node in turn one launch timer apart (20 frames, 9 for a
+// MissileSpawn), gathers the aircraft by the owner until every node is out,
+// then sends them in together; each node rebuilds on its own timer.
+namespace {
+constexpr int kSpawnAiPeriod = 10;    // FUN_006B68B0: +0x50/+0x58 timer = 10
+constexpr int kSpawnGapPlane = 20;    // case 0: +0x64 = 0x14
+constexpr int kSpawnGapMissile = 9;   // case 0: +0x64 = 9 (MissileSpawn +0xD68)
+}  // namespace
+
+void World::an_spawn_reset_target(int i) {
+    // FUN_006B7230: a missile still in state 2 is handed to the
+    // KamikazeTracker (FUN_0054E040 -- it flies on at the target it was given)
+    // and detached (FUN_006B72E0: a rocket node -> 7, SpawnRegenRate).
+    AnUnit& m = units_[static_cast<std::size_t>(i)].an;
+    for (std::size_t k = 0; k < m.sp_state.size(); ++k) {
+        if (m.sp_state[k] != kSpawnLaunched) continue;
+        const int su = m.sp_unit[k];
+        if (su < 0 || su >= static_cast<int>(units_.size()) || !units_[static_cast<std::size_t>(su)].an.t.missile)
+            continue;
+        m.sp_state[k] = kSpawnDead;
+        m.sp_timer[k] = std::max(0, m.t.spawn_regen_frames);
+        m.sp_unit[k] = -1;
+    }
+    m.sp_status = 0;
+    m.sp_tgt_unit = m.sp_tgt_bld = -1;
+    m.sp_next_unit = m.sp_next_bld = -1;
+}
+
+void World::an_spawn_launch(int i, int k) {
+    const std::string spawns = units_[static_cast<std::size_t>(i)].an.t.spawns;
+    const int regen = std::max(0, units_[static_cast<std::size_t>(i)].an.t.spawn_regen_frames);
+    auto it = an_.types.find(spawns);
+    if (it == an_.types.end()) return;
+    const bool missile = it->second.an.missile;
+    {
+        AnUnit& m = units_[static_cast<std::size_t>(i)].an;
+        // case 0: SpawnTimer (+0x5C/+0x64) = 0x14, or 9 for MissileSpawn.
+        m.sp_launch = missile ? kSpawnGapMissile : kSpawnGapPlane;
+        m.sp_state[static_cast<std::size_t>(k)] = kSpawnLaunched;
+    }
+    const int si = an_spawn(spawns, units_[static_cast<std::size_t>(i)].house,
+                            units_[static_cast<std::size_t>(i)].cell_x, units_[static_cast<std::size_t>(i)].cell_y);
+    Unit& own = units_[static_cast<std::size_t>(i)];   // re-fetch: units_ may have reallocated
+    if (si < 0) {
+        own.an.sp_state[static_cast<std::size_t>(k)] = kSpawnDead;
+        own.an.sp_timer[static_cast<std::size_t>(k)] = regen;
+        return;
+    }
+    Unit& s = units_[static_cast<std::size_t>(si)];
+    const int tu = own.an.sp_tgt_unit, tb = own.an.sp_tgt_bld;
+    own.an.sp_unit[static_cast<std::size_t>(k)] = si;
+    s.fx = own.fx + 0.2 * k;
+    s.fy = own.fy;
+    s.cell_x = own.cell_x;
+    s.cell_y = own.cell_y;
+    s.an.owner = i;
+    s.an.ammo = s.an.t.ammo > 0 ? s.an.t.ammo : 1;
+    s.flight_state = FlightState::TakingOff;
+    s.altitude = 1.0;
+    s.body_facing = own.body_facing;
+    // W4: locomotor +0x4D -- the launcher's elite rank picks the elite warhead.
+    s.an.rocket_elite = missile && is_elite(own.vet.veterancy);
+    if (missile) {
+        // case 0, rocket node: SetDestination(target) + Mission Move -- the
+        // RocketLocomotion [FUN_00661D00] pauses and tilts on the deck itself.
+        s.an.attack_unit = tu;
+        s.an.attack_building = tb;
+        s.an.sortie = kOutbound;
+        double gx = s.fx, gy = s.fy, gz = 0.0;
+        rocket_target_point(tu, tb, gx, gy, gz);
+        const RocketBlock& blk = an_.sw.rockets.block[static_cast<std::size_t>(
+            std::clamp(s.an.t.rocket_kind < 0 ? 1 : s.an.t.rocket_kind, 0, 2))];
+        rocket_launch(blk, s.an.rocket, s.fx * kLept, s.fy * kLept, kRocketDeckZ, gx * kLept, gy * kLept);
+        s.an.rocket.tx = gx * kLept;
+        s.an.rocket.ty = gy * kLept;
+        s.an.rocket.tz = gz;
+        s.altitude = kRocketDeckZ;
+        s.body_facing = facing_u16_from_delta(om::cos(s.an.rocket.yaw), om::sin(s.an.rocket.yaw));
+    } else {
+        // case 0, aircraft: SetDestination(the owner cell's neighbour in
+        // direction 0 = N, FUN_00481720(0)) + Mission Move -- it gathers by
+        // the owner, with no target yet.
+        s.an.attack_unit = s.an.attack_building = -1;
+        s.an.attack_x = std::max(0, std::min(grid_w_ - 1, own.cell_x));
+        s.an.attack_y = std::max(0, std::min(grid_h_ - 1, own.cell_y - 1));
+        s.an.sortie = kLoiter;
+    }
+}
+
+void World::an_spawn_owner_lost(int i) {
+    // FUN_006B6780: docked / reloading nodes are deleted with the owner; a
+    // rocket still in its launch window (state 1) is pulled from the
+    // KamikazeTracker (FUN_0054E220) and deleted; every other spawn goes to the
+    // KamikazeTracker (FUN_0054E040), which crashes a non-MissileSpawn
+    // (vtbl+0x3DC) and flies a missile on at its target.
+    std::vector<int> crash;
+    {
+        AnUnit& m = units_[static_cast<std::size_t>(i)].an;
+        for (std::size_t k = 0; k < m.sp_state.size(); ++k) {
+            const int st = m.sp_state[k], su = m.sp_unit[k];
+            if (st == kSpawnDead || st == kSpawnDocked || st == kSpawnReload) continue;
+            if (su < 0 || su >= static_cast<int>(units_.size())) continue;
+            Unit& s = units_[static_cast<std::size_t>(su)];
+            if (!s.alive || s.die_time >= 0.0) continue;
+            if (st == kSpawnRocketWait) {
+                s.alive = false;            // UnInit (vtbl+0xF8): gone, no blast
+                s.die_time = 1.0;
+                s.deployed_away = true;     // not a loss (DontScore)
+                s.an.rocket_end = 1;
+            } else if (!s.an.t.missile) {
+                crash.push_back(su);
+            }
+        }
+        m.sp_state.clear();
+        m.sp_timer.clear();
+        m.sp_unit.clear();
+        m.spawn_ready = m.spawn_out = m.spawn_pending = 0;
+        m.launch_hold = false;
+        m.sp_status = 0;
+        m.sp_tgt_unit = m.sp_tgt_bld = m.sp_next_unit = m.sp_next_bld = -1;
+    }
+    for (int su : crash) an_crash_alive(su);
+}
+
+void World::an_spawn_tick(int i) {
+    const std::string spawns = units_[static_cast<std::size_t>(i)].an.t.spawns;
+    const int regen = std::max(0, units_[static_cast<std::size_t>(i)].an.t.spawn_regen_frames);
+    const int reload = std::max(0, units_[static_cast<std::size_t>(i)].an.t.spawn_reload_frames);
+    const double sp_range = units_[static_cast<std::size_t>(i)].an.t.spawner_range;
+    auto it = an_.types.find(spawns);
+    const bool rocket = it != an_.types.end() && it->second.an.missile;
+    const int n = static_cast<int>(units_[static_cast<std::size_t>(i)].an.sp_state.size());
+    auto M = [&]() -> AnUnit& { return units_[static_cast<std::size_t>(i)].an; };
+    auto has_tgt = [&]() { return M().sp_tgt_unit >= 0 || M().sp_tgt_bld >= 0; };
+    auto promote = [&]() {   // "if (+0x6C) { +0x68 = +0x6C; +0x6C = 0; }"
+        AnUnit& m = M();
+        if (m.sp_next_unit >= 0 || m.sp_next_bld >= 0) {
+            m.sp_tgt_unit = m.sp_next_unit;
+            m.sp_tgt_bld = m.sp_next_bld;
+            m.sp_next_unit = m.sp_next_bld = -1;
+        }
+    };
+    auto spawn_of = [&](int k) -> int {
+        const int su = M().sp_unit[static_cast<std::size_t>(k)];
+        return (su < 0 || su >= static_cast<int>(units_.size())) ? -1 : su;
+    };
+    auto send_attack = [&](int su) {   // vtbl+0x3C8 SetTarget + Mission Attack (1)
+        Unit& s = units_[static_cast<std::size_t>(su)];
+        s.an.attack_unit = M().sp_tgt_unit;
+        s.an.attack_building = M().sp_tgt_bld;
+        s.an.sortie = kOutbound;
+    };
+    auto send_home = [&](int su) {   // SetDestination(owner), SetTarget(0), Mission Move
+        Unit& s = units_[static_cast<std::size_t>(su)];
+        s.an.attack_unit = s.an.attack_building = -1;
+        s.an.attack_x = s.an.attack_y = -1;
+        s.an.sortie = kReturn;
+    };
+    for (int k = 0; k < n; ++k) {
+        const std::size_t K = static_cast<std::size_t>(k);
+        const int st = M().sp_state[K];
+        switch (st) {
+            case kSpawnDocked: {
+                if (!has_tgt() || M().sp_launch > 0 || M().sp_status == 2) break;
+                // A rocket node waits while the launcher's locomotor moves
+                // (vtbl+0x10 Is_Moving / +0x80) [@0x6B6966..0x6B69DA].
+                if (rocket && units_[static_cast<std::size_t>(i)].moving()) break;
+                an_spawn_launch(i, k);
+                break;
+            }
+            case kSpawnRocketWait:
+                // Its pause + tilt ran out: detach (FUN_006B72E0, rocket node
+                // flag +0x14 = 1) -> state 7 with SpawnRegenRate.
+                if (M().sp_timer[K] <= 0) {
+                    M().sp_state[K] = kSpawnDead;
+                    M().sp_timer[K] = regen;
+                    M().sp_unit[K] = -1;
+                }
+                break;
+            case kSpawnLaunched: {
+                if (rocket) break;
+                promote();
+                const int su = spawn_of(k);
+                if (su < 0) break;
+                if (has_tgt()) {   // keep gathering: the neighbour cell in direction 4 = S
+                    const Unit& o = units_[static_cast<std::size_t>(i)];
+                    Unit& s = units_[static_cast<std::size_t>(su)];
+                    s.an.attack_x = std::max(0, std::min(grid_w_ - 1, o.cell_x));
+                    s.an.attack_y = std::max(0, std::min(grid_h_ - 1, o.cell_y + 1));
+                    s.an.sortie = kLoiter;
+                } else {
+                    send_home(su);
+                    M().sp_state[K] = kSpawnReturn;
+                }
+                break;
+            }
+            case kSpawnAttack: {
+                promote();
+                const int su = spawn_of(k);
+                if (su < 0) break;
+                if (!units_[static_cast<std::size_t>(su)].alive && units_[static_cast<std::size_t>(su)].deployed_away) {
+                    // (the clone's sortie already flew it home and aboard)
+                    M().sp_state[K] = kSpawnReload;
+                    M().sp_timer[K] = reload;
+                    M().sp_unit[K] = -1;
+                } else if (units_[static_cast<std::size_t>(su)].an.ammo == 0 || !has_tgt()) {
+                    send_home(su);
+                    M().sp_state[K] = kSpawnReturn;
+                } else {
+                    send_attack(su);
+                }
+                break;
+            }
+            case kSpawnReturn: {
+                promote();
+                const int su = spawn_of(k);
+                if (su < 0) break;
+                const Unit& s = units_[static_cast<std::size_t>(su)];
+                const bool aboard = !s.alive && s.deployed_away;
+                if (!aboard && s.an.ammo >= 1 && has_tgt()) {
+                    M().sp_state[K] = kSpawnAttack;
+                    send_attack(su);
+                } else if (aboard) {
+                    // Back on the owner: Limbo, state 6, SpawnReloadRate (+0x34).
+                    M().sp_state[K] = kSpawnReload;
+                    M().sp_timer[K] = reload;
+                    M().sp_unit[K] = -1;
+                } else if (s.alive && s.die_time < 0.0 && s.an.sortie != kReturn) {
+                    send_home(su);
+                }
+                break;
+            }
+            case kSpawnReload:
+                // Rearmed (Ammo = type Ammo) and healed (Strength = type Strength).
+                if (M().sp_timer[K] <= 0) M().sp_state[K] = kSpawnDocked;
+                break;
+            case kSpawnDead:
+                if (M().sp_timer[K] <= 0) M().sp_state[K] = kSpawnDocked;   // a new spawn, in Limbo
+                break;
+            default:
+                break;
+        }
+    }
+    // The manager status (+0x70).
+    if (M().sp_status == 0) {
+        promote();
+        if (has_tgt()) {
+            // vtbl+0x3AC (FUN_006F6CB0): InRange(target, SelectWeapon(target)).
+            const Unit& o = units_[static_cast<std::size_t>(i)];
+            double d = 0.0;
+            if (M().sp_tgt_unit >= 0) {
+                const Unit& v = units_[static_cast<std::size_t>(M().sp_tgt_unit)];
+                d = cdist(o.fx, o.fy, v.fx, v.fy);
+            } else {
+                const Building& b = buildings_[static_cast<std::size_t>(M().sp_tgt_bld)];
+                d = -1.0;
+                for (const Cellxy& c : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
+                    const double dc = cdist(o.fx, o.fy, c.x, c.y);
+                    if (d < 0.0 || dc < d) d = dc;
+                }
+            }
+            if (d > std::max(sp_range, 1.0) + 1e-9) an_spawn_reset_target(i);
+            else M().sp_status = 1;
+        }
+    } else if (M().sp_status == 1) {
+        if (!has_tgt()) {
+            an_spawn_reset_target(i);
+            return;
+        }
+        for (int k = 0; k < n; ++k) {
+            const int st = M().sp_state[static_cast<std::size_t>(k)];
+            if (st != kSpawnLaunched && st != kSpawnDead) return;   // still launching
+        }
+        bool any_missile = false;
+        for (int k = 0; k < n; ++k) {
+            const std::size_t K = static_cast<std::size_t>(k);
+            if (M().sp_state[K] != kSpawnLaunched) continue;
+            const int su = spawn_of(k);
+            if (su >= 0 && !units_[static_cast<std::size_t>(su)].an.t.missile) {
+                M().sp_state[K] = kSpawnAttack;
+                send_attack(su);
+            } else {
+                // KamikazeTracker (FUN_0054E040); a rocket node -> state 1 with
+                // the block's PauseFrames + TiltFrames (Rules+0x4B0/0x4B4 for
+                // the V3 type, else the DMisl block +0x4E4/0x4E8).
+                any_missile = true;
+                const int kind = (su >= 0 && units_[static_cast<std::size_t>(su)].an.t.rocket_kind == 0) ? 0 : 1;
+                const RocketBlock& blk = an_.sw.rockets.block[static_cast<std::size_t>(kind)];
+                M().sp_state[K] = kSpawnRocketWait;
+                M().sp_timer[K] = std::max(0, blk.pause_frames + blk.tilt_frames);
+            }
+        }
+        if (any_missile) an_spawn_reset_target(i);
+        M().sp_status = 2;
+    } else if (M().sp_status == 2) {
+        for (int k = 0; k < n; ++k) {
+            const int st = M().sp_state[static_cast<std::size_t>(k)];
+            if (st == kSpawnAttack || st == kSpawnReturn) return;
+        }
+        M().sp_status = 0;
+    }
 }
 
 void World::an_step_spawners(double dt) {
     (void)dt;
-    const int n = static_cast<int>(units_.size());
-    for (int i = 0; i < n; ++i) {
-        Unit& o = units_[i];
-        if (o.an.t.spawner_slot < 0) continue;
-        if (!live(o)) {
-            o.an.spawn_fire_unit = o.an.spawn_fire_building = -1;
+    for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
+        if (units_[i].an.t.spawner_slot < 0) continue;
+        if (units_[i].an.sp_state.empty()) {
+            units_[i].an.spawn_fire_unit = units_[i].an.spawn_fire_building = -1;
             continue;
         }
-        const AnType& t = o.an.t;
-        // SpawnRegenRate: a lost spawn is rebuilt; SpawnReloadRate: a returned
-        // one is rearmed [rules [CARRIER]/[DRED]/[DEST]].
-        // W4 [PROBABLE: SpawnManagerClass, MissileSpawn nodes -- "missile
-        // spawn don't come back" (SpawnReloadRate=0)]: a launched rocket's
-        // node is spent at once, so SpawnRegenRate runs from the launch, not
-        // from its detonation (ALL01: each Dreadnought rebuilds a missile
-        // every 80 frames while the last ones are still in the air).
-        const auto st = an_.types.find(t.spawns);
-        const bool missile_spawns = st != an_.types.end() && st->second.an.missile;
-        const int out_held = missile_spawns ? 0 : o.an.spawn_out;
-        if (o.an.spawn_ready + out_held + o.an.spawn_pending < t.spawns_number) {
-            if (++o.an.spawn_regen_timer >= std::max(1, t.spawn_regen_frames)) {
-                o.an.spawn_regen_timer = 0;
-                ++o.an.spawn_ready;
-            }
-        } else {
-            o.an.spawn_regen_timer = 0;
+        if (!units_[i].alive || units_[i].die_time >= 0.0) {
+            units_[i].an.spawn_fire_unit = units_[i].an.spawn_fire_building = -1;
+            an_spawn_owner_lost(i);
+            continue;
         }
-        if (o.an.spawn_pending > 0) {
-            if (++o.an.spawn_reload_timer >= std::max(1, t.spawn_reload_frames)) {
-                o.an.spawn_reload_timer = 0;
-                --o.an.spawn_pending;
-                ++o.an.spawn_ready;
+        if (units_[i].cargo_of >= 0) {   // carried: the manager is frozen
+            units_[i].an.spawn_fire_unit = units_[i].an.spawn_fire_building = -1;
+            continue;
+        }
+        const int n = static_cast<int>(units_.size());
+        {
+            AnUnit& m = units_[i].an;
+            const int regen = std::max(0, m.t.spawn_regen_frames);
+            // Timers count down every frame; the AI reads them every 10 frames.
+            if (m.sp_launch > 0) --m.sp_launch;
+            for (int& tm : m.sp_timer)
+                if (tm > 0) --tm;
+            // FUN_006B72E0 (Detach): a spawn that died / detonated / was shot
+            // down frees its node at once -> state 7, its own SpawnRegenRate
+            // timer (+0x30) from this frame. A spawn back aboard waits for the AI.
+            for (std::size_t k = 0; k < m.sp_state.size(); ++k) {
+                const int st = m.sp_state[k], su = m.sp_unit[k];
+                if (st < kSpawnRocketWait || st > kSpawnReturn || su < 0 || su >= n) continue;
+                const Unit& s = units_[static_cast<std::size_t>(su)];
+                if (s.alive && s.die_time < 0.0) continue;
+                if (!s.alive && s.deployed_away && st != kSpawnRocketWait) continue;
+                m.sp_state[k] = kSpawnDead;
+                m.sp_timer[k] = regen;
+                m.sp_unit[k] = -1;
             }
         }
-        // A spawner "shot" (combat.cpp try_fire) launches spawns at the target:
-        // missiles leave as a full volley, aircraft one per weapon ROF.
-        const int tu = o.an.spawn_fire_unit, tb = o.an.spawn_fire_building;
-        o.an.spawn_fire_unit = o.an.spawn_fire_building = -1;
-        if ((tu < 0 && tb < 0) || o.an.spawn_ready <= 0) continue;
-        auto it = an_.types.find(t.spawns);
-        if (it == an_.types.end()) continue;
-        const bool missile = it->second.an.missile;
-        const int count = missile ? o.an.spawn_ready : 1;
-        for (int k = 0; k < count; ++k) {
-            const int si = an_spawn(t.spawns, o.house, o.cell_x, o.cell_y);
-            if (si < 0) break;
-            Unit& s = units_[si];
-            Unit& own = units_[i];   // re-fetch: units_ may have reallocated
-            s.fx = own.fx + 0.2 * k;
-            s.fy = own.fy;
-            s.cell_x = own.cell_x;
-            s.cell_y = own.cell_y;
-            s.an.owner = i;
-            s.an.attack_unit = tu;
-            s.an.attack_building = tb;
-            s.an.sortie = kOutbound;
-            s.an.ammo = s.an.t.ammo > 0 ? s.an.t.ammo : 1;
-            s.flight_state = FlightState::TakingOff;
-            s.altitude = 1.0;
-            s.body_facing = own.body_facing;
-            // W4: locomotor +0x4D -- the launcher's elite rank picks the elite warhead.
-            s.an.rocket_elite = missile && is_elite(own.vet.veterancy);
-            if (missile) {
-                // W4 RocketLocomotion [FUN_00661D00]: on the launcher's deck,
-                // PauseFrames + TiltFrames from the rocket's own block.
-                double gx = s.fx, gy = s.fy, gz = 0.0;
-                rocket_target_point(tu, tb, gx, gy, gz);
-                const RocketBlock& blk = an_.sw.rockets.block[static_cast<std::size_t>(
-                    std::clamp(s.an.t.rocket_kind < 0 ? 1 : s.an.t.rocket_kind, 0, 2))];
-                rocket_launch(blk, s.an.rocket, s.fx * kLept, s.fy * kLept, kRocketDeckZ, gx * kLept,
-                              gy * kLept);
-                s.an.rocket.tx = gx * kLept;
-                s.an.rocket.ty = gy * kLept;
-                s.an.rocket.tz = gz;
-                s.altitude = kRocketDeckZ;
-                s.body_facing = facing_u16_from_delta(om::cos(s.an.rocket.yaw), om::sin(s.an.rocket.yaw));
+        // The target died: +0x68 = 0, ResetTarget unless a next one is queued.
+        auto tgt_live = [&](int tu, int tb) {
+            if (tu >= 0) return tu < n && live(units_[static_cast<std::size_t>(tu)]);
+            if (tb >= 0)
+                return tb < static_cast<int>(buildings_.size()) && buildings_[static_cast<std::size_t>(tb)].alive &&
+                       buildings_[static_cast<std::size_t>(tb)].state != Building::State::Dead;
+            return false;
+        };
+        {
+            AnUnit& m = units_[i].an;
+            if ((m.sp_next_unit >= 0 || m.sp_next_bld >= 0) && !tgt_live(m.sp_next_unit, m.sp_next_bld))
+                m.sp_next_unit = m.sp_next_bld = -1;
+            if ((m.sp_tgt_unit >= 0 || m.sp_tgt_bld >= 0) && !tgt_live(m.sp_tgt_unit, m.sp_tgt_bld)) {
+                m.sp_tgt_unit = m.sp_tgt_bld = -1;
+                if (m.sp_next_unit < 0 && m.sp_next_bld < 0) an_spawn_reset_target(i);
             }
-            --own.an.spawn_ready;
-            ++own.an.spawn_out;
         }
+        // TechnoClass::Fire -> FUN_006B7210: a new target is queued (+0x6C)
+        // unless it is the current one.
+        {
+            AnUnit& m = units_[i].an;
+            const int fu = m.spawn_fire_unit, fb = m.spawn_fire_building;
+            m.spawn_fire_unit = m.spawn_fire_building = -1;
+            if ((fu >= 0 || fb >= 0) && !(fu == m.sp_tgt_unit && fb == m.sp_tgt_bld)) {
+                m.sp_next_unit = fu;
+                m.sp_next_bld = fb;
+            }
+        }
+        if (units_[i].an.sp_tick > 0) --units_[i].an.sp_tick;
+        if (units_[i].an.sp_tick <= 0) {
+            units_[i].an.sp_tick = kSpawnAiPeriod;
+            an_spawn_tick(i);
+        }
+        // Counters for the probes / AI, and the launch hold (FUN_006B7400:
+        // nodes in state 1 + rockets still in state 2).
+        AnUnit& m = units_[i].an;
+        m.spawn_ready = m.spawn_out = m.spawn_pending = 0;
+        int launching = 0;
+        for (std::size_t k = 0; k < m.sp_state.size(); ++k) {
+            const int st = m.sp_state[k];
+            if (st == kSpawnDocked) ++m.spawn_ready;
+            else if (st == kSpawnReload) ++m.spawn_pending;
+            else if (st >= kSpawnRocketWait && st <= kSpawnReturn) ++m.spawn_out;
+            if (st == kSpawnRocketWait) {
+                ++launching;
+            } else if (st == kSpawnLaunched) {
+                const int su = m.sp_unit[k];
+                if (su >= 0 && su < static_cast<int>(units_.size()) &&
+                    units_[static_cast<std::size_t>(su)].alive && units_[static_cast<std::size_t>(su)].an.t.missile)
+                    ++launching;
+            }
+        }
+        m.launch_hold = launching > 0;
     }
 }
 
@@ -446,6 +805,27 @@ void World::an_step_fixed_wing(double dt) {
                         u.an.reload_timer = 0;
                         ++u.an.ammo;
                     }
+                } else if (home_ok && !spawned && u.hp < u.max_hp) {
+                    // W7-05-07 [RE: the airfield's UnitReload loop FUN_0044B780
+                    // @0x44C84x, every ReloadRate x 900 frames (@0x44C93C): a docked
+                    // plane is sent 0x1F (one ammo, FUN_006F4010) and, once full,
+                    // 0x1C -- RepairStep hit points for GetRepairStepCost
+                    // (FUN_00711470), refused (0x20) when the house cannot pay].
+                    if (++u.an.reload_timer >= std::max(1, P.reload_frames)) {
+                        u.an.reload_timer = 0;
+                        const int h = u.house;
+                        if (h >= 0 && h < house_count()) {
+                            const int step = repair_rules_.repair_step > 0 ? repair_rules_.repair_step : P.repair_step;
+                            const int cost = repair_step_cost(u.vet.cost > 0 ? u.vet.cost : u.max_hp, u.max_hp, step,
+                                                              repair_rules_.repair_percent);
+                            double& pool = econ_active(h) ? econ_[static_cast<std::size_t>(h)].credits
+                                                          : house_credits_[static_cast<std::size_t>(h)];
+                            if (pool >= static_cast<double>(cost)) {
+                                pool -= static_cast<double>(cost);
+                                u.hp = std::min(u.max_hp, u.hp + step);
+                            }
+                        }
+                    }
                 }
                 break;
             case kOutbound:
@@ -474,7 +854,9 @@ void World::an_step_fixed_wing(double dt) {
                             }
                         }
                     } else if (tb >= 0) {
-                        const int slot = unit_weapon_for_building(u, buildings_[tb].armor_ix, buildings_[tb].bomb_frame >= 0);
+                        const Building& tbb = buildings_[tb];
+                        const int slot = unit_weapon_for_building(u, tbb.armor_ix, tbb.bomb_frame >= 0,
+                                                                  an_victim_naval_cell(tbb.cx + tbb.fw / 2, tbb.cy + tbb.fh / 2));
                         if (slot >= 0) {
                             activate_weapon_slot(u, slot, veterancy_enabled() ? &veterancy_rules() : nullptr);
                             for (int k = 0; k < std::max(1, u.w6.burst); ++k) {
@@ -501,6 +883,14 @@ void World::an_step_fixed_wing(double dt) {
                     u.an.attack_x = u.an.attack_y = -1;
                     u.an.sortie = kReturn;
                 }
+                break;
+            case kLoiter:
+                // W7-06-03 [RE: SpawnManager AI FUN_006B68B0 cases 0/2]: a
+                // launched spawn flies to the cell next to its owner the manager
+                // named and waits there for the rest of the wing.
+                goal_x = u.an.attack_x; goal_y = u.an.attack_y; fly = true;
+                if (u.an.attack_x < 0) { goal_x = hx; goal_y = hy; }
+                if (spawned && !home_ok) u.an.sortie = kReturn;   // owner lost: crashes below
                 break;
             case kParadrop: {
                 // PDPLANE: straight run over the drop site, then off the map.
@@ -553,24 +943,22 @@ void World::an_step_fixed_wing(double dt) {
             case kReturn:
                 if (!home_ok) {
                     // AirportBound=yes with no airfield (or a spawn whose carrier
-                    // died): it crashes.
-                    u.an.crashing = false;
-                    an_damage_unit(i, u.hp, -1);
+                    // died): it crashes. W7-05-04/09 [RE: Enter_Idle_Mode
+                    // FUN_004176F0 -> vtbl+0x3DC FUN_004DEAC0; KamikazeTracker
+                    // FUN_0054E040]: a crash with its Strength left.
+                    an_crash_alive(i);
                     break;
                 }
                 goal_x = hx; goal_y = hy; fly = true;
                 if (cdist(u.fx, u.fy, hx, hy) < 0.25) {
                     if (spawned) {   // back aboard the carrier: rearm there
-                        const int ow = u.an.owner;
                         units_[i].alive = false;
                         units_[i].die_time = 1.0;
                         // W6-04-26: back aboard, not destroyed -- no unit lost on
                         // the score screen (the W4-SQ-03 deployed_away rule).
+                        // W7-06-06: the owner's node takes it aboard (state 6,
+                        // SpawnReloadRate) at its next manager AI tick.
                         units_[i].deployed_away = true;
-                        if (ow >= 0 && ow < n) {
-                            if (units_[ow].an.spawn_out > 0) --units_[ow].an.spawn_out;
-                            ++units_[ow].an.spawn_pending;
-                        }
                         continue;
                     }
                     u.an.sortie = kLanding;
@@ -645,16 +1033,34 @@ void World::an_step_deaths(double dt) {
             if (u.altitude <= 0.0) {
                 u.an.crashing = false;
                 u.flight_state = FlightState::Grounded;
-                // [RE-FALLBACK: the crash impact damage was not traced] the
-                // wreck deals a quarter of its Strength over one cell.
-                std::array<int, 11> verses{};
-                verses.fill(100);
-                const int dmg = std::max(10, u.max_hp / 4);
                 const double fx = u.fx, fy = u.fy;
-                const int house = u.house;
-                // W6-04-04 [RE-FALLBACK: the crash blast's warhead is not
-                // traced; taken as the Kirov's BlimpHE, Wall + Wood].
-                an_area_damage(house, fx, fy, dmg, 1.0, 0.5, verses, false, false, 0.0, kW6Wall | kW6Wood);
+                if (u.an.crash_hp > 0) {
+                    // W7-05-04/09 [RE: FlyLoco FUN_004CD520 @0x4CD7C9: Strength
+                    // left at impact -> ReceiveDamage(own Strength, Rules+0xFA8)
+                    // and DamageArea FUN_00489190(coords, that Strength, C4Warhead)].
+                    WeaponSpec c4;
+                    c4.valid = true;
+                    c4.damage = u.an.crash_hp;
+                    c4.verses = P.c4_verses;
+                    c4.cell_spread = P.c4_spread;
+                    c4.percent_at_max = P.c4_pmax;
+                    c4.inf_death = 2;
+                    const int dmg = u.an.crash_hp;
+                    u.an.crash_hp = 0;
+                    ability_area_damage(i, fx, fy, c4, dmg);
+                } else if (u.an.t.fixed_wing || (u.balloon_hover && !u.is_infantry)) {
+                    // W7-05-09 [RE: shot down -> FireDeathWeapon FUN_0070CAC0
+                    // (planes @0x4CD729; BalloonHover jumpjets on message 0x117C,
+                    // FUN_00744F30 @0x745001): DeathWeapon, else the Primary, x
+                    // DeathWeaponDamageModifier, its warhead's DamageArea].
+                    if (u.an.t.crash_weapon.valid && u.an.t.crash_weapon.damage > 0) {
+                        const WeaponSpec w = u.an.t.crash_weapon;
+                        ability_area_damage(i, fx, fy, w, w.damage);
+                    }
+                }
+                // (W7-05-09 [RE: FUN_00744F30 / FUN_0052283B]: a non-BalloonHover
+                // jumpjet (Night Hawk, Siege Chopper) only plays its Explosion
+                // anims (FUN_007376C0); the infantry Rocketeer just dies.)
             }
             continue;
         }
@@ -663,6 +1069,27 @@ void World::an_step_deaths(double dt) {
         if (u.is_naval && !u.an.t.underwater && u.an.t.weight >= P.ship_sinking_weight)
             u.an.sinking = true;
     }
+}
+
+// W7-05-04 [RE: AircraftClass vtbl+0x3DC = FUN_004DEAC0, called by
+// Enter_Idle_Mode FUN_004176F0 when no dock is found for an AirportBound plane,
+// and by the KamikazeTracker FUN_0054E040 for a spawn whose owner died]: the
+// aircraft falls with its Strength left; the impact deals that Strength
+// (an_step_deaths). The clone starts the death now and remembers the Strength.
+void World::an_crash_alive(int idx) {
+    if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
+    Unit& u = units_[idx];
+    if (!u.alive || u.die_time >= 0.0) return;
+    u.an.crash_hp = std::max(1, u.hp);
+    u.hp = 0;
+    u.die_time = 0.0;
+    u.vet.killed_by = -1;
+    occ_.release_all_of(idx, -1, -1);
+    u.target = -1;
+    u.target_building = -1;
+    u.path.clear();
+    u.path_idx = 0;
+    if (u.altitude <= 0.0) u.altitude = 1.0;   // falls (the crash path needs height)
 }
 
 // ------------------------------------------------------------- paradrop ----
@@ -700,6 +1127,7 @@ void World::an_paradrop(int house, SuperweaponType type, int cx, int cy) {
         return;
     }
     Unit& p = units_[pi];
+    p.an.loaner = true;   // W7-05-04 [RE: 0x65E0FE..0x65E550: techno +0x3D4 = 1]
     p.fx = sx;
     p.fy = cy;
     p.altitude = an_.sw.flight_level;
@@ -724,6 +1152,7 @@ int World::spawn_drop_plane(const std::string& plane_id, int house, int sx, int 
     const int pi = an_spawn(plane_id, house, sx, sy);
     if (pi < 0) return -1;
     Unit& p = units_[pi];
+    p.an.loaner = true;   // W7-05-04 [RE: FUN_0065D320 @0x65D632: techno +0x3D4 = 1]
     p.fx = p.cell_x;
     p.fy = p.cell_y;
     p.altitude = an_.sw.flight_level;
@@ -750,6 +1179,15 @@ bool World::order_leave_map(int idx) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return false;
     Unit& u = units_[idx];
     if (!u.alive || u.die_time >= 0.0 || !u.is_aircraft || !u.an.t.fixed_wing || u.an.t.spawned) return false;
+    // W7-05-04 [RE: Enter_Idle_Mode FUN_004176F0]: only a loaner (techno
+    // +0x3D4, set by the reinforcement / superweapon plane code) takes Mission
+    // Retreat (FUN_00415A50) and leaves the map; an ordinary AirportBound plane
+    // that finds no dock crashes (vtbl+0x3DC), in the campaign as in skirmish.
+    if (!u.an.loaner && u.an.t.airport_bound) {
+        an_.any = true;
+        an_crash_alive(idx);
+        return true;
+    }
     const int W = grid_w_, H = grid_h_;
     const int dl = u.cell_x, dr = W - 1 - u.cell_x, dt = u.cell_y, db = H - 1 - u.cell_y;
     int ex = u.cell_x, ey = u.cell_y;
@@ -892,6 +1330,179 @@ Cellxy World::ai_naval_spot_scan(int house, const HouseAiRec& rec, const Buildin
     return Cellxy{-1, -1};
 }
 
+// ------------------------------------------------------- W7-06-10 sonic ---
+
+// [RE: WaveClass type 0 (sonic) -- ctor FUN_0075D770 from TechnoClass::Fire
+// @0x6FE930 when the weapon IsSonic (+0x130); AI FUN_0075FD70 case 0 runs the
+// sweep FUN_00761910 then damages every cell of the wave (FUN_0075E150) each
+// frame, the wave deleted after 100 frames at the latest]:
+//   - the front (+0x138) advances 0.05 of the firer->target line a frame
+//     (DAT_007F5BB0), snapped to 1.0 past 0.98, while the firer still holds
+//     that target (+0x2B4) within 6 x 362 leptons (DAT_00B44CF0 * 6.0);
+//   - the back (+0x140) starts once the front is 0.1 ahead and follows at
+//     the same rate while it is no more than 0.025 behind the front; the wave
+//     ends when the back reaches the front;
+//   - the cells under the line from the back to the front + 0.025, sampled
+//     every 0.05 (FUN_0075FF10), each take ReceiveDamage(AmbientDamage (+0x98)
+//     of the firer's weapon 0, its warhead) for everything in them except the
+//     firer -- own units included.
+// [RE-FALLBACK: the wave's second, parallel cell line (FUN_0075FF10 for a
+// direction class > 3) and the aircraft layer are not swept.]
+void World::an_step_waves() {
+    const int n = static_cast<int>(units_.size());
+    // New waves: a sonic weapon fired this frame (fire_flash stamped 0.4).
+    for (int i = 0; i < n; ++i) {
+        const Unit& u = units_[i];
+        if (u.an.t.sonic_ambient <= 0 || !live(u) || u.fire_flash < 0.4 - 1e-9 || u.w_active != 0) continue;
+        SonicWave w;
+        w.firer = i;
+        w.target_unit = u.target;
+        w.target_bld = u.target < 0 ? u.target_building : -1;
+        double tx = 0, ty = 0, tz = 0;
+        if (!rocket_target_point(w.target_unit, w.target_bld, tx, ty, tz)) continue;
+        w.sx = u.fx;
+        w.sy = u.fy;
+        w.tx = tx;
+        w.ty = ty;
+        w.damage = is_elite(u.vet.veterancy) ? u.an.t.sonic_ambient_elite : u.an.t.sonic_ambient;
+        w.verses = u.w_verses;
+        w.sonic_wh = u.w6.sonic;
+        an_.waves.push_back(w);
+    }
+    if (an_.waves.empty()) return;
+    std::vector<SonicWave> keep;
+    keep.reserve(an_.waves.size());
+    for (SonicWave& w : an_.waves) {
+        // FUN_00761910: start the back once the front is 0.1 ahead.
+        if (w.head - w.tail > 0.1) w.tail_moving = true;
+        const bool firer_ok = w.firer >= 0 && w.firer < n && live(units_[w.firer]);
+        if (w.growing) {
+            bool hold = firer_ok;
+            double tx = 0, ty = 0, tz = 0;
+            if (hold) {
+                const Unit& f = units_[w.firer];
+                hold = (w.target_unit >= 0 ? f.target == w.target_unit : f.target_building == w.target_bld) &&
+                       rocket_target_point(w.target_unit, w.target_bld, tx, ty, tz) &&
+                       cdist(f.fx, f.fy, tx, ty) * kLept <= 362.038672 * 6.0;
+                if (hold) {   // FUN_00760460: the line follows the firer and the target
+                    w.sx = f.fx;
+                    w.sy = f.fy;
+                    w.tx = tx;
+                    w.ty = ty;
+                }
+            }
+            if (!hold) {
+                w.growing = false;
+                w.tail_moving = true;
+            }
+        }
+        if (w.head < 1.0 && w.growing) {
+            w.head += 0.05;
+            if (w.head > 0.98) w.head = 1.0;
+        }
+        if (w.tail_moving && w.tail <= w.head + 0.025) {
+            w.tail += 0.05;
+            if (w.head <= w.tail) continue;   // the wave is gone
+        }
+        // FUN_0075FF10: the cells under the line, back -> front + 0.025.
+        std::vector<std::pair<int, int>> cells;
+        for (double t = w.tail; t <= w.head + 0.025 + 1e-9; t += 0.05) {
+            const int cx = static_cast<int>(std::lround(w.sx + (w.tx - w.sx) * t));
+            const int cy = static_cast<int>(std::lround(w.sy + (w.ty - w.sy) * t));
+            if (cx < 0 || cy < 0 || cx >= grid_w_ || cy >= grid_h_) continue;
+            if (std::find(cells.begin(), cells.end(), std::make_pair(cx, cy)) == cells.end())
+                cells.emplace_back(cx, cy);
+        }
+        // FUN_0075E150: everything in each cell but the firer.
+        for (const auto& c : cells) {
+            for (int j = 0; j < n; ++j) {
+                Unit& v = units_[j];
+                if (j == w.firer || !live(v) || v.cell_x != c.first || v.cell_y != c.second) continue;
+                if (unit_airborne(v)) continue;
+                const int dmg = damage_vs(w.damage, w.verses, v.armor_ix);
+                if (dmg <= 0) continue;
+                if (w.sonic_wh && v.parasite_on_me >= 0) v.w6.sonic_hit = true;   // W6-04-09
+                const int hp0 = v.hp;
+                an_damage_unit(j, dmg, w.firer);
+                feed_damage(false, j, w.firer >= 0 && w.firer < n ? units_[w.firer].house : -1, hp0 - units_[j].hp);
+            }
+            const int b = building_at_cell(c.first, c.second);
+            if (b >= 0) {
+                const Building& bb = buildings_[static_cast<std::size_t>(b)];
+                const int dmg = damage_vs(w.damage, w.verses, bb.armor_ix);
+                const int hp0 = bb.hp;
+                an_damage_building(b, dmg);
+                feed_damage(true, b, w.firer >= 0 && w.firer < n ? units_[w.firer].house : -1,
+                            hp0 - buildings_[static_cast<std::size_t>(b)].hp);
+            }
+        }
+        keep.push_back(std::move(w));
+    }
+    an_.waves.swap(keep);
+}
+
+// ------------------------------------------- W7-06-11 DistributedFire -----
+
+// [RE: TechnoClass::Fire FUN_006FD210 @0x6FED3C: after a DistributedFire shot
+// (TechnoType +0x6B0) outside a forced Attack, the target joins the "already
+// shot" list (+0x470..+0x484) and the unit drops it (SetTarget(0));
+// FUN_007089D0 then picks the next one from the candidates the scan
+// collected (CanAutoTarget FUN_006F8320 +0x440/+0x458): the best one not shot
+// yet; when every candidate was shot the list is cleared and the best of all
+// is taken.] [RE-FALLBACK: the threat value of FUN_006F71D0 is not ported --
+// the nearest candidate stands for the best one.]
+void World::an_step_distributed_fire() {
+    const int n = static_cast<int>(units_.size());
+    for (int i = 0; i < n; ++i) {
+        Unit& u = units_[i];
+        if (!u.an.t.distributed_fire || !live(u)) continue;
+        if (u.attack_order) {   // Mission Attack: the forced target is kept
+            u.an.shot_list.clear();
+            continue;
+        }
+        if (u.fire_flash >= 0.4 - 1e-9 && u.target >= 0) {
+            if (std::find(u.an.shot_list.begin(), u.an.shot_list.end(), u.target) == u.an.shot_list.end())
+                u.an.shot_list.push_back(u.target);
+            u.target = -1;
+        }
+        // The candidates: enemies this unit could fire on now.
+        std::vector<int> cand;
+        for (int j = 0; j < n; ++j) {
+            const Unit& v = units_[j];
+            if (j == i || !live(v) || !is_enemy(u.house, v.house)) continue;
+            if (!object_visible_at(u.house, v.cell_x, v.cell_y)) continue;
+            const int slot = unit_weapon_for_unit(u, v);
+            if (slot < 0) continue;
+            const double rng = slot == 1 ? u.w2.range : (u.w_active == 0 ? u.w_range : u.vet.base.range);
+            if (cdist(u.fx, u.fy, v.fx, v.fy) > rng + 1e-9) continue;
+            cand.push_back(j);
+        }
+        std::vector<int>& shot = u.an.shot_list;
+        shot.erase(std::remove_if(shot.begin(), shot.end(),
+                                  [&](int t) { return std::find(cand.begin(), cand.end(), t) == cand.end(); }),
+                   shot.end());
+        if (cand.empty()) {
+            shot.clear();
+            continue;
+        }
+        int best = -1;
+        double bd = 0.0;
+        for (int j : cand) {
+            if (std::find(shot.begin(), shot.end(), j) != shot.end()) continue;
+            const double d = cdist(u.fx, u.fy, units_[j].fx, units_[j].fy);
+            if (best < 0 || d < bd) { best = j; bd = d; }
+        }
+        if (best < 0) {   // every candidate shot: start over
+            shot.clear();
+            continue;
+        }
+        if (u.target < 0 || std::find(shot.begin(), shot.end(), u.target) != shot.end()) {
+            u.target = best;
+            u.target_building = -1;
+        }
+    }
+}
+
 // ------------------------------------------------------------------ driver --
 
 void World::step_air_naval(double dt) {
@@ -900,6 +1511,7 @@ void World::step_air_naval(double dt) {
         for (const Unit& u : units_)
             if (u.an.t.underwater || u.an.t.sensors || u.an.t.spawner_slot >= 0 || u.an.t.fixed_wing ||
                 u.an.t.crashable || (u.is_naval && u.an.t.weight > 1.0) || u.an.iron_left_frames > 0.0 ||
+                u.an.t.distributed_fire || u.an.t.sonic_ambient > 0 ||   // W7-06-10/11
                 u.movement_domain == MovementDomain::Amphibious) {
                 an_.any = true;
                 break;
@@ -908,6 +1520,8 @@ void World::step_air_naval(double dt) {
     }
     ++an_.frame;
     an_step_naval(dt);
+    an_step_waves();             // W7-06-10
+    an_step_distributed_fire();  // W7-06-11
     an_step_spawners(dt);
     an_step_fixed_wing(dt);
     an_step_parachutes(dt);   // W4-SQ-06
@@ -916,6 +1530,19 @@ void World::step_air_naval(double dt) {
     // non-BalloonHover Landable jumpjet with no goal and no target lands.
     for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
         Unit& u = units_[i];
+        // W7-05-13 [RE: FootClass Mission_Attack FUN_004D4CE0 / Guard
+        // FUN_004D4F90: a HoverAttack (+0x390) unit at height 0 with a target
+        // gets SetDestination(its own cell) -- it lifts off and fights hovering].
+        if (u.an.t.hover_attack && u.is_aircraft && !u.an.t.fixed_wing && live(u) &&
+            u.flight_state == FlightState::Grounded && (u.target >= 0 || u.target_building >= 0)) {
+            occ_.release_all_of(i, -1, -1);
+            u.flight_state = FlightState::TakingOff;
+            u.flight_goal_x = u.cell_x;
+            u.flight_goal_y = u.cell_y;
+            u.has_flight_goal = true;
+            u.an.landing = false;
+            aircraft_any_ = true;
+        }
         if (!u.is_aircraft || u.an.t.fixed_wing || u.balloon_hover || !u.an.t.landable) continue;
         if (!live(u)) continue;
         if (u.flight_state == FlightState::Cruising && !u.has_flight_goal && u.target < 0 &&

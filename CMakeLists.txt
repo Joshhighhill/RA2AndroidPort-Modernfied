@@ -150,6 +150,7 @@ target_sources(ra2assets_tests PRIVATE engine/weapon.cpp engine/weapon_unit.cpp
 target_sources(ra2assets_tests PRIVATE tests/test_w5_combat.cpp)
 # Wave-6 #4: units and weapons (docs/gap/wave6/04-units.md).
 target_sources(ra2assets_tests PRIVATE tests/test_w6_units.cpp)
+target_sources(ra2assets_tests PRIVATE tests/test_w7_airnav.cpp)   # wave-7 air/naval
 # G16 world depth (agent G): bridges (pure) + the World garrison/bridge members.
 target_sources(ra2assets_tests PRIVATE engine/inf_anim.cpp tests/test_inf_anim.cpp)   # W3-B
 target_sources(ra2assets_tests PRIVATE engine/bridges.cpp engine/world_depth.cpp
