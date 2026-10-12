@@ -3585,6 +3585,10 @@ void World::ai_note_damage(bool building, int victim, int attacker_house, int dm
         const int t = ai_unit_type_of(rec, u);
         strength = u.max_hp;
         cost = (t >= 0) ? rec.cfg.team.unit_roster[(std::size_t)t].cost : u.max_hp;
+        // W7-04-18: a hit ToProtect unit asks for help (ai_unit.cpp).
+        if (t >= 0 && t < (int)rec.cfg.roster_to_protect.size() && rec.cfg.roster_to_protect[(std::size_t)t] &&
+            attacker_house != vh)
+            ai_protect_reqs_.push_back(AiProtectReq{victim, attacker_house});
     }
     if (strength <= 0) strength = 1;
     const int delta = om::ftol(((double)cost * ((double)dmg / (double)strength)));
@@ -3806,9 +3810,17 @@ int World::ai_unit_producing(int house, int iv01) const {
 }
 
 int World::ai_unit_type_of(const HouseAiRec& rec, const Unit& u) const {
-    // Units carry no roster index — map via the resolved combat image
-    // (unique per producible type; deterministic).
+    // Units carry no roster index -- map via the rules id (W7-09-17: the
+    // image is shared by distinct types -- the civilian TRUCKA and the
+    // Demolition Truck DTRUCK both draw TRUCKA, CTECH and CIV3 both CIV3 -- so
+    // an AI-owned civilian truck used to be recruited as a DTRUCK). A unit
+    // with no rules id (hand-built test UnitCombat) falls back to the image.
     const std::vector<UnitTypeDef>& r = rec.cfg.team.unit_roster;
+    if (!u.tg.t.rules_id.empty()) {
+        for (int i = 0; i < (int)r.size(); ++i)
+            if (r[i].id == u.tg.t.rules_id) return i;
+        return -1;
+    }
     for (int i = 0; i < (int)r.size(); ++i)
         if (r[i].combat.image == u.image) return i;
     return -1;
@@ -4082,6 +4094,43 @@ void World::ai_fill_team_view(int house, const HouseAiRec& rec,
     }
 }
 
+// W7-06-01: the free water cell nearest (tx,ty) that a ship at (sx,sy) can
+// reach -- a 4-way flood fill over the water grid from (sx,sy) (bounded),
+// keeping the cell with the least squared distance to the target, ties to the
+// first found (deterministic). {-1,-1} when the start is not on water.
+Cellxy World::ai_nearest_reachable_water(int sx, int sy, int tx, int ty) const {
+    const std::vector<std::uint8_t>& wg = grid_for(MovementDomain::Water);
+    const int w = grid_w_, h = grid_h_;
+    auto ok = [&](int x, int y) {
+        if (x < 0 || y < 0 || x >= w || y >= h) return false;
+        const std::size_t i = (std::size_t)y * (std::size_t)w + (std::size_t)x;
+        return i < wg.size() && wg[i] != 0;
+    };
+    if (!ok(sx, sy)) return Cellxy{-1, -1};
+    std::vector<std::uint8_t> seen((std::size_t)w * (std::size_t)h, 0);
+    std::vector<Cellxy> q;
+    q.reserve(4096);
+    q.push_back(Cellxy{sx, sy});
+    seen[(std::size_t)sy * w + sx] = 1;
+    Cellxy best{-1, -1};
+    long long best_d2 = -1;
+    static const int kDx[4] = {1, -1, 0, 0}, kDy[4] = {0, 0, 1, -1};
+    for (std::size_t k = 0; k < q.size() && k < 65536; ++k) {
+        const Cellxy c = q[k];
+        if (occ_.is_free(c.x, c.y) || (c.x == sx && c.y == sy)) {
+            const long long dx = c.x - tx, dy = c.y - ty, d2 = dx * dx + dy * dy;
+            if (best_d2 < 0 || d2 < best_d2) { best_d2 = d2; best = c; }
+        }
+        for (int d = 0; d < 4; ++d) {
+            const int nx = c.x + kDx[d], ny = c.y + kDy[d];
+            if (!ok(nx, ny) || seen[(std::size_t)ny * w + nx]) continue;
+            seen[(std::size_t)ny * w + nx] = 1;
+            q.push_back(Cellxy{nx, ny});
+        }
+    }
+    return best;
+}
+
 void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& team,
                                     const TeamCommand& c) {
     switch (c.kind) {
@@ -4114,7 +4163,27 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
                 return Cellxy{-1, -1};
             };
             int gx = c.x, gy = c.y;
-            const Cellxy s = nearest_free(c.x, c.y, 8);
+            // W7-06-01: an all-ship team (every live, unloaded member in the
+            // Water domain) can only gather / move on its own water body. The
+            // focus is the reachable free water cell nearest the ideal cell (a
+            // flood fill over the water grid from the lead ship). Before, the
+            // land-only snap left the muster cell inside the base, the fleet
+            // could never be "within Stray" of it, and the stock naval teams
+            // stayed in Gathering for good (Depth Charge, 35 minutes).
+            int lead = -1;
+            bool naval = false;
+            for (int m : team.members) {
+                if (m < 0 || m >= (int)units_.size()) continue;
+                const Unit& u = units_[(std::size_t)m];
+                if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
+                if (u.movement_domain != MovementDomain::Water) { naval = false; lead = -1; break; }
+                if (lead < 0) lead = m;
+                naval = true;
+            }
+            Cellxy s{-1, -1};
+            if (naval) s = ai_nearest_reachable_water(units_[(std::size_t)lead].cell_x,
+                                                      units_[(std::size_t)lead].cell_y, c.x, c.y);
+            else s = nearest_free(c.x, c.y, 8);
             if (s.x >= 0) { gx = s.x; gy = s.y; }
             team.gather_x = gx;   // realized move focus (contract A)
             team.gather_y = gy;
@@ -4127,6 +4196,17 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
                 const Unit& u = units_[m];
                 if (!u.alive || u.die_time >= 0.0) continue;
                 if (u.cargo_of >= 0) continue;   // W2-SK-09: rides the transport
+                // W7-02-04 [RE: FUN_0051F370 -- a computer-owned deployed
+                // infantry (UndeployDelay < 0) given a move plays Undeploy
+                // first]: a deployed team Desolator packs up and follows (a GI
+                // undeploys inside order_unit_move already).
+                if (u.deployed && !u.deploy_fire && u.abil.deployer) order_deploy(m);
+                if (naval) {   // W7-06-01: each ship's ring cell snapped onto its water
+                    const Cellxy ws = ai_nearest_reachable_water(u.cell_x, u.cell_y, gx + dx[k % 9] * spread,
+                                                                 gy + dy[k % 9] * spread);
+                    if (ws.x >= 0) order_unit_move(m, ws.x, ws.y);
+                    continue;
+                }
                 order_unit_move(m, gx + dx[k % 9] * spread, gy + dy[k % 9] * spread);
             }
             break;
@@ -4948,6 +5028,7 @@ void World::step(double dt) {
         }
         ~FeedGuard() { damage_feed() = saved; }
     } feed_guard(this, ai_any_);
+    ai_protect_reqs_.clear();   // W7-04-18: transient, this step's hits only
     // W2-SK-15: tombstoned units keep their slot (every target / team member /
     // cargo / parasite / projectile owner is a stable unit INDEX, so slots are
     // never erased or reused), but a dead slot releases its heap storage: the
@@ -5475,6 +5556,7 @@ void World::step(double dt) {
         step_ai_houses(dt);
         step_ai_teams(dt);  // AFTER the base brain: base tick then team tick,
                             // fixed deterministic order [RE: ai-team.md; spec §5]
+        step_ai_unit_rules();   // W7: auto-deploy + ToProtect (ai_unit.cpp)
     }
 
     // Multi-house [RE: multihouse.md §5]: evaluate last-team-standing victory

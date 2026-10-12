@@ -1,0 +1,26 @@
+# M-SOV11-FATE -- W7-10-01: units the enemy (BadGuy2) Yuris take in SOV11 get the
+# DecideUnitFate result (join the Yuri team or Hunt) instead of standing still.
+set render_every 900
+set on_quit continue
+set campaign sov11s.MAP Nod
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+until 900 input_locked == 0
+log S11-start
+dump
+cheat camp_spawn HTNK 0 80 76
+cheat camp_spawn HTNK 0 80 77
+cheat camp_spawn E2 0 79 75
+cheat camp_spawn DOG 0 79 74
+wait 150
+cheat camp_log fate
+log S11-after
+dump
+view unit 0:HTNK
+shot s11
+wait 300
+cheat camp_log fate
+log S11-late
+dump
+end

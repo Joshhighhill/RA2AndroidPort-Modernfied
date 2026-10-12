@@ -52,6 +52,13 @@ UnitRoster load_ai_skirmish_roster(const std::string& dir, const ra2assets::MixF
         // name ("4 Harriers" 0=4,ORCA / "4 Black Eagles" 0=4,BEAG); built onto
         // a free Airforce Command pad (launch_unit's fixed-wing branch).
         {"ORCA", true, "GAAIRC"}, {"BEAG", true, "GAAIRC"},
+        // W7-03-08 / W7-05-12: the Robot Tank, Battle Fortress and Siege
+        // Chopper the stock aimd TaskForces name (0=2,ROBO / 0=4,BFRT /
+        // 0=2,SCHP). Appended (every older roster index is unchanged); each is
+        // gated by its own full-parsed Prerequisite= (ROBO needs GAROBO, which
+        // no [AI] Build* list names, so a skirmish AI fields it only once it
+        // owns a Robot Control Center by other means, as in the original).
+        {"ROBO", true, "GAWEAP"}, {"BFRT", true, "GAWEAP"}, {"SCHP", true, "NAWEAP"},
     };
     UnitRoster ur = load_unit_roster_table(dir, ra2, ua, rules, art, kAiUnits,
                                            sizeof(kAiUnits) / sizeof(kAiUnits[0]), /*full_parse=*/true);
@@ -137,6 +144,11 @@ ra2engine::AiHouseConfig make_ai_slot_config(const ra2engine::SkirmishSlot& s, d
     acfg.team.trigger_side = s.side == ra2engine::World::Side::Soviet ? 2 : 1;  // [ai-trigger.md §5]
     acfg.team.house_name = country;
     fill_ai_building_maps(acfg.team, ba, rules, rules_ini);
+    // W7-04-18 [RE: TechnoTypeClass ToProtect=, read by ReceiveDamage
+    // @0x701C43]: HARV, CMIN and the navy call for help when hit.
+    acfg.roster_to_protect.clear();
+    for (const ra2engine::UnitTypeDef& d : acfg.team.unit_roster)
+        acfg.roster_to_protect.push_back(rules.section_flag(d.id, "ToProtect", false) ? 1 : 0);
     acfg.multiple_factory = rules.general_double("MultipleFactory", 0.8);   // W2-SK-06
     // W2-SK-24 [RE: rulesmd DissolveUnfilledTeamDelay=5000 "multiplay only";
     // RE-FALLBACK: a skirmish session is a non-campaign (multiplayer-type)
@@ -160,6 +172,9 @@ ra2engine::AiHouseConfig make_ai_slot_config(const ra2engine::SkirmishSlot& s, d
         acfg.ai.pick_wall_pct = at("AIPickWallDefensePercent", 0);
         // W6-03-04 [RE: FUN_006862d0 -> Rules+0x1178]: AIHateDelays=30,50,70 frames.
         acfg.hate_delay_frames = at("AIHateDelays", 0);
+        // W7-01-08 [RE: FUN_00521050 @0x52128C -- Rules+0xE30[house+0x184]]:
+        // AIAutoDeployFrameDelay=15,25,100 ;h,m,e (loader @0x66FC72).
+        acfg.auto_deploy_frames = at("AIAutoDeployFrameDelay", 0);
         // W6-03-10 [RE: FUN_006862d0 @0x686492-0x6864B3 -- at the game start
         // every computer house gets GiveMoney(ftol(Rules+0x1308[house+0x184]
         // (MultiplayerAICM=400,0,0) * 0.01 * its money)) (FUN_004f9770 adds to

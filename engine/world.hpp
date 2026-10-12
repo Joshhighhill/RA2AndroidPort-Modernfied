@@ -14,6 +14,7 @@
 #include "pathfind.hpp"  // Cellxy (path storage / find_path)
 #include "production.hpp"  // AI-1 base-planning: World owns per-house ProductionQueues
 #include "inf_anim.hpp"               // W3-B infantry sequence machine (Unit::ia)
+#include "ai_unit.hpp"                // W7 AI per-unit rules state (Unit::ai)
 #include "ra2assets/land_type.hpp"  // CB-3 Naval: LandType (build_water_passability)
 #include "repair_sell.hpp"  // Repair & Sell: RepairSellRules + the pure tick arithmetic
 #include "crate.hpp"  // P5 Crates: GameRandom/CrateRules/Powerup (pure)
@@ -396,6 +397,7 @@ struct Unit {
     UnitW5 w5;                       // wave-5 abilities (abil_w5.hpp)
     UnitW6 w6;                       // wave-6 #4 units/weapons (unit_w6.hpp)
     UnitTgt tg;                      // W6 fix #2: rules id, targeting data, IsInPlayfield, area guard (save v29)
+    UnitAi ai;                       // W7-01-08: AI auto-deploy guard clock (save v35)
     // R-210 [RE: CellClass::GetLevel +4 on a bridge cell, FootClass height gate
     // FUN_004D9B70]: 1 while the unit stands on a high-bridge deck (Level + 4),
     // 0 on the ground (or under the deck). Kept by step_units (save v30).
@@ -721,6 +723,17 @@ struct AiHouseConfig {
     // anger toward the nearest house each AI tick (multiplayer sessions only).
     // -1 = never (the campaign and every synthetic config).
     int hate_delay_frames = -1;
+    // W7-01-08 [RE: InfantryClass FUN_00521050 @0x52128C -- Rules+0xE30 is
+    // [General] AIAutoDeployFrameDelay=15,25,100 ;h,m,e indexed by house+0x184]:
+    // frames a computer-owned Deployer+DeployFire infantry stands in Guard
+    // before it deploys by itself. -1 = off (the campaign and every synthetic
+    // gate config keep the old never-auto-deploy behaviour).
+    int auto_deploy_frames = -1;
+    // W7-04-18 [RE: TechnoClass::ReceiveDamage FUN_00700DA0 @0x701C43 ->
+    // FUN_00707500]: a damaged ToProtect= unit (HARV, CMIN, the navy) calls up
+    // to 6 idle units of its house onto the attacker. Per team.unit_roster
+    // index; empty = off.
+    std::vector<std::uint8_t> roster_to_protect;
 };
 
 // --- L2 per-house economy [RE: HouseClass / FactoryClass; docs/re/production.md
@@ -2407,6 +2420,13 @@ private:
     void ai_pick_enemy_house(int house, HouseAiRec& rec);   // W2-SK-08 / W6-03-04
     void ai_note_damage(bool building, int victim, int attacker_house, int dmg);   // W6-03-04
     static void ai_damage_feed_cb(void* ctx, bool building, int victim, int attacker_house, int dmg);
+    // W7-01-08 / W7-02-04 / W7-04-18 (ai_unit.cpp): the computer houses'
+    // per-unit rules -- Deployer infantry auto-deploy / undeploy and the
+    // ToProtect call for help. Runs after step_ai_teams.
+    void step_ai_unit_rules();
+    void ai_protect(int house, const HouseAiRec& rec, int victim, int attacker_house);
+    struct AiProtectReq { int victim = -1; int attacker_house = -1; };
+    std::vector<AiProtectReq> ai_protect_reqs_;   // this step's ToProtect hits (transient)
     bool ai_house_out(int house) const;   // W6-03-04: house+0x1f5 (defeated)
     int ai_team_sw_state(int house, const HouseAiRec& rec, SuperweaponType t) const;   // W6-03-05
     void ai_raise_money(int house, HouseAiRec& rec);   // W6-03-08 (FUN_004fdb30)
@@ -2443,6 +2463,7 @@ private:
     // --- AI-2 offensive-teams phase [RE: ai-team.md] ---
     void step_ai_teams(double dt);
     int ai_unit_type_of(const HouseAiRec& rec, const Unit& u) const;
+    Cellxy ai_nearest_reachable_water(int sx, int sy, int tx, int ty) const;   // W7-06-01
     std::vector<IdleUnitView> ai_idle_units(int house, const HouseAiRec& rec) const;
     void ai_fill_team_view(int house, const HouseAiRec& rec, const TeamInstance& team,
                            TeamView& v) const;
