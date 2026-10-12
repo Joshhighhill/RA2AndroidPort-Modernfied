@@ -134,7 +134,7 @@ bool World::can_retaliate(const Unit& v, int a, int ab) const {
         return false;
     }
     if (allied_with(v.house, ah)) return false;                    // [0x4F98B0]
-    if (ws < 0 || v.abil.fire_kind != AbilityKind::None || v.abil.c4) return false;   // armed vs it
+    if (ws < 0) return false;   // GetFireError ILLEGAL: no weapon can engage it
     if (v.w_damage <= 0 && !secondary_view(v).valid) return false;
     const bool human = human_commanded(v.house);
     const bool tarcom = v.target >= 0 || v.target_building >= 0;
@@ -243,7 +243,7 @@ void World::call_for_help(int victim_house, int victim_unit, int victim_building
         if (!live(u) || u.house != victim_house || u.is_aircraft || u.an.t.fixed_wing || u.frozen) continue;
         if (u.target >= 0 || u.target_building >= 0 || u.attack_order || u.tg.overridden) continue;
         if (!armed_unit(u) || unit_weapon_for_unit(u, A) < 0) continue;
-        if (u.abil.fire_kind != AbilityKind::None || u.abil.c4 || u.is_harvester) continue;
+        if (u.is_harvester) continue;
         if (!mission_recruitable(unit_mission(u)) || u.tg.team_suicide) continue;
         cand.push_back({-u.tg.t.cost, i});
     }

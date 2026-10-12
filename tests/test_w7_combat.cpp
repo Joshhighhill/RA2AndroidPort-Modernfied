@@ -315,3 +315,16 @@ TEST_CASE("w7 crush: an ally is never squashed, an enemy is warned and squashed 
         else CHECK(w.units()[1].die_time < 0.0);
     }
 }
+
+TEST_CASE("w7 scan: an ability weapon (the dog's ParasiteDog jaw) still acquires (m-sov09 dogs)") {
+    Rig r;
+    r.w.arm_combat_w7(armed_rules());
+    r.units.push_back(soldier(0, 0, r.occ, 0));
+    r.units.push_back(soldier(1, 1, r.occ, 1, 0));
+    r.units[0].abil.fire_kind = AbilityKind::Parasite;
+    r.units[0].w_range = 1.5;
+    r.units[0].vet.base.range = 1.5;
+    r.units[0].tg.area_guard = true;
+    r.step(1);
+    CHECK(r.units[0].target == 1);
+}

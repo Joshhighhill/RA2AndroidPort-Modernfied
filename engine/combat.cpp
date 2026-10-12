@@ -1389,8 +1389,9 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
             if (u.target == -1 && u.target_building == -1) {
                 bool may = mission == 5 || mission == 11 || mission == 29 || mission == 6;
                 if (mission == 2 || mission == 10) may = u.tg.t.opportunity_fire || u.tg.team_aggressive;
-                if (u.has_flight_goal || u.abil.no_passive_acquire || u.an.t.no_passive_acquire || mc.zombie ||
-                    u.abil.fire_kind != AbilityKind::None || u.abil.c4)
+                // (an ability weapon -- the dog's ParasiteDog jaw, the Ivan --
+                // scans like any other; only the structure pass skips them)
+                if (u.has_flight_goal || u.abil.no_passive_acquire || u.an.t.no_passive_acquire || mc.zombie)
                     may = false;
                 // Engineer/spy/medic-type weapons (no damage) never scan.
                 if (u.w_damage <= 0 && !secondary_view(u).valid) may = false;
