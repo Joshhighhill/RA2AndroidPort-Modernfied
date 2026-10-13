@@ -328,3 +328,37 @@ TEST_CASE("w7 scan: an ability weapon (the dog's ParasiteDog jaw) still acquires
     r.step(1);
     CHECK(r.units[0].target == 1);
 }
+
+TEST_CASE("w7r1 cargo: an infantry created inside a transport holds no sub-cell spot (ALL04 phantom GI)") {
+    if (!ra2fixture::mapsmd03_available()) { MESSAGE("no install"); return; }
+    World w(ra2fixture::mapsmd03_map());
+    w.enable_subcells();
+    int x0 = -1, y0 = -1;
+    for (int y = 20; y < w.grid_h() - 20 && x0 < 0; ++y)
+        for (int x = 20; x < w.grid_w() - 20 && x0 < 0; ++x)
+            if (w.walkable(x, y) && w.walkable(x + 1, y) && w.walkable(x + 2, y)) { x0 = x; y0 = y; }
+    REQUIRE(x0 >= 0);
+    UnitCombat craft;
+    craft.strength = 300;
+    craft.is_vehicle = true;
+    craft.speed_cps = 2.0;
+    craft.rot = 127;
+    w.add_combat_unit(x0, y0, 0, craft);
+    w.units()[0].passengers_max = 5;
+    UnitCombat gi;
+    gi.strength = 125;
+    gi.is_infantry = true;
+    const int r1 = w.add_unit_in_transport(0, 0, gi);
+    const int r2 = w.add_unit_in_transport(0, 0, gi);
+    REQUIRE(r1 >= 0);
+    REQUIRE(r2 >= 0);
+    const Occupancy& o = w.occupancy();
+    CHECK(o.at(x0, y0) == 0);                 // the transport still owns its cell
+    CHECK(o.spot_of(x0, y0, r1) < 0);         // the riders hold no spot
+    CHECK(o.spot_of(x0, y0, r2) < 0);
+    CHECK(o.infantry_count(x0, y0) == 0);
+    w.order_unit_move(0, x0 + 2, y0);         // the transport drives off
+    for (int f = 0; f < 60; ++f) w.step(1.0 / 15.0);
+    REQUIRE(w.units()[0].cell_x != x0);
+    CHECK(o.at(x0, y0) == Occupancy::kEmpty);   // nothing left behind
+}
