@@ -24,12 +24,26 @@ until 1500 input_locked == 0
 # side the raids come from) and dig them in (deploy) there.
 p.select_types(["E1"]).add("click cell 87 127", "wait 300")
 p.select_types(["E1"]).add("key d", "wait 5")
-p.build("GAPOWR").build("GAREFN").build("GAPILE").build("GAPOWR").build("GAWEAP")
+p.build("GAPOWR").build("GAREFN").build("GAPILE")
+# fv8b: since w8fix-layer (the deck counts 4 levels in the elevation bonus and
+# the cliff tracer, FUN_00487C60) the starting IFVs lose the bonus range at
+# raiders on the x=98 bridge deck, drive up to the bridge head and die there,
+# and the raid that killed them walks on into the dug-in GIs. Like a player,
+# put two Pillboxes on the bridge head right after the barracks.
+PILLS = [tuple(int(c) for c in xy.split(",")) for xy in os.environ.get("MK_ALL03_PILLS", "97,123 100,123").split()]
+PILLS_AT = os.environ.get("MK_ALL03_PILLS_AT", "pile")
+if PILLS_AT == "pile":
+    for xy in PILLS:
+        p.build("GAPILL", tab=1, cat="defense", near=xy)
+p.build("GAPOWR").build("GAWEAP")
 # W7R1: since the original BuildTimeMultiplier / build speed (wave 7) a Grizzly
 # takes ~480 frames at one factory, so the AI raid reached the lone war factory
 # before the army stood. The Grizzlies now train as soon as the first war
 # factory stands while two more war factories go up (MultipleFactory 0.8).
 p.train("MTNK", 3, 10)
+if PILLS_AT == "weap":
+    for xy in PILLS:
+        p.build("GAPILL", tab=1, cat="defense", near=xy)
 
 
 RAIDERS = ["E2", "SHK", "HTK", "HTNK"]   # ascending priority

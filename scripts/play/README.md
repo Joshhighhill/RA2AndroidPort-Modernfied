@@ -310,6 +310,26 @@ a fragile win, not a re-tune). `m-sov04-real` WON again (Normal, f13439, `6a302d
 Beach block the landing craft unload on a different schedule, the feint infantry were ashore before the MCV, and
 the target loop sent the Rhinos after them south-west; the generator now holds the Rhinos at (108,48) until
 `free(1,AMCV) >= 1` (choreography).
+fv8b (bisected over `git log --first-parent` with per-merge builds; choreography only, no engine fault found,
+same difficulties): `m-all03-real` (Normal, WON f24738, `c7cec675b966d7ea`) -- w8fix-misc still wins, w8fix-layer
+loses: with the deck counted 4 levels up (FUN_00487C60 in the elevation bonus and the cliff tracer) the starting
+IFVs no longer outrange raiders on the x=98 bridge deck, stall at the bridge head and die, and the raid then walks
+into the dug-in GIs; the generator builds two Pillboxes on the bridge head after the barracks. `m-all05-real`
+(Normal, WON f20067, `b0103f55b4ecdb45`) -- fv7a still wins, fv7c loses: the red spy now loses its race with the
+plant dog pair by a few frames (it is sent when the pair reaches the south-west corner of its ~590-frame loop), and
+the per-tile LandType makes the sandbar south of the orange compound Beach (Foot-impassable; Tanya swims), so the
+spies' only way is the strip west of it: Tanya clears it from (37,69) and (29,57) first. `m-all11-real` (Easy, WON
+f9903, `44bc9fbc7acf6ca2`) -- w8fix-place put the second war factory on the IFV holding ground (111,107) (its old
+spot (101,106) is refused now), so only 5 of 10 SEALs boarded; it is placed near (114,111). `m-sov09-real` (Easy,
+WON f25342, `11f9ea48133d9a7c`) -- w8fix-save (paradrop cadence) lands the Yuris differently and the run moves
+~600 frames earlier; the east IFV, taken at its south turn, then drove at a target to the north into the Prism at
+(74,67): it is moved to (80,78) the moment it is taken. `m-sov12-real` (NOT WON before or after): w8fix-place moved
+the second power plant / Battle Lab north and the island raid razes the war factory ~700 frames earlier, so one
+Kirov instead of two is out; once it dies every poll of `units(0,ZEP) == 0 or pos_x(0,ZEP) ...` reports
+`missing-probe:pos_x` (2 -> 587 failures; same LOST outcome). `m-all04-real` (NOT WON): the craft cannot unload at
+the pier (x=119..120 is a level-4 cliff face and its level-0 foot is Rock by CliffBackImpassability); the only
+legal unload points on the lake are the rough shore (89..95,98..100) and the 3-cell ramp through the x=85 Beach
+strip at (86,130), and both routes pass the Russian Grand Cannons at (117,104)/(117,117), which sink the craft.
 
 ## Multiplayer (agent S, engine/mp_pages.inc)
 

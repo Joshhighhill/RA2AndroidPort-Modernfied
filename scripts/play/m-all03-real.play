@@ -69,6 +69,38 @@ if placing == 1 then place auto
 wait 1
 if placing == 1 then place auto
 until 600 built(0,GAPILE) > $n_GAPILE
+let n_GAPILL = built(0,GAPILL)
+until 900 can_build(GAPILL) == 1
+click tab:1
+click cameo:GAPILL
+until 2400 queue_ready(defense) == 1
+click cameo:GAPILL
+place near 97 123
+wait 1
+if placing == 1 then place near 97 123
+wait 1
+if placing == 1 then place near 97 123
+wait 1
+if placing == 1 then place near 97 123
+wait 1
+if placing == 1 then place near 97 123
+until 600 built(0,GAPILL) > $n_GAPILL
+let n_GAPILL = built(0,GAPILL)
+until 900 can_build(GAPILL) == 1
+click tab:1
+click cameo:GAPILL
+until 2400 queue_ready(defense) == 1
+click cameo:GAPILL
+place near 100 123
+wait 1
+if placing == 1 then place near 100 123
+wait 1
+if placing == 1 then place near 100 123
+wait 1
+if placing == 1 then place near 100 123
+wait 1
+if placing == 1 then place near 100 123
+until 600 built(0,GAPILL) > $n_GAPILL
 let n_GAPOWR = built(0,GAPOWR)
 until 900 can_build(GAPOWR) == 1
 click tab:0

@@ -19,10 +19,11 @@ when the base has no Tesla Power Plant (NAPOWR) left.
     dogs by the plants, so Tanya clears the outer yellow dogs from spots out of
     the coils' reach, then at full health walks the corridor to the silo's
     south side (66,44) taking two coil bolts, C4s the silo, heals, walks out.
-    Orange: Tanya clears the dogs from the strip south of the compound, waits
-    at (37,69) by the west gate, shoots the gate dog that runs at the first
-    spy; a spy blacks out OrangeTeam and Tanya C4s the orange silo from its
-    west side -> 'Victory 1' -> WON.
+    Orange (fv8b): Tanya clears the dogs from the strip south of the compound
+    and from (37,69) by the west gate, then from (29,57) on the west strip
+    (the spies' only Foot way since fv7c's per-tile Beach); the spies walk
+    down to her, one blacks out OrangeTeam and Tanya C4s the orange silo ->
+    'Victory 1' -> WON.
 
 Tanya's micro (act): shoot the nearest dog first, then the nearest enemy in
 range, else continue the order; never chase out of the leash. `repeat` keeps
@@ -111,6 +112,14 @@ p.add("click unit 2:SPY:0", "click cell 102 111",
       "click unit 2:SPY:1", "click unit 2:SPY:2 shift", "click cell 104 119", "wait 3")
 hold(400, "units(4,DOG) > 5")
 hold(20)
+# fv8b: the plant pair (dogs 3/4) walks a ~590-frame loop round the plants
+# (97,100) -> (105,100) -> (105,92) -> (97,92) -> back, and the walk from the
+# hold spot to the plant door takes ~300 frames. Like a player watching the
+# patrol, send the spy the moment the pair reaches its south-west corner, so
+# it reaches the door while the pair is on the far (north) side. (Sent at a
+# fixed time, the pair came down x=97 and caught it at the door -- the race
+# was a few frames either way.)
+hold(int(os.environ.get("MK_ALL05_PAIR_POLLS", "150")), f"ucell(4,DOG,3) != {os.environ.get('MK_ALL05_PAIR_CELL', '97100')}")
 p.add("click unit 2:SPY:0", "click building 4:NAPOWR:1")
 hold(300, "blackout(4) == 0")
 # With the coils dark, Tanya C4s the two plants by the gate and then the far
@@ -165,21 +174,38 @@ hold(800, "uhpn(1,TANY,0) < 365", st=(79, 46), box=(79, 83, 46, 50), dr=6.5)
 # plant; Tanya waits at (37,69), just out of the coil's reach, where she
 # shoots it when it runs at the spy, and the next spy walks in. In the
 # blackout she runs round to the silo's west side and C4s it.
-p.add("click unit 2:SPY:0", "click unit 2:SPY:1 shift", "click unit 2:SPY:2 shift", "click cell 44 75")
+# fv8b: since fv7c's per-tile LandType (the sandbar south of the compound is
+# Beach, impassable to Foot -- Tanya swims it) the spies' only way from the
+# yellow side to the orange compound is the strip west of it, past the
+# north dog's beat (y=48, under the (31,45)/(37,45) coils) and down x=27..31.
+# The spies wait at the yellow side; Tanya clears the gate-area dogs from
+# (37,69) as before, then walks the strip to (29,57) -- out of every coil's
+# reach -- and shoots the dogs that come at her there. Then the spies walk
+# the strip to her and one enters the nearest plant (31,59)/(36,59).
+spies = ("click unit 2:SPY:0", "click unit 2:SPY:1 shift", "click unit 2:SPY:2 shift")
 act("click cell 56 74", 400, cond="ucell(1,TANY,0) != 56074")
 hold(100, "units(7,DOG) > 1", st=(56, 74), box=(53, 60, 73, 76), dr=7)
 act("click cell 46 75", 200, cond="ucell(1,TANY,0) != 46075")
 hold(100, "units(7,DOG) > 1", st=(46, 75), box=(43, 49, 74, 76), dr=7)
 act("click cell 40 75", 200, cond="ucell(1,TANY,0) != 40075")
-hold(900, "ucx(2,SPY,0) > 46", st=(40, 75), box=(38, 42, 74, 76), dr=7)
+hold(int(os.environ.get("MK_ALL05_O40", "200")), "units(7,DOG) > 1", st=(40, 75), box=(38, 42, 74, 76), dr=7)
 act("click cell 36 73", 150, cond="ucell(1,TANY,0) != 36073", rdog=6)
 act("click cell 37 69", 150, cond="ucell(1,TANY,0) != 37069", rdog=6)
+hold(int(os.environ.get("MK_ALL05_O37", "400")), "units(7,DOG) > 1", st=(37, 69), box=(36, 37, 68, 70), dr=6.5)
+WEST = tuple(int(v) for v in os.environ.get("MK_ALL05_WEST", "29 57").split())
+for (x, y) in ((31, 67), (27, 61), WEST):
+    act(f"click cell {x} {y}", 150, cond=f"ucell(1,TANY,0) != {x * 1000 + y}", rdog=6)
+wb = (WEST[0] - 1, WEST[0] + 1, WEST[1] - 1, WEST[1] + 1)
+hold(int(os.environ.get("MK_ALL05_OW", "500")), "units(7,DOG) > 0", st=WEST, box=wb, dr=7)
+p.add(*spies, f"click cell {WEST[0]} {WEST[1] + 1}")
+hold(600, f"ucy(2,SPY,0) < {WEST[1] - 2}", st=WEST, box=wb, dr=7)
+hold(300, f"ucy(2,SPY,0) < {WEST[1] - 2}", st=WEST, box=wb, dr=7)
 for n in (3, 2, 1):
     p.add(f"if blackout(7) == 0 and units(2,SPY) >= {n} then click unit 2:SPY:0", "wait 1",
           f"if blackout(7) == 0 and units(2,SPY) >= {n} and selected_type(SPY) == 0 then click unit 2:SPY:0",
           f"if blackout(7) == 0 and selected_type(SPY) > 0 and selected_type(TANY) == 0 then click building 7:NAPOWR:near")
-    hold(300, f"blackout(7) == 0 and units(2,SPY) >= {n}", st=(37, 69), box=(36, 37, 68, 70), dr=6.5)
-    hold(60, "blackout(7) == 0", st=(37, 69), box=(36, 37, 68, 70), dr=6.5)
+    hold(200, f"blackout(7) == 0 and units(2,SPY) >= {n}", st=WEST, box=wb, dr=6.5)
+    hold(40, "blackout(7) == 0", st=WEST, box=wb, dr=6.5)
 c4(7, "NAMISL", 1, plant=300)
 p.add("shot silo2", "until 1500 outcome == WON", "end expect WON")
 p.save(OUT)
