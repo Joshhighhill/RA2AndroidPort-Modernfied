@@ -8,6 +8,10 @@
 # middle row (overlay 101 LOBRDG28, NoUseTileLandType=no) is the only ground
 # route between the bases: the Shore sandbar's Beach sub-tiles (TMP byte 10)
 # block Foot as in the original.
+# fv8a: the MCV deploys at (42,28) like m-trn02-real -- the old (26,38) spot is
+# the ore field and its ramps, refused by CanThisExistHere FUN_0047C530 since
+# w8fix-place (faithful), so the ConYard never unfolded and the GACNST event
+# (19) never fired the engineer reinforcement.
 set render_every 0
 set max_frames 3000
 set campaign trn02t.MAP GDI
@@ -18,7 +22,7 @@ waituntil 900 units(0,AMCV) >= 1
 assert bridge_destroyed >= 1
 wait 200
 click unit 0:AMCV:0
-click cell 26 38
+click cell 42 28
 waituntil 900 moving(0) == 0
 wait 60
 click unit 0:AMCV:0
