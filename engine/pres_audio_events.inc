@@ -467,7 +467,12 @@ private:
             // W6-04-27 [RE-FALLBACK: the locomotor water edge was not traced]:
             // amphibious infantry (Tanya, SEAL, Boris) stepping into / out of
             // water play the type's EnterWaterSound / LeaveWaterSound.
-            {
+            // W8-01-07 [RE: 0x51D4C0, the edge lives in InfantryClass::PlayAnim
+            // on the +0x6E8 wet flag]: a passenger in limbo plays no anim, so
+            // its flag keeps its last value while it rides; a swimmer boarding
+            // from water plays LeaveWaterSound at its unload onto land, not at
+            // boarding.
+            if (u.cargo_of < 0) {
                 const bool wet = w6_wet(w, u);
                 if (wet != p.wet && u.alive && u.die_time < 0.0)
                     w6_play(w5_bld_key(pres_type_id(u), wet ? "EnterWaterSound" : "LeaveWaterSound"), u.fx, u.fy,

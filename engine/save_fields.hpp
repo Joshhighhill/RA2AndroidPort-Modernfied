@@ -877,6 +877,7 @@ template <class Ar> void fields(Ar& ar, UnitW6& v) {
     io(ar, v.sonic); io(ar, v.sonic_hit); io(ar, v.heal_hit);   // W6-04-09
     io(ar, v.wall_flags);   // W6-04-04
     io(ar, v.unpowered);   // W6-04-18
+    io(ar, v.hover_spin);   // W8-04-05 (v42)
 }
 template <class Ar> void fields(Ar& ar, BldW6& v) {
     io(ar, v.burst_index);

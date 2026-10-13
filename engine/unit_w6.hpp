@@ -66,6 +66,10 @@ struct UnitW6 {
     bool heal_hit = false;
     int wall_flags = 0;   // W6-04-04: the ACTIVE warhead's W6WallFlags
     bool unpowered = false;   // W6-04-18: a PoweredUnit with no powered PowersUnit building
+    // W8-04-05 [RE: HoverLocomotionClass Power_Off FUN_00516A10 +0x68]: the
+    // signed spin counter (+-Random(20,30), 0 = not spinning) of a Hover
+    // unit switched off (save v42).
+    int hover_spin = 0;
 };
 
 // Per-building state.

@@ -201,4 +201,5 @@ Cell legend:
 
 1. The detonation height of a RocketLocomotion missile aimed at a unit on a deck (KamikazeTracker stores a CellClass destination, 0x54E040). This decides whether the original's Dreadnought hits deck targets at all (W8-04-02).
 2. The value of `[0xA8E128]` and the fall-landing path after `0x5F3970`, which fix the exact Robot Tank drop outcome (W8-04-05).
+   - **Resolved (w8fix-misc):** `0x5F3970` sets IsFallingDown (+0x8D) and WasFallingDown (+0x8F). ObjectClass::Update `FUN_005F3680` lands the object when its height drops below 1. With +0x8F set, it then calls ReceiveDamage(Health +0x6C, C4Warhead Rules+0xFA8, ignoreDefenses). The dropped Robot Tank dies. The clone kills it when the spin ends; the few frames of the fall are not modelled.
 3. Whether an amphibious *passenger* (SEAL/Tanya) may be unloaded onto Beach or water cells when the transport is beached with no land neighbour. The clone's eject uses the land grid only (`world.cpp:1926-1930`); the original validates through the passenger's own `CanEnterCell`. No reproduction was found.

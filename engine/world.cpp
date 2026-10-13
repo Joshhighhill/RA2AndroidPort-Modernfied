@@ -844,7 +844,8 @@ void World::w6_step_powered_units() {
     for (const Unit& u : units_) any = any || (u.w6.t.powered_unit && u.alive);
     if (!any) return;
     const std::vector<BuildingTypeDef>& bt = btypes();
-    for (Unit& u : units_) {
+    for (std::size_t ui = 0; ui < units_.size(); ++ui) {
+        Unit& u = units_[ui];
         if (!u.w6.t.powered_unit || !u.alive || u.die_time >= 0.0) continue;
         bool on = false;
         for (const Building& b : buildings_) {
@@ -856,15 +857,46 @@ void World::w6_step_powered_units() {
             on = true;
             break;
         }
+        const bool hover = u.cargo_of < 0 && unit_loco_kind(u) == LocoKind::Hover;
         if (!on && !u.w6.unpowered) {   // turned off: it stops where it is
             u.path.clear();
             u.path_idx = 0;
             u.target = -1;
             u.target_building = -1;
             u.attack_order = false;
+            // W8-04-05 [RE: HoverLocomotionClass::Power_Off FUN_00516A10]: a
+            // hovering unit starts to spin, +0x68 = Random(20,30), negated
+            // when Random(0,99) < 50. [RE-FALLBACK: the CurrentMission gate
+            // (not Sleep / Enter) is not modelled -- the clone has no
+            // explicit mission on a robot tank.]
+            if (hover) {
+                ProjRng& r = combat_rng_;
+                int spin = r.random(20, 30);
+                if (r.random(0, 99) < 50) spin = -spin;
+                u.w6.hover_spin = spin;
+            }
         }
         u.w6.unpowered = !on;
         if (!u.abil_bound) u.frozen = !on;   // abilities recompute frozen for bound units (below)
+        // W8-04-05 [RE: HoverLocomotionClass::Process FUN_00514130
+        // @0x514969..0x514A2C]: while spinning, facing += spin << 8 and the
+        // counter steps one toward 0. Not spinning: on a Water cell (LandType
+        // 2), off a deck, an unpowered hover sinks below floor + [0xA8E128]
+        // and is dropped (vt+0xEC = ObjectClass FUN_005F3970: IsFallingDown
+        // +0x8D, WasFalling +0x8F, OnBridge cleared). ObjectClass::Update
+        // FUN_005F3680 lands it and, WasFalling set, deals Health (+0x6C) as
+        // C4Warhead with ignoreDefenses: it dies. On land it only spins.
+        // [RE-FALLBACK: the few frames of the fall itself are not modelled.]
+        if (!hover) { u.w6.hover_spin = 0; continue; }
+        if (u.w6.hover_spin != 0) {
+            u.body_facing = std::fmod(u.body_facing + u.w6.hover_spin * 256.0 + 65536.0, 65536.0);
+            u.w6.hover_spin += u.w6.hover_spin > 0 ? -1 : 1;
+            if (u.w6.hover_spin != 0) continue;
+        }
+        if (u.w6.unpowered && !u.on_deck && is_water_cell(u.cell_x, u.cell_y)) {
+            u.an.iron_left_frames = 0;   // ignoreDefenses
+            an_damage_unit(static_cast<int>(ui), u.hp, -1);
+        }
     }
 }
 

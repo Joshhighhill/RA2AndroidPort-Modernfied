@@ -153,6 +153,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_w5_combat.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_w6_units.cpp)
 target_sources(ra2assets_tests PRIVATE tests/test_w7_units.cpp)   # wave-7 fix (units)
 target_sources(ra2assets_tests PRIVATE tests/test_w7_airnav.cpp)   # wave-7 air/naval
+target_sources(ra2assets_tests PRIVATE tests/test_w8_misc.cpp)   # wave-8 fix (w8fix-misc)
 # G16 world depth (agent G): bridges (pure) + the World garrison/bridge members.
 target_sources(ra2assets_tests PRIVATE engine/inf_anim.cpp tests/test_inf_anim.cpp)   # W3-B
 target_sources(ra2assets_tests PRIVATE engine/bridges.cpp engine/world_depth.cpp

@@ -552,6 +552,15 @@ public:
                 // pass under the ships (agent B's shared anim drawing).
                 if (fx_->spawn(wake_, u.fx, u.fy, u.level, 0.0)) ++wakes_;
             }
+            // W8-04-04 Hover wake (LCRF / SAPC / ROBO / YHVR) [RE:
+            // HoverLocomotionClass::Process FUN_00514130 @0x514841]: while
+            // Is_Moving_Now (vt+0x80), every 10 frames, not OnBridge (+0x8C),
+            // cell LandType Water: [General] Wake= at the unit.
+            else if (!wake_.empty() && !u.is_naval && ra2engine::unit_loco_kind(u) == ra2engine::LocoKind::Hover &&
+                     !u.on_deck && u.moving() && frame_ % 10 == 0 && on_water(w, u.cell_x, u.cell_y) &&
+                     w.object_visible_at(g_local_house, u.cell_x, u.cell_y)) {
+                if (fx_->spawn(wake_, u.fx, u.fy, u.level, 0.0)) ++wakes_;
+            }
             // V3 / Dreadnought rocket (RocketLocomotion, FUN_00661D00): the
             // launch anim when the tilt ends and it leaves the launcher, then
             // the trail every 3 frames while it flies.
