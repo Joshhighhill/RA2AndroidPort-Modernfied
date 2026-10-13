@@ -99,6 +99,11 @@ until 4000 anim_tick >= 1120
 cheat spawn CIV1 1 building 0:GACNST +7 +4
 cheat spawn CIV2 1 building 0:GACNST +7 +5
 cheat spawn CIV3 1 building 0:GACNST +8 +4
+# W7-09-03 [RE: Evaluate_Object 0x6F7894..0x6F790E]: an Insignificant object
+# (CIV1-3) is never auto-acquired in any game mode, so the GIs no longer open
+# fire on their own -- a player orders it: select a GI, click a civilian.
+click unit 0:E1
+click unit 1:CIV1
 until 6000 iseq(Panic) >= 1
 shot civ_{tick}
 shot civ_{tick}
