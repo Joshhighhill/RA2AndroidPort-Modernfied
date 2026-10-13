@@ -296,7 +296,7 @@ struct PresHarness {
                         const ra2engine::PlacementCheck chk = ra2engine::placement_check(
                             yx + dx, yy + dy, d.fw, d.fh, 0, d.adjacent, g.world_.passable(),
                             g.world_.grid_w(), g.world_.grid_h(), g.world_.occupancy(),
-                            g.world_.buildings(), false);
+                            g.world_.buildings(), false, nullptr, g.world_.build_mask(d.wall));   // W8-03-01
                         if (!chk.ok) continue;
                         if (g.world_.econ_place(g.local_house_, ra2engine::QueueCat::Structure, yx + dx,
                                                 yy + dy) != ra2engine::ProdResult::Placed)

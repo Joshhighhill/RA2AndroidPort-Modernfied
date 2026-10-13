@@ -1,4 +1,5 @@
 #include "building.hpp"
+#include "ore.hpp"   // W8-03-01 BuildMask live ore test
 #include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 #include <algorithm>
 
@@ -25,7 +26,8 @@ PlacementCheck placement_check(int cx, int cy, int fw, int fh, int house, int ad
                                const Occupancy& occ,
                                const std::vector<Building>& buildings,
                                bool bypass_adjacency,
-                               const std::vector<char>* base_normal_by_type) {
+                               const std::vector<char>* base_normal_by_type,
+                               const BuildMask* mask) {
     PlacementCheck r;
     auto cells = foundation_cells(cx, cy, fw, fh);
     r.cell_ok.assign(cells.size(), false);
@@ -34,6 +36,13 @@ PlacementCheck placement_check(int cx, int cy, int fw, int fh, int house, int ad
         int x = cells[k].x, y = cells[k].y;
         bool ok = x >= 0 && y >= 0 && x < grid_w && y < grid_h &&
                   passable[(size_t)y * grid_w + x] != 0 && occ.is_free(x, y);
+        // W8-03-01 [RE: FUN_0047C530]: overlay / bridge / slope / Buildable;
+        // ore refuses a building but not a wall (the Tiberium-overlay branch).
+        if (ok && mask && mask->build_static) {
+            const std::size_t i = (size_t)y * grid_w + x;
+            ok = i < mask->build_static->size() && (*mask->build_static)[i] != 0 &&
+                 (mask->wall || !mask->ore || !mask->ore->has_ore(x, y));
+        }
         if (ok) {   // no overlap with any alive building's foundation
             for (const Building& b : buildings) {
                 if (!b.alive || b.state == Building::State::Dead) continue;
@@ -63,6 +72,23 @@ PlacementCheck placement_check(int cx, int cy, int fw, int fh, int house, int ad
     }
     r.ok = all && r.adjacency;
     return r;
+}
+
+std::vector<std::uint8_t> buildable_static(const std::vector<std::uint8_t>& land,
+                                           const std::vector<std::uint8_t>& overlay_blocks,
+                                           const std::vector<std::uint8_t>& ramp,
+                                           const std::vector<std::uint8_t>& bridge,
+                                           const bool buildable_land[12]) {
+    std::vector<std::uint8_t> out(land.size(), 0);
+    for (std::size_t i = 0; i < land.size(); ++i) {
+        const int l = land[i];
+        if (l < 0 || l >= 12 || !buildable_land[l]) continue;            // DAT_0089D9D0 Buildable
+        if (i < overlay_blocks.size() && overlay_blocks[i]) continue;     // +0x44 != -1
+        if (i < ramp.size() && ramp[i] != 0) continue;                   // +0x11C slope
+        if (i < bridge.size() && bridge[i]) continue;                    // +0x140 & 0x100
+        out[i] = 1;
+    }
+    return out;
 }
 
 int building_frame(const Building& b, int shp_frame_count, double condition_yellow) {

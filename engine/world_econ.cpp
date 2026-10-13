@@ -414,9 +414,14 @@ PlacementCheck World::econ_placement(int house, int type, int cx, int cy) const 
         base_normal = r->base_normal;
         if (base_normal.size() < bt.size()) base_normal.resize(bt.size(), 1);
     }
+    // W8-03-01 [RE: FUN_0047C530]: a land building also needs a buildable
+    // cell (no overlay / slope / bridge, Buildable land); a wall may stand on
+    // ore. WaterBound keeps its water-grid test.
+    const bool wall = r && at_or<char>(r->wall, type, 0);
     PlacementCheck res = placement_check(cx, cy, d.fw, d.fh, house, d.adjacent, grid, grid_w(), grid_h(),
                                          occupancy(), buildings_, /*bypass_adjacency=*/false,
-                                         base_normal.empty() ? nullptr : &base_normal);
+                                         base_normal.empty() ? nullptr : &base_normal,
+                                         water ? nullptr : build_mask(wall));
     // W4-MC-04 [RE: FUN_00577e90]: never build outside [Map] LocalSize.
     if (playfield_.valid)
         for (int y = cy; y < cy + d.fh; ++y)
@@ -451,7 +456,8 @@ bool World::econ_place_building(int house, int type, int cx, int cy) {
         };
         auto can_place = [&](int x, int y) {
             const PlacementCheck c = placement_check(x, y, 1, 1, house, 0, passable(), grid_w(), grid_h(),
-                                                     occupancy(), buildings_, /*bypass_adjacency=*/true);
+                                                     occupancy(), buildings_, /*bypass_adjacency=*/true,
+                                                     nullptr, build_mask(/*wall=*/true));
             return c.ok;
         };
         for (const Cellxy& c : wall_line_fill(cx, cy, at_or<int>(r->wall_fill_range, type, 0), own_wall, can_place))

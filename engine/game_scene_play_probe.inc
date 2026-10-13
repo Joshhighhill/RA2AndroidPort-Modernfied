@@ -17,7 +17,8 @@
     void play_probe(ra2play::Probe& p) override {
         p.scene = "game";
         p.zero_families = {"units", "buildings", "built", "selected_type", "harv", "harvesters",
-                           "harv_bales", "can_build", "cameo", "cameo_tab", "moving"};
+                           "harv_bales", "can_build", "cameo", "cameo_tab", "moving",
+                           "bad_place"};
         p.set_s("mode", campaign_ ? "campaign" : "skirmish");
         net_probe(p);   // NET-PLAY keys (net, net_frame, net_stalled, net_end, ...)
         // W5-E: sound / EVA evidence (pres_audio.inc counters): snd(KEY),
@@ -231,6 +232,22 @@
             p.add("buildings(" + hs + ")", 1);
             p.add("buildings(" + hs + "," + id + ")", 1);
             if (b.state == ra2engine::Building::State::Idle) p.add("built(" + hs + "," + id + ")", 1);
+            // W8-03-01 (w8fix-place): buildings standing on a cell the
+            // placement rule refuses (overlay / slope / bridge / unbuildable
+            // land; FUN_0047C530). 0 for every built or deployed structure.
+            const std::vector<std::uint8_t>& bs = world_.build_static();
+            if (!bs.empty()) {
+                bool bad = false;
+                for (int j = 0; j < b.fh && !bad; ++j)
+                    for (int i = 0; i < b.fw && !bad; ++i) {
+                        const int x = b.cx + i, y = b.cy + j;
+                        if (x < 0 || y < 0 || x >= world_.grid_w() || y >= world_.grid_h()) continue;
+                        bad = bs[static_cast<std::size_t>(y) * world_.grid_w() + x] == 0 ||
+                              (!ba_.roster.empty() && b.type >= 0 && b.type < static_cast<int>(ba_.roster.size()) &&
+                               !ba_.roster[b.type].wall && world_.ore().has_ore(x, y));
+                    }
+                if (bad) p.add("bad_place(" + hs + ")", 1);
+            }
         }
         p.set("selected_building", input_.selected_building());
         {   // W6-01-01: the selected building's rules id ("" none)

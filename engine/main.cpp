@@ -62,6 +62,7 @@ static char* ra2_cli_pref_path() {
 
 #include "audio_mixer.hpp"
 #include "bridges.hpp"      // G16 (agent G): bridge overlay classes
+#include "overlay_land.hpp"  // W8-03-02 / W8-03-01 (w8fix-place): overlay land + buildable grid
 #include "orig_math.hpp"    // Net L0: the original FastMath for sim code living in main.cpp
 #include "audio_sdl.hpp"
 #include "music_stream.hpp"
@@ -164,6 +165,12 @@ struct Assets {
     // temperate names. For the DEFAULT map this is the TEMPERATE row, whose
     // fields are the exact literals used before this existed.
     const ra2assets::TheaterChain* chain = nullptr;
+    // W8-03-02 / W8-03-01 (w8fix-place): the rules' per-OverlayType land
+    // override (engine/overlay_land.hpp) and the [LandType] Buildable= flags,
+    // read once with the map (load_assets). Empty = rules not read (no
+    // overlay override, no buildable mask).
+    std::vector<ra2engine::OverlayLandInfo> overlay_land;
+    bool land_buildable[12] = {true, true, false, false, false, false, false, true, false, false, false, false};
 };
 
 // G-86: the theater chain the ART loaders (buildings, ore, unit palette) use.
@@ -255,6 +262,45 @@ struct OreArt {
 // load_unit_assets(), instead of each loader slurping the 268 MB file
 // independently (was 79 s cold start; see docs/superpowers/specs/
 // 2026-07-09-foundation-batch-design.md, sub-project 4).
+// W8-03-02 / W8-03-01 (w8fix-place): fills Assets::overlay_land and
+// land_buildable from rulesmd ([OverlayTypes] Land= / NoUseTileLandType= /
+// Tiberium=, [Clear]..[Weeds] Buildable=). A missing rulesmd leaves them at
+// the defaults (no override).
+Ini load_ini_from_ra2md(const std::string& dir, const std::string& name);
+void place_load_overlay_rules(const std::string& dir, Assets& a) {
+    try {
+        const Ini ini = load_ini_from_ra2md(dir, "rulesmd.ini");
+        const std::vector<std::string> names = ra2engine::overlay_names_in_order(ini.section("OverlayTypes"));
+        auto get = [&ini](const std::string& sec, const std::string& key) -> std::string {
+            for (const auto& kv : ini.section(sec)) {
+                std::string k = kv.first;
+                for (char& c : k) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                std::string want = key;
+                for (char& c : want) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                if (k != want) continue;
+                std::string v = kv.second;
+                const std::size_t sc = v.find(';');
+                if (sc != std::string::npos) v.resize(sc);
+                return v;
+            }
+            return std::string();
+        };
+        a.overlay_land = ra2engine::overlay_land_table(names, get);
+        static const char* kLand[12] = {"Clear", "Road", "Water", "Rock", "Wall", "Tiberium",
+                                        "Beach", "Rough", "Ice", "Railroad", "Tunnel", "Weeds"};
+        for (int l = 0; l < 12; ++l) {
+            const std::string v = get(kLand[l], "Buildable");
+            if (v.empty()) continue;
+            std::size_t k = 0;
+            while (k < v.size() && std::isspace(static_cast<unsigned char>(v[k]))) ++k;
+            const char c = k < v.size() ? static_cast<char>(std::tolower(static_cast<unsigned char>(v[k]))) : 'n';
+            a.land_buildable[l] = c == 'y' || c == 't' || c == '1';
+        }
+    } catch (const std::exception&) {
+        a.overlay_land.clear();
+    }
+}
+
 Assets load_assets(const std::string& dir, const ra2assets::MixFile& ra2,
                    const MapSelection& sel = MapSelection{}) {
     load_progress("MAP + THEATER");   // W2-AR-02 loading-screen checkpoint
@@ -331,7 +377,9 @@ Assets load_assets(const std::string& dir, const ra2assets::MixFile& ra2,
               << map.height() << " cells=" << map.cells().size()
               << " templates=" << th.template_count() << "\n";
 
-    return Assets{std::move(map), pal, std::move(th), chain};
+    Assets out{std::move(map), pal, std::move(th), chain};
+    place_load_overlay_rules(dir, out);   // W8-03-02 / W8-03-01
+    return out;
 }
 
 // CB-3 Naval [RE-GATE APPLIED: naval.md §2]: resolve every materialized map
@@ -3184,6 +3232,43 @@ void spawn_base(ra2engine::World& world, const BuildingAssets& ba, int house, in
 #include "pres_state.inc"    // W5-PRES R-120 Iron Curtain / elite flash / chrono warp
 #include "pres_turret.inc"   // W2-GA-13 defence turrets
 #include "w5_combat_arm.inc"  // W5-B: sub-cells / land speed / crush arming of the real World
+// W8-03-02 / W8-03-01 (w8fix-place) -- the ONE overlay land-type hook
+// (called by depth_set_terrain just before World::set_land_terrain):
+//  1. FUN_0047D1C0's overlay branch on `lt` -- rocks/fences become Rock,
+//     tracks Railroad (engine/overlay_land.hpp). The low-bridge overlays stay
+//     with depth_set_terrain's own override (w8fix-bridge).
+//  2. The static buildable grid of CanThisExistHere FUN_0047C530: Buildable
+//     LandType, no non-ore overlay (bridges included), flat (TMP ramp 0).
+void place_overlay_terrain(ra2engine::World& world, Assets& a, std::vector<ra2assets::LandType>& lt) {
+    if (a.overlay_land.empty()) return;   // rules not read: legacy terrain
+    const int gw = world.grid_w(), gh = world.grid_h();
+    const std::size_t n = static_cast<std::size_t>(gw) * gh;
+    std::vector<int> ovl(n, -1), lvl(n, 0);
+    std::vector<std::uint8_t> ramp(n, 0), blocks(n, 0), land(n, 0);
+    for (const ra2assets::MapCell& c : a.map.cells()) {
+        if (c.x < 0 || c.y < 0 || c.x >= gw || c.y >= gh) continue;
+        const std::size_t i = static_cast<std::size_t>(c.y) * gw + c.x;
+        lvl[i] = c.level;
+        if (const ra2assets::TmpFile* t = a.theater.tmp_for_tile(c.tile)) {
+            if (c.subtile < t->count()) {
+                try {
+                    if (const std::uint8_t* hdr = t->image_header(c.subtile)) ramp[i] = hdr[42];
+                } catch (const std::exception&) {}
+            }
+        }
+        if (!a.map.has_overlay()) continue;
+        const int id = a.map.overlay_at(c.x, c.y);
+        if (id < 0 || id == 255) continue;
+        ovl[i] = id;
+        const bool ore = id < static_cast<int>(a.overlay_land.size()) && a.overlay_land[id].tiberium;
+        blocks[i] = ore ? 0 : 1;   // ore is live (OreField); every other overlay refuses a building
+    }
+    ra2engine::apply_overlay_land(lt, ovl, lvl, gw, gh, a.overlay_land, kCliffBackImpassability,
+                                  [](int id) { return ra2engine::is_low_bridge_overlay(id); });
+    for (std::size_t i = 0; i < n && i < lt.size(); ++i) land[i] = static_cast<std::uint8_t>(lt[i]);
+    world.set_build_static(ra2engine::buildable_static(land, blocks, ramp, {}, a.land_buildable));
+}
+
 #include "world_depth.inc"    // G16 (agent G): bridges/garrison arming of the real World      // G-87 [Terrain]/overlays/[Smudge]/neutral [Structures]
 #include "pres_radar.inc"    // G-09 render half: isometric radar minimap
 
@@ -5427,7 +5512,8 @@ void draw_placement_cursor(SDL_Renderer* ren, ra2engine::TextureCache& tc, const
     // Naval Yard, BaseNormal) so the cursor colour matches what a click does.
     const ra2engine::PlacementCheck chk = pre_chk ? *pre_chk : ra2engine::placement_check(
         cx, cy, d.fw, d.fh, 0, d.adjacent, world.passable(), world.grid_w(), world.grid_h(),
-        world.occupancy(), world.buildings(), /*bypass_adjacency=*/false);
+        world.occupancy(), world.buildings(), /*bypass_adjacency=*/false, nullptr,
+        world.build_mask(d.wall));   // W8-03-01
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
     const std::vector<ra2engine::Cellxy> cells = ra2engine::foundation_cells(cx, cy, d.fw, d.fh);
     // W5-PRES R-102: the live game draws PLACE.SHP (CellClass::DrawPlacement).

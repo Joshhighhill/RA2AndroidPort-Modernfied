@@ -273,6 +273,7 @@ struct SaveAccess {
         save::io(ar, w.land_speed_armed_); save::mark(ar, "land_speed_armed_");
         save::io(ar, w.speed_land_); save::mark(ar, "speed_land_");
         save::io(ar, w.ramp_); save::mark(ar, "ramp_");
+        save::io(ar, w.build_static_); save::mark(ar, "build_static_");   // W8-03-01 (save v42)
         save::io(ar, w.level_grid_); save::mark(ar, "level_grid_");
         save::io(ar, w.land_rules_); save::mark(ar, "land_rules_");
         save::io(ar, w.loco_rules_); save::mark(ar, "loco_rules_");   // W7 locomotion (v35)

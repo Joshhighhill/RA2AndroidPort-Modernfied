@@ -180,42 +180,148 @@ void World::sync_garrison_owner(int bi) {
     }
 }
 
-// BuildingClass::UnloadOccupants (FUN_00457DD0): every occupant is put back
-// on the map beside the foundation; FiringOccupantIndex resets. The original
-// walks out from the foundation edge to ONE exit cell and stacks the infantry
-// in its sub-cells; the clone's one-unit-per-cell occupancy places each on the
-// nearest free cell to the foundation's bottom corner instead
-// [RE-FALLBACK: exit walk order / sub-cell stacking]. No exit at all -> the
-// occupants die (KillOccupants, FUN_004585B0) [PROBABLE].
-void World::unload_occupants(int bi) {
+// BuildingClass::UnloadOccupants (FUN_00457DD0), W8-06-07 / W8-02-04
+// [RE: disasm 0x457DD0..0x458180]: FiringOccupantIndex resets; the exit is
+// ONE cell on the ring around the foundation (origin (x0,y0), size w x h),
+// walked in this order, each tested with the FIRST occupant's
+// IsCellOccupied (vtbl+0x1AC -> InfantryClass FUN_0051BD70: land type +
+// the FootClass height gate FUN_004D9B70 + room in the cell):
+//   1. (x0+w, y)   y = y0+h down to y0-1     (the right column, bottom up)
+//   2. (x, y0+h)   x = x0+w-1 down to x0-1   (the bottom row, right to left)
+//   3. (x, y0-1)   x = x0 .. x0+w            (the top row, left to right)
+//   4. (x0-1, y)   y = y0 .. y0+h            (the left column, top down)
+// No enterable cell: KillOccupants FUN_004585B0(0) UnInits every occupant
+// (no death), unless the caller passed the second flag (the sell path), in
+// which case they unlimbo on the foundation's last cell (x0+w-1, y0+h-1).
+// Every occupant is Unlimboed (forced, DAT_00A8D714++) at that one cell's
+// centre and scattered; the clone fills the cell's infantry spots and
+// spreads the rest to the nearest enterable cells around it (same gate)
+// [RE-FALLBACK: the forced stacking / scatter].
+void World::unload_occupants(int bi, bool place_inside) {
     if (bi < 0 || bi >= static_cast<int>(buildings_.size())) return;
     Building& b = buildings_[bi];
     b.firing_occupant = 0;
     if (b.occupants.empty()) return;
-    const Cellxy corner{b.cx + b.fw - 1, b.cy + b.fh};
-    const std::vector<Cellxy> free =
-        nearest_free_cells(corner, static_cast<int>(b.occupants.size()), passable_, grid_w_, grid_h_, occ_);
+    const int x0 = b.cx, y0 = b.cy, w = b.fw, h = b.fh;
+    const int lead = b.occupants.front();
+    PathTerrain pterr;
+    std::vector<int> pgates;
+    const PathTerrain* ptp = terrain_for(units_[static_cast<std::size_t>(lead)], pterr, pgates);
+    // Can `ui` stand on (x,y), reached from (fx,fy) on layer fl? Returns the
+    // layer (0 ground / 1 deck) or -1.
+    auto enter = [&](int ui, int fx, int fy, int fl, int x, int y) -> int {
+        if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return -1;
+        const Unit& u = units_[static_cast<std::size_t>(ui)];
+        if (!unit_can_enter_cell(u, x, y) || building_at_cell(x, y) >= 0) return -1;
+        if (!occ_.can_enter(x, y, ui)) return -1;
+        if (!ptp || !ptp->level) return 0;
+        return path_step_layer(*ptp, grid_w_, fx, fy, fl, x, y);
+    };
+    std::vector<Cellxy> ring;
+    for (int y = y0 + h; y >= y0 - 1; --y) ring.push_back({x0 + w, y});
+    for (int x = x0 + w - 1; x >= x0 - 1; --x) ring.push_back({x, y0 + h});
+    for (int x = x0; x <= x0 + w; ++x) ring.push_back({x, y0 - 1});
+    for (int y = y0; y <= y0 + h; ++y) ring.push_back({x0 - 1, y});
+    Cellxy exit{-1, -1};
+    int exit_layer = 0;
+    for (const Cellxy& c : ring) {
+        const int l = enter(lead, x0, y0, 0, c.x, c.y);
+        if (l >= 0) { exit = c; exit_layer = l; break; }
+    }
     const int house = b.house;
-    for (std::size_t k = 0; k < b.occupants.size(); ++k) {
-        const int ui = b.occupants[k];
-        Unit& u = units_[ui];
+    std::vector<int> occ_list = b.occupants;
+    b.occupants.clear();
+    if (exit.x < 0 && !place_inside) {
+        // KillOccupants(0): UnInit, no death anim, no kill credit.
+        for (int ui : occ_list) {
+            Unit& u = units_[static_cast<std::size_t>(ui)];
+            u.garrison_of = -1;
+            u.cargo_of = -1;
+            u.cell_x = x0 + w - 1;
+            u.cell_y = y0 + h - 1;
+            u.fx = u.cell_x;
+            u.fy = u.cell_y;
+            ability_erase_unit(ui);
+        }
+        garrison_events_.push_back({GarrisonEvent::Unloaded, bi, house});
+        sync_garrison_owner(bi);
+        return;
+    }
+    const bool inside = exit.x < 0;
+    if (inside) exit = Cellxy{x0 + w - 1, y0 + h - 1};
+    auto put = [&](int ui, Cellxy c, int layer) {
+        Unit& u = units_[static_cast<std::size_t>(ui)];
+        u.cell_x = c.x;
+        u.cell_y = c.y;
+        u.fx = c.x;
+        u.fy = c.y;
+        u.guard_x = c.x;
+        u.guard_y = c.y;
+        u.on_deck = static_cast<std::uint8_t>(layer == 1 ? 1 : 0);
+        if (map_) if (const ra2assets::MapCell* mc = map_->at(c.x, c.y)) u.level = mc->level;
+        occ_.set(c.x, c.y, ui);
+    };
+    // The unlimbo loop runs from the LAST occupant down (0x458088: index
+    // count-1 .. 0).
+    for (auto it = occ_list.rbegin(); it != occ_list.rend(); ++it) {
+        const int ui = *it;
+        Unit& u = units_[static_cast<std::size_t>(ui)];
         u.garrison_of = -1;
         u.cargo_of = -1;
-        if (k >= free.size()) {   // no exit cell
-            ability_kill_unit(ui);
+        if (inside || occ_.can_enter(exit.x, exit.y, ui)) { put(ui, exit, exit_layer); continue; }
+        // The exit cell is full: the nearest enterable cell around it.
+        Cellxy got{-1, -1};
+        int got_layer = 0;
+        for (int r = 1; r <= 3 && got.x < 0; ++r)
+            for (int dy = -r; dy <= r && got.x < 0; ++dy)
+                for (int dx = -r; dx <= r && got.x < 0; ++dx) {
+                    if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
+                    const int x = exit.x + dx, y = exit.y + dy;
+                    if (x >= x0 && x < x0 + w && y >= y0 && y < y0 + h) continue;   // the foundation
+                    const int l = enter(ui, exit.x, exit.y, exit_layer, x, y);
+                    if (l >= 0) { got = Cellxy{x, y}; got_layer = l; }
+                }
+        if (got.x < 0) {   // a failed Unlimbo deletes the unit (vtbl+0xF8)
+            u.cell_x = exit.x;
+            u.cell_y = exit.y;
+            u.fx = exit.x;
+            u.fy = exit.y;
+            ability_erase_unit(ui);
             continue;
         }
-        u.cell_x = free[k].x;
-        u.cell_y = free[k].y;
-        u.fx = u.cell_x;
-        u.fy = u.cell_y;
-        u.guard_x = u.cell_x;
-        u.guard_y = u.cell_y;
-        occ_.set(u.cell_x, u.cell_y, ui);
+        put(ui, got, got_layer);
     }
-    b.occupants.clear();
     garrison_events_.push_back({GarrisonEvent::Unloaded, bi, house});
     sync_garrison_owner(bi);
+}
+
+Cellxy World::nearest_exit_from_host(const Unit& u, int hx, int hy, int hlayer, int* layer) const {
+    PathTerrain pterr;
+    std::vector<int> pgates;
+    const PathTerrain* ptp = terrain_for(u, pterr, pgates);
+    const std::vector<std::uint8_t>& grid = grid_for(u.movement_domain);
+    auto ok = [&](int x, int y, int& l) {
+        if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return false;
+        const std::size_t i = static_cast<std::size_t>(y) * grid_w_ + x;
+        if (i >= grid.size() || !grid[i] || !occ_.is_free(x, y)) return false;
+        l = 0;
+        if (!ptp || !ptp->level) return true;
+        l = path_step_layer(*ptp, grid_w_, hx, hy, hlayer, x, y);
+        return l >= 0;
+    };
+    int l = 0;
+    if (ok(hx, hy, l)) { if (layer) *layer = l; return {hx, hy}; }
+    for (int r = 1; r <= grid_w_ + grid_h_; ++r) {
+        for (int x = hx - r; x <= hx + r; ++x) {
+            if (ok(x, hy - r, l)) { if (layer) *layer = l; return {x, hy - r}; }
+            if (ok(x, hy + r, l)) { if (layer) *layer = l; return {x, hy + r}; }
+        }
+        for (int y = hy - r + 1; y <= hy + r - 1; ++y) {
+            if (ok(hx - r, y, l)) { if (layer) *layer = l; return {hx - r, y}; }
+            if (ok(hx + r, y, l)) { if (layer) *layer = l; return {hx + r, y}; }
+        }
+    }
+    return {-1, -1};
 }
 
 // W7-02-10 / W7-01-38(a): the player gives an own firing garrison a target
@@ -762,8 +868,10 @@ void World::step_depth(double dt) {
                           b.occupants.end());
         // The building died or is being sold: its occupants walk out
         // (FUN_004421B0 / FUN_00449B70 both call UnloadOccupants).
+        // W8-06-07 [RE: FUN_00449B70 @0x44A4FC passes the place-inside flag;
+        // the death path FUN_004421B0 @0x4425BB does not].
         if (!b.occupants.empty() && (!b.alive || b.state == Building::State::Dead || b.selling)) {
-            unload_occupants(bi);
+            unload_occupants(bi, /*place_inside=*/b.selling && b.alive && b.state != Building::State::Dead);
             continue;
         }
         // W7-08-09 [RE: the damage-state update FUN_0043FAA0 @0x44012F ->

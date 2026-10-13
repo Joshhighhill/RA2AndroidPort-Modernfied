@@ -217,8 +217,11 @@ void World::ability_erase_unit(int idx) {
     v.bomb_frame = -1;
     if (v.parasite_on_me >= 0) {
         Unit& d = units_[v.parasite_on_me];
-        const std::vector<Cellxy> g =
-            nearest_free_cells({v.cell_x, v.cell_y}, 1, passable_, grid_w_, grid_h_, occ_);
+        std::vector<Cellxy> g;   // W8-03-10: height-gated from the host
+        {
+            const Cellxy e = nearest_exit_from_host(d, v.cell_x, v.cell_y, v.on_deck);
+            if (e.x >= 0) g.push_back(e);
+        }
         v.parasite_on_me = -1;
         const int di = static_cast<int>(&d - units_.data());
         if (!g.empty()) {
@@ -568,8 +571,10 @@ void World::ability_death_pass() {
                 Unit& d = units_[di];
                 u.parasite_on_me = -1;
                 std::vector<Cellxy> g;
-                if (!(F < d.suppress_until))
-                    g = nearest_free_cells({u.cell_x, u.cell_y}, 1, passable_, grid_w_, grid_h_, occ_);
+                if (!(F < d.suppress_until)) {   // W8-03-10: height-gated from the host
+                    const Cellxy e = nearest_exit_from_host(d, u.cell_x, u.cell_y, u.on_deck);
+                    if (e.x >= 0) g.push_back(e);
+                }
                 if (!g.empty()) {
                     d.cargo_of = -1;
                     d.cell_x = g[0].x;
@@ -702,7 +707,11 @@ void World::step_abilities(double dt) {
             const Unit* hp = (h >= 0 && h < n) ? &units_[h] : nullptr;
             if (hp && hp->parasite_on_me == i) units_[h].parasite_on_me = -1;
             const int hx = hp ? hp->cell_x : d.cell_x, hy = hp ? hp->cell_y : d.cell_y;
-            const std::vector<Cellxy> g = nearest_free_cells({hx, hy}, 1, passable_, grid_w_, grid_h_, occ_);
+            std::vector<Cellxy> g;   // W8-03-10: height-gated from the host's last cell
+            {
+                const Cellxy e = nearest_exit_from_host(d, hx, hy, hp ? hp->on_deck : 0);
+                if (e.x >= 0) g.push_back(e);
+            }
             d.cargo_of = -1;
             if (!g.empty()) {
                 d.cell_x = g[0].x; d.cell_y = g[0].y; d.fx = g[0].x; d.fy = g[0].y;

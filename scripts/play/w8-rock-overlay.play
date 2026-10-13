@@ -1,0 +1,24 @@
+# w8fix-place W8-03-02 [RE: FUN_0047D1C0 overlay branch; rulesmd SROCK*/TROCK*
+# Land=Rock NoUseTileLandType=true]: SOV10T, the SROCK05 cell (125,64) is
+# impassable Rock -- a Rhino ordered across it never stands on it.
+set render_every 0
+set on_quit continue
+set campaign SOV10T.MAP Nod
+click start
+until 300 scene == game
+require scene == game
+waituntil 1500 input_locked == 0
+wait 5
+cheat camp_spawn HTNK 0 124 64
+wait 3
+cheat camp_move HTNK 126 64
+repeat 30
+wait 10
+assert ucell(0,HTNK,0) != 125064
+endrepeat
+cheat camp_move HTNK 125 64
+repeat 20
+wait 10
+assert ucell(0,HTNK,0) != 125064
+endrepeat
+end

@@ -82,17 +82,25 @@ the stock civilian types and not modelled.
 
 ### A5 Leaving — `BuildingClass::UnloadOccupants` `FUN_00457DD0` — CONFIRMED (structure)
 
-Resets FiringOccupantIndex, finds one exit cell by walking outward from the
-foundation edge, unlimbos every occupant there (an occupant that cannot be
-placed is deleted), AI-owned occupants get mission Hunt, then the vector is
-cleared. Callers: Mission_Unload `FUN_0044D880` (the Deploy order on the
-building), the sell path `FUN_00449B70`, building destruction `FUN_004421B0`,
-and the ownership sync above. When no exit cell exists the occupants are
-killed (`FUN_004585B0` KillOccupants) [PROBABLE].
-Clone: `World::unload_occupants` (Deploy on a selected own garrison = `D` or
-the ACTION_SELF click; sell/death release). [RE-FALLBACK] the clone's one-unit
-cells put each occupant on the nearest free cell to the foundation's bottom
-corner instead of stacking sub-cells.
+Resets FiringOccupantIndex and finds ONE exit cell on the ring around the
+foundation (origin (x0,y0), size w x h), testing each with the first
+occupant's IsCellOccupied (vtbl+0x1AC: land type, the FootClass height gate
+`FUN_004D9B70`, room) in this order (wave 8, disasm 0x457DD0..0x458050):
+right column (x0+w, y0+h .. y0-1), bottom row (x0+w-1 .. x0-1, y0+h), top row
+(x0 .. x0+w, y0-1), left column (x0-1, y0 .. y0+h). Every occupant (last
+first) is force-unlimboed (DAT_00A8D714++) at that cell (a failed Unlimbo
+deletes the unit), the scatter flag (arg 1) queues mission 0xF, then the
+vector is cleared. No enterable cell: KillOccupants `FUN_004585B0(0)` UnInits
+every occupant (no death) -- CONFIRMED -- unless arg 2 is set, in which case
+they unlimbo on the foundation's last cell (x0+w-1, y0+h-1). Callers and
+args: Mission_Unload `FUN_0044D880` (0,0), sell `FUN_00449B70` @0x44A4FC
+(0,1), destruction `FUN_004421B0` @0x4425BB (0,0), the sync `FUN_004581F0`
+(0,0), `FUN_006DCE20` (0,0), `FUN_00501329` (1,0).
+Clone: `World::unload_occupants(bi, place_inside)` -- the ring walk, height
+gate, kill / place-inside rules; the infantry fill the exit cell's spots and
+the rest spill to the nearest enterable cells around it [RE-FALLBACK: the
+forced stacking + scatter]. (Before wave 8: an unbounded nearest-free-cell
+search with no height gate -- W8-06-07 / W8-02-04.)
 
 ## §B Bridges
 

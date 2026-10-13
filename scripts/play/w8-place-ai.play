@@ -1,0 +1,33 @@
+# w8fix-place W8-03-01: the AI base planner places on buildable cells only
+# (no ore / overlay / slope / bridge; FUN_0047C530) and still grows a base.
+# Arena, three Brutal AIs against a passive player, ten game minutes.
+set render_every 3000
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click button "Customize Battle"
+click map:xarena.map
+click button "Use Map"
+click combo:ai1
+click "pick:Brutal Enemy"
+click combo:ai2
+click "pick:Brutal Enemy"
+click combo:ai3
+click "pick:Brutal Enemy"
+click start
+until 120 scene == game
+require scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+wait 9000
+log ai-bases
+assert buildings(1) >= 8
+assert buildings(2) >= 8
+assert buildings(3) >= 8
+assert bad_place(1) == 0
+assert bad_place(2) == 0
+assert bad_place(3) == 0
+dump
+end

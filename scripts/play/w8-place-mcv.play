@@ -1,0 +1,36 @@
+# w8fix-place W8-03-01 [RE: CellClass::CanThisExistHere FUN_0047C530 via the
+# MCV legality FUN_007154F0; try-to-deploy ring FUN_00737D50]: May Day
+# (xmp31s2). An MCV ordered to deploy in the middle of the ore field never
+# unfolds on ore: it drives to the first legal ring offset or reports
+# "cannot deploy". Every structure of house 0 stands on buildable cells
+# (bad_place: overlay / ore / slope / bridge / unbuildable land).
+set render_every 0
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click button "Customize Battle"
+require page == "Customize Battle"
+click list:down
+click list:down
+click map:xmp31s2.map
+click button "Use Map"
+require map == "xmp31s2.map"
+click start
+until 90 scene == game
+require scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+assert bad_place(0) == 0
+cheat spawn AMCV 0 cell 112 95
+wait 3
+click unit 0:AMCV:0
+wait 1
+require selected == 1
+key d
+wait 450
+assert bad_place(0) == 0
+log mcv-on-ore
+dump
+end

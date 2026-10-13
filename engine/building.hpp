@@ -15,6 +15,8 @@
 
 namespace ra2engine {
 
+class OreField;   // ore.hpp (W8-03-01 BuildMask)
+
 // One building type's stats, resolved ONCE by the caller (main.cpp from
 // Rules/Art, or a test by hand). Index into the roster vector is the
 // Building::type key used everywhere.
@@ -227,12 +229,45 @@ struct PlacementCheck {
 // rect of at least one alive, same-house, non-Dead building. `bypass_adjacency`
 // (scripted spawns: the very first ConYard has no neighbors) skips ONLY the
 // adjacency test, never the cell tests.
+// W8-03-01 [RE: CellClass::CanThisExistHere FUN_0047C530, reached from the
+// MCV deploy legality FUN_007154F0 and the placement test]: in play a
+// building (speed type -1) is refused on a cell that
+//   - carries ANY overlay (+0x44 != -1; ore, gems, rocks, crates, bridges...),
+//     except a Wall=yes type (+0x16BF) over a Tiberium overlay
+//     (FUN_005FD510 != -1), which is allowed on a flat non-bridge cell;
+//   - has the bridge flag (+0x140 & 0x100) or flag 0x400;
+//   - has a slope (+0x11C != 0);
+//   - or whose LandType is not Buildable (the [Clear]..[Weeds] Buildable=
+//     table at DAT_0089D9D0, stride 0x24).
+// `build_static` is the per-cell static part (1 = LandType Buildable, flat,
+// no non-ore overlay, not a bridge cell) built once from the map
+// (buildable_static); the ore part is live (OreField). A WaterBound type uses
+// the water grid and no mask (its own tile-set test). nullptr = the legacy
+// passability-only test.
+struct BuildMask {
+    const std::vector<std::uint8_t>* build_static = nullptr;
+    const OreField* ore = nullptr;   // live ore/gems: refuse a building, allow a wall
+    bool wall = false;               // Wall=yes type: ore cells are allowed
+};
+
 PlacementCheck placement_check(int cx, int cy, int fw, int fh, int house, int adjacent,
                                const std::vector<std::uint8_t>& passable, int grid_w, int grid_h,
                                const Occupancy& occ,
                                const std::vector<Building>& buildings,
                                bool bypass_adjacency,
-                               const std::vector<char>* base_normal_by_type = nullptr);
+                               const std::vector<char>* base_normal_by_type = nullptr,
+                               const BuildMask* mask = nullptr);
+
+// W8-03-01: the static buildable grid (see BuildMask). `land` is the final
+// per-cell LandType (tile, then the overlay override of FUN_0047D1C0),
+// `overlay_blocks` 1 where a non-ore overlay sits, `ramp` the TMP slope
+// type, `bridge` 1 on a bridge cell, `buildable_land[12]` the rules
+// [LandType] Buildable= flags. All grids are grid_w*grid_h (y*w+x).
+std::vector<std::uint8_t> buildable_static(const std::vector<std::uint8_t>& land,
+                                           const std::vector<std::uint8_t>& overlay_blocks,
+                                           const std::vector<std::uint8_t>& ramp,
+                                           const std::vector<std::uint8_t>& bridge,
+                                           const bool buildable_land[12]);
 // Gap owner A (G-28) [RE: construction.md §9 -- the neighbour must be own AND
 // BaseNormal=yes; RE-E5 the +0x154F read is a pre-hunt citation]: when
 // `base_normal_by_type` is given, an own building whose type has

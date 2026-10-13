@@ -67,7 +67,8 @@ bool World::can_deploy_at(int idx, int x, int y, int* ox, int* oy) const {
     occ.release_all_of(idx, -1, -1);
     const PlacementCheck chk = placement_check(cx, cy, d.fw, d.fh, units_[idx].house, d.adjacent,
                                                passable_, grid_w_, grid_h_, occ, buildings_,
-                                               /*bypass_adjacency=*/true);
+                                               /*bypass_adjacency=*/true, nullptr,
+                                               build_mask(/*wall=*/false));   // W8-03-01 [RE: FUN_0047C530 via FUN_007154F0]
     return chk.ok;
 }
 
