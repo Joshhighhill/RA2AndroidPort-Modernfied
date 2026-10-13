@@ -1869,8 +1869,15 @@ int World::add_unit_in_transport(int t_idx, int house, const UnitCombat& c) {
     const int prev = occ_.at(cx, cy);
     add_combat_unit(cx, cy, house, c);
     const int p = static_cast<int>(units_.size()) - 1;
-    if (prev == Occupancy::kEmpty) occ_.clear(cx, cy);   // the passenger never claims the cell
-    else occ_.set(cx, cy, prev);
+    // The passenger never claims the cell [RE: a unit created inside a
+    // transport is never Unlimbo'd -- it has no cell, so it blocks nothing].
+    // Release it from the cell AND from any infantry sub-cell spot it took
+    // (R-061): the old owner-only restore left a phantom infantry spot on the
+    // transport's cell, which blocked every mover there once the transport
+    // left (W7R1: ALL04's LCRF stuck behind a "parked" GI that was riding
+    // another craft -- ScatterContent cannot move a passenger).
+    occ_.release(cx, cy, p);
+    if (prev != Occupancy::kEmpty && occ_.at(cx, cy) != prev) occ_.set(cx, cy, prev);
     Unit& u = units_[p];
     u.fx = units_[t_idx].fx;
     u.fy = units_[t_idx].fy;

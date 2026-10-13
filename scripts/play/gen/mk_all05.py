@@ -6,15 +6,23 @@ wall rings guarded by Tesla Coils; every base also has a Tesla Reactor
 (NANRCT, off the playable area) that only turns neutral ('No Power Plants')
 when the base has no Tesla Power Plant (NAPOWR) left.
 
- 1. The spies disguise as a Conscript; spy 0 enters a RedTeam power plant
-    (blackout), spy 1 re-arms it, spy 2 enters the Battle Lab (secondary
-    objective -> the map is enlarged, ResizeView).
+ 1. The spies disguise as a Conscript. W7R1 (original walk speed, dogs with
+    DetectDisguise): Tanya holds (101,117) south of the red gate, out of the
+    y=110 coils' reach; spy 0 goes up to the gate as bait, the y=106 dog pair
+    runs out after it and Tanya shoots them; the next spy enters a RedTeam
+    power plant (blackout).
  2. Tanya C4s the three RedTeam power plants during the blackout -> the red
-    reactor goes neutral and the red Tesla Coils stay dark for good.
- 3. 'Spies Dead 1' flies in three fresh spies. One blacks out YellowTeam, Tanya
-    C4s the yellow silo from outside its wall ring; two black out OrangeTeam in
-    turn while Tanya walks round to the compound's west gate and C4s the orange
-    silo -> 'Victory 1' -> WON.
+    reactor goes neutral and the red Tesla Coils stay dark for good; she hunts
+    the last plant-patrol dog and the last spy enters the Battle Lab
+    (secondary objective -> the map is enlarged, ResizeView).
+ 3. 'Spies Dead 1' flies in three fresh spies. Yellow: no spy gets past the two
+    dogs by the plants, so Tanya clears the outer yellow dogs from spots out of
+    the coils' reach, then at full health walks the corridor to the silo's
+    south side (66,44) taking two coil bolts, C4s the silo, heals, walks out.
+    Orange: Tanya clears the dogs from the strip south of the compound, waits
+    at (37,69) by the west gate, shoots the gate dog that runs at the first
+    spy; a spy blacks out OrangeTeam and Tanya C4s the orange silo from its
+    west side -> 'Victory 1' -> WON.
 
 Tanya's micro (act): shoot the nearest dog first, then the nearest enemy in
 range, else continue the order; never chase out of the leash. `repeat` keeps
@@ -42,8 +50,6 @@ click unit 2:SPY:1 shift
 click unit 2:SPY:2 shift
 click unit 4:E2:4
 wait 20
-click unit 2:SPY:0
-click building 4:NAPOWR:1
 """)
 T = "units(1,TANY) > 0"
 
@@ -67,6 +73,24 @@ def act(goal_cmd, iters, cond=None, rdog=8, r=5, w=5, leash=True, bgoal=False):
     p.add(f"if {T}{c} then wait {w}", "endrepeat", "dump")
 
 
+def hold(iters, cond=None, st=(101, 117), box=(99, 104, 117, 121), dr=5.5, w=4, extra=()):
+    """Hold Tanya on a spot out of the y=110 Tesla Coils' reach: shoot dogs that
+    come within her range, and walk back whenever an auto-acquired chase takes
+    her out of the box (two coil bolts nearly kill her)."""
+    c = f" and {cond}" if cond else ""
+    x0, x1, y0, y1 = box
+    D = f"ndog(1,TANY,0) <= {dr}"
+    back = f"click cell {st[0]} {st[1]}"
+    p.add(f"repeat {iters}",
+          f"if {T}{c} and selected_type(TANY) == 0 then click unit 1:TANY:0",
+          f"if {T}{c} and {D} and utgt(1,TANY,0) == -1 then click unit e:DOG:near",
+          f"if {T}{c} and ucx(1,TANY,0) < {x0} then {back}",
+          f"if {T}{c} and ucx(1,TANY,0) > {x1} then {back}",
+          f"if {T}{c} and ucy(1,TANY,0) < {y0} then {back}",
+          f"if {T}{c} and ucy(1,TANY,0) > {y1} then {back}",
+          *extra, f"if {T}{c} then wait {w}", "endrepeat")
+
+
 def c4(h, bid, n_alive, plant=80, spec=None):
     spec = spec or f"{h}:{bid}:0"
     alive = f"buildings({h},{bid}) >= {n_alive}"
@@ -75,32 +99,87 @@ def c4(h, bid, n_alive, plant=80, spec=None):
 
 
 # 1-2: the red base
+# W7R1: since the original walk speed (10 leptons/frame, wave 7) and the dogs'
+# DetectDisguise, a disguised spy cannot slip past the red dog pair that walks
+# y=106 just inside the gate (and Tanya cannot reach it under the y=110 Tesla
+# Coils). Like a player: Tanya holds a spot south of the gate out of the coils'
+# reach, a spy is sent up to the gate as bait, the pair runs out after it and
+# Tanya shoots them; then a spy walks into the power plant.
 act("click cell 104 134", 20, r=7)
-act("click cell 103 124", 30, r=7)
-act("click cell 103 124", 90, cond="blackout(4) == 0", r=7)
-p.add("until 900 blackout(4) > 0", "click unit 2:SPY:0", "click building 4:NAPOWR:1",
-      "click unit 2:SPY:1", "click building 4:NATECH:0")
+act("click cell 101 117", 60, cond="units(4,DOG) > 7", r=5, rdog=5.5)
+p.add("click unit 2:SPY:0", "click cell 102 111",
+      "click unit 2:SPY:1", "click unit 2:SPY:2 shift", "click cell 104 119", "wait 3")
+hold(400, "units(4,DOG) > 5")
+hold(20)
+p.add("click unit 2:SPY:0", "click building 4:NAPOWR:1")
+hold(300, "blackout(4) == 0")
+# With the coils dark, Tanya C4s the two plants by the gate and then the far
+# one (100,85): the red reactor goes neutral and the coils stay dark for good.
+# (A spy left over when the bait survived goes into a plant too: the fresh
+# spies only fly in once all of these are gone.)
+p.add("until 900 blackout(4) > 0",
+      "if units(2,SPY) > 1 then click unit 2:SPY:1", "if units(2,SPY) > 1 then click building 4:NAPOWR:1")
 c4(4, "NAPOWR", 3)
-act("click cell 101 90", 40, cond="buildings(4,NAPOWR) >= 2 and ucell(1,TANY,0) != 101090")
-c4(4, "NAPOWR", 2, spec="4:NAPOWR:1")
+c4(4, "NAPOWR", 2)
+act("click cell 101 90", 40, cond="buildings(4,NAPOWR) >= 1 and ucell(1,TANY,0) != 101090")
 c4(4, "NAPOWR", 1)
 p.add("assert buildings(4,NAPOWR) == 0", "until 300 buildings(4,NANRCT) == 0", "shot red")
-# 3: fresh spies; the yellow silo
+# The last plant-patrol dog walks the Battle Lab's west side, where the spy
+# goes in: Tanya hunts it first, then the spy enters the Battle Lab
+# (secondary objective -> the map is enlarged).
+act("click cell 99 98", 150, cond="units(4,DOG) > 3", rdog=10)
+p.add("click unit 2:SPY:0", "click building 4:NATECH:0")
+# 3: fresh spies; the yellow silo. Tanya keeps her micro while they fly in
+# (idle, the last plant-patrol dog walked up and bit her).
+act("click cell 101 92", 400, cond="units(2) < 3")
 p.add("until 3000 units(2) >= 3", "until 3000 view_resized >= 1", "wait 30",
       "click unit 2:SPY:0", "click unit 2:SPY:1 shift", "click unit 2:SPY:2 shift",
       "if units(4,E2) > 0 then click unit 4:E2:0", "wait 5",
-      "click unit 2:SPY:0", "click building 6:NAPOWR:0",
-      "click unit 2:SPY:1", "click unit 2:SPY:2 shift", "click cell 66 53")
-act("click cell 65 49", 300, cond="ucell(1,TANY,0) != 65049 and blackout(6) == 0")
-act("click cell 65 49", 400, cond="blackout(6) == 0")
+      "click unit 2:SPY:0", "click unit 2:SPY:1 shift", "click unit 2:SPY:2 shift", "click cell 81 51")
+# W7R1: the yellow dogs sniff out a disguised spy, so Tanya clears the ones
+# outside the plants' wall first, from spots out of the coils' reach: the pair
+# that roams round the silo from (65,49), then from (79,46) the guard at (79,41)
+# and the two that walk east of the silo, while the spies walk up behind her.
+act("click cell 65 49", 150, cond="ucell(1,TANY,0) != 65049", rdog=6)
+hold(400, "units(6,DOG) > 5", st=(65, 49), box=(63, 67, 47, 51), dr=6.5)
+act("click cell 79 46", 120, cond="ucell(1,TANY,0) != 79046", rdog=6)
+hold(600, "units(6,DOG) > 2", st=(79, 46), box=(79, 83, 46, 50), dr=6.5)
+# The two dogs left walk right by the plants and the only way to a plant is
+# round the war factory's corner on one dog's beat -- no spy gets in. But the
+# silo's south side (66,44) is out of both coils' reach and is reached by the
+# corridor north of the war factory (70,44): the (73,40) coil gets two bolts
+# at Tanya on the way (she has 375 hp, a bolt takes ~130). With full health
+# she walks in, C4s the silo from there, and heals before walking out again.
+hold(400, "uhpn(1,TANY,0) < 370", st=(79, 46), box=(79, 83, 46, 50), dr=6.5)
+p.add("click unit 1:TANY:0", "click cell 66 44", "until 400 ucell(1,TANY,0) == 66044")
 c4(6, "NAMISL", 1)
+hold(800, "uhpn(1,TANY,0) < 365", st=(66, 44), box=(65, 67, 43, 46), dr=7)
 p.add("assert buildings(6,NAMISL) == 0", "shot silo1",
-      "click unit 2:SPY:0", "click building 7:NAPOWR:2",
-      "click unit 2:SPY:1", "click cell 60 72")
-# the orange silo, through the compound's west gate
-act("click cell 56 72", 300, cond="ucell(1,TANY,0) != 56072 and blackout(7) == 0")
-act("click cell 56 72", 400, cond="blackout(7) == 0")
-p.add("click unit 2:SPY:0", "click building 7:NAPOWR:2")
-c4(7, "NAMISL", 1, plant=200)
+      "click unit 1:TANY:0", "click cell 79 46", "until 400 ucell(1,TANY,0) == 79046")
+hold(800, "uhpn(1,TANY,0) < 365", st=(79, 46), box=(79, 83, 46, 50), dr=6.5)
+# The orange silo: its only way in -- and the way to the orange plants -- is
+# the compound's west gate (37,68), under the (44,65) coil. Tanya walks the
+# open strip south of the compound (y=74..75, out of the coils' reach) and
+# shoots the orange dogs that come out at her while the spies walk up behind.
+# The dog that guards (42,62) inside the gate sniffs out a spy on its way to a
+# plant; Tanya waits at (37,69), just out of the coil's reach, where she
+# shoots it when it runs at the spy, and the next spy walks in. In the
+# blackout she runs round to the silo's west side and C4s it.
+p.add("click unit 2:SPY:0", "click unit 2:SPY:1 shift", "click unit 2:SPY:2 shift", "click cell 44 75")
+act("click cell 56 74", 400, cond="ucell(1,TANY,0) != 56074")
+hold(100, "units(7,DOG) > 1", st=(56, 74), box=(53, 60, 73, 76), dr=7)
+act("click cell 46 75", 200, cond="ucell(1,TANY,0) != 46075")
+hold(100, "units(7,DOG) > 1", st=(46, 75), box=(43, 49, 74, 76), dr=7)
+act("click cell 40 75", 200, cond="ucell(1,TANY,0) != 40075")
+hold(900, "ucx(2,SPY,0) > 46", st=(40, 75), box=(38, 42, 74, 76), dr=7)
+act("click cell 36 73", 150, cond="ucell(1,TANY,0) != 36073", rdog=6)
+act("click cell 37 69", 150, cond="ucell(1,TANY,0) != 37069", rdog=6)
+for n in (3, 2, 1):
+    p.add(f"if blackout(7) == 0 and units(2,SPY) >= {n} then click unit 2:SPY:0", "wait 1",
+          f"if blackout(7) == 0 and units(2,SPY) >= {n} and selected_type(SPY) == 0 then click unit 2:SPY:0",
+          f"if blackout(7) == 0 and selected_type(SPY) > 0 and selected_type(TANY) == 0 then click building 7:NAPOWR:near")
+    hold(300, f"blackout(7) == 0 and units(2,SPY) >= {n}", st=(37, 69), box=(36, 37, 68, 70), dr=6.5)
+    hold(60, "blackout(7) == 0", st=(37, 69), box=(36, 37, 68, 70), dr=6.5)
+c4(7, "NAMISL", 1, plant=300)
 p.add("shot silo2", "until 1500 outcome == WON", "end expect WON")
 p.save(OUT)
