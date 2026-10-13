@@ -173,15 +173,9 @@ static constexpr double kDieAnimFps = 15.0;
 // with combat.cpp's value if that one ever changes.
 static constexpr double kFireFlashSecs = 0.4;
 
-// Seconds between re-path attempts while blocked (next cell held by another
-// unit). Short enough to feel responsive, long enough that a unit briefly
-// waiting for one ahead to step off doesn't thrash A* every frame.
-static constexpr double kBlockedWait = 0.30;
-// Seconds of CONTINUOUS block after which a unit abandons its order (boxed-in
-// or sealed corridor). Transient jams (a funnel cell mid-crossing) clear well
-// inside this: the per-frame can_enter check resumes the walk the instant the
-// blocker steps off, and failed re-paths retry every kBlockedWait until then.
-static constexpr double kGiveUpAfter = 2.0;
+// W7-11-03/11: the blocked-move timers are the original's PathDelay (9
+// frames) / BlockagePathDelay (60 frames) in engine/world_loco.cpp; a unit
+// no longer abandons its order because of other units (kGiveUpAfter is gone).
 
 // RA2 temperate tile geometry -- must match iso_renderer.cpp's / input.cpp's
 // kTileW/kTileH/kLevelPx (the same duplicated-constant pattern already
@@ -1055,6 +1049,7 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.auto_crush = c.auto_crush;   // W5-B R-050
     u.is_infantry = c.is_infantry; // W5-B R-061
     u.land_speed_loco = c.land_speed_loco;   // W5-B R-062
+    u.loco.t = c.loco;                       // W7 locomotion: kind + acceleration keys
     u.crushable = c.crushable;
     // gF [RE: docs/re/mcv-deploy.md]: DeploysInto= -> roster index (inert -1
     // for every unit type without the key, i.e. everything but AMCV/SMCV).
@@ -1337,7 +1332,10 @@ void World::order_unit_move(int idx, int gx, int gy) {
         (void)order_deploy(idx);   // toggles back: emits Deploy(0)
     }
     if (u.frozen) return;
-    if (u.abil.teleporter && !u.is_aircraft) {
+    // W7-11-13 [RE: UnitClass::SetDestination 0x740780]: a Teleporter
+    // HARVESTER (the Chrono Miner) piggybacks a Drive locomotor and drives --
+    // to ore and on player moves; only its refinery dock warps (harvest.cpp).
+    if (u.abil.teleporter && !u.is_aircraft && !u.is_harvester) {
         teleport_unit(idx, gx, gy);
         return;
     }
@@ -1374,12 +1372,29 @@ void World::order_unit_move(int idx, int gx, int gy) {
         u.path_idx = 0;
         return;                                      // NO A*, NO occ reservation
     }
-    // Drop any stale next-cell reservation from an in-flight order (the
-    // occupancy may still mark a cell this unit reserved but will now never
-    // enter, which would block other units forever); re-assert only the
-    // current cell.
-    occ_.release_all_of(idx, u.cell_x, u.cell_y);
-    occ_.set(u.cell_x, u.cell_y, idx);
+    // W7-11-03: a new order starts the blocked-move timers afresh.
+    u.loco.path_delay = 0.0;
+    u.loco.blockage = -1.0;
+    u.loco.temp_tries = 0;
+    // W7-11-17 [RE: FUN_004B0E50 -- a track is only re-evaluated at its end]:
+    // a Drive/Ship unit on a track finishes it; the new route starts from the
+    // track's head-to cell and the cells still ahead on the track stay
+    // reserved.
+    std::vector<Cellxy> track_prefix;
+    Cellxy start{u.cell_x, u.cell_y};
+    if (u.loco.trk >= 0 && loco_is_track(u) && !u.path.empty()) {
+        track_prefix.push_back({u.cell_x, u.cell_y});
+        if (u.loco.trk_two && !u.loco.trk_in_mid) track_prefix.push_back({u.loco.trk_mx, u.loco.trk_my});
+        start = {u.loco.trk_hx, u.loco.trk_hy};
+    } else {
+        u.loco.trk = -1;
+        // Drop any stale next-cell reservation from an in-flight order (the
+        // occupancy may still mark a cell this unit reserved but will now never
+        // enter, which would block other units forever); re-assert only the
+        // current cell.
+        occ_.release_all_of(idx, u.cell_x, u.cell_y);
+        occ_.set(u.cell_x, u.cell_y, idx);
+    }
     // CB-3 Naval [RE-GATE APPLIED: naval.md §1]: select the domain grid -- Land
     // (the DEFAULT, every existing unit) resolves to the SAME passable_ object
     // (byte-identical); Water resolves to water_passable_. CONFIRMED: the naval
@@ -1396,13 +1411,35 @@ void World::order_unit_move(int idx, int gx, int gy) {
     PathTerrain terr;
     std::vector<int> gates;
     const PathTerrain* tp = terrain_for(u, terr, gates);
+    const std::vector<std::uint8_t>& grid = crush ? crush_grid() : grid_for(u.movement_domain);
+    const std::vector<std::uint8_t>* leak =
+        u.movement_domain == MovementDomain::Water ? nullptr : crush ? crush_leak() : wall_leak();
     std::vector<Cellxy> path =
         u.movement_domain == MovementDomain::Land
-            ? find_path_nearest_t(crush ? crush_grid() : grid_for(u.movement_domain), grid_w_, grid_h_,
-                                  {u.cell_x, u.cell_y}, {gx, gy}, kNearestPathBudget,
-                                  crush ? crush_leak() : wall_leak(), tp)
-            : find_path_t(grid_for(u.movement_domain), grid_w_, grid_h_, {u.cell_x, u.cell_y}, {gx, gy},
-                          u.movement_domain == MovementDomain::Water ? nullptr : wall_leak(), tp);
+            ? find_path_nearest_t(grid, grid_w_, grid_h_, start, {gx, gy}, kNearestPathBudget, leak, tp)
+            : find_path_t(grid_for(u.movement_domain), grid_w_, grid_h_, start, {gx, gy}, leak, tp);
+    // W7-11-08 [RE: A* FUN_00429A10 + Can_Enter costs DAT_0081770C]: the A*
+    // charges the cells other units hold (a parked ally 8, a moving unit 1 / 4,
+    // an enemy 20). The terrain-only route (memoised) is kept when it meets no
+    // unit -- every unit cost is >= 1, so it is then already the cheapest;
+    // otherwise the search runs again with the unit costs.
+    if (path.size() > 1 && path_meets_units(path, occ_, idx)) {
+        std::vector<std::uint16_t> cost;
+        build_occupancy_cost(units_, occ_, grid_w_, grid_h_, idx, false, this, cost);
+        std::vector<Cellxy> p2 =
+            u.movement_domain == MovementDomain::Land
+                ? find_path_nearest_t(grid, grid_w_, grid_h_, start, {gx, gy}, kNearestPathBudget, leak, tp, &cost)
+                : find_path_bounded_t(grid_for(u.movement_domain), grid_w_, grid_h_, start, {gx, gy}, 0, leak, tp,
+                                      &cost);
+        if (p2.size() > 1) path = std::move(p2);
+    }
+    if (!track_prefix.empty()) {
+        // Prepend the cells the current track still covers (path[0] = head).
+        std::vector<Cellxy> full = track_prefix;
+        if (path.empty()) full.push_back(start);
+        else full.insert(full.end(), path.begin(), path.end());
+        path = std::move(full);
+    }
     if (path.size() <= 1) {
         // Assigned its own cell / unreachable: stay put, snap cleanly
         // (mirrors the single-unit Finding-1 cancel branch).
@@ -1774,7 +1811,6 @@ void World::group_enter_transport(int issuer, const std::vector<int>& ids, int t
     // transport itself, passing can_load NOW (capacity re-checked at
     // boarding -- orders may oversubscribe) [spec §3].
     std::vector<int> movers;
-    std::vector<Cellxy> cur;
     for (int ii : ids) {
         if (ii < 0 || ii >= static_cast<int>(units_.size())) continue;
         const std::size_t i = static_cast<std::size_t>(ii);
@@ -1783,15 +1819,14 @@ void World::group_enter_transport(int issuer, const std::vector<int>& ids, int t
         if (static_cast<int>(i) == t_idx) continue;
         if (!can_load(units_, t_idx, static_cast<int>(i), allied)) continue;
         movers.push_back(static_cast<int>(i));
-        cur.push_back({units_[i].cell_x, units_[i].cell_y});
     }
     if (movers.empty()) return;
     cargo_any_ = true;   // the step_cargo firewall opens on the FIRST order (spec §8)
-    // Batch per transport into assign_formation around the transport's cell,
-    // so each passenger gets a DISTINCT free nearby cell (the same batching
-    // step() uses for combat approach requests) [spec §3].
-    const std::vector<Cellxy> targets =
-        assign_formation({t.cell_x, t.cell_y}, cur, passable_, grid_w_, grid_h_, occ_);
+    // W7-11-12 [RE: InfantryClass Can_Enter 0x51BD70 / UnitClass 0x73DFA0:
+    // under Mission Enter the NavCom transport's own cell is enterable]: every
+    // passenger paths INTO the transport's cell and boards on reaching it
+    // (step_units stops it there; step_cargo boards at adjacency).
+    const int tcx = t.cell_x, tcy = t.cell_y;
     for (std::size_t k = 0; k < movers.size(); ++k) {
         Unit& u = units_[movers[k]];
         u.target = -1;               // an enter order supersedes engagement
@@ -1803,7 +1838,7 @@ void World::group_enter_transport(int issuer, const std::vector<int>& ids, int t
         // data-unreachable with HTK (SizeLimit=2 < harvester Size=3), guarded
         // anyway [spec §4].
         if (u.is_harvester) u.manual_hold = true;
-        order_unit_move(movers[k], targets[k].x, targets[k].y);
+        order_unit_move(movers[k], tcx, tcy);
     }
 }
 
@@ -2129,26 +2164,62 @@ void World::step_flight(double dt) {
         u.altitude = step_altitude(u.altitude, target, rate * dt);
         u.flight_state = advance_flight_state(u.flight_state, u.altitude, u.cruise_altitude);
 
-        // 2) Cruise translation: turn toward the goal AND advance straight-line
-        //    the SAME frame (no heading-complete gate -- Process turns and
-        //    translates together; with OmniFire the flyer never needs to face
-        //    the target). Takeoff CLIMB and horizontal TRAVEL OVERLAP: the unit
-        //    translates while still ascending (TakingOff), it does NOT hold
-        //    horizontal until airborne -- the Kirov leaves the factory climbing
-        //    and moving at once [RE-GATE APPLIED: aircraft.md §1/§2/§3 -- D3].
-        //    cell_x/cell_y track the ground projection of fx/fy for the shadow
-        //    anchor + combat range, but claim NO occupancy [spec §4].
+        // 2) W7-05-15 JumpjetLocomotionClass horizontal model (ILocomotion
+        //    vtable 0x7EBD68). Per logic frame: the state handler sets the
+        //    desired facing (toward the goal) and the target speed, the
+        //    FacingClass turns at JumpJetTurnRate<<8 u16/frame, the integrator
+        //    FUN_0054CDA0 ramps CurSpeed by JumpJetAccel (down by 1.5x Accel)
+        //    and moves ftol(CurSpeed) leptons along the CURRENT facing
+        //    (@0x54D1FB). Takeoff CLIMB and horizontal TRAVEL overlap once the
+        //    unit is a quarter (BalloonHover: half) of the way up [RE: Ascending
+        //    FUN_0054B760: target speed = JumpjetSpeed once height >
+        //    Height/4 (Height/2 for BalloonHover)]. cell_x/cell_y track the
+        //    ground projection of fx/fy but claim NO occupancy [spec §4].
+        const double fr = dt * 15.0;                          // logic frames this call
+        const double max_lpf = u.flight_speed * 256.0 / 15.0;  // JumpjetSpeed (raw)
+        const int speed_i = static_cast<int>(max_lpf);
+        const double turn_lpf = u.flight_turn / 15.0;          // u16/frame
+        const int turn_rate = std::max(1, static_cast<int>(std::lround(turn_lpf / 256.0)));
+        double target_speed = 0.0;
         if ((u.flight_state == FlightState::Cruising ||
              u.flight_state == FlightState::TakingOff) && u.has_flight_goal) {
             const double gx = static_cast<double>(u.flight_goal_x);
             const double gy = static_cast<double>(u.flight_goal_y);
-            u.body_facing = heading_toward(u.body_facing, gx - u.fx, gy - u.fy,
-                                           u.flight_turn * dt, u.omni_fire);
-            const bool arrived = cruise_step(u.fx, u.fy, gx, gy, u.flight_speed * dt);
-            u.cell_x = static_cast<int>(std::lround(u.fx));
-            u.cell_y = static_cast<int>(std::lround(u.fy));
-            if (arrived) u.has_flight_goal = false;   // hover at the goal (BalloonHover)
+            const double dist = om::hypot(gx - u.fx, gy - u.fy) * 256.0;   // leptons
+            if (dist < 20.0) {
+                // [RE: Cruising FUN_0054BD20 -- dist < 0x14: CurSpeed and the
+                // target speed zeroed, the unit is put exactly on the goal]
+                // -> hover at the goal (BalloonHover) / the landing logic.
+                if (u.flight_state == FlightState::Cruising) {
+                    u.fx = gx;
+                    u.fy = gy;
+                    u.an.jj_speed = 0.0;
+                    u.has_flight_goal = false;
+                }
+            } else {
+                const double want = facing_u16_from_delta(gx - u.fx, gy - u.fy);
+                if (u.flight_state == FlightState::Cruising) {
+                    target_speed = jumpjet_cruise_speed(dist, speed_i, turn_rate,
+                                                        facing_diff_256(u.body_facing, want));
+                } else {
+                    const double lift = u.balloon_hover ? u.cruise_altitude / 2.0
+                                                        : u.cruise_altitude / 4.0;
+                    if (u.altitude > lift) target_speed = max_lpf;
+                }
+                if (target_speed > 0.0 || u.flight_state == FlightState::Cruising)
+                    u.body_facing = heading_toward(u.body_facing, gx - u.fx, gy - u.fy,
+                                                   turn_lpf * fr, /*omni=*/false);
+            }
         }
+        u.an.jj_speed = jumpjet_ramp(u.an.jj_speed, target_speed, max_lpf, u.an.t.jj_accel * fr);
+        const double step = std::trunc(u.an.jj_speed) * fr;   // ftol(CurSpeed)
+        if (step > 0.0) {
+            step_along_facing(u.fx, u.fy, u.body_facing, step);
+            u.fx = std::clamp(u.fx, 0.0, static_cast<double>(std::max(0, grid_w_ - 1)));
+            u.fy = std::clamp(u.fy, 0.0, static_cast<double>(std::max(0, grid_h_ - 1)));
+        }
+        u.cell_x = static_cast<int>(std::lround(u.fx));
+        u.cell_y = static_cast<int>(std::lround(u.fy));
     }
 }
 
@@ -5414,11 +5485,10 @@ void World::step(double dt) {
             sc.condition_red = land_rules_.condition_red;
         }
         std::vector<int> scatter;
-        sc.world = this;   // w7fix-combat: alliance view / IQ / W7 rules
-        if (occ_.subcells()) {
-            sc.scatter_out = &scatter;
-            if (!land_speed_armed_) sc.armed = false;
-        }
+        sc.scatter_out = &scatter;   // W7-11-09: friendly blockers scatter (vehicles and infantry)
+        sc.loco = loco_rules_;       // W7: PathDelay / BlockagePathDelay / CloseEnough / ConditionYellow / Hover*
+        sc.inf_tables = &inf_tables_;
+        sc.world = this;
         w6_apply_wall_kills();   // W6-04-05: walls shot down last step open now
         w6_step_powered_units();   // W6-04-18: robots without a powered control centre stop
         step_wall_crush();   // P4 (no-op without crushable walls)
@@ -5452,7 +5522,7 @@ void World::step(double dt) {
             st.amph.deck = deck_grid(MovementDomain::Amphibious);
         }
         step_units(units_, passable_, water_passable_, grid_w_, grid_h_, occ_, dt, move_cps_, anims_,
-                   amph ? &amphib_grid() : nullptr, (land_speed_armed_ || occ_.subcells()) ? &sc : nullptr, wall_leak(),
+                   amph ? &amphib_grid() : nullptr, &sc, wall_leak(),
                    crush ? &crush_grid() : nullptr, crush ? crush_leak() : nullptr,
                    (any_gate || terrain_armed()) ? &st : nullptr);
         std::sort(scatter.begin(), scatter.end());
@@ -5980,475 +6050,7 @@ std::vector<int> unit_draw_order(const std::vector<Unit>& units) {
     return order;
 }
 
-// Copy `passable` but mark every cell OWNED/RESERVED by a unit other than
-// `self` impassable, so a re-path routes around the current traffic. The
-// unit's own start cell is forced walkable (find_path needs a passable start).
-static std::vector<std::uint8_t> passable_minus_units(const std::vector<std::uint8_t>& passable,
-                                                      int w, int h, const Occupancy& occ, int self,
-                                                      int start_x, int start_y) {
-    std::vector<std::uint8_t> out = passable;
-    for (int y = 0; y < h; ++y)
-        for (int x = 0; x < w; ++x) {
-            // W5-B R-061: "can this unit enter" -- an infantry may share a
-            // cell that still has a free sub-cell spot (whole-cell otherwise).
-            if (!occ.can_enter(x, y, self))
-                out[static_cast<std::size_t>(y) * w + x] = 0;
-        }
-    if (start_x >= 0 && start_y >= 0 && start_x < w && start_y < h)
-        out[static_cast<std::size_t>(start_y) * w + start_x] = 1;
-    return out;
-}
-
-double land_speed_mult(const MoveSpeedCtx& c, const Unit& u, int w, int h, int nx, int ny) {
-    // Only the Drive/Ship/Hover locomotors read the GroundType table for speed
-    // (FUN_004B2550 / FUN_006A1310); the Walk locomotor (infantry) does not.
-    if (!c.armed || !c.land || (!u.is_vehicle && !u.is_naval) || u.is_aircraft || !u.land_speed_loco)
-        return 1.0;
-    if (nx < 0 || ny < 0 || nx >= w || ny >= h) return 1.0;
-    const std::size_t i = static_cast<std::size_t>(ny) * w + nx;
-    if (i >= c.land->size()) return 1.0;
-    int land = (*c.land)[i];
-    if (c.ore && c.ramp && i < c.ramp->size() && c.ore->has_ore(nx, ny) && (*c.ramp)[i] < 5) land = 5;
-    if (land < 0 || land > 11) land = 0;
-    int st = u.speed_type;
-    if (st < 0 || st > 7) st = u.is_naval ? 5 : 1;   // default: Track (Drive), Float (ship)
-    double m = c.cost[land][st];
-    if (m > 1.0) m = 1.0;
-    // Slope (UnitClass only): the next cell higher -> *Uphill, lower -> *Downhill;
-    // SpeedType Track uses the Tracked pair, every other type the Wheeled pair.
-    if (c.level && !u.is_naval) {
-        const std::size_t ci = static_cast<std::size_t>(u.cell_y) * w + u.cell_x;
-        if (u.cell_x >= 0 && u.cell_y >= 0 && u.cell_x < w && u.cell_y < h && ci < c.level->size()) {
-            const int cur = (*c.level)[ci], nxt = (*c.level)[i];
-            const int k = st == 1 ? 0 : 1;
-            if (cur < nxt) m *= c.up[k];
-            else if (nxt < cur) m *= c.down[k];
-        }
-    }
-    if (m == 0.0) m = 0.5;
-    if (u.max_hp > 0 && static_cast<double>(u.hp) / u.max_hp <= c.condition_red) m *= 0.75;
-    return m;
-}
-
-void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable,
-                const std::vector<std::uint8_t>& water_passable, int w, int h,
-                Occupancy& occ, double dt, double move_cps, const AnimTable& anims,
-                const std::vector<std::uint8_t>* amphib_passable, const MoveSpeedCtx* speed,
-                const std::vector<std::uint8_t>* wall_leak, const std::vector<std::uint8_t>* crush_passable,
-                const std::vector<std::uint8_t>* crush_leak, const StepTerrain* terrain) {
-    // R-210: unit u's terrain (null without one -> the 2-D walk).
-    auto terrain_of_unit = [&](const Unit& u, PathTerrain& t) -> const PathTerrain* {
-        if (!terrain) return nullptr;
-        t = u.movement_domain == MovementDomain::Water ? terrain->water
-            : u.movement_domain == MovementDomain::Amphibious ? terrain->amph : terrain->land;
-        t.start_layer = t.deck ? u.on_deck : 0;
-        t.open_cells = nullptr;
-        if (terrain->gates && u.movement_domain != MovementDomain::Water && u.house >= 0 &&
-            u.house < static_cast<int>(terrain->gates->size()) && !(*terrain->gates)[(std::size_t)u.house].empty())
-            t.open_cells = &(*terrain->gates)[(std::size_t)u.house];
-        return (t.level || t.open_cells) ? &t : nullptr;
-    };
-    for (std::size_t i = 0; i < units.size(); ++i) {
-        Unit& u = units[i];
-        const int self = static_cast<int>(i);
-        const UnitAnimSeq& seq = anim_for_image(anims, u.image);  // per-image anim table (Task 2)
-
-        // Dead/dying units never move, never re-claim a cell, and never
-        // occupy: combat.cpp's step_combat already released a unit's
-        // occupancy the instant it died (die_time flips to >= 0.0), so
-        // falling through to the idle branch below would resurrect a
-        // corpse's claim on its cell and wrongly block living units from
-        // entering it.
-        // CB-2 [RE-GATE APPLIED: aircraft.md §4/§6]: an airborne unit runs NO
-        // ground movement/occupancy; a Grounded aircraft keeps its spawn-set
-        // occ_ cell (add_unit set it; step_units never re-touches it) until
-        // takeoff releases it. Provably false in every existing demo
-        // (is_aircraft=false).
-        if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.is_aircraft) continue;
-
-        if (!u.moving()) {
-            occ.set(u.cell_x, u.cell_y, self);  // idle units own their cell
-            u.fx = u.cell_x;
-            u.fy = u.cell_y;
-            u.frame = seq_frame(seq.stand, u.facing, 0);
-            u.wait_time = 0.0;
-            continue;
-        }
-
-        // W7-06-16 [RE: FUN_006B7400 (spawn nodes in state 1 + rockets in
-        // state 2) != 0 -> the move step returns "hold": ShipLoco FUN_006A1310
-        // @0x6A13E6, DriveLoco FUN_004B2550 @0x4B264C]: a Dreadnought / V3
-        // with its own rockets on the deck stays where it is.
-        if (u.an.launch_hold) continue;
-
-        // Vehicle hull turn-then-move gate (docs/re/voxel-render.md §5): a
-        // vehicle first rotates its body toward the next segment's direction
-        // at its ROT rate; until the body is aligned (shortest arc within
-        // kAimToleranceU16) it turns in place and does NOT advance this frame.
-        // Infantry (!is_vehicle) skip this entirely -- byte-identical path.
-        if (u.is_vehicle) {
-            std::size_t pi = u.path_idx;
-            while (pi < u.path.size() && u.path[pi].x == u.cell_x && u.path[pi].y == u.cell_y)
-                ++pi;
-            if (pi < u.path.size()) {
-                const double seg_dx = u.path[pi].x - u.cell_x;
-                const double seg_dy = u.path[pi].y - u.cell_y;
-                const double want = facing_u16_from_delta(seg_dx, seg_dy);
-                u.body_facing = turn_toward(u.body_facing, want, u.rot_u16_per_sec * dt);
-                double d = std::fmod(want - u.body_facing, 65536.0);
-                if (d > 32768.0) d -= 65536.0;
-                if (d < -32768.0) d += 65536.0;
-                if (std::abs(d) > kAimToleranceU16) continue;  // still turning in place
-            }
-        }
-
-        // Per-unit speed: a vehicle rolls at its own speed_cps; infantry (and
-        // any unit with speed_cps == 0) use the World-wide move_cps unchanged.
-        // W5-B R-062: x the land/slope/damage multiplier the locomotor set
-        // when it committed to the cell being entered (1.0 when unarmed).
-        const double cps = (u.speed_cps > 0.0 ? u.speed_cps : move_cps) * u.speed_mult;
-        double budget = cps * dt;
-        bool blocked = false;
-        while (budget > 0.0 && u.path_idx < u.path.size()) {
-            const Cellxy tgt = u.path[u.path_idx];
-            if (tgt.x == u.cell_x && tgt.y == u.cell_y) {  // already here (e.g. path[0])
-                ++u.path_idx;
-                continue;
-            }
-            // Face the segment being entered (docs/re/infantry-anim.md §5) --
-            // updated at segment SELECTION, before the reservation/blocked
-            // check below, so a unit still visibly turns toward a blocked
-            // direction even on a frame where it can't actually step yet.
-            // Vehicles carry a continuous body_facing (updated by the turn
-            // gate above) instead of the 8-way Unit::facing; renderers must
-            // not use Unit::facing for them, so skip this update.
-            if (!u.is_vehicle) {
-                const int f = facing_from_delta(tgt.x - u.cell_x, tgt.y - u.cell_y);
-                if (f >= 0) u.facing = f;
-            }
-            // Gap fix C (G-47) [RE: rulesmd Crusher=/Crushable=; crush branch of
-            // the Drive locomotor not unwound -- RE-W6 open]: a Crusher vehicle
-            // driving into a cell held by enemy Crushable infantry squashes it
-            // (the infantry dies, the cell frees) instead of waiting for it.
-            // W5-B R-061: with sub-cells, every crushable enemy infantry in the
-            // cell's three spots is squashed.
-            // w7fix-combat W7-03-01 / W7-09-04 [RE: ObjectClass::IsCrushable
-            // 0x5F64C0 @0x5F650A/0x5F6557 -> IsAlliedWith 0x4F98B0]: never an
-            // ally of the crusher's owner (a neutral the map lists included).
-            // W7-07-21 [RE: Drive 0x4B3D85 -> UnitClass::Crush(cell, 1)
-            // 0x7404B0 @0x740564..0x74058A -> CellClass::Incoming(Empty, 1, 0)
-            // FUN_00481580; the squash Crush(cell, 0) runs on ARRIVAL,
-            // Per_Cell_Process FUN_00739AC0 @0x739FB9]: with the W7 rules the
-            // infantry is warned when the crusher commits to the cell and
-            // squashed only if still there when it arrives.
-            const World* W7 = speed ? speed->world : nullptr;
-            const bool w7crush = W7 && W7->combat_w7().armed && occ.subcells();
-            auto crush_ally = [&](const Unit& v) {
-                return W7 ? W7->allied_with(u.house, v.house) : v.house == u.house;
-            };
-            if (u.crusher && u.is_vehicle) {
-                int victims[4] = {occ.at(tgt.x, tgt.y), -1, -1, -1};
-                if (occ.subcells())
-                    for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s)
-                        victims[s - 1] = occ.spot_unit(tgt.x, tgt.y, s);
-                const int cell_ix = tgt.y * w + tgt.x;
-                bool warn = false, elite = false;
-                for (int o : victims) {
-                    if (o < 0 || o == self || o >= static_cast<int>(units.size())) continue;
-                    Unit& v = units[o];
-                    elite = elite || is_elite(v.vet.veterancy);
-                    if (w7crush && occ.is_infantry(o) && can_crush(u, v) && !crush_ally(v) && v.alive &&
-                        v.die_time < 0.0 && v.cargo_of < 0) {
-                        warn = true;   // squashed on arrival (below)
-                        continue;
-                    }
-                    if (can_crush(u, v) && !crush_ally(v) && v.alive &&   // W6-04-14/29
-                        v.die_time < 0.0 && v.cargo_of < 0) {
-                        v.hp = 0;
-                        v.die_time = 0.0;
-                        v.vet.killed_by = self;
-                        v.target = -1;
-                        v.target_building = -1;
-                        v.path.clear();
-                        v.path_idx = 0;
-                        occ.release_all_of(o, -1, -1);
-                    }
-                }
-                if (warn && u.tg.crush_warn != cell_ix) {
-                    u.tg.crush_warn = cell_ix;
-                    for (int o : victims) {
-                        if (o < 0 || o == self || o >= static_cast<int>(units.size())) continue;
-                        const Unit& v = units[o];
-                        if (!v.alive || v.die_time >= 0.0 || v.moving() || v.is_vehicle) continue;
-                        if (speed->scatter_out && W7->incoming_scatters(v, elite, /*nokidding=*/false))
-                            speed->scatter_out->push_back(o);
-                    }
-                }
-            }
-            // R-210 [RE: FUN_004D9B70]: the height gate on every step -- a cliff
-            // (or a deck that is gone) refuses it; the re-path below finds a
-            // legal way. `step_layer` is the deck layer the unit lands on.
-            int step_layer = u.on_deck;
-            if (terrain) {
-                PathTerrain t;
-                if (const PathTerrain* tp = terrain_of_unit(u, t); tp && tp->level) {
-                    const int dx = tgt.x - u.cell_x, dy = tgt.y - u.cell_y;
-                    step_layer = (dx < -1 || dx > 1 || dy < -1 || dy > 1)
-                                     ? -1
-                                     : path_step_layer(*tp, w, u.cell_x, u.cell_y, u.on_deck, tgt.x, tgt.y);
-                    if (step_layer < 0) {
-                        blocked = true;
-                        break;
-                    }
-                }
-            }
-            // Reserve the next cell before stepping into it.
-            if (occ.is_infantry(self)) {
-                // W5-B R-061 [RE: FindInfantrySubposition FUN_00481090]: an
-                // infantry reserves a SPOT in the next cell -- the quadrant of
-                // its current in-cell position (it keeps its lane), else the
-                // spot preference row; no free spot (or a vehicle there) blocks.
-                if (occ.spot_of(tgt.x, tgt.y, self) < 0) {
-                    int cur = occ.spot_of(u.cell_x, u.cell_y, self);
-                    if (cur < 0) cur = 0;
-                    const int sp = occ.free_spot(tgt.x, tgt.y, cur, self & 3);
-                    if (sp < 0) {
-                        blocked = true;
-                        break;
-                    }
-                    occ.set_spot(tgt.x, tgt.y, self, sp);
-                }
-            } else if (occ.at(tgt.x, tgt.y) != self || !occ.can_enter(tgt.x, tgt.y, self)) {
-                // W7-07-21: a cell held only by infantry this crusher may squash
-                // is entered (the squash happens on arrival).
-                bool crush_only = false;
-                if (w7crush && u.crusher && u.is_vehicle && !occ.can_enter(tgt.x, tgt.y, self)) {
-                    crush_only = true;
-                    for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s) {
-                        const int o = occ.spot_unit(tgt.x, tgt.y, s);
-                        if (o < 0 || o == self) continue;
-                        if (o >= static_cast<int>(units.size())) { crush_only = false; break; }
-                        const Unit& v = units[o];
-                        if (!(can_crush(u, v) && !crush_ally(v) && v.alive && v.die_time < 0.0)) crush_only = false;
-                    }
-                    // a vehicle owner (not us) still blocks
-                    const int own = occ.at(tgt.x, tgt.y);
-                    if (own >= 0 && own != self && (own >= static_cast<int>(units.size()) || !occ.is_infantry(own)))
-                        crush_only = false;
-                }
-                if (crush_only) {
-                    occ.set(tgt.x, tgt.y, self);
-                    if (speed) u.speed_mult = land_speed_mult(*speed, u, w, h, tgt.x, tgt.y);
-                } else if (occ.can_enter(tgt.x, tgt.y, self)) {
-                    occ.set(tgt.x, tgt.y, self);  // reserve (now owns current + next)
-                    if (speed) u.speed_mult = land_speed_mult(*speed, u, w, h, tgt.x, tgt.y);   // W5-B R-062
-                } else {
-                    blocked = true;
-                    break;
-                }
-            }
-            const double dx = tgt.x - u.fx;
-            const double dy = tgt.y - u.fy;
-            const double dist = om::sqrt(dx * dx + dy * dy);
-            if (dist <= 1e-9 || budget >= dist) {
-                occ.release(u.cell_x, u.cell_y, self);  // leave the old cell
-                u.fx = tgt.x;
-                u.fy = tgt.y;
-                u.cell_x = tgt.x;
-                u.cell_y = tgt.y;  // occ already owns this cell (reserved above)
-                if (terrain) u.on_deck = static_cast<std::uint8_t>(step_layer > 0 ? 1 : 0);   // R-210
-                // W7-07-21 [RE: Per_Cell_Process FUN_00739AC0 -> Crush(cell, 0)
-                // 0x7404B0]: the squash on arrival -- every crushable non-allied
-                // infantry still in the cell dies (kill credited to the crusher).
-                if (w7crush && u.crusher && u.is_vehicle) {
-                    for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s) {
-                        const int o = occ.spot_unit(tgt.x, tgt.y, s);
-                        if (o < 0 || o == self || o >= static_cast<int>(units.size())) continue;
-                        Unit& v = units[o];
-                        if (!(can_crush(u, v) && !crush_ally(v) && v.alive && v.die_time < 0.0 && v.cargo_of < 0))
-                            continue;
-                        v.hp = 0;
-                        v.die_time = 0.0;
-                        v.vet.killed_by = self;
-                        v.target = -1;
-                        v.target_building = -1;
-                        v.path.clear();
-                        v.path_idx = 0;
-                        occ.release_all_of(o, -1, -1);
-                    }
-                    u.tg.crush_warn = -1;
-                }
-                budget -= (dist <= 1e-9 ? 0.0 : dist);
-                ++u.path_idx;
-                u.wait_time = 0.0;
-            } else {
-                const double t = budget / dist;
-                u.fx += dx * t;
-                u.fy += dy * t;
-                budget = 0.0;
-            }
-        }
-
-        if (u.path_idx >= u.path.size()) {  // arrived
-            u.fx = u.cell_x;
-            u.fy = u.cell_y;
-            u.path.clear();
-            u.path_idx = 0;
-            u.anim_time = 0.0;
-            u.frame = seq_frame(seq.stand, u.facing, 0);
-            u.wait_time = 0.0;
-            occ.set(u.cell_x, u.cell_y, self);
-            continue;
-        }
-
-        if (blocked) {
-            // W5-B R-050: a vehicle held up by idle infantry of its own house
-            // asks them to scatter out of the way (the original's
-            // Map[cell].Incoming -> Scatter for friendly occupants).
-            const World* W7 = speed ? speed->world : nullptr;
-            if (W7 && W7->combat_w7().armed && speed->scatter_out && occ.subcells() && u.wait_time == 0.0 &&
-                u.path_idx < u.path.size()) {
-                // w7fix-combat W7-07-22 [RE: UnitClass::Can_Enter_Cell 0x73DFA0
-                // -> MOVE_TEMP for an ALLIED stationary occupant (any Foot,
-                // vehicles too, whatever its target); Drive 0x4B2550 @0x4B2CE0 /
-                // 0x4B319D / 0x4B385A / 0x4B4357 and Walk 0x75A6B1]: within
-                // CloseEnough of its goal the mover STOPS (Assign_Destination(0));
-                // otherwise CellClass::Incoming(Empty, 1, 1) scatters every
-                // occupant of the cell.
-                const Cellxy bc = u.path[u.path_idx];
-                int occs[4] = {-1, -1, -1, -1};
-                {
-                    const int own = occ.at(bc.x, bc.y);
-                    if (own >= 0 && own < static_cast<int>(units.size()) && !occ.is_infantry(own)) occs[0] = own;
-                    for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s)
-                        occs[s - 1] = occ.spot_unit(bc.x, bc.y, s);
-                }
-                bool temp = false;
-                for (int o : occs) {
-                    if (o < 0 || o == self || o >= static_cast<int>(units.size())) continue;
-                    const Unit& v = units[o];
-                    if (v.alive && v.die_time < 0.0 && !v.moving() && W7->allied_with(u.house, v.house)) temp = true;
-                }
-                if (temp) {
-                    const Cellxy goal = u.path.back();
-                    const double gx = goal.x - u.cell_x, gy = goal.y - u.cell_y;
-                    // (the stop ends a plain move; an attack approach keeps
-                    // re-pathing -- the attack mission would re-issue the same
-                    // approach every frame and livelock against the stop)
-                    const bool plain_move = u.target < 0 && u.target_building < 0 && u.attack_cell_x < 0 &&
-                                            !u.crushing;
-                    if (plain_move && om::sqrt(gx * gx + gy * gy) <= W7->combat_w7().close_enough) {
-                        u.path.clear();
-                        u.path_idx = 0;
-                        u.fx = u.cell_x;
-                        u.fy = u.cell_y;
-                        u.wait_time = 0.0;
-                        u.frame = seq_frame(seq.stand, u.facing, 0);
-                        occ.release_all_of(self, u.cell_x, u.cell_y);
-                        occ.set(u.cell_x, u.cell_y, self);
-                        continue;
-                    }
-                    for (int o : occs) {
-                        if (o < 0 || o == self || o >= static_cast<int>(units.size())) continue;
-                        const Unit& v = units[o];
-                        // (a unit busy with a target keeps it: Scatter only
-                        // moves an idle one -- the step-aside never cancels
-                        // an attack, or two attackers livelock scattering
-                        // each other)
-                        if (v.alive && v.die_time < 0.0 && !v.moving() && v.enter_target < 0 && v.target < 0 &&
-                            v.target_building < 0 && v.attack_cell_x < 0 &&
-                            W7->incoming_scatters(v, false, /*nokidding=*/true))
-                            speed->scatter_out->push_back(o);
-                    }
-                }
-            } else if (speed && speed->scatter_out && u.is_vehicle && occ.subcells() && u.wait_time == 0.0 &&
-                u.path_idx < u.path.size()) {   // once per hold-up, not every frame
-                const Cellxy bc = u.path[u.path_idx];
-                for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s) {
-                    const int o = occ.spot_unit(bc.x, bc.y, s);
-                    if (o >= 0 && o < static_cast<int>(units.size()) && units[o].house == u.house &&
-                        !units[o].moving() && units[o].target < 0 && units[o].enter_target < 0)
-                        speed->scatter_out->push_back(o);
-                }
-            }
-            const double prev_wait = u.wait_time;
-            u.wait_time += dt;
-            u.frame = seq_frame(seq.stand, u.facing, 0);  // stand while waiting (reads as "holding")
-            // Seniority stagger (breaks the mirror-symmetric re-path
-            // livelock): if the unit blocking our next cell has a LOWER index,
-            // it holds course and WE detour early (first attempt at
-            // kBlockedWait); if it has a HIGHER index, it is expected to
-            // detour first, so our first attempt is delayed one extra
-            // interval. Without this, two facing units cross the re-path
-            // threshold on the same frame every cycle and -- with symmetric
-            // occupancy and deterministic A* tie-breaks -- each computes the
-            // mirror image of the other's detour, oscillating between rows
-            // forever (a stable 2-cycle: observed in a 200s trace, not
-            // hypothetical).
-            const Cellxy blk = u.path[u.path_idx];
-            const int blocker = occ.at(blk.x, blk.y);
-            const double first_try =
-                (blocker != Occupancy::kEmpty && blocker < self)
-                    ? kBlockedWait
-                    : 2.0 * kBlockedWait;
-            if (u.wait_time >= kGiveUpAfter) {
-                // Continuously blocked with no route found for the whole
-                // timeout (boxed-in / sealed corridor) -> give up cleanly.
-                u.path.clear();
-                u.path_idx = 0;
-                u.fx = u.cell_x;
-                u.fy = u.cell_y;
-                u.wait_time = 0.0;
-            } else if (u.wait_time >= first_try &&
-                       (prev_wait < first_try ||
-                        om::ftol((prev_wait - first_try) / kBlockedWait) !=
-                            om::ftol((u.wait_time - first_try) / kBlockedWait))) {
-                // On a re-path attempt boundary (first_try, then every
-                // kBlockedWait after) -> attempt a re-path around the current
-                // traffic. On FAILURE keep the original path and keep waiting:
-                // transient jams (another unit mid-crossing of a funnel cell)
-                // clear on their own, and the per-frame can_enter check above
-                // resumes the walk the moment the blocker steps off. Only the
-                // kGiveUpAfter timeout abandons the order.
-                const Cellxy goal = u.path.back();
-                // CB-3 Naval [RE-GATE APPLIED: naval.md §1/§3]: re-path over the
-                // unit's domain grid -- Land (every existing unit) uses `passable`
-                // byte-identically; Water uses `water_passable`. Keyed off
-                // movement_domain so ALL THREE A* sites (order_unit_move, this
-                // re-path, and the combat-approach naval branch) select on the
-                // SAME field; inert today (is_naval == Water-domain). CONFIRMED:
-                // one occ_ cell + shared FootClass repath (§1/§3).
-                const bool crush = crush_passable && u.crusher && u.is_vehicle &&
-                                   u.movement_domain == MovementDomain::Land;   // P4
-                const std::vector<std::uint8_t>& g =
-                    u.movement_domain == MovementDomain::Water ? water_passable
-                    : (u.movement_domain == MovementDomain::Amphibious && amphib_passable)
-                        ? *amphib_passable : crush ? *crush_passable : passable;
-                std::vector<std::uint8_t> p2 =
-                    passable_minus_units(g, w, h, occ, self, u.cell_x, u.cell_y);
-                // W2-SK-16: a detour try is budgeted (a crowd-sealed goal used
-                // to flood the whole grid every 0.3 s per blocked unit).
-                PathTerrain rt;
-                std::vector<Cellxy> np =
-                    find_path_bounded_t(p2, w, h, {u.cell_x, u.cell_y}, goal, kRepathBudget,
-                                        u.movement_domain == MovementDomain::Water ? nullptr
-                                        : crush ? crush_leak : wall_leak,
-                                        terrain_of_unit(u, rt));
-                if (np.size() > 1) {
-                    u.path = std::move(np);
-                    u.path_idx = 1;
-                    u.wait_time = 0.0;
-                }
-            }
-            continue;
-        }
-
-        // Still walking: cycle the walk frames.
-        u.anim_time += dt;
-        const int phase = om::ftol(u.anim_time * kWalkFps) % seq.walk.count;
-        u.frame = seq_frame(seq.walk, u.facing, phase);
-    }
-}
+// W7 locomotion: land_speed_mult and step_units live in engine/world_loco.cpp.
 
 // ============================================================================
 // Projectile phase (P2) [RE: projectile.md + §12] -- the World half of

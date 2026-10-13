@@ -109,8 +109,8 @@ inline int pres_jumpjet_wobble_px(int idx, const ra2engine::Unit& u) {
     // W7-05-08: the keys live in the RULES id's section ([JUMPJET], not [ROCK]).
     auto it = cache.find(pres_type_id(u));
     if (it == cache.end()) {
-        auto num = [&](const char* sec, const char* k, double d) {
-            const std::string v = pres_clean(g_walk_rules->get(sec, k));
+        auto num = [&](const char* sname, const char* k, double d) {
+            const std::string v = pres_clean(g_walk_rules->get(sname, k));
             return v.empty() ? d : std::atof(v.c_str());
         };
         Wob w;

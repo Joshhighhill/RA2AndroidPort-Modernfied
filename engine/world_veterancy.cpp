@@ -2,6 +2,7 @@
 // of this phase, kept in their own TU so engine/world.cpp only carries the
 // three small insertions (add_combat_unit copy, add_building flag, the two
 // step() calls). Everything here is behind vet_any_ / crates_any_.
+#include <algorithm>
 #include <cmath>
 
 #include "world.hpp"
@@ -108,12 +109,16 @@ void World::refresh_vet_stats(int idx) {
         u.an.t.fly_speed_cps = u.w5.base_fly_cps * m;
     }
     if (v.rules_speed > 0 && !u.is_aircraft) {
-        const int s = speed_value(v.rules_speed, v.speed_mult, has(Ability::Faster), vet_rules_.speed);
-        if (s == v.rules_speed) {
+        // W7 / V8 [RE: FUN_004DB0B0 reads TechnoType+0x678 -- the Speed= in
+        // LEPTONS, min(255, trunc(Speed*256/100))]: the crate and FASTER
+        // multipliers truncate the lepton value (GI 10 -> 12), not Speed=.
+        const int lept = std::min(255, static_cast<int>(std::min(100, v.rules_speed) * 256 / 100));
+        const int s = lept > 0 ? speed_value(lept, v.speed_mult, has(Ability::Faster), vet_rules_.speed) : 0;
+        if (s == lept || lept <= 0) {
             u.speed_cps = v.base_speed_cps;
         } else {
             const double base = v.base_speed_cps > 0.0 ? v.base_speed_cps : move_cps_;
-            const double per = base / static_cast<double>(v.rules_speed);
+            const double per = base / static_cast<double>(lept);
             u.speed_cps = per * static_cast<double>(s);
         }
     }

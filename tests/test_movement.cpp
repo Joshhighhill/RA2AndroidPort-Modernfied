@@ -123,7 +123,7 @@ TEST_CASE("step_units: boxed-in unit cannot move and stops cleanly (no spin)") {
     check_no_overlap(units);
 }
 
-TEST_CASE("step_units: head-on in a 1-wide corridor -> no overlap, both terminate") {
+TEST_CASE("step_units: head-on in a 1-wide corridor -> no overlap, both stop within CloseEnough") {
     auto p = open_grid(4, 1);  // cells (0..3, 0)
     Occupancy occ(4, 1);
     std::vector<Unit> units;
@@ -134,7 +134,9 @@ TEST_CASE("step_units: head-on in a 1-wide corridor -> no overlap, both terminat
         step_units(units, p, p,4, 1, occ, dt, 4.0, kNoAnims);
         check_no_overlap(units);
     }
-    // Deadlock resolves by both stopping; neither overlaps.
+    // W7-11-03/10 [RE: FUN_004B2550 Move 6]: once both are held up each
+    // reads the other as parked (Temp) and, within CloseEnough (2.25 cells)
+    // of its goal, stops there -- the move ends; neither overlaps.
     CHECK_FALSE(units[0].moving());
     CHECK_FALSE(units[1].moving());
     check_no_overlap(units);

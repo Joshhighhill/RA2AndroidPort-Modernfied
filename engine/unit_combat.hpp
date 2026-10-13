@@ -8,6 +8,7 @@
 #include "air_naval.hpp"  // W2-AN: AnType (pure)
 #include "unit_w6.hpp"    // wave-6 #4: UnitTypeW6 (pure)
 #include "target_w6.hpp"  // W6 fix #2 (missions): UnitTypeTgt (pure)
+#include "locomotion.hpp" // W7: LocoType (pure)
 #include "unit_w7.hpp"    // wave-7 fix (units): UnitTypeW7 (pure)
 
 namespace ra2engine {
@@ -167,6 +168,7 @@ struct UnitCombat {
     bool auto_crush = false;          // W5-B R-050: TechnoType AutoCrush= (+0xD2D; HARV/CMIN yes)
     bool is_infantry = false;         // W5-B R-061: an [InfantryTypes] type (uses sub-cell spots)
     bool land_speed_loco = false;     // W5-B R-062: Drive/Ship locomotor (reads [LandType] speed)
+    LocoType loco;                    // W7 locomotion: kind + acceleration keys (save v35)
     // gF [RE: docs/re/mcv-deploy.md]: DeploysInto= building id (AMCV->GACNST).
     std::string deploys_into;
     // --- G16 (agent G) [RE: docs/re/world-depth.md] ---

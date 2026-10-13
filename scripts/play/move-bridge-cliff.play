@@ -21,6 +21,12 @@ require scene == game
 until 60 input_locked == 1
 until 1500 input_locked == 0
 wait 5
+# W7 speed model re-tune: Tanya swims her raw 15 leptons/frame now (was 24 with
+# GameSpeedBias) and the GIs walk 10 (was 16), so the run is longer and the
+# Soviet units kill Tanya (the mission's lose trigger) before it ends. This
+# script checks movement over cliffs and bridges, not the fight: the Soviet
+# units are removed first.
+cheat camp_killu 1 *
 
 # --- 1. Tanya and the cliff --------------------------------------------------------
 click unit 0:TANY

@@ -229,7 +229,7 @@ TEST_CASE("harvest: stamped dock target - far refinery going Idle mid-wait poach
     CHECK(r.units[1].dock_refinery == 0);               // ...at refinery 0, not 1
 }
 
-TEST_CASE("harvest: CMIN full cycle - load, warp home, unload, timed warp back") {
+TEST_CASE("harvest: CMIN full cycle - load, warp home, unload, drive back (W7-11-13)") {
     Rig r;
     r.ore.set(2, 2, OreKind::Ore, kMaxOreDensity, 0);  // 11 bales under the miner
     r.ore.set(2, 1, OreKind::Ore, 9, 0);               // + 9 in the N ring cell = 20
@@ -268,25 +268,17 @@ TEST_CASE("harvest: CMIN full cycle - load, warp home, unload, timed warp back")
     CHECK(r.units[0].harv == HarvState::Unloading);
     CHECK(r.credits[0] == 19 * 25);
 
-    r.step(kUnloadSecsPerBale);  // last bale -> UnloadEnd; return warp STARTS
+    r.step(kUnloadSecsPerBale);  // last bale -> UnloadEnd
     CHECK(r.units[0].bales_ore == 0);
     CHECK(r.credits[0] == 20 * 25);
     CHECK(count_events(r.events, HarvestEvent::Kind::UnloadEnd, 0) == 1);
-    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoOut, 0) == 1);
-    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoIn, 0) == 0);  // NOT landed
-    CHECK(r.units[0].harv == HarvState::Unloading);     // warp-back transit state
-    CHECK(r.units[0].dock_refinery == -1);
-    CHECK(r.units[0].cell_x == 10);                     // still at the dock
-    CHECK(r.units[0].cell_y == 11);
-
-    r.step(kChronoWarpSecs);  // transit completes exactly kChronoWarpSecs later
+    // W7-11-13 [RE: UnitClass::SetDestination 0x740780]: no warp back -- the
+    // Chrono Miner piggybacks a Drive locomotor and drives to the ore.
     CHECK(count_events(r.events, HarvestEvent::Kind::ChronoOut, 0) == 0);
-    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoIn, 0) == 1);
-    // Lands at/adjacent to harv_cell (2,2) -- here (2,2) itself is passable,
-    // so the teleport lands exactly on it.
-    CHECK(r.units[0].cell_x == 2);
-    CHECK(r.units[0].cell_y == 2);
     CHECK(r.units[0].harv == HarvState::SeekOre);
+    CHECK(r.units[0].dock_refinery == -1);
+    CHECK(r.units[0].cell_x == 10);                     // leaves the dock on its tracks
+    CHECK(r.units[0].cell_y == 11);
 }
 
 TEST_CASE("harvest: CMIN warps home, HARV drives") {
@@ -396,17 +388,11 @@ TEST_CASE("harvest: CMIN warp releases the origin cell and claims exactly the la
     REQUIRE(r.units[0].harv == HarvState::Unloading);
     for (int i = 0; i < 20; ++i) r.step(kUnloadSecsPerBale);
     REQUIRE(r.units[0].bales_ore == 0);
-    REQUIRE(r.units[0].dock_refinery == -1);          // return-warp transit marker
-
-    // Return leg: warp back to the ore field (2, 2).
-    r.step(kChronoWarpSecs);
+    REQUIRE(r.units[0].dock_refinery == -1);
+    // W7-11-13: no return warp -- SeekOre at the dock; it drives back.
     REQUIRE(r.units[0].harv == HarvState::SeekOre);
-    REQUIRE(r.units[0].cell_x == 2);
-    REQUIRE(r.units[0].cell_y == 2);
-    CHECK(r.occ.at(10, 11) == Occupancy::kEmpty);     // (a) dock cell released
-    CHECK(r.occ.can_enter(10, 11, /*unit*/ 99));
-    CHECK(r.occ.at(2, 2) == 0);                       // landing claimed
-    CHECK(r.claims_of(0) == 1);                       // (b) exactly one claim, full cycle
+    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoOut, 0) == 0);
+    CHECK(r.claims_of(0) >= 1);
 }
 
 TEST_CASE("harvest: warp onto a cell occupied by another unit deflects (no overlap)") {
@@ -574,7 +560,7 @@ TEST_CASE("harvest: CMIN manual return with an empty, never-stamped hold skips t
     CHECK(r.units[0].cell_y == 11);
 }
 
-TEST_CASE("harvest: CMIN manual return with a real stamped harv_cell still warps back") {
+TEST_CASE("harvest: CMIN manual return with a real stamped harv_cell drives back (W7-11-13)") {
     // Contrast case: has_harv_cell == true (found ore earlier) -> the normal
     // timed warp-back still fires. Guards against the fix being over-broad.
     Rig r;
@@ -594,17 +580,11 @@ TEST_CASE("harvest: CMIN manual return with a real stamped harv_cell still warps
     r.step(0.01);
     REQUIRE(r.units[0].harv == HarvState::Unloading);
 
-    r.step(0.01);  // no bales -> UnloadEnd, but has_harv_cell -> warp-back starts
+    r.step(0.01);  // no bales -> UnloadEnd; W7-11-13: no warp back, it drives
     CHECK(count_events(r.events, HarvestEvent::Kind::UnloadEnd, 0) == 1);
-    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoOut, 0) == 1);
-    CHECK(r.units[0].harv == HarvState::Unloading);  // warp-back transit state
-    CHECK(r.units[0].dock_refinery == -1);
-
-    r.step(kChronoWarpSecs);
-    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoIn, 0) == 1);
-    CHECK(r.units[0].cell_x == 2);
-    CHECK(r.units[0].cell_y == 2);
+    CHECK(count_events(r.events, HarvestEvent::Kind::ChronoOut, 0) == 0);
     CHECK(r.units[0].harv == HarvState::SeekOre);
+    CHECK(r.units[0].dock_refinery == -1);
 }
 
 // ---- Review Important-2: FreeUnit grand-opening edge detector coverage ----
