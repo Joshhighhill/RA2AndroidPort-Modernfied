@@ -45,14 +45,18 @@ assert uheight(0,TANY,0) == 6
 view cell 59 60
 wait 2
 shot tanya_on_edge
-# the river at the foot of the cliff (a cell the cliff does not hide)
+# the river at the foot of the cliff (a cell the cliff does not hide).
+# fv7d: (57,58) is Water08 sub 3, TMP terrain byte 15 -> Rock through
+# DAT_008278F4 (a rock in the river, impassable to every SpeedType in the
+# original); (55,58) is open water (Water09, byte 9), reached down the ramp at
+# (54..57,69..70) and the shore at (52,66).
 click unit 0:TANY
 wait 1
-click cell 57 58
+click cell 55 58
 # control for section 3: in the river she does play the Swim set
 waituntil 2400 iseq(Swim) >= 1
 assert iseq(Swim) >= 1
-until 2400 ucell(0,TANY,0) == 57058              @R-210
+until 2400 ucell(0,TANY,0) == 55058              @R-210
 assert uheight(0,TANY,0) == 2
 assert cliff_steps(0) == 0                         @R-210
 assert cliff_steps == 0                            @R-210

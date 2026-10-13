@@ -238,6 +238,7 @@ Keys reserved for later phases (scripts already assert them and report
 | `missiles.play` | W4: skirmish weapon flights to READ -- Rhino shell, IFV homing missile + trail, Kirov voxel bombs, V3 tilt/climb/arc, Grand Cannon, tusks |
 | `missiles-intercept.play` | W4: ALL01, an enemy Patriot site shoots a player V3 rocket down (homing RedEye2, DontScore) |
 | `move-bridge-cliff.play` | R-210: ALL01 -- Tanya on Liberty Island's cliff edge is ordered into the river below and walks down the island stairs instead of dropping (`cliff_steps(0) == 0`); after the Fort Bradley rendezvous an engineer repairs the broken east bridge at the hut and the box-selected GIs pass their own gate, walk on the deck (`sel_deck`, `deck_steps(0)`) and reach the far bank |
+| `trn02-bridge-repair.play` | fv7d: TRN02 -- the MCV deploy fires `RedTeamRepairBridge`; the RedTeam engineer's script line 46 (attack CABHUT) sends it into the hut [RE: InfantryClass::Mission_Attack 0x51F0F0, Infiltrate set for Engineer= by the loader 0x5243B9] and the destroyed middle row of the only bridge is repaired (`bridge_destroyed == 0`). The Shore sandbar's Beach sub-tiles (TMP byte 10) stay impassable to Foot as in the original |
 | `pres-w7.play` | Wave 7 presentation (docs/gap/wave7/12-presentation.md): voices keyed by rules id (`voice(ID,field)`), EVA UnitReady / Canceled, group number, Desolator eruption, Robot Tank on/offline, drone move loop, Chrono wave beam, Prism split beams (`pres(fragment_beam)`), Rocketeer Hover/Fly, no UnitLost for V3 rockets (`pres(spawned_no_unit_lost)`), Kirov crash impact (`pres(crash_impact)`), Demo Truck DEMTEXP (`pres(death_weapon)`) |
 | `pres-w7-mc.play` | W7-10-05 / W7-12-23: SOV09 Yuri capture (mc-range orders) -> `mc_pairs`, `pres(mind_control)`, MINDANIM ring + link line shot |
 | `probe-*.play` | Harness self-checks / diagnostics (no gameplay claims) |
@@ -275,7 +276,10 @@ f17211, `26ab47b1ab2f50ac` on 844a88a); `m-sov09-real`'s breaching IFV drives ba
 each lure hit (Easy, WON f19877 on 9bf5ccd; NOT WON after fv7c's unified call for help, which no
 longer draws the SEALs/Grizzlies out). `m-trn02-real` is NOT WON after fv7c: the per-tile LandType
 makes the Shore sandbar between the bases Beach (TMP byte 10, impassable to Foot) and the only bridge
-has a destroyed middle section (overlay 101), so no ground route joins the two bases.
+has a destroyed middle section (overlay 101), so no ground route joins the two bases. fv7d: that is the
+original's map too -- the route is the bridge, which the RedTeam engineer repairs at the CABHUT once the
+player deploys (`RedTeamRepairBridge`); the clone gave the computer engineer an attack order instead of
+the original's Capture/Enter (InfantryClass::Mission_Attack 0x51F0F0). `m-trn02-real` WON again (f9460).
 
 ## Multiplayer (agent S, engine/mp_pages.inc)
 
