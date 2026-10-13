@@ -620,7 +620,7 @@ private:
     }
     bool w6_wet(const ra2engine::World& w, const ra2engine::Unit& u) const {
         // W7-12-09: Water or Beach, the PlayAnim wet test.
-        return u.alive && !u.is_aircraft && !u.is_vehicle && u.cargo_of < 0 &&
+        return u.alive && !u.is_aircraft && !u.is_vehicle && u.cargo_of < 0 && !u.on_deck &&   // R-210: on a bridge deck
                (w.is_water_cell(u.cell_x, u.cell_y) || (w.land_speed_armed() && w.speed_land_at(u.cell_x, u.cell_y) == 6));
     }
     // W6-04-27 aircraft [RE-FALLBACK: the fly/jumpjet locomotor sound calls
