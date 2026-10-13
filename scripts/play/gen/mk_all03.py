@@ -32,13 +32,30 @@ p.build("GAPOWR").build("GAREFN").build("GAPILE").build("GAPOWR").build("GAWEAP"
 p.train("MTNK", 3, 10)
 
 
+RAIDERS = ["E2", "SHK", "HTK", "HTNK"]   # ascending priority
+RAID_R = int(os.environ.get("MK_ALL03_RAID_R", "8"))
+
+
 def regroup():
     # W7R1: the Grizzlies idle where they leave the factory, out of range of
     # the raids on the yard's east side, and meet them one by one. Like a
     # player, pull them together east of the Construction Yard.
     c = "outcome == RUNNING and units(0,MTNK) > 0"
     p.add(f"if {c} then click unit 0:MTNK:0 soft", f"if {c} and selected > 0 then key t",
-          f"if {c} and selected > 0 then key t", f"if {c} and selected > 0 then click cell 90 127 alt")
+          f"if {c} and selected > 0 then key t")
+    # fv7b: with the w7r2 engine changes merged on top of w7r1 (the vehicle
+    # ScatterContent push and the Approach_Target 0x4D55B0 rings -- either
+    # one alone still won) the raids razed the base from f10200 while the
+    # Grizzlies idled at the regroup cell; a human house gets no call for
+    # help (FUN_00707500). Like a player, send the group at a raider that
+    # comes within 8 cells (last click wins: highest priority last; 10+
+    # cells pulls the tanks out piecemeal and loses).
+    near = []
+    for t in RAIDERS:
+        q = f"sel_near(1,{t}) < {RAID_R}"
+        p.add(f"if {c} and selected > 0 and {q} then click unit 1:{t}:near soft")
+        near.append(f"sel_near(1,{t}) >= {RAID_R}")
+    p.add(f"if {c} and selected > 0 and {' and '.join(near)} then click cell 90 127 alt")
 
 
 for b in ("GAWEAP", "GAREFN", "GAPOWR", "GAWEAP"):

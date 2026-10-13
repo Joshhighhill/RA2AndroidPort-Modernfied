@@ -41,6 +41,7 @@ wait 60
 
 # The Red Team base (house 1): the map's Allied-type base, plus whatever the
 # Red Team AI builds (defences first).
+MASS = int(os.environ.get("MK_TRN02_MASS", "12"))
 RED = ["NALASR", "GAPILE", "NAHAND", "GAPOWR", "GACNST", "GAREFN", "NAWEAP", "NAPOWR", "NARADR", "NACNST"]
 
 
@@ -61,14 +62,23 @@ def main(out):
     p.add("until 4000 units(0,E1) >= 22 or outcome != RUNNING", "dump", "shot trn02_army")
     # March on the red base: attack each building type in turn.
     for r in range(12):
+        # fv7b (w7r2 Approach_Target rings): the squad now fans out on the
+        # weapon-range ring of each building, inside the Red Team's guard
+        # reach, and a 5-GI trickle died piecemeal to its GIs and barracks
+        # output. Mass a squad before each new sweep (credits pile up unused).
+        if r > 0:
+            p.add(f"until 3000 units(0,E1) >= {MASS} or outcome != RUNNING", "if outcome == WON then end expect WON")
         for b in RED:
             p.select_types(["E1"])
             # R3: since an attack on a building holds at weapon range, the
             # squad stands in front of its target; ':near' clicks a footprint
             # point no GI covers (a click on a selected GI deploys it).
             p.add(f"if {g} and buildings(1,{b}) > 0 then click building 1:{b}:near soft", "click xy 500 400 right")
-            p.add("let tw = f", "until 300 outcome != RUNNING or f >= $tw+299", "if outcome == WON then end expect WON")
-        p.train("E1", 2, 5, guard=True)
+            # fv7b: stay on a target until it falls (300 frames at most); no
+            # wait for a type that is already gone.
+            p.add("let tw = f", f"until 300 outcome != RUNNING or buildings(1,{b}) == 0 or f >= $tw+299",
+                  "if outcome == WON then end expect WON")
+        p.train("E1", 2, MASS, guard=True)
         p.add(f"if {g} then dump", "if outcome == WON then end expect WON")
     p.add("shot trn02_final", "until 3000 outcome != RUNNING", "dump", "end expect WON")
     p.save(out)

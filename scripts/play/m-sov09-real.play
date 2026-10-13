@@ -557,6 +557,22 @@ if units(6,FV) > 0 and ucell(6,FV,0) != 70081 and upath(6,FV,0) != 70081 then cl
 if units(6,FV) > 0 and ucell(6,FV,0) != 70081 and upath(6,FV,0) != 70081 then click cell 70 81
 endrepeat
 dump
+click xy 500 400 right
+click unit 6:FV:1
+click cell 66 75
+wait 10
+repeat 30
+wait 10
+if units(6,FV) > 0 and ucell(6,FV,1) != 66075 and utgt(6,FV,1) != -1 then click xy 500 400 right
+if units(6,FV) > 0 and ucell(6,FV,1) != 66075 and utgt(6,FV,1) != -1 then click unit 6:FV:1
+if units(6,FV) > 0 and ucell(6,FV,1) != 66075 and utgt(6,FV,1) != -1 then click cell 66 75
+if units(6,FV) > 0 and ucell(6,FV,1) != 66075 and umov(6,FV,1) == 0 then click xy 500 400 right
+if units(6,FV) > 0 and ucell(6,FV,1) != 66075 and umov(6,FV,1) == 0 then click unit 6:FV:1
+if units(6,FV) > 0 and ucell(6,FV,1) != 66075 and umov(6,FV,1) == 0 then click cell 66 75
+if units(6,FV) > 0 and ucell(6,FV,1) != 66075 and upath(6,FV,1) != 66075 then click xy 500 400 right
+if units(6,FV) > 0 and ucell(6,FV,1) != 66075 and upath(6,FV,1) != 66075 then click unit 6:FV:1
+if units(6,FV) > 0 and ucell(6,FV,1) != 66075 and upath(6,FV,1) != 66075 then click cell 66 75
+endrepeat
 let pw = power_out(1)
 click xy 500 400 right
 click unit 6:FV:1
@@ -1706,6 +1722,22 @@ if units(6,MTNK) > 0 and ucell(6,MTNK,0) != 64078 and utgt(6,MTNK,0) != -1 and n
 if units(6,MTNK) > 0 and ucell(6,MTNK,0) != 64078 and utgt(6,MTNK,0) != -1 and nenemy(6,MTNK,0) > 6 then click cell 64 78
 wait 20
 dump
+click xy 500 400 right
+click unit 6:FV:1
+click cell 66 75
+wait 10
+repeat 30
+wait 10
+if units(6,FV) > 0 and ucell(6,FV,1) != 66075 and utgt(6,FV,1) != -1 then click xy 500 400 right
+if units(6,FV) > 0 and ucell(6,FV,1) != 66075 and utgt(6,FV,1) != -1 then click unit 6:FV:1
+if units(6,FV) > 0 and ucell(6,FV,1) != 66075 and utgt(6,FV,1) != -1 then click cell 66 75
+if units(6,FV) > 0 and ucell(6,FV,1) != 66075 and umov(6,FV,1) == 0 then click xy 500 400 right
+if units(6,FV) > 0 and ucell(6,FV,1) != 66075 and umov(6,FV,1) == 0 then click unit 6:FV:1
+if units(6,FV) > 0 and ucell(6,FV,1) != 66075 and umov(6,FV,1) == 0 then click cell 66 75
+if units(6,FV) > 0 and ucell(6,FV,1) != 66075 and upath(6,FV,1) != 66075 then click xy 500 400 right
+if units(6,FV) > 0 and ucell(6,FV,1) != 66075 and upath(6,FV,1) != 66075 then click unit 6:FV:1
+if units(6,FV) > 0 and ucell(6,FV,1) != 66075 and upath(6,FV,1) != 66075 then click cell 66 75
+endrepeat
 let pw = power_out(1)
 click xy 500 400 right
 click unit 6:FV:1

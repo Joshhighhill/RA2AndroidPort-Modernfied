@@ -110,6 +110,7 @@ DOG_PARK = (_cells("MK_SOV09_DOG_PARK", "26,50") or [None])[0]
 FV_ROUTE = _cells("MK_SOV09_FV_ROUTE", "40,77 48,82 64,82 66,77")
 FV_HOLD = int(os.environ.get("MK_SOV09_FV_HOLD", "60"))
 LURE = int(os.environ.get("MK_SOV09_LURE", "1"))   # 0: the pre-wave-7 plan (fails)
+BREACH_POLLS = int(os.environ.get("MK_SOV09_BREACH_POLLS", "30"))
 LURE_POLLS = int(os.environ.get("MK_SOV09_LURE_POLLS", "60"))
 
 
@@ -286,6 +287,13 @@ def main(out):
                   f"if {back} then click cell 44 87")
 
         for phase in ("A", "B"):
+            # fv7b: since w7r3 (a Prism Tower no longer shoots at airborne
+            # units -- FUN_007718B0 AA legality) the opening plays out a
+            # little differently and the idle breaching IFV had drifted to
+            # (69,80); from there its plant order took it into a Prism's
+            # reach (dead in 90 frames). Back to the gap first, from where
+            # it shells the plants in step 5.
+            drive(p, "6:FV:0", 66, 75, BREACH_POLLS)
             p.add("let pw = power_out(1)", "click xy 500 400 right", "click unit 6:FV:0",
                   "click building 1:GAPOWR:near", "until 400 power_out(1) < $pw")
             order(p, "6:FV:0", "cell 66 82")
