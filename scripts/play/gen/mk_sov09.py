@@ -117,6 +117,7 @@ DOG_PARK = (_cells("MK_SOV09_DOG_PARK", "26,50") or [None])[0]
 # (55,78) (a building cell) took it along y=75, 9 cells from the Prism.
 FV_ROUTE = _cells("MK_SOV09_FV_ROUTE", "40,77 48,82 64,82 66,77")
 FV_HOLD = int(os.environ.get("MK_SOV09_FV_HOLD", "60"))
+CAP_HOLD = _cells("MK_SOV09_CAP_HOLD", "80,78")[0]   # fv8b: the captured IFV waits here
 LURE = int(os.environ.get("MK_SOV09_LURE", "1"))   # 0: the pre-wave-7 plan (fails)
 ESCORT_POSTS = _cells("MK_SOV09_ESCORT_POSTS", "65,76 67,76")
 BREACH_POLLS = int(os.environ.get("MK_SOV09_BREACH_POLLS", "30"))
@@ -228,8 +229,14 @@ def main(out):
     for _ in range(40):
         c = "units(6,FV) < 2 and units(1,FV) > 0"
         p.add(f"if {c} then click xy 500 400 right", f"if {c} then click unit 6:YURI:2",
-              f"if {c} then click unit 1:FV:near soft", "wait 40")
-    p.add("until 300 units(6,FV) >= 2", "assert ucell(6,FV,1) == 66077", "dump")
+              f"if {c} then click unit 1:FV:near soft", "waituntil 40 units(6,FV) >= 2")
+    # fv8b: the moment the IFV is taken, the player moves it and Yuri 2 on --
+    # left idle at the south turn both auto-acquired a target to the north
+    # and drove/walked into the Prism at (74,67) (the w8fix-save paradrop
+    # cadence lands the Yuris differently, and the whole timeline moved).
+    p.add("until 300 units(6,FV) >= 2")
+    order(p, "6:FV:0", f"cell {CAP_HOLD[0]} {CAP_HOLD[1]}")
+    p.add("assert ucell(6,FV,1) == 66077", "dump")
     # Yuri 2 out of the SEALs' way (they come to the gap) until step 6
     order(p, "6:YURI:2", "cell 40 86")
     # (the captured IFV stays at its patrol's south turn: any way west along

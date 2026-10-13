@@ -175,164 +175,167 @@ until 1500 umov(6,YURI,2) == 0
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 if units(6,FV) < 2 and units(1,FV) > 0 then click xy 500 400 right
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 6:YURI:2
 if units(6,FV) < 2 and units(1,FV) > 0 then click unit 1:FV:near soft
-wait 40
+waituntil 40 units(6,FV) >= 2
 until 300 units(6,FV) >= 2
+click xy 500 400 right
+click unit 6:FV:0
+click cell 80 78
 assert ucell(6,FV,1) == 66077
 dump
 click xy 500 400 right
