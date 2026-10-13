@@ -11,6 +11,16 @@ click start
 until 300 scene == game
 wait 30
 until 1500 input_locked == 0
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+click cell 87 127
+wait 300
+if units(0,E1) > 0 then click unit 0:E1:0
+key t
+key t
+key d
+wait 5
 let n_GAPOWR = built(0,GAPOWR)
 until 900 can_build(GAPOWR) == 1
 click tab:0
@@ -91,6 +101,38 @@ if placing == 1 then place auto
 wait 1
 if placing == 1 then place auto
 until 600 built(0,GAWEAP) > $n_GAWEAP
+until 900 cameo(MTNK) == 1
+click tab:3
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+let n_GAWEAP = built(0,GAWEAP)
+until 900 can_build(GAWEAP) == 1
+click tab:0
+click cameo:GAWEAP
+until 2400 queue_ready(structure) == 1
+click cameo:GAWEAP
+place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+until 600 built(0,GAWEAP) > $n_GAWEAP
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
 let n_GAREFN = built(0,GAREFN)
 until 900 can_build(GAREFN) == 1
 click tab:0
@@ -107,6 +149,10 @@ if placing == 1 then place auto
 wait 1
 if placing == 1 then place auto
 until 600 built(0,GAREFN) > $n_GAREFN
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
 let n_GAPOWR = built(0,GAPOWR)
 until 900 can_build(GAPOWR) == 1
 click tab:0
@@ -123,31 +169,130 @@ if placing == 1 then place auto
 wait 1
 if placing == 1 then place auto
 until 600 built(0,GAPOWR) > $n_GAPOWR
-until 900 cameo(MTNK) == 1
-click tab:3
-click cameo:MTNK
-click cameo:MTNK
-click cameo:MTNK
-click cameo:MTNK
-click cameo:MTNK
-click cameo:MTNK
-click cameo:MTNK
-click cameo:MTNK
-click cameo:MTNK
-click cameo:MTNK
-waituntil 2000 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+let n_GAWEAP = built(0,GAWEAP)
+until 900 can_build(GAWEAP) == 1
+click tab:0
+click cameo:GAWEAP
+until 2400 queue_ready(structure) == 1
+click cameo:GAWEAP
+place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+until 600 built(0,GAWEAP) > $n_GAWEAP
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
 if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
-waituntil 2000 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
 if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
-waituntil 2000 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
 if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
@@ -166,19 +311,106 @@ click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
-waituntil 2000 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
 if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
-waituntil 2000 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
 if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
-waituntil 2000 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
 if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
@@ -197,19 +429,106 @@ click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
-waituntil 2000 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
 if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
-waituntil 2000 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
 if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
-waituntil 2000 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
 if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
@@ -228,19 +547,106 @@ click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
-waituntil 2000 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
 if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
-waituntil 2000 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
 if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
-waituntil 2000 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
 if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
 if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK

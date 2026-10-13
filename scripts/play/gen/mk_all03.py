@@ -18,15 +18,43 @@ until 300 scene == game
 wait 30
 until 1500 input_locked == 0
 """)
-p.build("GAPOWR").build("GAREFN").build("GAPILE").build("GAPOWR").build("GAWEAP").build("GAREFN").build("GAPOWR")
+# W7R1: since wave 7 (threat scan, retaliation, call-for-help) the idle GIs
+# answer the CivilianArmy raids, walk out after them and die in the streets.
+# Like a player, walk them into the base (beside the Construction Yard, the
+# side the raids come from) and dig them in (deploy) there.
+p.select_types(["E1"]).add("click cell 87 127", "wait 300")
+p.select_types(["E1"]).add("key d", "wait 5")
+p.build("GAPOWR").build("GAREFN").build("GAPILE").build("GAPOWR").build("GAWEAP")
+# W7R1: since the original BuildTimeMultiplier / build speed (wave 7) a Grizzly
+# takes ~480 frames at one factory, so the AI raid reached the lone war factory
+# before the army stood. The Grizzlies now train as soon as the first war
+# factory stands while two more war factories go up (MultipleFactory 0.8).
+p.train("MTNK", 3, 10)
+
+
+def regroup():
+    # W7R1: the Grizzlies idle where they leave the factory, out of range of
+    # the raids on the yard's east side, and meet them one by one. Like a
+    # player, pull them together east of the Construction Yard.
+    c = "outcome == RUNNING and units(0,MTNK) > 0"
+    p.add(f"if {c} then click unit 0:MTNK:0 soft", f"if {c} and selected > 0 then key t",
+          f"if {c} and selected > 0 then key t", f"if {c} and selected > 0 then click cell 90 127 alt")
+
+
+for b in ("GAWEAP", "GAREFN", "GAPOWR", "GAWEAP"):
+    p.build(b)
+    regroup()
 for r in range(4):
-    p.train("MTNK", 3, 10)
+    if r > 0:
+        p.train("MTNK", 3, 10)
     want = min(army, (r+1)*9)
     # A player tops the batch up when the AI's raids thin it out (since the P4
     # crushable walls the AI tanks drive through the sandbags/fences, and the
     # raid losses vary): re-queue while short, then insist.
     for _ in range(3):
-        p.add(f"waituntil 2000 units(0,MTNK) >= {want}")
+        for _ in range(6):
+            regroup()
+            p.add(f"waituntil 330 units(0,MTNK) >= {want}")
         p.add(
             f"if units(0,MTNK) < {want} and cameo(MTNK) == 1 then click tab:3",
             *[f"if units(0,MTNK) < {want} and cameo(MTNK) == 1 then click cameo:MTNK" for _ in range(4)])
