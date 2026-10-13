@@ -7,6 +7,7 @@
 #include <map>
 #include <utility>
 
+#include "bridges.hpp"          // W8: low_bridge_destroyed (speed_land_at)
 #include "cargo.hpp"          // can_load/cargo_total_size/next_eject/eject_cell (CB-1)
 #include "combat.hpp"         // armor_index, step_combat, MoveRequest
 #include "flight.hpp"         // CB-2: step_altitude/cruise_step/heading_toward/advance_flight_state
@@ -694,7 +695,18 @@ int World::speed_land_at(int x, int y) const {
     // Ore on a flat cell is Tiberium land (FUN_0047D1C0: a Tiberium overlay with
     // Land=Clear and ramp type < 5).
     if (ore_.has_ore(x, y) && ramp_[i] < 5) return 5;
+    // W8-01-04 / W8-03-03 / W8-04-01 [RE: CellClass::RecalcAttributes
+    // FUN_0047D1C0 L39-43 -- with an overlay, LandType = OverlayType.Land
+    // (+0x298), returning at once when NoUseTileLandType (+0x2AC, loader
+    // 0x5FE148/0x5FE163) is set]: an intact or damaged low-bridge piece
+    // (LOBRDG01-26 / LOBRDB*: Land=Road, NoUseTileLandType=true) makes its cell
+    // Road; a destroyed one (NoUseTileLandType=false) keeps the tile's type.
+    if (low_bridge_road(i)) return 1;
     return speed_land_[i];
+}
+
+bool World::low_bridge_road(std::size_t i) const {
+    return i < bridge_ovl_.size() && bridge_ovl_[i] >= 0 && !low_bridge_destroyed(bridge_ovl_[i]);
 }
 
 double World::unit_speed_cps(int i) const {
@@ -5637,6 +5649,7 @@ void World::step(double dt) {
         if (land_speed_armed_) {
             sc.armed = true;
             sc.land = &speed_land_;
+            sc.bridge_ovl = bridge_ovl_.empty() ? nullptr : &bridge_ovl_;   // W8-03-03
             sc.ramp = &ramp_;
             sc.level = &level_grid_;
             sc.ore = &ore_;
@@ -6670,12 +6683,30 @@ void World::detonate_projectile(Projectile& p, int victim) {
                      units_[p.target_unit].hp != hp_before[static_cast<std::size_t>(p.target_unit)])
                         ? p.target_unit : ar.first_unit;
     // G16 (agent G) [RE: world-depth.md §B2, FUN_00489190]: the shell's
-    // explosion may break a low bridge section in the impact cell (inert unless
-    // GameScene armed the depth rules and the map has low bridges).
-    if (depth_rules_.armed && !bridge_ovl_.empty() && p.attacker >= 0 &&
-        p.attacker < static_cast<int>(units_.size())) {
-        const Unit& att = units_[p.attacker];
-        bridge_explosion(icx, icy, att.w_damage, att.w_active == 1 ? att.w2.wall : att.p_wall);
+    // explosion may break the low section / high span in the impact cell (inert
+    // unless GameScene armed the depth rules). W8-03-09 / W8-04-03: no longer
+    // gated on the map having a LOW bridge (ALL01T has high bridges only), and
+    // the high-bridge roll gets the impact Z for the deck window (0x489E87).
+    // The clone's unit Z has no deck term, so a shell bursting on a deck
+    // unit's cell is taken at the deck height.
+    if (depth_rules_.armed && (!bridge_ovl_.empty() || !hbridge_.empty())) {
+        int bz = impact_z;
+        if (p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size())) {
+            const Unit& t = units_[static_cast<std::size_t>(p.target_unit)];
+            if (t.on_deck && t.cell_x == icx && t.cell_y == icy)
+                bz = std::max(bz, deck_z(icx, icy) + unit_lz(t));
+        }
+        if (p.attacker >= 0 && p.attacker < static_cast<int>(units_.size())) {
+            const Unit& att = units_[p.attacker];
+            bridge_explosion(icx, icy, att.w_damage, att.w_active == 1 ? att.w2.wall : att.p_wall, bz);
+        } else if (p.attacker < 0 && p.attacker_building >= 0 &&
+                   p.attacker_building < static_cast<int>(buildings_.size()) &&
+                   buildings_[p.attacker_building].type >= 0 &&
+                   buildings_[p.attacker_building].type < static_cast<int>(btypes().size())) {
+            // A base defense's shell detonates through the same DamageArea.
+            const Unit shooter = defense_shooter(p.attacker_building, p.weapon_slot);
+            bridge_explosion(icx, icy, shooter.w_damage, (shooter.w6.wall_flags & kW6Wall) != 0, bz);
+        }
     }
     if (restore_slot >= 0)
         activate_weapon_slot(units_[p.attacker], restore_slot, vet_any_ ? &vet_rules_ : nullptr);

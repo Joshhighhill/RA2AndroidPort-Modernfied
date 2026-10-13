@@ -806,9 +806,15 @@
                 return "";
             }
             if (c == "bridge_hit" && a.size() >= 4) {   // G16 debug: one explosion roll
-                world_.bridge_explosion(std::atoi(a[1].c_str()), std::atoi(a[2].c_str()),
-                                        std::atoi(a[3].c_str()), true);
+                const int bx = std::atoi(a[1].c_str()), by = std::atoi(a[2].c_str());
+                world_.bridge_explosion(bx, by, std::atoi(a[3].c_str()), true,
+                                        a.size() >= 5 ? std::atoi(a[4].c_str()) : world_.deck_z(bx, by));
                 return "";
+            }
+            if (c == "storm_bolt" && a.size() >= 3) {   // W8-06-04: one Lightning Storm bolt (trigger 90)
+                const int h = a.size() >= 4 ? std::atoi(a[3].c_str()) : local_house_;
+                return world_.trigger_lightning_strike(h, std::atoi(a[1].c_str()), std::atoi(a[2].c_str()))
+                           ? "" : "storm_bolt off the map";
             }
             if (c == "infkill" && a.size() >= 3) {   // W3-B: infkill H:TYPE[:n] INFDEATH (death-kind check)
                 int h = 0, n = 0;

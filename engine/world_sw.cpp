@@ -612,6 +612,12 @@ void World::an_storm_bolt(SwStrike& s, int x, int y) {
     an_area_damage(s.house, x, y, an_.sw.storm_damage, an_.sw.storm_wh_spread, an_.sw.storm_wh_pmax,
                    verses, /*hit_air=*/false, /*spare_house=*/false, 0.0, an_.sw.storm_wall_flags,   // W6-04-04
                    storm_inf_death_);   // W7-12-08
+    // W8-06-04 [RE: FUN_0053A030 -- the bolt is DamageArea FUN_00489190 at
+    // the cell centre with Z = Level + BridgeHeight on a bridge cell
+    // (GetCoordsWithBridge), LightningWarhead IonWH Wall=yes: the bridge block
+    // @0x489DCB rolls Random(1, BridgeStrength=1500) < LightningDamage 250,
+    // ~16.6% per bolt, on a deck or low-bridge cell].
+    bridge_area_roll(x, y, an_.sw.storm_damage, an_.sw.storm_wall_flags, deck_z(x, y));
     an_event(SwEvent::Bolt, s.house, SuperweaponType::LightningStorm, x, y);
     s.recent.push_back(x);
     s.recent.push_back(y);

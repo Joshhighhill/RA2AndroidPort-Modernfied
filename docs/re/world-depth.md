@@ -111,16 +111,33 @@ art by the ini number and drew every overlay after #0 with the wrong art; fixed.
   `NoUseTileLandType=true` (rulesmd) — ground units cross the river, ships do
   not; the destroyed pieces `LOBRDG27/28` (0x64/0x65) have
   `NoUseTileLandType=false` — the tile's land type (water) applies again.
-  Clone: `depth_set_terrain` + `World::set_bridge_cell`.
+  This is the cell's LandType itself (`CellClass::RecalcAttributes`
+  `FUN_0047D1C0` L39-43: with an overlay, LandType = OverlayType.Land +0x298,
+  returning at once when NoUseTileLandType +0x2AC is set; loader `0x5FE148`),
+  so an intact low-bridge cell is Road for EVERY reader: Drive speed, the
+  naval-target test (GetFireError `0x6FBC86`), PlayAnim's wet set and the
+  enter/leave water sounds [CONFIRMED, W8-01-04]. Clone: `depth_set_terrain` +
+  `World::set_bridge_cell` (grids, Beach blocks Foot/Track/Wheel as at load,
+  W8-01-06) + `World::speed_land_at` / `MoveSpeedCtx::bridge_ovl` (LandType).
 * Damage — `MapClass::DamageArea` `FUN_00489190`: an explosion in a low-bridge
   cell whose warhead has `Wall=yes` (WarheadType +0x144) breaks the section when
   the warhead is `IonCannonWarhead` (Rules +0xFF0) or
   `Random(1, BridgeStrength) < damage` (`BridgeStrength` = Rules +0x1740,
   1500). Wood range `0x49 < idx < 100`, concrete `0xCC < idx < 0xE7`
   (`FUN_00586BB0` dispatch). Gated by `DestroyableBridges` /
-  `BridgeDestruction`. Clone: `World::bridge_explosion`, fed by projectile
-  detonations and ground (force-fire) shots. [RE-FALLBACK] instant-hit weapons
-  do not roll; the RNG is a dedicated xorshift, not the scenario RNG.
+  `BridgeDestruction`. The roll lives in DamageArea itself, so EVERY
+  DamageArea caller rolls it: shells (`FUN_004690A0`), V3 / Dreadnought
+  rockets (`FUN_00662A70` @0x662D07), death and crash weapons
+  (`FUN_0070CAC0` -> bullet -> @0x4699A0), Ivan bombs, the Lightning Storm
+  bolt (`FUN_0053A030`, Z = GetCoordsWithBridge, IonWH Wall=yes, 250 vs 1500:
+  ~16.6% per bolt) [CONFIRMED, W8-05-04 / W8-06-04]. On a cell with the bridge
+  flag (+0x140 & 0x100, a high deck) the roll also needs the explosion Z in
+  `((Level-2)*104 + BridgeHeight, (Level+1)*104 + BridgeHeight]`
+  (@0x489E87 concrete / @0x48A012 wood) [CONFIRMED, W8-04-03]. Clone:
+  `World::bridge_explosion(.., z_abs)` / `bridge_area_roll`, fed by projectile
+  detonations (any map with a bridge, low or high), ground (force-fire) shots,
+  rockets, `ability_area_damage` and the storm bolt. [RE-FALLBACK] instant-hit
+  weapons do not roll; the RNG is a dedicated xorshift, not the scenario RNG.
 * Section — `FUN_0057B4D0` finds the centre of the 3-cell cross-section
   (looks one / two cells back along the cross axis); `FUN_0057B720` (cross
   axis y) and `FUN_0057BCE0` (cross axis x) rewrite the three cells:
@@ -129,8 +146,15 @@ art by the ini number and drew every overlay after #0 with the wrong art; fixed.
   0x60→0x61, 0x62→99. Concrete mirrors the wood set at +131 [PROBABLE: the
   concrete rewrite functions `FUN_0057C990`/`FUN_0057CF60` were not dumped;
   `FUN_0057C720`'s dispatch thresholds are exactly +131].
-* A ground unit left on a collapsed section dies [PROBABLE: `FUN_00654C00`
-  runs on the three cells only in the destroy branch].
+* The section rewrite then calls `FUN_00487920` on the three cells (after
+  `FUN_0047D1C0`) [CONFIRMED, W8-01-03 / W8-03-07]: every object in the cell's
+  list whose CanEnterCell (vt+0x1AC) answers Move::No (7) takes
+  `ReceiveDamage(Health, C4Warhead, ignoreDefenses=1, preventPassengerEscape=1)`;
+  a landed AircraftType dies too, and in the destroy pass a JumpJet type
+  (+0xD94); then a 5x5 scan kills movers heading into the cell (locomotor
+  vt+0xA0) that cannot enter it. A Tanya / SEAL / Yuri Prime / Robot Tank on
+  a section collapsing into water lives. (`FUN_00654C00` only queues the cell.)
+  Clone: `World::low_bridge_cell_kill`.
 
 ### B3 High bridges — destruction modelled (W4-FIX-SEQ), on/under layer not
 
@@ -145,16 +169,25 @@ cross `OnBridge` at `BridgeHeight` = 416.
   (concrete); BridgeSet/WoodBridgeSet ramp tiles or a 0xED/0xEE owner ->
   `FUN_00570FC0` (wood). The high functions walk the span both ways
   (`FUN_00571D60/00571E60/00571F70/00572310`), place broken ramp tiles
-  (`FUN_0056E6B0`), kill the objects on the deck (`FUN_0047DC80`) [CONFIRMED
-  structure; the per-section walk is RE-FALLBACK in the clone].
+  (`FUN_0056E6B0`), and run `FUN_0047DC80` on each cell [CONFIRMED structure;
+  the per-section walk is RE-FALLBACK in the clone]. `FUN_0047DC80` kills
+  EVERY object in the ground list (+0xE4: ships, swimmers, hover and ground
+  units under the span) with `ReceiveDamage(Health, C4Warhead,
+  ignoreDefenses=1, preventPassengerEscape=1)` and drops every object in the
+  deck list (+0xE8) with vt+0xEC `FUN_005F3970` (IsFallingDown, die on
+  landing: `FUN_005F3680` deals the same lethal hit on touchdown)
+  [CONFIRMED, W8-01-01/02]. Clone: `World::high_bridge_cell_kill` kills every
+  non-airborne unit of the cell at once, with its passengers (no fall anim).
+* A crashing jumpjet that was above an intact deck stops on it and fires its
+  death weapon at the deck's Z (`FUN_0054C7C0`) [CONFIRMED, W8-05-04].
 * Trigger 63 Apply100Damage (`FUN_006DFA00`) calls `FUN_00586BB0` on its
   waypoint cell up to 4 times (no BridgeStrength roll, no DestroyableBridges
   gate) [CONFIRMED].
 * Clone (`World::set_high_bridges / break_high_bridge / repair_high_bridge_near
   / force_bridge_break`): deck cells over water are ground-passable while
   intact (they were blocked before -- no unit could cross a high bridge), a
-  break takes the whole connected deck at once, kills ground units on it and
-  hides the deck overlays; the ramps keep their art and stay passable; a
+  break takes the whole connected deck at once, kills every unit on it and
+  under it and hides the deck overlays; the ramps keep their art and stay passable; a
   BridgeRepairHut within 4 cells restores the span; weapon hits on a deck use
   the low-bridge Wall=/Random(1,BridgeStrength) roll [RE-FALLBACK]. Units on a
   deck are drawn at ground level (no OnBridge layer).

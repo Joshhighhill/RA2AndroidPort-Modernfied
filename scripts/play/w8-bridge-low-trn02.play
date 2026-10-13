@@ -1,0 +1,53 @@
+# W8-BRIDGE-LOW-TRN02 -- wave-8 low-bridge fixes on the TRN02 bridge
+# (54..56, 41..46; row 43 is an intact LOBRDG piece over a Beach tile, row 44
+# is shipped destroyed).
+#  1. An intact low bridge is Road [RE: CellClass::RecalcAttributes FUN_0047D1C0
+#     -- LOBRDG Land=Road NoUseTileLandType=true]: Tanya on (55,43) stands on
+#     Road, plays no Tread / Swim and no enter-water sound (W8-01-04).
+#  2. The section collapses [RE: FUN_00487920]: the GI on it cannot enter the
+#     Beach cell any more and dies; Tanya (amphibious) lives; the broken cell is
+#     not walkable -- the runtime path agrees with the load path's Beach rule
+#     (W8-01-06).
+set render_every 0
+set campaign trn02t.MAP GDI
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+waituntil 900 units(0,AMCV) >= 1
+wait 5
+cheat camp_spawn TANY 0 55 47
+wait 3
+cheat camp_move TANY 55 43
+waituntil 300 ucell(0,TANY,0) == 55043
+waituntil 60 umov(0,TANY,0) == 0
+wait 20
+require ucell(0,TANY,0) == 55043
+assert uland(0,TANY,0) == 1                        @W8-01-04
+assert iseq(Tread) == 0                            @W8-01-04
+assert iseq(Swim) == 0                             @W8-01-04
+# she waded the Beach of the destroyed row 44 on the way; on the intact row 43
+# she is dry again (every enter-water edge has its leave-water edge)
+assert pres(leave_water) == pres(enter_water)      @W8-01-04
+dump
+view cell 55 43
+shot tanya_on_lowbridge
+# a Conscript on the same section
+# (from the north bank: row 44 is shipped destroyed over Beach, no GI crosses it)
+cheat camp_spawn E2 0 55 41
+wait 3
+cheat camp_move E2 56 43
+waituntil 400 ucell(0,E2,0) == 56043
+wait 20
+require ucell(0,E2,0) == 56043
+let gi1 = units(0,E2)
+# the section (54..56, 43): intact -> damaged -> destroyed
+cheat bridge_hit 55 43 100000
+wait 2
+cheat bridge_hit 55 43 100000
+wait 30
+log AFTER_HIT
+dump
+assert units(0,E2) == $gi1-1                       @W8-01-03
+assert units(0,TANY) >= 1                          @W8-01-03
+assert uland(0,TANY,0) == 6
+end

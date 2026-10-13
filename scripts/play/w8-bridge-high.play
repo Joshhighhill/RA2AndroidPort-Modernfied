@@ -1,0 +1,95 @@
+# W8-BRIDGE-HIGH -- wave-8 bridge fixes on the ALL01T east high bridge
+# (82,51..55), docs/gap/wave8 root causes 4 and 5.
+#  1. The collapse kills EVERY object of the span [RE: FUN_0047DC80 -- the
+#     ground list (+0xE4) takes a lethal C4Warhead hit, the deck list (+0xE8)
+#     falls (FUN_005F3970) and dies on touchdown (FUN_005F3680)]: three
+#     Conscripts packed into ONE deck cell (W8-01-01 / W8-02-01: only the first
+#     used to die) and a SEAL swimming under the deck (W8-01-02 / W8-06-03).
+#  2. The high-bridge roll needs the deck-height window [RE: DamageArea
+#     FUN_00489190 @0x489E87]: a burst at the water line under the deck never
+#     breaks it (W8-04-03 / W8-05-05); this map has no low bridge, which used to
+#     disable every shell roll (W8-03-09).
+#  3. Lightning Storm bolts roll the bridge [RE: FUN_0053A030 -> FUN_00489190,
+#     IonWH Wall=yes, 250 vs BridgeStrength 1500 ~ 16.6% a bolt] (W8-06-04).
+set render_every 0
+set campaign ALL01T.MAP GDI
+click start
+until 300 scene == game
+require scene == game
+until 60 input_locked == 1
+until 1500 input_locked == 0
+wait 5
+cheat camp_killu 1 *
+# the fort rendezvous hands over the gate (move-bridge-cliff section 2)
+cheat camp_spawn E1 0 62 38
+cheat camp_move E1 70 38
+until 900 buildings(0,GAGATE_A) >= 1
+assert bridge_destroyed >= 5
+cheat camp_spawn ENGINEER 0 82 46
+wait 5
+click unit 0:ENGINEER
+wait 1
+click building 4:CABHUT
+until 900 bridge_destroyed <= 4
+log REPAIRED
+
+# --- 1. collapse: three Conscripts in one deck cell, a SEAL under the deck ----------
+cheat camp_spawn E2 0 82 45 3
+wait 3
+cheat camp_move E2 82 53
+waituntil 900 max_cell_inf(0) == 3
+wait 60
+assert units(0,E2) == 3
+assert udeck(0,E2,0) == 1
+assert udeck(0,E2,1) == 1
+assert udeck(0,E2,2) == 1
+cheat camp_spawn GHOST 0 78 52
+wait 3
+cheat camp_move GHOST 82 51
+waituntil 900 ucell(0,GHOST,0) == 82051
+wait 30
+require ucell(0,GHOST,0) == 82051
+assert udeck(0,GHOST,0) == 0
+cheat bridge_hit 82 53 100000
+wait 30
+log COLLAPSED
+dump
+assert bridge_destroyed >= 5
+assert units(0,E2) == 0                            @W8-01-01
+assert units(0,GHOST) == 0                         @W8-01-02
+view cell 82 53
+shot after_collapse
+
+# --- 2. repair; a burst at the water line under the deck never rolls --------------
+cheat camp_spawn ENGINEER 0 82 46
+wait 5
+click unit 0:ENGINEER
+wait 1
+click building 4:CABHUT
+until 900 bridge_destroyed <= 4
+let d0 = bridge_destroyed
+# level 2 river: Z = 2*104 = 208, outside ((2-2)*104+416, (2+1)*104+416]
+cheat bridge_hit 82 53 100000 208
+wait 5
+assert bridge_destroyed == $d0                     @W8-04-03
+# just above the window's floor: (2-2)*104 + 416 + 1
+cheat bridge_hit 82 53 100000 417
+wait 5
+assert bridge_destroyed > $d0                      @W8-04-03
+
+# --- 3. repair; storm bolts on the deck --------------------------------------------
+cheat camp_spawn ENGINEER 0 82 46
+wait 5
+click unit 0:ENGINEER
+wait 1
+click building 4:CABHUT
+until 900 bridge_destroyed <= 4
+let d1 = bridge_destroyed
+repeat 40
+cheat storm_bolt 82 53
+wait 1
+endrepeat
+wait 5
+assert bridge_destroyed > $d1                      @W8-06-04
+dump
+end
