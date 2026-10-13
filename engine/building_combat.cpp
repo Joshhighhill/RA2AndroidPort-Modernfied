@@ -225,11 +225,23 @@ void World::step_building_combat(double dt) {
 
         const double cx = bcenter_x(b), cy = bcenter_y(b);
         auto slot_for = [&](const Unit& v) {
-            if (w5_.armed && t.w5.prism) return 0;   // PrismSupport is the beam, not a gun
+            // w7r3: the forced slot must still be able to hit the target --
+            // AA/AG from the projectile (ThreatFlags FUN_007718B0), the
+            // GetFireError legality every weapon passes (slot_can_target).
+            // PrismShot and the coil bolts fly InvisibleHigh / Invisible (no
+            // AA=yes), so a Prism Tower or a Tesla Coil never engages an
+            // airborne Kirov; the forced index skipped the test and they shot
+            // airships down.
+            const bool air = unit_airborne(v);
+            if (w5_.armed && t.w5.prism)   // PrismSupport is the beam, not a gun
+                return slot_can_target(t.weapon[0], air, v.armor_ix) ? 0 : -1;
             // Wave-5 (R-045) [TechnoClass::SelectWeapon FUN_006F2890]: an
             // overpowered building fires its Secondary (OPCoilBolt).
-            if (w5_.armed && t.w5.overpowerable) return b.w5.overpowered ? 1 : 0;
-            return choose_weapon(t.weapon[0], t.weapon[1], unit_airborne(v), v.armor_ix);
+            if (w5_.armed && t.w5.overpowerable) {
+                const int s = b.w5.overpowered ? 1 : 0;
+                return slot_can_target(t.weapon[s], air, v.armor_ix) ? s : -1;
+            }
+            return choose_weapon(t.weapon[0], t.weapon[1], air, v.armor_ix);
         };
         // W6-04-22 [RE: TechnoClass in-range test FUN_006F6750, combat.md §9]:
         // 3-D distance from the building's centre (z = its level), the

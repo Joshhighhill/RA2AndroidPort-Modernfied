@@ -337,3 +337,67 @@ TEST_CASE("netL0: a k-frame rearm expires after exactly k decrements, for every 
         CHECK(ticks == k);
     }
 }
+
+TEST_CASE("w7r3: a Prism Tower / Tesla Coil never engages an airborne Kirov (no AA projectile, FUN_007718B0)") {
+    ra2assets::MapFile map;
+    for (int kind = 0; kind < 2; ++kind) {   // 0 = Prism (PrismType), 1 = Tesla (Overpowerable)
+        World w(map);
+        w.arm_w5(RulesW5{}, {});
+        BuildingTypeDef tower;
+        tower.id = kind == 0 ? "ATESLA" : "TESLA";
+        tower.strength = 600;
+        tower.weapon[0] = slot(/*aa=*/false, /*ag=*/true);   // PrismShot / CoilBolt: InvisibleHigh / Invisible
+        tower.weapon[0].damage = 120;
+        tower.weapon[0].rof = 45;
+        tower.weapon[0].range = 8.0;
+        tower.weapon[1] = tower.weapon[0];                    // PrismSupport / OPCoilBolt
+        tower.armed = true;
+        if (kind == 0) tower.w5.prism = true;
+        else tower.w5.overpowerable = true;
+        w.set_building_types({tower});
+        w.add_building(0, 2, 2, 1, 1, 0, 600, 0, 0.0, /*instant=*/true);
+        UnitCombat zep;
+        zep.strength = 2000;
+        zep.is_aircraft = true;
+        Unit& k = w.add_combat_unit(5, 2, 1, zep);
+        k.altitude = 500.0;
+        k.flight_state = FlightState::Cruising;
+        for (int f = 0; f < 120; ++f) w.step(1.0 / 15.0);
+        CHECK(w.units()[0].hp == 2000);
+        CHECK(w.buildings()[0].def_target == -1);
+        // the same tower takes a ground unit
+        UnitCombat htnk;
+        htnk.strength = 400;
+        Unit& g = w.add_combat_unit(5, 4, 1, htnk);
+        for (int f = 0; f < 120; ++f) w.step(1.0 / 15.0);
+        CHECK(w.units()[1].hp < 400);
+        CHECK(w.units()[0].hp == 2000);
+    }
+}
+
+TEST_CASE("w7r3: no legal weapon (-1) keeps the active slot -- a dog's NeverUse scanner never loads") {
+    ra2assets::MapFile map;
+    World w(map);
+    UnitCombat dog;
+    dog.strength = 100;
+    dog.damage = 30;
+    dog.rof = 20;
+    dog.range = 1.5;
+    dog.verses = {100, 100, 100, 0, 0, 0, 0, 0, 0, 0, 0};   // ParasiteDog
+    dog.secondary = slot(true, true, {100, 80, 80, 50, 25, 25, 75, 50, 25, 100, 100});   // VirtualScanner / SA
+    dog.secondary.never_use = true;
+    dog.secondary.range = 5.0;
+    w.add_combat_unit(2, 2, 1, dog);
+    UnitCombat tank;
+    tank.strength = 400;
+    tank.armor = "heavy";
+    w.add_combat_unit(3, 2, 0, tank);
+    Unit& du = w.units()[0];
+    const Unit& tu = w.units()[1];
+    CHECK(unit_weapon_for_unit(du, tu) == -1);
+    const std::vector<int> before = du.w_verses;
+    activate_weapon_slot(du, unit_weapon_for_unit(du, tu), nullptr);
+    CHECK(du.w_active == 0);
+    CHECK(du.w_verses == before);
+    CHECK(du.w_verses[5] == 0);
+}

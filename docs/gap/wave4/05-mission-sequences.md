@@ -8,6 +8,60 @@ The question here is not "can the trigger chain reach Win" (wave 2 proved that w
 out the way the map's own triggers, teams and scripts intend": intro sequences, enemy waves, AI-vs-AI set pieces,
 reinforcement arrivals, objectives and end sequences.
 
+## W7 restore R3 (branch `w7r3`, on master 29962fc: SOV11, SOV12)
+
+**Neither mission is won again with real orders.** The cause is faithful: since w7fix-move the Kirov flies
+JumpjetSpeed=5 raw leptons per frame (~0.29 cells/s, [RE: JumpjetLocomotionClass FUN_0054CDA0 @0x54D1FB]), 4x
+slower than when P5 proved the Kirov plans. Flak (FlakWeapon 40/20 frames, Range 12) and Patriots (RedEye2 75/55,
+Range 12) now get four times the shots at an airship; the `--play` runs below measure it.
+
+Engine fix (b), commit `b8467c6`: **Prism Towers and Tesla Coils engaged airborne units.** The prism /
+overpowerable branch of the building weapon choice forced slot 0/1 without the AA/AG legality
+(ThreatFlags `FUN_007718B0`, GetFireError) every weapon passes; PrismShot (InvisibleHigh) and CoilBolt / OPCoilBolt
+have no AA=yes. BadGuy1's coils (SOV11) and BadGuy3's prisms (SOV12) were shooting Kirovs. Unit test
+`w7r3: a Prism Tower / Tesla Coil never engages an airborne Kirov`.
+
+Engine fix (b), commit `023db87`: **no legal weapon (-1) loaded the Secondary.** `activate_weapon_slot(u, -1)`
+(GetFireError ILLEGAL for both slots) fell into the secondary branch. A YR dog (BadTeeth / ParasiteDog 0% vs
+vehicles, NeverUse VirtualScanner secondary) sent onto a Grizzly carried the scanner's SA Verses (25% heavy),
+passed the W7-01-01 infect gate and rode tanks forever: in ALL06 the last BadGuy1 dog hopped from Grizzly to
+Grizzly and DestroyedAll(BadGuy1) never fired. Unit test `w7r3: no legal weapon (-1) keeps the active slot`;
+`--demo-combat/tank/abilities/roster/roster2/veterancy/aircraft/ai-team/campaign` print their pins unchanged.
+
+- **SOV11** (`gen/mk_sov11.py`, Normal, as before). Every NAFLAK route was searched (Dijkstra over the 41 cannons,
+  LocalSize bounds): BadGuy1's south-west corner (flak (70,123), (72,121), (77,117), (79,115)) lies on the only
+  low-flak line (the west edge) and costs about 70 cannon-cells; the east / north route costs more. Measured
+  crossings: 6 Kirovs bunched or in single file all die on Normal; on Easy 5 of 6 die. The corner is a level-6
+  plateau whose only ramp is inside BadGuy1's main base (the Rhinos path round through it and die at its Tesla
+  gate), and flak shoots V3 rockets down (the V3s fired from the shore below never landed a hit). Tried and dropped:
+  ground assault on the corner, V3 shelling, single-file spacing, bombing the two western cannons first (both die,
+  all six Kirovs too), and BadGuy3's reactor (27,53) (2000 of 4900 power vs a 3315 drain; NAFLAK Powered=yes would
+  take the Kremlin's two cannons offline) -- no airship survives to reach it. The generator keeps that last plan
+  (single file, north edge at x+y=75, reactor, Kremlin). A win needs a ground war that takes BadGuy1's base (its two
+  NANRCT reactors carry its whole 1835 drain).
+- **SOV12** (`gen/mk_sov12.py`, Easy, as before). Three faithful-speed failures fixed in the generator: the raid
+  IFVs at the island are bombed by the airships while they wait for the third one (a new third Kirov; the IFVs shot the
+  first one down when it waited alone), the north route bends round BadGuy1's Patriot (101,60) (`NORTH`), and the descent to the
+  Chronosphere follows the west shore out of the (53,103) / (55,101) / (53,115) Patriots. Six airships now reach the
+  Chronosphere's ring of seven Patriots ((63,124), (63,133), (66,122), (69,126), (69,134), (70,139), (74,122): ~86
+  Patriot-cells on the cheapest line) and die inside it (one ring Patriot bombed on the way). The Iron Curtain
+  (buildable) does not fit the money once the harvester dies, and the island base falls to the chrono raids (SEALs)
+  before it would charge.
+
+| Script | Result | Difficulty | frames | play_hash |
+|---|---|---|---|---|
+| `m-sov11-real` | RUNNING, FAIL (all Kirovs die at the SW corner) | Normal | 18383 | `2c6420dc8a3ad1ac` |
+| `m-sov12-real` | LOST (Kirovs die in the Chronosphere's Patriot ring) | Easy | 20199 | `ad98d3980beea466` |
+| `m-trn02-real` | **WON** (PASS) | Normal | 29146 | `3ea1ade0f6f4a378` |
+| `m-sov04-real` | **WON** (PASS) | Normal | 14083 | `2c5e8dcd88ca423c` |
+| `m-sov02-real` | PASS | Normal | 1377 | `6103dd13b7c06767` |
+| `m-all07-real` | **WON** (PASS) | Normal | 2382 | `dd39f963c1bdbfb2` |
+| `m-all10-real` | **WON** (PASS) | Normal | 17293 | `69d85e8b18a9652a` |
+| `m-all12-real` | PASS (opening) | Normal | 3283 | `2c1b8ad13e163990` |
+| `all01-opening` | PASS | Normal | 3613 | `55e8eec5bf495fed` |
+| `all01-v3-statue` | PASS | -- | 376 | `0dc2ed3cfaf45035` |
+| `m-all06-real` | **WON** (PASS) after the dog fix below; before it RUNNING at f71567 (both bases razed, one BadGuy1 dog riding Grizzlies) | Easy | 59788 | `74ca55054dc084da` |
+
 ## MR1 status (mission re-record agent MR1, branch `mr1`, on master `57a5dcc`: SOV01, ALL04, SOV09, ALL08)
 
 After the networking merges (L0 original FastMath/_ftol and whole-frame timers, L1 command layer, L2 per-house
