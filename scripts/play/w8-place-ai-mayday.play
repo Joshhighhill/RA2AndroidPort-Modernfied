@@ -1,0 +1,29 @@
+# w8fix-place W8-03-01: the AI base planner places on buildable cells only
+# (no ore / overlay / slope / bridge; FUN_0047C530) and still grows a base.
+# Variant: May Day (xmp31s2, ore fields and bridges), one Brutal AI against a passive player (a two-player map); checked at f~1200, before
+# the AIs' first wave ends the passive player's game (sk-1v3).
+set render_every 3000
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click button "Customize Battle"
+click list:down
+click list:down
+click map:xmp31s2.map
+click button "Use Map"
+click combo:ai1
+click "pick:Brutal Enemy"
+click start
+until 120 scene == game
+require scene == game
+click unit 0:AMCV
+key d
+until 450 built(0,GACNST) == 1
+wait 1150
+require scene == game
+log ai-bases
+assert buildings(1) >= 6
+assert bad_place(1) == 0
+dump
+end

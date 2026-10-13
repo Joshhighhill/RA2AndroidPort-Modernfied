@@ -64,6 +64,7 @@ bool open_rect(const World& w, int W, int H, int& x0, int& y0) {
             for (int dy = 0; dy < H && ok; ++dy)
                 for (int dx = 0; dx < W && ok; ++dx)
                     if (!w.walkable(x + dx, y + dy) || w.unit_at_cell(x + dx, y + dy) >= 0 ||
+                        w.ore().has_ore(x + dx, y + dy) ||
                         w.cell_level(x + dx, y + dy) != l0)
                         ok = false;
             if (ok) { x0 = x; y0 = y; return true; }
