@@ -568,6 +568,8 @@ class World;
 struct MoveSpeedCtx {
     bool armed = false;
     const std::vector<std::uint8_t>* land = nullptr;   // LandType per cell (tile + overlay)
+    // W8-03-03: the low-bridge overlay per cell (-1 none); an intact piece is Road.
+    const std::vector<std::int16_t>* bridge_ovl = nullptr;
     const std::vector<std::int8_t>* level = nullptr;   // height level per cell
     float cost[12][8] = {};                            // [LandType][SpeedType], capped at 1
     double up[2] = {1.0, 1.0};                         // Tracked/Wheeled Uphill
@@ -987,7 +989,8 @@ public:
     void arm_land_speed(const std::vector<std::uint8_t>& land, const std::vector<std::uint8_t>& ramp,
                         const LandSpeedRules& r);
     bool land_speed_armed() const { return land_speed_armed_; }
-    int speed_land_at(int x, int y) const;   // effective LandType (ore -> Tiberium)
+    int speed_land_at(int x, int y) const;   // effective LandType (ore -> Tiberium, low bridge -> Road)
+    bool low_bridge_road(std::size_t i) const;   // W8-01-04: an intact low-bridge piece makes cell i Road
     // W7-06-02 [RE: GetFireError @0x6FBC86, SelectWeapon FUN_006F2890]: a
     // target standing on this cell is a naval target (LandType Water 2 or
     // Beach 6). Unarmed land speed: the water grid.
@@ -2496,7 +2499,16 @@ public:
     void set_bridges(std::vector<int> overlay, std::vector<ra2assets::LandType> tile_land);
     bool bridges_enabled() const { return !bridge_ovl_.empty(); }
     int bridge_overlay_at(int x, int y) const;               // current runtime index, -1 none
-    int bridge_explosion(int cx, int cy, int damage, bool wall_warhead);   // FUN_00489190 bridge part
+    // FUN_00489190's bridge part. `z_abs`: the explosion's absolute height in
+    // leptons (Level*104 + height); a high-bridge cell rolls only inside the
+    // deck window (W8-04-03 / W8-05-05, 0x489E87).
+    int bridge_explosion(int cx, int cy, int damage, bool wall_warhead, int z_abs);
+    // W8-05-04 / W8-06-04: DamageArea's bridge roll for an area blast centred
+    // at (cx, cy) cells, warhead wall keys `wall_flags` (Wall= is the test).
+    int bridge_area_roll(double cx, double cy, int damage, int wall_flags, int z_abs);
+    // The absolute lepton height of an intact high-bridge deck at (x, y):
+    // (Level + 4) * 104 (BridgeHeight 416), else the cell's ground height.
+    int deck_z(int x, int y) const;
     int repair_bridge_near(int b_idx);                       // engineer entered a BridgeRepairHut
     bool bridge_needs_repair_near(int b_idx) const;          // W7-08-19: the hut's Enter test
     // W4-SQ-10 high bridges [RE: FUN_00586BB0 dispatch -> FUN_005766D0
@@ -3032,7 +3044,15 @@ private:
     // Remove a unit from the game without dying (erase, §C2).
     void ability_erase_unit(int idx);
     // DamageArea [§E/§F]: all houses, units + buildings, linear falloff.
-    void ability_area_damage(int src_unit, double cx, double cy, const WeaponSpec& w, int damage);
+    // `z_abs` (W8-05-04): the blast's absolute height for DamageArea's bridge
+    // roll; kZOfSource = the source unit's (deck included), else the ground.
+    static constexpr int kZOfSource = -0x7FFFFFFF;
+    void ability_area_damage(int src_unit, double cx, double cy, const WeaponSpec& w, int damage,
+                             int z_abs = kZOfSource);
+    // The absolute lepton height of unit u (Level*104, + BridgeHeight on a
+    // deck, + its altitude in flight) [RE-FALLBACK: the clone's Z for the
+    // bridge roll; the layer-aware unit Z is W8-03-08's].
+    int unit_abs_z(const Unit& u) const;
     void ability_delay_kill(int b_idx, const WeaponSpec& w, double dist_leptons);   // P4
 public:
     // P4: arm the ability pass for building death weapons (GameScene, real play).
@@ -3097,6 +3117,9 @@ private:
     void sync_garrison_owner(int b_idx);           // FUN_004581F0
     void step_garrison_combat(double dt);
     void set_bridge_cell(int x, int y, int idx);   // overlay + Recalc_Attributes analogue
+    void low_bridge_cell_kill(int x, int y, bool destroy);   // W8-01-03: FUN_00487920
+    void high_bridge_cell_kill(int x, int y);                // W8-01-01/02: FUN_0047DC80
+    void bridge_kill_unit(int ui);                           // lethal, no passenger escape
     int neutral_house() const;
 };
 

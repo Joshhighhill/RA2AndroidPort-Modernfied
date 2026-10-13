@@ -98,8 +98,8 @@ rule therefore matches the map data (SlopeIndex = the TMP ramp byte 42).
   Water: none), `open_gates_for(house)` (the owner's `are_allied` view),
   `terrain_for(unit)`, `sync_deck_layer`; `Unit::on_deck` (save v30).
   `step_units` refuses a step the gate refuses (the blocked re-path then finds
-  a legal way) and keeps `on_deck`. A broken deck kills the units ON it; an
-  amphibious unit swimming under it lives.
+  a legal way) and keeps `on_deck`. A broken deck kills every unit ON it and
+  UNDER it, ships and swimmers included (`FUN_0047DC80`, W8-01-01/02).
 * Armed with the map heights (`arm_land_speed`, the real game only); every
   unit-test / gate World keeps the flat search.
 * `Input::resolve_ground_cell` scans heights top-down and takes the first

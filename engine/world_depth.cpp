@@ -24,9 +24,23 @@ int cheb_to_foundation(const Building& b, int x, int y) {
     }
     return best;
 }
-bool blocks_ground(ra2assets::LandType t) {   // == world.cpp land_type_blocks_ground
+// == world.cpp land_type_blocks_ground. W8-01-06 [DATA: rulesmd [Beach]
+// Foot=Track=Wheel=0%]: Beach blocks the ground SpeedTypes too (the fv7c load
+// path already did), so a low section destroyed at runtime over a Beach tile is
+// not walkable -- the runtime path agrees with the load path.
+bool blocks_ground(ra2assets::LandType t) {
     return t == ra2assets::LandType::Water || t == ra2assets::LandType::Rock ||
-           t == ra2assets::LandType::Wall;
+           t == ra2assets::LandType::Wall || t == ra2assets::LandType::Beach;
+}
+bool airborne(const Unit& u) { return u.is_aircraft && u.altitude > 0.0; }
+// The objects a bridge cell's collapse can reach: on the map (not carried,
+// garrisoned or under a parachute), alive, not in flight.
+bool collapse_candidate(const Unit& u) {
+    return u.alive && u.die_time < 0.0 && u.cargo_of < 0 && !airborne(u);
+}
+// A JumpJet type (TechnoType +0xD94, FUN_00711510) or the jumpjet locomotor.
+bool jumpjet_type(const Unit& u) {
+    return u.loco.t.kind == static_cast<int>(LocoKind::Jumpjet) || (u.is_aircraft && !u.an.t.fixed_wing);
 }
 }  // namespace
 
@@ -434,25 +448,83 @@ int World::bridge_cells_destroyed() const {
 // CellClass::Recalc_Attributes analogue for one bridge cell: an intact /
 // damaged low section is Land=Road with NoUseTileLandType=true (ground
 // passable, no ships); a destroyed one (LOBRDG27/28, NoUseTileLandType=false)
-// falls back to the tile's land type (water under the river span).
+// falls back to the tile's land type (water under the river span). The
+// LandType the rest of the engine reads follows bridge_ovl_ (speed_land_at,
+// W8-01-04); the passability grids are rewritten here.
 void World::set_bridge_cell(int x, int y, int idx) {
     const std::size_t i = static_cast<std::size_t>(y) * grid_w_ + x;
+    const bool was_destroyed = low_bridge_destroyed(bridge_ovl_[i]);
     bridge_ovl_[i] = static_cast<std::int16_t>(idx);
     const ra2assets::LandType lt = low_bridge_destroyed(idx)
                                        ? static_cast<ra2assets::LandType>(bridge_tile_land_[i])
                                        : ra2assets::LandType::Road;
     if (i < passable_.size()) passable_[i] = blocks_ground(lt) ? 0 : 1;
     if (i < water_passable_.size()) water_passable_[i] = (lt == ra2assets::LandType::Water) ? 1 : 0;
+    // fv7c: Beach is the amphibious/hover-only grid (W8-01-06: a section
+    // broken over Beach is swimmable, not walkable).
+    if (i < beach_.size()) beach_[i] = (lt == ra2assets::LandType::Beach) ? 1 : 0;
     ++bridge_version_;
-    if (!low_bridge_destroyed(idx)) return;
-    // A ground unit left standing on a collapsed section dies with it
-    // [PROBABLE: FUN_00654C00 runs on the three cells only in the destroy branch].
-    const int ou = occ_.at(x, y);
-    if (ou >= 0 && ou < static_cast<int>(units_.size())) {
-        const Unit& u = units_[ou];
-        if (u.alive && u.die_time < 0.0 && !u.is_naval && !u.is_aircraft && passable_[i] == 0)
-            ability_kill_unit(ou);
+    if (was_destroyed == low_bridge_destroyed(idx)) return;   // a damage stage: same land
+    low_bridge_cell_kill(x, y, low_bridge_destroyed(idx));
+}
+
+// W8-01-03 / W8-03-07 [RE: FUN_00487920, called on the three rewritten cells
+// after FUN_0047D1C0 by the section rewrites FUN_0057B720 / FUN_0057BCE0 / ...]:
+// every object in the cell's (ground) list that can no longer enter it
+// (vt+0x1AC CanEnterCell == Move::No, for a unit FUN_0073DFA0) takes lethal
+// C4Warhead damage with ignoreDefenses=1 and preventPassengerEscape=1; a
+// landed AircraftType (WhatAmI 2) dies too, and in the destroy pass so does a
+// JumpJet type (+0xD94). So a Tanya / SEAL / Yuri Prime / Robot Tank on a
+// section collapsing into Water or Beach lives; a GI or a tank dies. Then the
+// 5x5 around the cell: a mover whose locomotor is heading into the cell
+// (vt+0xA0) and that cannot enter it dies the same way. [PROBABLE: an object
+// in flight is not in the cell list; the clone skips airborne units. The
+// repair rewrite is taken as the non-destroy pass (param 0).]
+void World::low_bridge_cell_kill(int x, int y, bool destroy) {
+    const int nu = static_cast<int>(units_.size());
+    for (int j = 0; j < nu; ++j) {
+        const Unit& u = units_[static_cast<std::size_t>(j)];
+        if (!collapse_candidate(u) || u.cell_x != x || u.cell_y != y) continue;
+        const bool kill = !unit_can_enter_cell(u, x, y) || (u.is_aircraft && u.an.t.fixed_wing) ||
+                          (destroy && jumpjet_type(u));
+        if (kill) bridge_kill_unit(j);
     }
+    for (int j = 0; j < nu; ++j) {
+        const Unit& u = units_[static_cast<std::size_t>(j)];
+        if (!collapse_candidate(u) || u.is_aircraft || !u.moving()) continue;
+        if (u.cell_x == x && u.cell_y == y) continue;
+        if (std::abs(u.cell_x - x) > 2 || std::abs(u.cell_y - y) > 2) continue;
+        std::size_t pi = u.path_idx;
+        while (pi < u.path.size() && u.path[pi].x == u.cell_x && u.path[pi].y == u.cell_y) ++pi;
+        if (pi >= u.path.size() || u.path[pi].x != x || u.path[pi].y != y) continue;
+        if (!unit_can_enter_cell(u, x, y)) bridge_kill_unit(j);
+    }
+}
+
+// The collapse kill [RE: FUN_0047DC80 / FUN_00487920 / FUN_005F3680 ->
+// ReceiveDamage(&Health, 0, Rules+0xFA8 C4Warhead, 0, ignoreDefenses=1,
+// preventPassengerEscape=1, 0)]: lethal through the Iron Curtain, and a
+// transport's passengers die with it (W8-03-06; KillPassengers, not the
+// W7-04-02 escape of step_cargo).
+void World::bridge_kill_unit(int ui) {
+    if (ui < 0 || ui >= static_cast<int>(units_.size())) return;
+    Unit& t = units_[static_cast<std::size_t>(ui)];
+    if (!t.alive || t.die_time >= 0.0) return;
+    for (int p : t.cargo) {
+        if (p < 0 || p >= static_cast<int>(units_.size())) continue;
+        Unit& u = units_[static_cast<std::size_t>(p)];
+        u.cargo_of = -1;
+        u.alive = false;   // tombstone directly (no die anim), as step_cargo's kill-all
+        u.die_time = -1.0;
+        u.hp = 0;
+        u.cell_x = t.cell_x;
+        u.cell_y = t.cell_y;
+        u.fx = t.cell_x;
+        u.fy = t.cell_y;
+    }
+    t.cargo.clear();
+    t.unload_pending = false;
+    ability_kill_unit(ui);
 }
 
 // MapClass::DamageArea's bridge part (FUN_00489190): an explosion in a low
@@ -460,15 +532,24 @@ void World::set_bridge_cell(int x, int y, int idx) {
 // Random(1, BridgeStrength) < damage (the IonCannonWarhead always does); the
 // section rewrite is FUN_0057B720 / FUN_0057BCE0 over the 3-cell
 // cross-section FUN_0057B4D0 centres. BridgeDestruction=no disables it.
-int World::bridge_explosion(int cx, int cy, int damage, bool wall_warhead) {
+int World::bridge_explosion(int cx, int cy, int damage, bool wall_warhead, int z_abs) {
     if ((bridge_ovl_.empty() && hbridge_.empty()) || !wall_warhead || !depth_rules_.armed ||
         !depth_rules_.bridge_destruction)
         return 0;
     const int idx = bridge_overlay_at(cx, cy);
     if (!is_low_bridge_overlay(idx) || low_bridge_destroyed(idx)) {
-        // W4-SQ-10 [RE-FALLBACK: the same Wall= warhead + Random(1, BridgeStrength)
-        // < damage roll as a low section]: a deck hit breaks the high span.
+        // W4-SQ-10 [RE: FUN_00489190 @0x489DCB..0x489F1E concrete, @0x489FB5..
+        // 0x48A0C6 wood]: the same Wall= warhead + Random(1, BridgeStrength) <
+        // damage roll breaks the high span (FUN_00586BB0).
         if (!high_bridge_cell(cx, cy) || high_bridge_destroyed(cx, cy)) return 0;
+        // W8-04-03 / W8-05-05 / W8-03-09 [RE: 0x489E87 / 0x48A012]: on a cell
+        // with the bridge flag (+0x140 & 0x100) the roll needs the explosion Z
+        // in ((Level-2)*104 + BridgeHeight, (Level+1)*104 + BridgeHeight]
+        // (Level +0x11B, DAT_0089D7E0 = 104, DAT_0089D7D4 = BridgeHeight 416):
+        // a shell at a ship under the span, or an air burst more than a level
+        // above the deck, never rolls.
+        const int lv = cell_level(cx, cy);
+        if (!(z_abs > (lv - 2) * 104 + 416 && z_abs <= (lv + 1) * 104 + 416)) return 0;
         if (!(bridge_rng_.random(1, std::max(1, depth_rules_.bridge_strength)) < damage)) return 0;
         return break_high_bridge(cx, cy);
     }
@@ -499,6 +580,23 @@ int World::bridge_explosion(int cx, int cy, int damage, bool wall_warhead) {
 // connected to a low-bridge cell within 2 cells of the hut's foundation to an
 // intact piece (low_bridge_repaired) [RE-FALLBACK: the per-section restore
 // walk of FUN_0057EE70 is not traced]. Returns the number of cells restored.
+int World::deck_z(int x, int y) const {
+    const int lv = cell_level(x, y);
+    return (high_bridge_cell(x, y) && !high_bridge_destroyed(x, y)) ? (lv + 4) * 104 : lv * 104;
+}
+
+// W8-05-04 / W8-06-04 [RE: DamageArea FUN_00489190 @0x489DCB: the bridge roll
+// sits in the area applicator itself, so every DamageArea caller rolls it --
+// rockets FUN_00662A70 @0x662D07, the death weapon FUN_0070CAC0 -> bullet
+// FUN_004690A0 @0x4699A0, the Lightning Storm bolt FUN_0053A030]: the blast's
+// own cell, a Wall=yes warhead (+0x144).
+int World::bridge_area_roll(double cx, double cy, int damage, int wall_flags, int z_abs) {
+    if (bridge_ovl_.empty() && hbridge_.empty()) return 0;
+    const int x = static_cast<int>(std::lround(cx)), y = static_cast<int>(std::lround(cy));
+    if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return 0;
+    return bridge_explosion(x, y, damage, (wall_flags & kW6Wall) != 0, z_abs);
+}
+
 int World::repair_bridge_near(int bi) {
     if (bridge_ovl_.empty()) return repair_high_bridge_near(bi);   // W4-SQ-10
     if (bi < 0 || bi >= static_cast<int>(buildings_.size())) return 0;
@@ -547,6 +645,27 @@ void World::set_high_bridges(std::vector<std::uint8_t> cells) {
     ++bridge_version_;
 }
 
+// W8-01-01/02, W8-02-01, W8-03-05, W8-06-02/03 [RE: FUN_0047DC80, called on
+// each cross-section cell by the destroy walks FUN_005766D0 / FUN_00570FC0]:
+// 1) every object in the cell's ground list (+0xE4: ships, swimmers, hover
+//    and ground units UNDER the span) takes ReceiveDamage(Health, C4Warhead,
+//    ignoreDefenses=1, preventPassengerEscape=1);
+// 2) every object in the deck list (+0xE8) gets vt+0xEC = FUN_005F3970
+//    (IsFallingDown +0x8D, die-on-landing +0x8F, OnBridge cleared) and on
+//    touchdown FUN_005F3680 deals the same lethal hit.
+// So every object of the cell dies, on the deck or under it, whatever its
+// layer: the clone kills them all at once [RE-FALLBACK: no fall animation].
+// Layer-agnostic by design (the deck/ground occupancy split lives elsewhere):
+// every unit whose cell is the deck cell is iterated, not the cell's single
+// occupancy owner -- up to three infantry share a cell (W5-B sub-cells).
+void World::high_bridge_cell_kill(int x, int y) {
+    const int nu = static_cast<int>(units_.size());
+    for (int j = 0; j < nu; ++j) {
+        const Unit& u = units_[static_cast<std::size_t>(j)];
+        if (collapse_candidate(u) && u.cell_x == x && u.cell_y == y) bridge_kill_unit(j);
+    }
+}
+
 bool World::high_bridge_cell(int x, int y) const {
     if (hbridge_.empty() || x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return false;
     return (hbridge_[static_cast<std::size_t>(y) * grid_w_ + x] & 3) != 0;
@@ -578,18 +697,7 @@ int World::break_high_bridge(int x, int y) {
         hbridge_[i] |= 4;
         ++n;
         if ((hbridge_[i] & 3) == 1) passable_[i] = 0;
-        // The objects on the deck die with it (FUN_0047DC80). R-210: with the
-        // heights armed that is every unit standing ON the deck (a deck over
-        // land too; an amphibious unit swimming under it lives); otherwise the
-        // historical rule (a ground unit on a deck over water).
-        if (terrain_armed() || (hbridge_[i] & 3) == 1) {
-            const int ou = occ_.at(c.x, c.y);
-            if (ou >= 0 && ou < static_cast<int>(units_.size())) {
-                const Unit& u = units_[ou];
-                const bool on = terrain_armed() ? u.on_deck != 0 : (!u.is_naval && !u.is_aircraft);
-                if (u.alive && u.die_time < 0.0 && on && !u.is_naval && !u.is_aircraft) ability_kill_unit(ou);
-            }
-        }
+        high_bridge_cell_kill(c.x, c.y);
         for (int dy = -1; dy <= 1; ++dy)
             for (int dx = -1; dx <= 1; ++dx)
                 if ((dx || dy) && high_bridge_cell(c.x + dx, c.y + dy) && !high_bridge_destroyed(c.x + dx, c.y + dy))
@@ -723,7 +831,9 @@ void World::step_depth(double dt) {
         u.cell_shot = false;
         const int x = u.attack_cell_x, y = u.attack_cell_y;
         const bool wall = u.w_active == 1 ? u.w2.wall : u.p_wall;
-        bridge_explosion(x, y, u.w_damage, wall);
+        // [RE-FALLBACK: a ground-fire shell at a bridge cell bursts at the
+        // cell's bridge coordinates (GetCoordsWithBridge): the deck height]
+        bridge_explosion(x, y, u.w_damage, wall, deck_z(x, y));
         const int victim = occ_.at(x, y);
         if (victim >= 0 && victim != i && victim < static_cast<int>(units_.size()))
             deliver_unit_hit(units_, occ_, i, victim);

@@ -31,6 +31,7 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include "bridges.hpp"     // W8-03-03: low_bridge_destroyed
 #include "combat.hpp"      // can_crush
 #include "locomotion.hpp"
 #include "pathfind.hpp"
@@ -151,6 +152,11 @@ double land_speed_mult(const MoveSpeedCtx& c, const Unit& u, int w, int h, int n
         if (i < c.land->size()) {
             int land = (*c.land)[i];
             if (c.ore && c.ramp && i < c.ramp->size() && c.ore->has_ore(nx, ny) && (*c.ramp)[i] < 5) land = 5;
+            // W8-03-03 [RE: FUN_0047D1C0]: an intact low-bridge cell is Road
+            // (World::speed_land_at); vehicles cross at the Road row's speed.
+            if (c.bridge_ovl && i < c.bridge_ovl->size() && (*c.bridge_ovl)[i] >= 0 &&
+                !low_bridge_destroyed((*c.bridge_ovl)[i]))
+                land = 1;
             if (land < 0 || land > 11) land = 0;
             int st = u.speed_type;
             if (st < 0 || st > 7) st = u.is_naval ? 5 : 1;   // default: Track (Drive), Float (ship)

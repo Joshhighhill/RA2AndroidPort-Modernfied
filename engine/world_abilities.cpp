@@ -271,7 +271,13 @@ void World::ability_damage_building(int b_idx, int dmg) {
 // It used to be a 2-D linear falloff with one hit per building at its nearest
 // cell (an Ivan left a Battle Lab at 50/500). The blast centre is (cx, cy) in
 // cells at that cell's ground level; the source unit is excluded.
-void World::ability_area_damage(int src_unit, double cx, double cy, const WeaponSpec& w, int damage) {
+int World::unit_abs_z(const Unit& u) const {
+    const int base = u.on_deck ? deck_z(u.cell_x, u.cell_y) : cell_level(u.cell_x, u.cell_y) * 104;
+    return base + (u.is_aircraft ? ability_ftol(u.altitude) : 0);
+}
+
+void World::ability_area_damage(int src_unit, double cx, double cy, const WeaponSpec& w, int damage,
+                                int z_abs) {
     Unit shooter;
     shooter.alive = false;   // never a real unit
     shooter.house = (src_unit >= 0 && src_unit < static_cast<int>(units_.size()))
@@ -300,6 +306,12 @@ void World::ability_area_damage(int src_unit, double cx, double cy, const Weapon
     };
     damage_area(*this, units_, buildings_, occ_, shooter, src_unit, -1, ix, iy, iz,
                 w.delay_kill ? &delay : nullptr);
+    // W8-05-04 [RE: FUN_00489190 @0x489DCB]: DamageArea's own bridge roll (an
+    // Ivan bomb, a Demo Truck, a crash / death weapon on a bridge).
+    if (z_abs == kZOfSource)
+        z_abs = (src_unit >= 0 && src_unit < static_cast<int>(units_.size()))
+                    ? unit_abs_z(units_[static_cast<std::size_t>(src_unit)]) : iz;
+    bridge_area_roll(cx, cy, damage, w.wall_flags, z_abs);
 }
 
 // P4 [RE: FUN_00700DA0 @0x701327..0x701403]: a lethal hit by a CausesDelayKill
@@ -560,7 +572,8 @@ void World::ability_death_pass() {
             if (u.bomb_frame >= 0) {
                 u.bomb_frame = -1;
                 ability_events_.push_back({Ev::Kind::BombBlast, u.bomb_owner, i, 0, 0, false});
-                ability_area_damage(-1, u.fx, u.fy, ability_rules_.ivan_warhead, ability_rules_.ivan_damage);
+                ability_area_damage(-1, u.fx, u.fy, ability_rules_.ivan_warhead, ability_rules_.ivan_damage,
+                                    unit_abs_z(u));
             }
             // §B3: the riding drone pops out, unless suppressed.
             if (u.parasite_on_me >= 0) {
@@ -862,7 +875,8 @@ void World::step_abilities(double dt) {
         if (!bomb_due(u.bomb_frame, ability_frame_)) continue;
         u.bomb_frame = -1;
         ability_events_.push_back({Ev::Kind::BombBlast, u.bomb_owner, i, 0, 0, false});
-        ability_area_damage(-1, u.fx, u.fy, ability_rules_.ivan_warhead, ability_rules_.ivan_damage);
+        ability_area_damage(-1, u.fx, u.fy, ability_rules_.ivan_warhead, ability_rules_.ivan_damage,
+                                    unit_abs_z(u));
     }
     for (int b = 0; b < static_cast<int>(buildings_.size()); ++b) {
         Building& bb = buildings_[b];

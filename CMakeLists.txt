@@ -156,7 +156,8 @@ target_sources(ra2assets_tests PRIVATE tests/test_w7_airnav.cpp)   # wave-7 air/
 # G16 world depth (agent G): bridges (pure) + the World garrison/bridge members.
 target_sources(ra2assets_tests PRIVATE engine/inf_anim.cpp tests/test_inf_anim.cpp)   # W3-B
 target_sources(ra2assets_tests PRIVATE engine/bridges.cpp engine/world_depth.cpp
-                                       tests/test_bridges.cpp tests/test_high_bridges.cpp)
+                                       tests/test_bridges.cpp tests/test_high_bridges.cpp
+                                       tests/test_w8_bridges.cpp)   # wave-8 bridges
 # building.cpp is pure C++17 (no SDL): BuildingTypeDef/Building struct defs,
 # foundation_cells row-major enumeration, placement_check validity (in-grid,
 # passable, unoccupied, no overlap, adjacency), building_frame/buildup_frame

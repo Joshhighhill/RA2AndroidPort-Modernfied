@@ -283,6 +283,19 @@ void World::rocket_explode(int i, int end) {
         an_area_damage(house, nx / kLept, ny / kLept, rocket_damage(blk, u.an.rocket_elite), wh.spread,
                        wh.pmax, wh.verses, /*hit_air=*/false, /*spare_house=*/false, std::max(0.0, nz),
                        wh.wall_flags);   // W6-04-04 (V3WH / DMISLWH: Wall + Wood)
+    if (end == 1) {
+        // W8-05-04 / W8-04-03 [RE: FUN_00662A70 @0x662D07 -> DamageArea
+        // FUN_00489190, V3WH / DMISLWH Wall=yes]: the detonation rolls the
+        // bridge in its cell; Z is the nose height (the deck height when it
+        // bursts on a target standing on a deck).
+        const int bx = static_cast<int>(std::lround(nx / kLept)), by = static_cast<int>(std::lround(ny / kLept));
+        int bz = cell_level(bx, by) * 104 + static_cast<int>(std::max(0.0, nz));
+        const int tg = units_[i].target;
+        if (tg >= 0 && tg < static_cast<int>(units_.size()) && units_[static_cast<std::size_t>(tg)].on_deck &&
+            units_[static_cast<std::size_t>(tg)].cell_x == bx && units_[static_cast<std::size_t>(tg)].cell_y == by)
+            bz = std::max(bz, deck_z(bx, by) + static_cast<int>(std::max(0.0, nz)));
+        bridge_area_roll(nx / kLept, ny / kLept, rocket_damage(blk, u.an.rocket_elite), wh.wall_flags, bz);
+    }
     Unit& r = units_[i];   // (an_area_damage never reallocates units_; re-fetch anyway)
     if (end == 1) {
         fire_events_.push_back({i, -1, -1, -1, 0, ""});
@@ -1099,11 +1112,16 @@ void World::an_step_deaths(double dt) {
         // W2-AN-07 [RE: aircraft.md §2 Crashable +0xD95; JumpjetCrash]: a
         // Crashable flier (and every fixed-wing aircraft) killed in the air
         // falls at its crash rate, then explodes where it hits the ground.
+        // W8-05-04: a crash that came to rest on a high-bridge deck (below) is over.
+        if (u.is_aircraft && !u.an.crashing && u.flight_state == FlightState::Grounded &&
+            u.altitude == 416.0 && high_bridge_cell(u.cell_x, u.cell_y))
+            continue;
         if (u.is_aircraft && u.altitude > 0.0 && (u.an.t.crashable || u.an.t.fixed_wing) &&
             !u.an.t.missile) {
             u.an.crashing = true;
             u.die_time = 0.0;   // hold the death anim until impact
             const double rate = u.descend_rate > 0.0 ? u.descend_rate : kFlyClimbLps;
+            const double alt0 = u.altitude;
             u.altitude = std::max(0.0, u.altitude - std::max(rate, 12.0 * 15.0) * dt);
             u.flight_state = FlightState::Descending;
             u.has_flight_goal = false;
@@ -1125,10 +1143,22 @@ void World::an_step_deaths(double dt) {
                 u.cell_x = std::max(0, std::min(grid_w_ - 1, static_cast<int>(std::lround(u.fx))));
                 u.cell_y = std::max(0, std::min(grid_h_ - 1, static_cast<int>(std::lround(u.fy))));
             }
-            if (u.altitude <= 0.0) {
+            // W8-05-04 [RE: Jumpjet Crashing FUN_0054C7C0]: a falling jumpjet
+            // that was above an intact high-bridge deck stops ON it (bridge
+            // flag, old Z >= floor + BridgeHeight, new Z below it) and fires its
+            // death weapon (message 0x117C) at the deck's Z -- a Kirov no
+            // longer falls through the deck to the river.
+            bool deck_hit = false;
+            if (!u.an.t.fixed_wing && high_bridge_cell(u.cell_x, u.cell_y) &&
+                !high_bridge_destroyed(u.cell_x, u.cell_y) && alt0 >= 416.0 && u.altitude < 416.0) {
+                u.altitude = 416.0;
+                deck_hit = true;
+            }
+            if (u.altitude <= 0.0 || deck_hit) {
                 u.an.crashing = false;
                 u.flight_state = FlightState::Grounded;
                 const double fx = u.fx, fy = u.fy;
+                const int crash_z = cell_level(u.cell_x, u.cell_y) * 104 + static_cast<int>(u.altitude);
                 if (u.an.crash_hp > 0) {
                     // W7-05-04/09 [RE: FlyLoco FUN_004CD520 @0x4CD7C9: Strength
                     // left at impact -> ReceiveDamage(own Strength, Rules+0xFA8)
@@ -1142,7 +1172,7 @@ void World::an_step_deaths(double dt) {
                     c4.inf_death = 2;
                     const int dmg = u.an.crash_hp;
                     u.an.crash_hp = 0;
-                    ability_area_damage(i, fx, fy, c4, dmg);
+                    ability_area_damage(i, fx, fy, c4, dmg, crash_z);
                 } else if (u.an.t.fixed_wing || (u.balloon_hover && !u.is_infantry)) {
                     // W7-05-09 [RE: shot down -> FireDeathWeapon FUN_0070CAC0
                     // (planes @0x4CD729; BalloonHover jumpjets on message 0x117C,
@@ -1150,7 +1180,7 @@ void World::an_step_deaths(double dt) {
                     // DeathWeaponDamageModifier, its warhead's DamageArea].
                     if (u.an.t.crash_weapon.valid && u.an.t.crash_weapon.damage > 0) {
                         const WeaponSpec w = u.an.t.crash_weapon;
-                        ability_area_damage(i, fx, fy, w, w.damage);
+                        ability_area_damage(i, fx, fy, w, w.damage, crash_z);
                     }
                 }
                 // (W7-05-09 [RE: FUN_00744F30 / FUN_0052283B]: a non-BalloonHover
