@@ -82,6 +82,12 @@ if (args.size() == 3 && args[0] == "pres_vet") {
     world_.units()[static_cast<std::size_t>(i)].vet.veterancy = static_cast<float>(std::atof(args[2].c_str()));
     return true;
 }
+//   cheat poison_next_load            W8-06-01: the next saved-game load fails
+//                                    after load_world (the bad-save path)
+if (args.size() == 1 && args[0] == "poison_next_load") {
+    g_play_poison_next_load = true;
+    return true;
+}
 //   cheat pres_para TYPE H DX DY ALT  a paratrooper hanging at ALT leptons over
 //                                    the player's first building + (DX, DY)
 if (args.size() == 6 && args[0] == "pres_para") {

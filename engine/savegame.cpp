@@ -303,7 +303,10 @@ bool SaveAccess::valid_world(const World& w, std::string* why) {
         const Unit& u = w.units_[static_cast<std::size_t>(i)];
         const std::string at = "unit " + std::to_string(i) + " ";
         if (!house_ix(u.house)) return bad(at + "house");
-        if (!unit_ix(u.target) || !(unit_ix(u.cargo_of) || u.cargo_of == kGarrisonCargo) ||   // W5-E: a garrisoned unit's sentinel
+        // W5-E / W8-06-01: cargo_of also holds the garrison and the parachute
+        // sentinels (a garrisoned infantry, a paratrooper under its chute).
+        const bool cargo_ok = unit_ix(u.cargo_of) || u.cargo_of == kGarrisonCargo || u.cargo_of == kParachuteCargo;
+        if (!unit_ix(u.target) || !cargo_ok ||
             !unit_ix(u.enter_target) ||
             !unit_ix(u.parasite_on_me) || !unit_ix(u.temporal_target) || !unit_ix(u.bomb_owner) ||
             !unit_ix(u.ability_fired_unit))
@@ -313,6 +316,17 @@ bool SaveAccess::valid_world(const World& w, std::string* why) {
             !bld_ix(u.temporal_target_building) || !bld_ix(u.ability_fired_building))
             return bad(at + "building reference");
         if (u.bomb_house < -1 || u.bomb_house >= kMaxHouses) return bad(at + "bomb house");
+        // W8-06-01 audit: the lists and air/naval links later code indexes
+        // with (a transport's cargo -- a transport inside a transport holds
+        // unit indices both ways --, a spawn's owner, the spawn-manager nodes,
+        // an aircraft's airfield). None of them holds a sentinel.
+        for (int c : u.cargo)
+            if (!unit_ix(c)) return bad(at + "cargo list");
+        if (!unit_ix(u.an.owner) || !unit_ix(u.an.attack_unit) || !bld_ix(u.an.home) ||
+            !bld_ix(u.an.attack_building))
+            return bad(at + "air/naval reference");
+        for (int s : u.an.sp_unit)
+            if (!unit_ix(s)) return bad(at + "spawn node");
     }
     for (int i = 0; i < nb; ++i) {
         const Building& b = w.buildings_[static_cast<std::size_t>(i)];
@@ -324,6 +338,8 @@ bool SaveAccess::valid_world(const World& w, std::string* why) {
         if (!unit_ix(b.killed_by) || !unit_ix(b.c4_by) || !unit_ix(b.bomb_owner) || !unit_ix(b.def_target))
             return bad(at + "unit reference");
         if (b.bomb_house < -1 || b.bomb_house >= kMaxHouses) return bad(at + "bomb house");
+        for (int o : b.occupants)   // W8-06-01 audit: the garrison list
+            if (!unit_ix(o)) return bad(at + "occupant list");
     }
     return true;
 }

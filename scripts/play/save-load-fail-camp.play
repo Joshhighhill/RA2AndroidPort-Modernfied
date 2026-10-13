@@ -1,0 +1,31 @@
+# save-load-fail-camp.play -- W8-06-01: a campaign save that fails to load
+# ends on the error page, never in a crash. Before the fix the in-place
+# rebuild reset the campaign while the scene still pointed at its vehicle art
+# (use after free in setup_campaign, ALL01T 0xC0000005).
+set render_every 0
+set campaign ALL01T.MAP GDI
+click start
+until 300 scene == game
+until 60 input_locked == 1
+until 1500 input_locked == 0
+wait 5
+key f10
+wait 2
+click "menu:SAVE GAME"
+wait 2
+click dialog:action
+wait 5
+cheat poison_next_load
+key f10
+wait 2
+click "menu:LOAD GAME"
+wait 2
+click dialog:row0
+click dialog:action
+wait 5
+assert scene == error                                     @W8-06-01
+wait 30
+key escape
+until 60 scene != error                                   @W8-06-01
+log STILL-RUNNING
+end

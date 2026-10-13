@@ -324,6 +324,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_play_script.cpp engine/play_sc
 # P7 Save/Load [RE: docs/re/saveload.md]: the archive core, field visitors,
 # file container + slots. SDL-free.
 target_sources(ra2assets_tests PRIVATE tests/test_saveload.cpp engine/savegame.cpp)
+target_sources(ra2assets_tests PRIVATE tests/test_save_states.cpp)   # W8-06-01 save states + W8-05-07 paradrop
 # The saveload source-scan tripwire reads engine/*.hpp to prove every World /
 # MapTriggerSystem data member is visited by the serializer.
 target_compile_definitions(ra2assets_tests PRIVATE RA2_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

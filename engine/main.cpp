@@ -6354,6 +6354,10 @@ Scene* defer_load_scene(bool no_audio, ra2engine::save::SaveFile f);
 // W6-06-09: the startup Resume page loads AUTOSAVE.SAV without deleting it;
 // the GameScene built from it takes this flag (game_scene_lifecycle.inc
 // autosaved_) so the file is removed only when that game ends normally.
+// W8-06-01 (--play only, cheat poison_next_load): the next saved-game load is
+// treated as refused after load_world has run over the scene's World -- the
+// failure path a bad save takes, without needing a bad file.
+bool g_play_poison_next_load = false;
 bool g_resumed_from_autosave = false;
 bool g_resumed_from_autosave_take() {
     const bool r = g_resumed_from_autosave;
@@ -7413,6 +7417,10 @@ private:
                             f.header.map_cells == static_cast<int>(a_.map.cells().size());
         bool ok = map_ok && w && s && ra2engine::save::from_bytes(*s, sc) &&
                   ra2engine::save::load_world(world_, *w);
+        if (g_play_poison_next_load) {   // W8-06-01 play hook: a refused load
+            g_play_poison_next_load = false;
+            ok = false;
+        }
         if (ok && campaign_) {   // P10: TRIG + HOST must both restore
             const std::vector<uint8_t>* tr = f.section(ra2engine::save::kTagTriggers);
             const std::vector<uint8_t>* hs = f.section(ra2engine::save::kTagHost);
@@ -7466,29 +7474,19 @@ private:
                 }
             }
             banner_ = "GAME LOADED";   // W2-UI-21: the original posts no message after a load
-        } else {
-            // Never run a half-loaded World: start the same scenario fresh.
-            campaign_.reset();
-            world_ = cfg_.campaign_map.empty() ? launch_skirmish(cfg_, a_, ua_, ba_, rules_, &rules_ini_)
-                                               : build_campaign_world(a_, ua_);
-            if (cfg_.campaign_map.empty())   // [G-60] same real-play AI as the ctor
-                arm_skirmish_ai(world_, cfg_, ba_, rules_, rules_ini_, ur_ai_,
-                                load_aimd_or_empty(dir_), &a_.map, ua_);
-            setup_player_economies();   // L2: fresh wallets + queues for every human house
-            world_.set_session_seed(session_seed_for(cfg_));   // Net L0
-            if (!cfg_.campaign_map.empty()) setup_campaign(cfg_);
-            world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
-        depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
-        w5_arm_combat(world_, rules_, &a_.map, &a_.theater);   // W5-B: sub-cells, land speed, crush
-            wire_abilities(world_, rules_, rules_ini_);
-            wire_w5(world_, ba_, rules_, rules_ini_, art_ini_);   // wave-5 (agent C)
-            enable_p5_features(world_, rules_, ba_, cfg_, {&ur_.defs, &ur_ai_.defs});
-            init_map_dressing();   // G-87: the fresh world gets its map dressing again
-            install_econ_rules();   // L2
-            show_banner(camp::csf_text(dir_, "TXT_ERROR_LOADING_GAME"));
         }
         std::cerr << "[saveload] load " << (ok ? "ok" : "FAILED") << " frame=" << f.header.frame
                   << " desc=" << f.header.description << "\n";
+        if (!ok) {
+            // W8-06-01: never run a half-loaded World, and never rebuild the
+            // scenario in place either -- the old in-place rebuild reset the
+            // campaign while vlist_ still pointed at its vehicle art, and
+            // setup_campaign read the freed memory (ALL01T 0xC0000005). The
+            // load fails cleanly: build_deferred turns this into the error page
+            // ("Error loading game!", MAIN MENU); the scene is destroyed
+            // normally (the delegated constructor has completed).
+            throw std::runtime_error(camp::csf_text(dir_, "TXT_ERROR_LOADING_GAME"));
+        }
     }
     void load_game(const std::string& path) {
         std::vector<uint8_t> bytes;

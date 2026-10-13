@@ -84,6 +84,8 @@ Column groups: Inf = infantry (GI), Swim = swimmer (SEAL / Tanya / Yuri Prime), 
 | **Fix** | <ol><li>Accept `u.cargo_of == kParachuteCargo` next to `kGarrisonCargo` at `savegame.cpp:306`.</li><li>Separately, make a failed campaign load fall back cleanly. Find the crash with the c-crash script under a debugger.</li></ol> |
 | **Test** | `c-crash.play` / `b-parasave.play` must reach `banner != "Error loading game!"`, and the paratrooper must land after the load (`units(0,E1)` +1). |
 
+**Status: FIXED (w8fix-save, save v42).** `valid_world` accepts `kParachuteCargo`; the validator now also range-checks the cargo / occupant lists, spawn nodes and air links. The crash was a use-after-free: the failure path reset the campaign while `vlist_` still held its vehicle-art pointers, and `setup_campaign` → `load_unloading_classes` read them (0xFEEEFEEE string). A refused load now throws out of the load scene into the error page instead of rebuilding in place. Tests: `tests/test_save_states.cpp`, `scripts/play/save-paradrop.play`, `save-paradrop-camp.play`, `save-load-fail-camp.play`.
+
 ### W8-06-02: A collapsing high-bridge deck kills only one unit per cell (also low bridges) — MAJOR
 
 | | |
