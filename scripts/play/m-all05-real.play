@@ -18,10 +18,11 @@
 #     dogs by the plants, so Tanya clears the outer yellow dogs from spots out of
 #     the coils' reach, then at full health walks the corridor to the silo's
 #     south side (66,44) taking two coil bolts, C4s the silo, heals, walks out.
-#     Orange: Tanya clears the dogs from the strip south of the compound, waits
-#     at (37,69) by the west gate, shoots the gate dog that runs at the first
-#     spy; a spy blacks out OrangeTeam and Tanya C4s the orange silo from its
-#     west side -> 'Victory 1' -> WON.
+#     Orange (fv8b): Tanya clears the dogs from the strip south of the compound
+#     and from (37,69) by the west gate, then from (29,57) on the west strip
+#     (the spies' only Foot way since fv7c's per-tile Beach); the spies walk
+#     down to her, one blacks out OrangeTeam and Tanya C4s the orange silo ->
+#     'Victory 1' -> WON.
 #
 # Tanya's micro (act): shoot the nearest dog first, then the nearest enemy in
 # range, else continue the order; never chase out of the leash. `repeat` keeps
@@ -89,6 +90,15 @@ if units(1,TANY) > 0 and ucx(1,TANY,0) > 104 then click cell 101 117
 if units(1,TANY) > 0 and ucy(1,TANY,0) < 117 then click cell 101 117
 if units(1,TANY) > 0 and ucy(1,TANY,0) > 121 then click cell 101 117
 if units(1,TANY) > 0 then wait 4
+endrepeat
+repeat 150
+if units(1,TANY) > 0 and ucell(4,DOG,3) != 97100 and selected_type(TANY) == 0 then click unit 1:TANY:0
+if units(1,TANY) > 0 and ucell(4,DOG,3) != 97100 and ndog(1,TANY,0) <= 5.5 and utgt(1,TANY,0) == -1 then click unit e:DOG:near
+if units(1,TANY) > 0 and ucell(4,DOG,3) != 97100 and ucx(1,TANY,0) < 99 then click cell 101 117
+if units(1,TANY) > 0 and ucell(4,DOG,3) != 97100 and ucx(1,TANY,0) > 104 then click cell 101 117
+if units(1,TANY) > 0 and ucell(4,DOG,3) != 97100 and ucy(1,TANY,0) < 117 then click cell 101 117
+if units(1,TANY) > 0 and ucell(4,DOG,3) != 97100 and ucy(1,TANY,0) > 121 then click cell 101 117
+if units(1,TANY) > 0 and ucell(4,DOG,3) != 97100 then wait 4
 endrepeat
 click unit 2:SPY:0
 click building 4:NAPOWR:1
@@ -282,10 +292,6 @@ if units(1,TANY) > 0 and uhpn(1,TANY,0) < 365 and ucy(1,TANY,0) < 46 then click 
 if units(1,TANY) > 0 and uhpn(1,TANY,0) < 365 and ucy(1,TANY,0) > 50 then click cell 79 46
 if units(1,TANY) > 0 and uhpn(1,TANY,0) < 365 then wait 4
 endrepeat
-click unit 2:SPY:0
-click unit 2:SPY:1 shift
-click unit 2:SPY:2 shift
-click cell 44 75
 repeat 400
 if units(1,TANY) > 0 and ucell(1,TANY,0) != 56074 and selected_type(TANY) == 0 then click unit 1:TANY:0
 if units(1,TANY) > 0 and ucell(1,TANY,0) != 56074 and ndog(1,TANY,0) <= 8 and umov(1,TANY,0) == 1 then click unit e:DOG:near
@@ -340,14 +346,14 @@ if units(1,TANY) > 0 and ucell(1,TANY,0) != 40075 and ndog(1,TANY,0) > 8 and nen
 if units(1,TANY) > 0 and ucell(1,TANY,0) != 40075 then wait 5
 endrepeat
 dump
-repeat 900
-if units(1,TANY) > 0 and ucx(2,SPY,0) > 46 and selected_type(TANY) == 0 then click unit 1:TANY:0
-if units(1,TANY) > 0 and ucx(2,SPY,0) > 46 and ndog(1,TANY,0) <= 7 and utgt(1,TANY,0) == -1 then click unit e:DOG:near
-if units(1,TANY) > 0 and ucx(2,SPY,0) > 46 and ucx(1,TANY,0) < 38 then click cell 40 75
-if units(1,TANY) > 0 and ucx(2,SPY,0) > 46 and ucx(1,TANY,0) > 42 then click cell 40 75
-if units(1,TANY) > 0 and ucx(2,SPY,0) > 46 and ucy(1,TANY,0) < 74 then click cell 40 75
-if units(1,TANY) > 0 and ucx(2,SPY,0) > 46 and ucy(1,TANY,0) > 76 then click cell 40 75
-if units(1,TANY) > 0 and ucx(2,SPY,0) > 46 then wait 4
+repeat 200
+if units(1,TANY) > 0 and units(7,DOG) > 1 and selected_type(TANY) == 0 then click unit 1:TANY:0
+if units(1,TANY) > 0 and units(7,DOG) > 1 and ndog(1,TANY,0) <= 7 and utgt(1,TANY,0) == -1 then click unit e:DOG:near
+if units(1,TANY) > 0 and units(7,DOG) > 1 and ucx(1,TANY,0) < 38 then click cell 40 75
+if units(1,TANY) > 0 and units(7,DOG) > 1 and ucx(1,TANY,0) > 42 then click cell 40 75
+if units(1,TANY) > 0 and units(7,DOG) > 1 and ucy(1,TANY,0) < 74 then click cell 40 75
+if units(1,TANY) > 0 and units(7,DOG) > 1 and ucy(1,TANY,0) > 76 then click cell 40 75
+if units(1,TANY) > 0 and units(7,DOG) > 1 then wait 4
 endrepeat
 repeat 150
 if units(1,TANY) > 0 and ucell(1,TANY,0) != 36073 and selected_type(TANY) == 0 then click unit 1:TANY:0
@@ -373,70 +379,146 @@ if units(1,TANY) > 0 and ucell(1,TANY,0) != 37069 and ndog(1,TANY,0) > 6 and nen
 if units(1,TANY) > 0 and ucell(1,TANY,0) != 37069 then wait 5
 endrepeat
 dump
+repeat 400
+if units(1,TANY) > 0 and units(7,DOG) > 1 and selected_type(TANY) == 0 then click unit 1:TANY:0
+if units(1,TANY) > 0 and units(7,DOG) > 1 and ndog(1,TANY,0) <= 6.5 and utgt(1,TANY,0) == -1 then click unit e:DOG:near
+if units(1,TANY) > 0 and units(7,DOG) > 1 and ucx(1,TANY,0) < 36 then click cell 37 69
+if units(1,TANY) > 0 and units(7,DOG) > 1 and ucx(1,TANY,0) > 37 then click cell 37 69
+if units(1,TANY) > 0 and units(7,DOG) > 1 and ucy(1,TANY,0) < 68 then click cell 37 69
+if units(1,TANY) > 0 and units(7,DOG) > 1 and ucy(1,TANY,0) > 70 then click cell 37 69
+if units(1,TANY) > 0 and units(7,DOG) > 1 then wait 4
+endrepeat
+repeat 150
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 31067 and selected_type(TANY) == 0 then click unit 1:TANY:0
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 31067 and ndog(1,TANY,0) <= 6 and umov(1,TANY,0) == 1 then click unit e:DOG:near
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 31067 and ndog(1,TANY,0) <= 6 and utgt(1,TANY,0) == -1 then click unit e:DOG:near
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 31067 and ndog(1,TANY,0) > 6 and nenemy(1,TANY,0) <= 5 and umov(1,TANY,0) == 1 then click unit e:*:near
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 31067 and ndog(1,TANY,0) > 6 and nenemy(1,TANY,0) <= 5 and utgt(1,TANY,0) == -1 then click unit e:*:near
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 31067 and ndog(1,TANY,0) > 6 and nenemy(1,TANY,0) > 5 and umov(1,TANY,0) == 0 then click cell 31 67
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 31067 and nenemy(1,TANY,0) > 6.2 and umov(1,TANY,0) == 0 and utgt(1,TANY,0) >= 0 then click cell 31 67
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 31067 and ndog(1,TANY,0) > 6 and nenemy(1,TANY,0) > 5 and umov(1,TANY,0) == 1 and utgt(1,TANY,0) >= 0 then click cell 31 67
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 31067 then wait 5
+endrepeat
+dump
+repeat 150
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 27061 and selected_type(TANY) == 0 then click unit 1:TANY:0
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 27061 and ndog(1,TANY,0) <= 6 and umov(1,TANY,0) == 1 then click unit e:DOG:near
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 27061 and ndog(1,TANY,0) <= 6 and utgt(1,TANY,0) == -1 then click unit e:DOG:near
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 27061 and ndog(1,TANY,0) > 6 and nenemy(1,TANY,0) <= 5 and umov(1,TANY,0) == 1 then click unit e:*:near
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 27061 and ndog(1,TANY,0) > 6 and nenemy(1,TANY,0) <= 5 and utgt(1,TANY,0) == -1 then click unit e:*:near
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 27061 and ndog(1,TANY,0) > 6 and nenemy(1,TANY,0) > 5 and umov(1,TANY,0) == 0 then click cell 27 61
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 27061 and nenemy(1,TANY,0) > 6.2 and umov(1,TANY,0) == 0 and utgt(1,TANY,0) >= 0 then click cell 27 61
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 27061 and ndog(1,TANY,0) > 6 and nenemy(1,TANY,0) > 5 and umov(1,TANY,0) == 1 and utgt(1,TANY,0) >= 0 then click cell 27 61
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 27061 then wait 5
+endrepeat
+dump
+repeat 150
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 29057 and selected_type(TANY) == 0 then click unit 1:TANY:0
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 29057 and ndog(1,TANY,0) <= 6 and umov(1,TANY,0) == 1 then click unit e:DOG:near
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 29057 and ndog(1,TANY,0) <= 6 and utgt(1,TANY,0) == -1 then click unit e:DOG:near
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 29057 and ndog(1,TANY,0) > 6 and nenemy(1,TANY,0) <= 5 and umov(1,TANY,0) == 1 then click unit e:*:near
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 29057 and ndog(1,TANY,0) > 6 and nenemy(1,TANY,0) <= 5 and utgt(1,TANY,0) == -1 then click unit e:*:near
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 29057 and ndog(1,TANY,0) > 6 and nenemy(1,TANY,0) > 5 and umov(1,TANY,0) == 0 then click cell 29 57
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 29057 and nenemy(1,TANY,0) > 6.2 and umov(1,TANY,0) == 0 and utgt(1,TANY,0) >= 0 then click cell 29 57
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 29057 and ndog(1,TANY,0) > 6 and nenemy(1,TANY,0) > 5 and umov(1,TANY,0) == 1 and utgt(1,TANY,0) >= 0 then click cell 29 57
+if units(1,TANY) > 0 and ucell(1,TANY,0) != 29057 then wait 5
+endrepeat
+dump
+repeat 500
+if units(1,TANY) > 0 and units(7,DOG) > 0 and selected_type(TANY) == 0 then click unit 1:TANY:0
+if units(1,TANY) > 0 and units(7,DOG) > 0 and ndog(1,TANY,0) <= 7 and utgt(1,TANY,0) == -1 then click unit e:DOG:near
+if units(1,TANY) > 0 and units(7,DOG) > 0 and ucx(1,TANY,0) < 28 then click cell 29 57
+if units(1,TANY) > 0 and units(7,DOG) > 0 and ucx(1,TANY,0) > 30 then click cell 29 57
+if units(1,TANY) > 0 and units(7,DOG) > 0 and ucy(1,TANY,0) < 56 then click cell 29 57
+if units(1,TANY) > 0 and units(7,DOG) > 0 and ucy(1,TANY,0) > 58 then click cell 29 57
+if units(1,TANY) > 0 and units(7,DOG) > 0 then wait 4
+endrepeat
+click unit 2:SPY:0
+click unit 2:SPY:1 shift
+click unit 2:SPY:2 shift
+click cell 29 58
+repeat 600
+if units(1,TANY) > 0 and ucy(2,SPY,0) < 55 and selected_type(TANY) == 0 then click unit 1:TANY:0
+if units(1,TANY) > 0 and ucy(2,SPY,0) < 55 and ndog(1,TANY,0) <= 7 and utgt(1,TANY,0) == -1 then click unit e:DOG:near
+if units(1,TANY) > 0 and ucy(2,SPY,0) < 55 and ucx(1,TANY,0) < 28 then click cell 29 57
+if units(1,TANY) > 0 and ucy(2,SPY,0) < 55 and ucx(1,TANY,0) > 30 then click cell 29 57
+if units(1,TANY) > 0 and ucy(2,SPY,0) < 55 and ucy(1,TANY,0) < 56 then click cell 29 57
+if units(1,TANY) > 0 and ucy(2,SPY,0) < 55 and ucy(1,TANY,0) > 58 then click cell 29 57
+if units(1,TANY) > 0 and ucy(2,SPY,0) < 55 then wait 4
+endrepeat
+repeat 300
+if units(1,TANY) > 0 and ucy(2,SPY,0) < 55 and selected_type(TANY) == 0 then click unit 1:TANY:0
+if units(1,TANY) > 0 and ucy(2,SPY,0) < 55 and ndog(1,TANY,0) <= 7 and utgt(1,TANY,0) == -1 then click unit e:DOG:near
+if units(1,TANY) > 0 and ucy(2,SPY,0) < 55 and ucx(1,TANY,0) < 28 then click cell 29 57
+if units(1,TANY) > 0 and ucy(2,SPY,0) < 55 and ucx(1,TANY,0) > 30 then click cell 29 57
+if units(1,TANY) > 0 and ucy(2,SPY,0) < 55 and ucy(1,TANY,0) < 56 then click cell 29 57
+if units(1,TANY) > 0 and ucy(2,SPY,0) < 55 and ucy(1,TANY,0) > 58 then click cell 29 57
+if units(1,TANY) > 0 and ucy(2,SPY,0) < 55 then wait 4
+endrepeat
 if blackout(7) == 0 and units(2,SPY) >= 3 then click unit 2:SPY:0
 wait 1
 if blackout(7) == 0 and units(2,SPY) >= 3 and selected_type(SPY) == 0 then click unit 2:SPY:0
 if blackout(7) == 0 and selected_type(SPY) > 0 and selected_type(TANY) == 0 then click building 7:NAPOWR:near
-repeat 300
+repeat 200
 if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 3 and selected_type(TANY) == 0 then click unit 1:TANY:0
 if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 3 and ndog(1,TANY,0) <= 6.5 and utgt(1,TANY,0) == -1 then click unit e:DOG:near
-if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 3 and ucx(1,TANY,0) < 36 then click cell 37 69
-if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 3 and ucx(1,TANY,0) > 37 then click cell 37 69
-if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 3 and ucy(1,TANY,0) < 68 then click cell 37 69
-if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 3 and ucy(1,TANY,0) > 70 then click cell 37 69
+if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 3 and ucx(1,TANY,0) < 28 then click cell 29 57
+if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 3 and ucx(1,TANY,0) > 30 then click cell 29 57
+if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 3 and ucy(1,TANY,0) < 56 then click cell 29 57
+if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 3 and ucy(1,TANY,0) > 58 then click cell 29 57
 if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 3 then wait 4
 endrepeat
-repeat 60
+repeat 40
 if units(1,TANY) > 0 and blackout(7) == 0 and selected_type(TANY) == 0 then click unit 1:TANY:0
 if units(1,TANY) > 0 and blackout(7) == 0 and ndog(1,TANY,0) <= 6.5 and utgt(1,TANY,0) == -1 then click unit e:DOG:near
-if units(1,TANY) > 0 and blackout(7) == 0 and ucx(1,TANY,0) < 36 then click cell 37 69
-if units(1,TANY) > 0 and blackout(7) == 0 and ucx(1,TANY,0) > 37 then click cell 37 69
-if units(1,TANY) > 0 and blackout(7) == 0 and ucy(1,TANY,0) < 68 then click cell 37 69
-if units(1,TANY) > 0 and blackout(7) == 0 and ucy(1,TANY,0) > 70 then click cell 37 69
+if units(1,TANY) > 0 and blackout(7) == 0 and ucx(1,TANY,0) < 28 then click cell 29 57
+if units(1,TANY) > 0 and blackout(7) == 0 and ucx(1,TANY,0) > 30 then click cell 29 57
+if units(1,TANY) > 0 and blackout(7) == 0 and ucy(1,TANY,0) < 56 then click cell 29 57
+if units(1,TANY) > 0 and blackout(7) == 0 and ucy(1,TANY,0) > 58 then click cell 29 57
 if units(1,TANY) > 0 and blackout(7) == 0 then wait 4
 endrepeat
 if blackout(7) == 0 and units(2,SPY) >= 2 then click unit 2:SPY:0
 wait 1
 if blackout(7) == 0 and units(2,SPY) >= 2 and selected_type(SPY) == 0 then click unit 2:SPY:0
 if blackout(7) == 0 and selected_type(SPY) > 0 and selected_type(TANY) == 0 then click building 7:NAPOWR:near
-repeat 300
+repeat 200
 if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 2 and selected_type(TANY) == 0 then click unit 1:TANY:0
 if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 2 and ndog(1,TANY,0) <= 6.5 and utgt(1,TANY,0) == -1 then click unit e:DOG:near
-if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 2 and ucx(1,TANY,0) < 36 then click cell 37 69
-if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 2 and ucx(1,TANY,0) > 37 then click cell 37 69
-if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 2 and ucy(1,TANY,0) < 68 then click cell 37 69
-if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 2 and ucy(1,TANY,0) > 70 then click cell 37 69
+if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 2 and ucx(1,TANY,0) < 28 then click cell 29 57
+if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 2 and ucx(1,TANY,0) > 30 then click cell 29 57
+if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 2 and ucy(1,TANY,0) < 56 then click cell 29 57
+if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 2 and ucy(1,TANY,0) > 58 then click cell 29 57
 if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 2 then wait 4
 endrepeat
-repeat 60
+repeat 40
 if units(1,TANY) > 0 and blackout(7) == 0 and selected_type(TANY) == 0 then click unit 1:TANY:0
 if units(1,TANY) > 0 and blackout(7) == 0 and ndog(1,TANY,0) <= 6.5 and utgt(1,TANY,0) == -1 then click unit e:DOG:near
-if units(1,TANY) > 0 and blackout(7) == 0 and ucx(1,TANY,0) < 36 then click cell 37 69
-if units(1,TANY) > 0 and blackout(7) == 0 and ucx(1,TANY,0) > 37 then click cell 37 69
-if units(1,TANY) > 0 and blackout(7) == 0 and ucy(1,TANY,0) < 68 then click cell 37 69
-if units(1,TANY) > 0 and blackout(7) == 0 and ucy(1,TANY,0) > 70 then click cell 37 69
+if units(1,TANY) > 0 and blackout(7) == 0 and ucx(1,TANY,0) < 28 then click cell 29 57
+if units(1,TANY) > 0 and blackout(7) == 0 and ucx(1,TANY,0) > 30 then click cell 29 57
+if units(1,TANY) > 0 and blackout(7) == 0 and ucy(1,TANY,0) < 56 then click cell 29 57
+if units(1,TANY) > 0 and blackout(7) == 0 and ucy(1,TANY,0) > 58 then click cell 29 57
 if units(1,TANY) > 0 and blackout(7) == 0 then wait 4
 endrepeat
 if blackout(7) == 0 and units(2,SPY) >= 1 then click unit 2:SPY:0
 wait 1
 if blackout(7) == 0 and units(2,SPY) >= 1 and selected_type(SPY) == 0 then click unit 2:SPY:0
 if blackout(7) == 0 and selected_type(SPY) > 0 and selected_type(TANY) == 0 then click building 7:NAPOWR:near
-repeat 300
+repeat 200
 if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 1 and selected_type(TANY) == 0 then click unit 1:TANY:0
 if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 1 and ndog(1,TANY,0) <= 6.5 and utgt(1,TANY,0) == -1 then click unit e:DOG:near
-if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 1 and ucx(1,TANY,0) < 36 then click cell 37 69
-if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 1 and ucx(1,TANY,0) > 37 then click cell 37 69
-if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 1 and ucy(1,TANY,0) < 68 then click cell 37 69
-if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 1 and ucy(1,TANY,0) > 70 then click cell 37 69
+if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 1 and ucx(1,TANY,0) < 28 then click cell 29 57
+if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 1 and ucx(1,TANY,0) > 30 then click cell 29 57
+if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 1 and ucy(1,TANY,0) < 56 then click cell 29 57
+if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 1 and ucy(1,TANY,0) > 58 then click cell 29 57
 if units(1,TANY) > 0 and blackout(7) == 0 and units(2,SPY) >= 1 then wait 4
 endrepeat
-repeat 60
+repeat 40
 if units(1,TANY) > 0 and blackout(7) == 0 and selected_type(TANY) == 0 then click unit 1:TANY:0
 if units(1,TANY) > 0 and blackout(7) == 0 and ndog(1,TANY,0) <= 6.5 and utgt(1,TANY,0) == -1 then click unit e:DOG:near
-if units(1,TANY) > 0 and blackout(7) == 0 and ucx(1,TANY,0) < 36 then click cell 37 69
-if units(1,TANY) > 0 and blackout(7) == 0 and ucx(1,TANY,0) > 37 then click cell 37 69
-if units(1,TANY) > 0 and blackout(7) == 0 and ucy(1,TANY,0) < 68 then click cell 37 69
-if units(1,TANY) > 0 and blackout(7) == 0 and ucy(1,TANY,0) > 70 then click cell 37 69
+if units(1,TANY) > 0 and blackout(7) == 0 and ucx(1,TANY,0) < 28 then click cell 29 57
+if units(1,TANY) > 0 and blackout(7) == 0 and ucx(1,TANY,0) > 30 then click cell 29 57
+if units(1,TANY) > 0 and blackout(7) == 0 and ucy(1,TANY,0) < 56 then click cell 29 57
+if units(1,TANY) > 0 and blackout(7) == 0 and ucy(1,TANY,0) > 58 then click cell 29 57
 if units(1,TANY) > 0 and blackout(7) == 0 then wait 4
 endrepeat
 repeat 300
