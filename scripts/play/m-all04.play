@@ -3,6 +3,11 @@
 # INSIDE the landing craft (Full=yes), so the player drives the craft onto
 # the beach and unloads it (Deploy key); the MCV then drives to a legal spot
 # and unfolds into a ConYard. Cheat: camp_deploy = the player's move + deploy.
+# fv8a: the craft beaches on the Level-0 Beach strip x=95 (y 84..97) -- the
+# old (120,68) is the foot of Chicago's 4-level seawall (WClifA06, TMP terrain
+# type 15 = Rock + CliffBackImpassability), which no unit can enter in the
+# original (docs/gap/wave7/13a-suspects-locomotion.md suspect 1), so since
+# fv7c / w8fix-place the unload there is refused.
 set render_every 600
 set on_quit continue
 set campaign ALL04u.MAP GDI
@@ -22,7 +27,7 @@ assert units(0) >= 8
 until 2000 in_garrison(1) >= 20
 until 2000 moving(0) == 0
 click unit 0:LCRF
-click cell 120 68
+click cell 95 88
 until 1200 moving(0) == 0
 click unit 0:LCRF
 key d
@@ -31,9 +36,14 @@ until 600 carried(0) == 0
 cheat camp_move E1 115 45
 cheat camp_move GI 115 45
 cheat camp_move MTNK 115 45
+# fv8a: from the x=95 beach the MCV drives to (85,88), the nearest 4x4
+# buildable spot clear of the beach-side ore field (live ore refuses a
+# building, FUN_0047C530), and unfolds there.
+cheat camp_move AMCV 85 88
 wait 300
+until 900 moving(0) == 0
 cheat camp_deploy
-wait 900
+wait 300
 cheat camp_deploy
 until 900 buildings(0) >= 1
 assert buildings(0) >= 1
