@@ -4591,13 +4591,14 @@ TEST_CASE("world: step_repair_sell is a strict no-op with the firewall closed [R
 // [IQ] RepairSell, money >= [AI] CreditReserve, the RepairDelay latch is clear
 // and the building is AIRepairable ([Structures] field 16) or captured.
 TEST_CASE("fv7c: AI building repair -- IQ, CreditReserve and AIRepairable gates (FUN_00450620)") {
-    struct Case { int iq; double credits; bool repairable; bool captured; bool expect; };
+    struct Case { int iq; double credits; bool repairable; bool captured; bool expect; int type = 0; };
     const Case cases[] = {
         {5, 10000.0, true, false, true},    // repaired
         {5, 10000.0, false, false, false},  // not AIRepairable (ALL04's Russian2 NAYARD)
         {5, 10000.0, false, true, true},    // captured counts
         {0, 10000.0, true, false, false},   // IQ below RepairSell (1)
         {5, 50.0, true, false, false},      // below CreditReserve (100)
+        {5, 10000.0, true, false, true, 2}, // ClickRepairable=no: Repair(1) skips the cursor gate (NAPSYA)
     };
     for (const Case& c : cases) {
         ra2assets::MapFile map;
@@ -4608,7 +4609,7 @@ TEST_CASE("fv7c: AI building repair -- IQ, CreditReserve and AIRepairable gates 
         world.arm_combat_w7(r);
         world.set_house_iq(1, c.iq);
         world.set_house_repair_delay(1, 10);
-        const int b = world.add_building(0, 5, 5, 5, 4, /*house*/ 1, 1000, 0, 0.0, true);
+        const int b = world.add_building(c.type, 5, 5, 5, 4, /*house*/ 1, 1000, 0, 0.0, true);
         world.buildings()[b].hp = 500;
         world.buildings()[b].ai_repairable = c.repairable;
         world.buildings()[b].has_been_captured = c.captured;

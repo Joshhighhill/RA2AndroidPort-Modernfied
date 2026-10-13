@@ -2458,6 +2458,7 @@ public:
     // fv7c [RE: FUN_00450620 per-building gate]: may house h's AI start a
     // repair on building b (IQ >= RepairSell, AIRepairable or captured)?
     bool ai_may_repair(int h, const Building& b) const;
+    bool ai_repair_on(int bi);   // fv7c: Repair(1) without the click gate
     // W6-02-05: start an armed AI house's TeamDelays check clock at `secs`
     // (it fires when the clock reaches TeamDelays / 15).
     void set_ai_team_check_clock(int h, double frames) {   // Net L0: frames

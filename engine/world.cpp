@@ -3517,6 +3517,21 @@ bool World::ai_may_repair(int h, const Building& b) const {
     return b.ai_repairable || b.has_been_captured;
 }
 
+// fv7c [RE: FUN_00450620 calls this->Repair(1) = FUN_00446F40 (vtbl+0x19C)
+// directly -- NOT the wrench cursor's Can_Be_Repaired FUN_00452620, so
+// ClickRepairable=no (the Psychic Amplifier) does not stop the AI].
+bool World::ai_repair_on(int bi) {
+    if (bi < 0 || bi >= (int)buildings_.size()) return false;
+    Building& b = buildings_[(std::size_t)bi];
+    if (!b.alive || b.state != Building::State::Idle || b.being_repaired || b.selling || b.hp >= b.max_hp) return false;
+    if (w7_rules_.armed) {
+        b.being_repaired = true;
+        repair_sell_any_ = true;
+        return true;
+    }
+    return set_repair(bi, b.house, 1);   // a synthetic World keeps the G-65 path
+}
+
 void World::set_house_repair_delay(int h, int frames) {
     if (h < 0) return;
     if ((int)house_repair_delay_.size() <= h) {
@@ -3547,7 +3562,7 @@ void World::step_ai_repair(double dt) {
                 b.hp >= b.max_hp)
                 continue;
             if (!ai_may_repair(h, b)) continue;
-            if (set_repair(bi, h, 1)) { clock = 0.0; break; }
+            if (ai_repair_on(bi)) { clock = 0.0; break; }
         }
     }
 }
@@ -3652,7 +3667,7 @@ void World::step_ai_houses(double dt) {
                     b.being_repaired || b.selling || b.hp >= b.max_hp)
                     continue;
                 if (!ai_may_repair(h, b)) continue;   // fv7c: IQ + AIRepairable gate
-                if (set_repair(bi, h, 1)) { rec.state.repair_clock = 0.0; break; }
+                if (ai_repair_on(bi)) { rec.state.repair_clock = 0.0; break; }
             }
         }
 
