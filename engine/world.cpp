@@ -6029,6 +6029,11 @@ void World::step(double dt) {
                 // cell whose LandType is Water (2) OR Beach (6); only types
                 // with the Swim set are affected (AmphibiousDestroyer)].
                 if (!c.in_water && land_speed_armed_ && speed_land_at(u.cell_x, u.cell_y) == 6) c.in_water = true;
+                // R-210 deck layer: a unit on a bridge deck stands on the bridge
+                // (the deck is its cell for movement and drawing), so it walks --
+                // the Water/Beach under the deck is not its ground. Tanya crossing
+                // a bridge played the Swim set and the enter-water sound.
+                if (u.on_deck) c.in_water = false;
                 c.has_target = u.target >= 0 || u.target_building >= 0;
                 c.dying = u.die_time >= 0.0;
                 c.deployed = u.deployed;

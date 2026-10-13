@@ -49,6 +49,9 @@ shot tanya_on_edge
 click unit 0:TANY
 wait 1
 click cell 57 58
+# control for section 3: in the river she does play the Swim set
+waituntil 2400 iseq(Swim) >= 1
+assert iseq(Swim) >= 1
 until 2400 ucell(0,TANY,0) == 57058              @R-210
 assert uheight(0,TANY,0) == 2
 assert cliff_steps(0) == 0                         @R-210
@@ -95,4 +98,20 @@ assert sel_min_cy >= 56                            @R-210
 assert sel_deck == 0
 assert cliff_steps(0) == 0                         @R-210
 shot crossed
+
+# --- 3. Tanya on the bridge deck walks (user report: she played Swim on a bridge) ---
+# R-210: a unit on the deck stands on the bridge, not in the water below it.
+cheat camp_spawn TANY 0 82 44
+wait 2
+click unit 0:TANY:1
+wait 1
+require selected == 1
+click cell 82 54
+waituntil 600 sel_deck >= 1
+assert sel_deck >= 1                               @R-210
+assert iseq(Swim) == 0
+wait 15
+assert sel_deck >= 1
+assert iseq(Swim) == 0
+shot tanya_on_deck
 end
