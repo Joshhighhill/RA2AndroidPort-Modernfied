@@ -30,7 +30,12 @@ p.add("until 1200 units(0,SENGINEER) >= 1")
 # R-210: with the height gate the Conscripts and civilians no longer take cliff
 # steps, so the fight on the way plays out differently; the escort now stays with
 # the engineer for the second leg too (alone it met three GIs at (100,111)).
-p.select_types(["E2", "SENGINEER"]).add("click cell 97 92", "until 900 sel_moving == 0", "wait 60")
+# w7r2: since wave 7's threat scan the GIs by the road -- house 2's at
+# (100,105..110), house 1's at (98..99,86..92) -- engage the column, and the
+# engineer walking with it (or just behind) is shot. The Conscripts go first
+# and fight both groups; the engineer follows once the fighting is over.
+p.select_types(["E2"]).add("click cell 97 92", "until 900 sel_moving == 0", "wait 300")
+p.select_types(["SENGINEER"]).add("click cell 97 92", "until 900 sel_moving == 0", "wait 60")
 p.select_types(["E2", "SENGINEER"]).add("click cell 99 95", "until 1500 sel_moving == 0", "wait 30")
 p.select_types(["SENGINEER"]).add("click cell 99 95", "until 1500 sel_moving == 0", "dump", "click unit 0:SENGINEER:0", "click building 4:CABHUT:1", "wait 20", "dump",
       "until 1800 bridge_destroyed < $broken", "assert units(0,SENGINEER) == 0", "assert outcome == RUNNING", "shot repaired")
@@ -50,6 +55,29 @@ p.add("wait 1800")
 # way, and from the east side -- out of the Pentagon pillboxes' reach
 # ((59/61,46), (59/61,53)) -- the type-selected Conscripts force-fire the four
 # 180-HP sections (Ctrl, the loop below).
+# w7r2: since wave 7's original speeds (Conscript Speed=4 raw leptons/frame)
+# the army no longer outruns the two Vulcan pillboxes flanking the base's
+# only entrance, (71,84)/(71,86) -- walking between them it lost 21 of 25
+# men. Vulcan2 does 40 per 26 frames to a Conscript, the M1Carbine 7.5 per 25
+# to the pillbox's steel (400 HP), so the massed army stops east of the gate
+# and shoots both pillboxes out first (a plain attack order on the nearest).
+p.select_types(["E2"]).add("click cell 82 85", "wait 30", "until 1500 sel_moving == 0", "dump")
+def shoot_pills(n):
+    for k in range(n):
+        p.select_types(["E2"]).add("let pills = buildings(1,GAPILL)", "click building 1:GAPILL:near",
+                                   "wait 30", "until 1200 buildings(1,GAPILL) < $pills", "dump")
+shoot_pills(2)
+# ... and the same for the four by the Pentagon, (59/61,46) and (59/61,53),
+# which cover the road north at (60,53..60): from (61,64), out of their reach.
+# The GI squad in the corridor (69..75,81..85) mows down a column walking
+# past (a unit on a move order does not shoot back): the massed army picks
+# the GI nearest it, one at a time, until none is within reach.
+PICKS = int(os.environ.get("MK_SOV01_PICKS", "24"))
+for _ in range(PICKS):
+    p.select_types(["E2"]).add("click unit e:E1:near soft", "wait 50")
+p.add("dump")
+p.select_types(["E2"]).add("click cell 61 64", "wait 30", "until 1500 sel_moving == 0", "wait 60", "dump")
+shoot_pills(4)
 p.select_types(["E2"]).add("click cell 72 40", "wait 30", "until 2400 sel_moving == 0", "wait 60", "dump")
 for k in range(10):
     for piece in ["CAWA2A","CAWA2B","CAWA2C","CAWA2D"]:
