@@ -1,3 +1,10 @@
+# W7 STATUS: NOT WON -- faithful income/build-time changes (wave 7). The
+# opening works (LCRF beaching needs the w7r1 transport sub-cell fix), the base
+# and the Chrono Miner run, but one miner now earns ~1/4 of before (it drives
+# back to the ore), the Grizzly has BuildTimeMultiplier=1.5, and Tesla
+# Troopers / V3 fire take the ore field and the barracks (~f5400, at Normal and
+# Easy alike); the army never reaches 15 Grizzlies (3 at f16578) and the run
+# ends RUNNING at ~f30000. Needs a new strategy, not a timing re-tune.
 # P1: ALL04 (Chicago) won with real orders only (no cheats).
 # W4-SQ-01/02 opening: the landing craft arrive CARRYING the MCV and the
 # tank/GI groups (TeamType Full=yes); Soviet garrison teams occupy civilian
@@ -79,15 +86,15 @@ click tab:0
 click cameo:GAPILE
 until 2400 queue_ready(structure) == 1
 click cameo:GAPILE
-place auto
+place near 111 54
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 111 54
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 111 54
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 111 54
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 111 54
 until 600 built(0,GAPILE) > $n_GAPILE
 let n_GAWEAP = built(0,GAWEAP)
 until 900 can_build(GAWEAP) == 1
@@ -105,6 +112,16 @@ if placing == 1 then place auto
 wait 1
 if placing == 1 then place auto
 until 600 built(0,GAWEAP) > $n_GAWEAP
+if units(0,E1) > 0 then click unit 0:E1:0 soft
+if selected > 0 then key t
+if selected > 0 then key t
+if selected > 0 then click cell 110 58 alt
+wait 300
+if units(0,E1) > 0 then click unit 0:E1:0 soft
+if selected > 0 then key t
+if selected > 0 then key t
+if selected > 0 then key d
+wait 5
 dump
 shot base
 until 900 cameo(MTNK) == 1
@@ -124,6 +141,22 @@ click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
+let n_GAREFN = built(0,GAREFN)
+until 900 can_build(GAREFN) == 1
+click tab:0
+click cameo:GAREFN
+until 2400 queue_ready(structure) == 1
+click cameo:GAREFN
+place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+wait 1
+if placing == 1 then place auto
+until 600 built(0,GAREFN) > $n_GAREFN
 let n_GAWEAP = built(0,GAWEAP)
 until 900 can_build(GAWEAP) == 1
 click tab:0
@@ -156,7 +189,157 @@ if placing == 1 then place auto
 wait 1
 if placing == 1 then place auto
 until 600 built(0,GAWEAP) > $n_GAWEAP
-until 9000 units(0,MTNK) >= 15
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then key t
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 and selected > 0 then click cell 112 60 alt
+if units(0,MTNK) < 15 and units(0,MTNK) > 0 then wait 300
+until 900 units(0,MTNK) >= 15
 dump
 if units(0,MTNK) > 0 then click unit 0:MTNK:0
 if units(0,FV) > 0 then click unit 0:FV:0 shift
