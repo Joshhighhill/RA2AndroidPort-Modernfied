@@ -15,6 +15,8 @@ p = P("""# P1: ALL11 (Cuba) won with real orders only (no cheats).
 # acquisition, per-house difficulty handicap): Easy (the loading screen's
 # Normal loses the radar / SEAL prerequisite to the landings). Two
 # chronoshifts: the first takes two silos, the second the last one.
+# W7 (original build times / speeds): group trained from the Battle Lab on,
+# Chronosphere + a Prism pair inland, first shift ~f9950, WON f17780.
 set render_every 3000
 set on_quit continue
 set campaign all11t.MAP GDI 0
@@ -31,6 +33,7 @@ G = "outcome == RUNNING and buildings(2,NAMISL) > 0"
 # open field north of it chase the landing invaders and die.
 hx, hy = 112, 106
 bx, by = 112, 92   # open ground north of the base (spare SEALs wait here)
+csx, csy = 118, 90  # W7: Chronosphere anchor, inland (Clear, no Beach/Water cell near)
 
 DESEL = "click xy 900 650 right nopark"   # right-click = deselect (original scheme)
 
@@ -115,33 +118,38 @@ p.build("GAPOWR").add("dump")
 # W6 re-tune: the invaders now land at full strength, the BadGuy2 Dreadnought
 # patrol attack-moves along the south shore, and idle units pick targets up at
 # guard range -- an army that waits in the base for minutes is whittled down.
-# Grizzlies hold the base; the SEALs and IFVs are only trained once the
-# Chronosphere is up and charging (its ~3400-frame charge is about the
-# time 12 IFVs take), so they wait as little as possible.
+# Grizzlies hold the base (W7: the SEALs and IFVs now start with the
+# Battle Lab, see below).
 p.train("MTNK", 3, 6)
 p.build("GATECH").add("dump")
-p.add("until 900 can_build(GACSPH) == 1", "click tab:1", "click cameo:GACSPH", "until 3000 queue_ready(defense) == 1",
-      "cycle cameo:GACSPH placing == 1", "place auto", "until 900 buildings(0,GACSPH) >= 1", "dump", "shot csph")
-# MR2: two more war factories (MultipleFactory) so the IFVs are ready
-# between BadGuy2's nukes; each rallies to the holding ground too.
-for k in (1, 2):
-    p.build("GAWEAP")
-    p.add(f"click building 0:GAWEAP:{k}", "wait 2", f"click cell {hx} {hy}", "wait 2", DESEL)
+# W7 re-tune (original build times: BuildTimeMultiplier, one SEAL ~400
+# frames from one barracks): the strike group is the long pole now. Start
+# the SEALs and IFVs the moment the Battle Lab stands, and add a second
+# barracks and war factory (MultipleFactory) while they train.
 p.train("GHOST", 2, 12)
 p.train("FV", 3, 12)
-for _ in range(3):
-    p.build("GAPOWR")
-    p.build("ATESLA", tab=1, cat="defense").build("ATESLA", tab=1, cat="defense")
-# MR2 (master after the networking merges): BadGuy2's first nuke (charged
-# from the 'Chronosphere is Built' silo hand-over, launched ~f11466) goes
-# for the IFVs and SEALs waiting on the holding ground (FUN_0050ca10 scores
-# a transport highest) and wiped 15 units out. Like a player hearing "Nuclear
-# missile launched", scatter the group off the holding ground for the
-# missile's flight, then bring it back.
-dodge(1)
-p.train("FV", 3, 4, guard=True)   # replace the IFVs lost meanwhile
+# W7: the Chronosphere goes inland, on the clear plateau east of the yard.
+# 'place auto' put it on the west shore, partly on Beach cells -- a naval
+# target (GetFireError: the target cell's LandType Water/Beach), and the
+# BadGuy2 Typhoon patrol torpedoed it to death while it waited charged.
+p.add("until 900 can_build(GACSPH) == 1", "click tab:1", "click cameo:GACSPH", "until 3000 queue_ready(defense) == 1",
+      "cycle cameo:GACSPH placing == 1", f"place near {csx} {csy}")
+for _ in range(4):
+    p.add("wait 1", f"if placing == 1 then place near {csx} {csy}")
+p.add("until 900 buildings(0,GACSPH) >= 1", "dump", "view building 0:GACSPH", "shot csph")
+p.build("GAPILE")
+p.build("GAWEAP")
+p.add("click building 0:GAWEAP:1", "wait 2", f"click cell {hx} {hy}", "wait 2", DESEL)
+# W7: no Prism/power build-out before the strike any more -- the structure
+# steps kept the script busy ~2500 frames after the group stood ready, and
+# the late shift met BadGuy2's first nuke (charged from the hand-over).
+# Only a Prism pair beside the inland Chronosphere while the group trains
+# (the structure queue is idle then): landing parties reached it from the
+# north road and burnt it down right after the first shift.
+p.build("ATESLA", tab=1, cat="defense", near=(csx, csy)).build("ATESLA", tab=1, cat="defense", near=(csx, csy))
 p.add("until 3000 units(0,FV) >= 9 and units(0,GHOST) >= 9", "dump")
-p.train("GHOST", 2, 5, guard=True)
+p.train("FV", 3, 2, guard=True)
+p.train("GHOST", 2, 3, guard=True)
 def wave(tag):
     load_burst(10)
     p.add("dump", f"shot loaded{tag}")
@@ -162,7 +170,13 @@ def wave(tag):
 
 wave("1")
 # MR2: with the extra factories the first strike can take all three silos.
-p.add("if outcome == WON then end expect WON")
+# W7: 'Win (Nukes KIA)' fires ~150 frames after the last silo falls.
+p.add("waituntil 600 outcome != RUNNING or buildings(2,NAMISL) > 0",
+      "if outcome == WON then end expect WON")
+# Fallback (second strike): defend the base while the group re-forms.
+for _ in range(2):
+    p.build("GAPOWR")
+    p.build("ATESLA", tab=1, cat="defense").build("ATESLA", tab=1, cat="defense")
 # W6 re-tune: the first strike now takes two of the three silos (the Cuba
 # garrison kills the SEALs heading for silo A). The Chronosphere recharges
 # well before the nuke timer runs out: train a second, smaller group from
@@ -171,8 +185,11 @@ p.train("FV", 3, 9, guard=True)
 p.train("GHOST", 2, 10, guard=True)
 # MR2: the second nuke (~6800 frames after the first) lands while this
 # group trains: dodge it too, then let the factories finish.
-dodge(2)
+dodge(1)
 p.add(f"if {G} then wait 900")
 wave("2")
 p.add("shot final", "until 3000 outcome == WON", "end expect WON")
+# W7: a unit named by index can vanish between the guard and the click (it
+# died, or boarded/unloaded this frame): skip such a click instead of failing.
+p.l = [x + " soft" if " then click unit 0:" in x and not x.endswith(" soft") else x for x in p.l]
 p.save(out)
