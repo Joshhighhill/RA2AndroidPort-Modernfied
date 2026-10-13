@@ -138,7 +138,14 @@ for _ in range(4):
     p.add("wait 1", f"if placing == 1 then place near {csx} {csy}")
 p.add("until 900 buildings(0,GACSPH) >= 1", "dump", "view building 0:GACSPH", "shot csph")
 p.build("GAPILE")
-p.build("GAWEAP")
+# fv8b: since w8fix-place (FUN_0047C530: no building on overlay / slope /
+# bridge / unbuildable land) 'place auto' put this war factory on the
+# holding ground (111,107), where the IFVs park for boarding -- packed
+# between the factories, only 5 of 10 SEALs got in, and its old spot
+# (101,106) is now refused. Like a player, put it south-east of the holding
+# ground (it lands on (119,109)).
+WF2 = tuple(int(v) for v in os.environ.get("MK_ALL11_WF2", "114 111").split())
+p.build("GAWEAP", near=WF2)
 p.add("click building 0:GAWEAP:1", "wait 2", f"click cell {hx} {hy}", "wait 2", DESEL)
 # W7: no Prism/power build-out before the strike any more -- the structure
 # steps kept the script busy ~2500 frames after the group stood ready, and

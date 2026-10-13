@@ -166,15 +166,15 @@ click tab:0
 click cameo:GAWEAP
 until 2400 queue_ready(structure) == 1
 click cameo:GAWEAP
-place auto
+place near 114 111
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 114 111
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 114 111
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 114 111
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 114 111
 until 600 built(0,GAWEAP) > $n_GAWEAP
 click building 0:GAWEAP:1
 wait 2
