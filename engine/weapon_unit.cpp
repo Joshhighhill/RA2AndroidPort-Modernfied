@@ -88,6 +88,13 @@ int unit_weapon_for_building(const Unit& u, int armor_ix, bool target_bombed, bo
 
 void activate_weapon_slot(Unit& u, int slot, const VeterancyRules* vr) {
     if (slot == u.w_active) return;
+    // w7r3: -1 is "no weapon can engage" (GetFireError ILLEGAL); it used to
+    // fall into the secondary branch and load the Secondary's stats. A YR dog
+    // (BadTeeth/ParasiteDog 0% vs vehicles, NeverUse VirtualScanner secondary)
+    // ordered onto a Grizzly thus carried the scanner's SA Verses (25% heavy),
+    // passed the W7-01-01 infect gate and rode tanks forever (ALL06: the last
+    // BadGuy1 dog kept the house alive). Keep the current slot.
+    if (slot < 0) return;
     if (slot == 1 && !u.w2.valid) return;
     const bool vet = vr && u.vet.recv;
     const UnitVet& v = u.vet;

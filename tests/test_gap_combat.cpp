@@ -374,3 +374,30 @@ TEST_CASE("w7r3: a Prism Tower / Tesla Coil never engages an airborne Kirov (no 
         CHECK(w.units()[0].hp == 2000);
     }
 }
+
+TEST_CASE("w7r3: no legal weapon (-1) keeps the active slot -- a dog's NeverUse scanner never loads") {
+    ra2assets::MapFile map;
+    World w(map);
+    UnitCombat dog;
+    dog.strength = 100;
+    dog.damage = 30;
+    dog.rof = 20;
+    dog.range = 1.5;
+    dog.verses = {100, 100, 100, 0, 0, 0, 0, 0, 0, 0, 0};   // ParasiteDog
+    dog.secondary = slot(true, true, {100, 80, 80, 50, 25, 25, 75, 50, 25, 100, 100});   // VirtualScanner / SA
+    dog.secondary.never_use = true;
+    dog.secondary.range = 5.0;
+    w.add_combat_unit(2, 2, 1, dog);
+    UnitCombat tank;
+    tank.strength = 400;
+    tank.armor = "heavy";
+    w.add_combat_unit(3, 2, 0, tank);
+    Unit& du = w.units()[0];
+    const Unit& tu = w.units()[1];
+    CHECK(unit_weapon_for_unit(du, tu) == -1);
+    const std::vector<int> before = du.w_verses;
+    activate_weapon_slot(du, unit_weapon_for_unit(du, tu), nullptr);
+    CHECK(du.w_active == 0);
+    CHECK(du.w_verses == before);
+    CHECK(du.w_verses[5] == 0);
+}
