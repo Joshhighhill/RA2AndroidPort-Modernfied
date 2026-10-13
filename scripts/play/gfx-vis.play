@@ -60,11 +60,24 @@ until 1800 queue_ready(defense) == 1
 click cameo:NASAM
 place auto
 until 300 built(0,NASAM) == 1
+# w7 (fv7a): the Medium AI's first tank group shells the base from weapon
+# range by ~f1100. A human house's idle units neither answer a building's
+# call for help [RE: FUN_00707500 -- computer helpers only] nor see past
+# weapon range + 1 in Guard, so the passive base fell before the v03/v04
+# shots. Defend it as a player would: band-select the army, G = Guard Area
+# (2x weapon range, W6-02-11 [RE: GuardObject FUN_0072FE30]).
+view building 0:GACNST
+drag xy 30 30 1080 690
+key g
 let tanks = units(0,MTNK)
 click tab:3
 click cameo:MTNK
 until 1500 units(0,MTNK) > $tanks
 wait 6
+view building 0:GACNST
+drag xy 30 30 1080 690
+key g
+view building 0:GAWEAP
 view building 0:GAWEAP
 shot v03a_door
 wait 900

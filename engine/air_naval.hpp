@@ -124,7 +124,7 @@ struct AnUnit {
     bool in_water = false;            // stands on a water cell (ships always)
     bool submerged = false;           // cloaked sub (Underwater+Cloakable)
     int surface_left_frames = 0;      // whole frames left surfaced after firing (CloakDelay; Net L0)
-    std::uint8_t detected_mask = 0;   // bit h: house h's sonar sees this sub
+    std::uint32_t detected_mask = 0;  // bit h: house h's sonar sees this sub (fv7c: 32-bit, FUN_004F98B0 house masks)
     bool sinking = false;             // ShipSinkingWeight death (renderer)
     // --- superweapons ---
     int iron_left_frames = 0;         // Iron Curtain invulnerability left (whole frames; Net L0)

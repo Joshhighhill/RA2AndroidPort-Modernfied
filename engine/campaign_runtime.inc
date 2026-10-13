@@ -409,8 +409,27 @@ public:
         push_script_demand();
         step_hunters();
         step_house_states();  // W5-A 9 FireSale state + 35 PreferredTarget
+        publish_team_flags(); // fv7c: TeamType Aggressive/Suicide/IsBaseDefense -> the World
         if (sys_->outcome() != 0) flag_end(sys_->outcome());
         ++frame_;
+    }
+    // fv7c (13b 1b) [RE: Team +0x5D4 -> TeamType +0xAD/+0xAF/+0xF6, read for
+    // every house]: each campaign team member's TeamType flags, for the
+    // World's retaliation (Suicide), on-the-move scan (Aggressive) and call
+    // for help (team members excluded unless IsBaseDefense).
+    void publish_team_flags() {
+        std::vector<std::uint8_t> f(w_.units().size(), 0);
+        for (const Team& t : teams_) {
+            if (t.type < 0 || t.type >= (int)teams_data_.teams.size()) continue;
+            const ra2engine::MapTeamType& tt = teams_data_.teams[(std::size_t)t.type];
+            const std::uint8_t b = (std::uint8_t)(ra2engine::World::kTeamMember |
+                                                  (tt.is_base_defense ? ra2engine::World::kTeamBaseDefense : 0) |
+                                                  (tt.aggressive ? ra2engine::World::kTeamAggressive : 0) |
+                                                  (tt.suicide ? ra2engine::World::kTeamSuicide : 0));
+            for (int m : t.members)
+                if (m >= 0 && m < (int)f.size()) f[(std::size_t)m] |= b;
+        }
+        w_.set_campaign_team_flags(std::move(f));
     }
     // Interactive: run as many 15 Hz logic frames as the wall-clock dt covers.
     void update(double dt) {
@@ -791,6 +810,10 @@ private:
                     return v.empty() ? 1.0 : std::atof(v.c_str());
                 };
                 w_.set_house_handicap((int)i, num("FirePower"), num("ROF"));
+                // fv7c [RE: FUN_004F6DD0 copies RepairDelay (minutes) -> the
+                // house +0x280 repair timer]: the AI repair of a computer house.
+                if (!(i == 0 || rec.player_control))
+                    w_.set_house_repair_delay((int)i, (int)(num("RepairDelay") * 900.0));
             }
             {   // W4-SQ-02: [<Country>] MultiplayPassive= (map, else RA2 rules.ini)
                 std::string mp = camp::up(camp::trim_comment(map_.get(country, "MultiplayPassive", "")));
@@ -1449,6 +1472,7 @@ private:
                 if (water) w_.block_water_footprint(o.x, o.y, d.fw, d.fh);   // ships path around it
                 ra2engine::Building& b = w_.buildings()[(std::size_t)idx];
                 b.hp = ra2engine::campaign_strength(d.strength, o.health, true);
+                b.ai_repairable = o.ai_repairable;   // fv7c [RE: FUN_0044F810 field 16 -> +0x6CB]
                 placing_ = true;
                 sync_tracks();
                 placing_ = false;

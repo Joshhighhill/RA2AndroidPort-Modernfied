@@ -287,7 +287,7 @@ void World::step_garrison_combat(double dt) {
             const Unit& v = units_[j];
             if (!v.alive || v.die_time >= 0.0 || v.cargo_of >= 0) return false;
             if (!is_enemy(b.house, v.house) || disguise_fools(b.house, v)) return false;   // W7-01-02
-            if (!(v.seen_by_mask & (1u << b.house))) return false;
+            if (!v.seen_by_house(b.house)) return false;   // fv7c: 32-bit house mask
             if (!slot_can_target(w, v.is_aircraft && v.altitude > 0.0, v.armor_ix)) return false;
             return om::hypot(v.fx - cx, v.fy - cy) <= range + 0.5;
         };

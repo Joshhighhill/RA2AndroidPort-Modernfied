@@ -115,5 +115,10 @@ void w5_arm_combat(ra2engine::World& world, const Rules& rules, const ra2assets:
     w7.tgt_strength = rules.general_double("TargetStrengthCoefficientDefault", -200.0);
     w7.tgt_distance = rules.general_double("TargetDistanceCoefficientDefault", -10.0);
     w7.enemy_house_bonus = rules.general_double("EnemyHouseThreatBonus", 400.0);
+    // fv7c [RE: FUN_00707500 budget Rules+0xB18 / cooldown Rules+0x14D8 x 900.0]
+    w7.call_for_help_budget = static_cast<double>(static_cast<int>(rules.section_double("AI", "ComputerBaseDefenseResponse", 3.0)));
+    w7.base_defense_delay = static_cast<int>(rules.general_double("BaseDefenseDelay", 0.25) * 900.0);   // ftol (truncation)
+    w7.iq_repair_sell = static_cast<int>(rules.section_double("IQ", "RepairSell", 1.0));       // fv7c
+    w7.ai_credit_reserve = rules.section_double("AI", "CreditReserve", 100.0);                // fv7c
     world.arm_combat_w7(w7);
 }

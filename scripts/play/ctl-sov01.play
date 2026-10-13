@@ -27,7 +27,13 @@ drag xy 30 30 1080 690                        @W4-MC-07
 wait 1
 assert selected >= 1                          @W4-MC-07
 let n = selected
-click unit 0:E2:near +2 +2 onscreen                @W4-MC-07
+# w7 (fv7a): with the original speeds the opening walk-in ends later and its
+# crowd (and SOV01's hostile civilians) fill the cells around the conscript --
+# +2 +2 landed on a civilian (an attack order), so aim at a free cell and
+# check the cursor first that the click IS a move order.
+move unit 0:E2:near +2 -2 onscreen
+assert cursor_name == move                    @W4-MC-07
+click unit 0:E2:near +2 -2 onscreen                @W4-MC-07
 wait 1
 assert sel_moving >= 1                        @W4-MC-07
 wait 45
@@ -46,7 +52,12 @@ assert selected == 0
 touch tap unit 0:E2                                @W4-MC-07
 wait 1
 assert selected == 1
-touch tap unit 0:E2:near -2 +2 onscreen            @W4-MC-07
+# (fv7a: -2 +2 is now an impassable cell here (NoMove) and the E2 was still
+# walking from the army order, a hollow pass -- tap a cell the cursor shows as
+# a move.)
+move unit 0:E2:near +2 +2 onscreen
+assert cursor_name == move                    @W4-MC-07
+touch tap unit 0:E2:near +2 +2 onscreen            @W4-MC-07
 wait 1
 assert sel_moving >= 1                        @W4-MC-07
 let cx0 = cam_x

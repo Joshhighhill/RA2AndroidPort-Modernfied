@@ -626,8 +626,13 @@ Easy/Normal/Difficult binding from `ai-base.md`.**
   house, attacked by a non-allied Infantry/Unit, calls up to six recruitable,
   unteamed (or base-defense-team) objects of its house that can reach
   (FUN_0056CC30, movement zone) and fire on the attacker, ranked by threat value
-  within the attacker-threat x Rules+0xB18 budget. The clone ranks by distance
-  [RE-FALLBACK].
+  within the attacker-threat x Rules+0xB18 budget. fv7c: implemented as ONE
+  routine for every computer house, `World::call_for_help` (world_w7.cpp):
+  ThreatPosed (vtbl+0x2C0 = FUN_00707FC0 -> type +0x670) budget x
+  ComputerBaseDefenseResponse, FUN_004D96B0 value, GetFireError(attacker, 0),
+  Area Guard (roll >= 66) / Rescue, attacker cooldown BaseDefenseDelay x 900
+  armed only when the budget is spent. [RE-OPEN: the x100/x10 multipliers on
+  victim +0x218, unit tests UnitType +0x5EC / unit +0x2E4 / victim +0x2DC.]
 - **Capture fate (W7-10-01 / W7-08-12).** `CaptureManagerClass::DecideUnitFate
   FUN_004722E0` (after Capture 0x471C80 and Free 0x471F20): the victim leaves its
   team; for a computer owner the weights `[General] AICaptureNormal /
