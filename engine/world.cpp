@@ -891,6 +891,8 @@ const std::vector<std::uint8_t>& World::amphib_grid() const {
     const std::size_t n = std::min(amphib_passable_.size(), water_passable_.size());
     for (std::size_t i = 0; i < n; ++i)
         if (water_passable_[i]) amphib_passable_[i] = 1;
+    for (std::size_t i = 0; i < amphib_passable_.size() && i < beach_.size(); ++i)
+        if (beach_[i]) amphib_passable_[i] = 1;   // fv7c: Hover/Amphibious cross Beach
     return amphib_passable_;
 }
 
@@ -900,9 +902,10 @@ bool World::unit_can_enter_cell(const Unit& u, int x, int y) const {
     const std::size_t i = static_cast<std::size_t>(y) * grid_w_ + x;
     const bool land = i < passable_.size() && passable_[i] != 0;
     const bool water = i < water_passable_.size() && water_passable_[i] != 0;
+    const bool beach = i < beach_.size() && beach_[i] != 0;   // fv7c
     switch (u.movement_domain) {
         case MovementDomain::Water: return water;
-        case MovementDomain::Amphibious: return land || water;
+        case MovementDomain::Amphibious: return land || water || beach;
         default: return land;
     }
 }
@@ -1191,14 +1194,12 @@ void World::set_water_terrain(const std::vector<ra2assets::LandType>& land_types
 
 static bool land_type_blocks_ground(ra2assets::LandType t) {
     // [RE: naval.md §2 Ground[LandType][SpeedType]; rulesmd [Water]/[Rock]/
-    // [Wall] Foot=Track=Wheel=0%] -- the three ground SpeedTypes agree on
-    // every row, so one Land grid serves Foot/Track/Wheel.
-    // [Beach] is also 0% for them, but the clone's LandType is a per-TILE-SET
-    // classification (land_type.hpp): the ShorePieces set mixes land and water
-    // sub-tiles, so blocking it would wall off coasts the original lets units
-    // walk. Shore stays passable [RE-FALLBACK: per-sub-tile land type].
+    // [Wall]/[Beach] Foot=Track=Wheel=0%] -- the three ground SpeedTypes agree
+    // on every row, so one Land grid serves Foot/Track/Wheel. fv7c (13a #1):
+    // the LandType is now per sub-tile (the TMP terrain byte through
+    // DAT_008278F4, FUN_00544910), so Beach is blocked as in the original.
     return t == ra2assets::LandType::Water || t == ra2assets::LandType::Rock ||
-           t == ra2assets::LandType::Wall;
+           t == ra2assets::LandType::Wall || t == ra2assets::LandType::Beach;
 }
 
 void World::set_land_terrain(const std::vector<ra2assets::LandType>& land_types) {
@@ -1206,8 +1207,11 @@ void World::set_land_terrain(const std::vector<ra2assets::LandType>& land_types)
     // the Land grid on water / cliffs (CliffSet + WaterCliffs -> Rock) / walls.
     set_water_terrain(land_types);
     const std::size_t n = std::min(land_types.size(), passable_.size());
-    for (std::size_t i = 0; i < n; ++i)
+    beach_.assign(passable_.size(), 0);
+    for (std::size_t i = 0; i < n; ++i) {
+        if (land_types[i] == ra2assets::LandType::Beach && passable_[i]) beach_[i] = 1;   // fv7c
         if (land_type_blocks_ground(land_types[i])) passable_[i] = 0;
+    }
 }
 
 void World::block_water_footprint(int cx, int cy, int fw, int fh) {
@@ -2084,7 +2088,11 @@ void World::step_cargo(double /*dt*/) {
         }
         // W2-AN-10: a landing craft unloads only once beached on a LAND cell
         // (the eject ring is land-only); an unload order at sea is dropped.
-        if (t.movement_domain == MovementDomain::Amphibious && !walkable(t.cell_x, t.cell_y)) {
+        // fv7c: a Beach cell (closed to the ground grid) counts as beached.
+        const std::size_t tci = static_cast<std::size_t>(t.cell_y) * grid_w_ + t.cell_x;
+        const bool on_beach = t.cell_x >= 0 && t.cell_y >= 0 && t.cell_x < grid_w_ && t.cell_y < grid_h_ &&
+                              tci < beach_.size() && beach_[tci];
+        if (t.movement_domain == MovementDomain::Amphibious && !walkable(t.cell_x, t.cell_y) && !on_beach) {
             t.unload_pending = false;
             continue;
         }
@@ -2110,8 +2118,20 @@ void World::step_cargo(double /*dt*/) {
         // nearest-free-neighbour fallback. CB-1 transports are vehicles
         // (HTK/FV) so body_facing is live; a non-vehicle transport would
         // eject along its spawn default -- data-unreachable on our roster.
+        // fv7c (13a #1) [RE: the eject validates through the passenger's
+        // vtbl+0x1AC IsCellOccupied, which applies the height gate
+        // FUN_004D9B70 -- transport-cargo.md §4]: a passenger is not put on a
+        // cell its own step from the transport's cell could not reach (an
+        // LCRF at a cliff foot used to drop its MCV 4 levels up the cliff).
+        PathTerrain pterr;
+        std::vector<int> pgates;
+        const PathTerrain* ptp = terrain_for(units_[static_cast<std::size_t>(p)], pterr, pgates);
+        auto free_eject = [&](int x, int y) {
+            if (!free_cell(x, y)) return false;
+            return !(ptp && ptp->level && path_step_layer(*ptp, grid_w_, t.cell_x, t.cell_y, t.on_deck, x, y) < 0);
+        };
         const Cellxy cell = eject_cell(t.cell_x, t.cell_y, t.body_facing,
-                                       t.eject_counter, free_cell);
+                                       t.eject_counter, free_eject);
         if (cell.x < 0) continue;              // boxed in: HOLD -- passenger stays
                                                // aboard, unload_pending stays set,
                                                // retried every frame [RE-GATE
@@ -2363,6 +2383,7 @@ bool World::capture_building(int b_idx, int new_house, int startup) {
 
     // (1) flip the flag -- power/economy/buildability/sidebar are per-frame
     //     derived over b.house, so they re-home automatically (Approach A).
+    b.has_been_captured = true;   // fv7c: FUN_00450620 HasBeenCaptured
     b.house = new_house;
 
     // (2) SW move (only a SW-granting building).
@@ -3302,11 +3323,13 @@ void World::step_visibility() {
     //    cell (object_visible_at: explored with FogOfWar off, visible with it on).
     for (Unit& u : units_) {
         if (!u.alive) continue;
-        std::uint8_t m = 0;
-        // T3: seen_by_mask bit-stamp stays capped at 8 combatant houses (the
-        // uint8_t mask, D7) even as house_count() may exceed 3.
-        for (int h = 0; h < house_count() && h < 8; ++h)
-            if (object_visible_at(h, u.cell_x, u.cell_y)) m |= (std::uint8_t)(1u << h);
+        std::uint32_t m = 0;
+        // fv7c [RE: FUN_004F98B0, 32-bit house masks]: every house up to 31 is
+        // stamped (was capped at 8 by a uint8_t mask, so houses >= 8 -- ALL04
+        // PlayerAlt2, ALL06/08 Elania, SOV09 -- never auto-acquired a unit).
+        // Houses >= 32 read as seen (Unit::seen_by_house).
+        for (int h = 0; h < house_count() && h < 32; ++h)
+            if (object_visible_at(h, u.cell_x, u.cell_y)) m |= (1u << h);
         u.seen_by_mask = m;
     }
     // Shroud/Fog [RE: shroud.md §7A]: a latched house sees the whole map.
@@ -3476,12 +3499,72 @@ bool World::ai_place_ready(int house, HouseAiRec& rec, QueueCat cat) {
                                ? rec.cfg.buildup_totals[node.type] : 0.0;
     const int idx = add_building(node.type, px, py, t.fw, t.fh, house, t.strength,
                                  t.armor_ix, buildup, /*instant=*/false);
+    if (idx >= 0) buildings_[(std::size_t)idx].ai_repairable = true;   // fv7c [RE: FUN_00440500]
     if (node.type == rec.cfg.catalog.naval_yard) block_water_footprint(px, py, t.fw, t.fh);   // W2-AN-16
     node.building = idx;
     node.dead = false;
     ai_econ(rec).queues.placed(cat);
     rec.state.pending[q] = -1;
     return true;
+}
+
+bool World::ai_may_repair(int h, const Building& b) const {
+    // [RE: FUN_00450620 -- Owner+0x24C IQ >= Rules+0x1444 [IQ] RepairSell;
+    // HasBeenCaptured || +0x6CB AIRepairable]. Only with the W7 rules armed
+    // (the real rulesmd); a synthetic World keeps the ungated G-65 pass.
+    if (!w7_rules_.armed) return true;
+    if (house_iq(h) < w7_rules_.iq_repair_sell) return false;
+    return b.ai_repairable || b.has_been_captured;
+}
+
+// fv7c [RE: FUN_00450620 calls this->Repair(1) = FUN_00446F40 (vtbl+0x19C)
+// directly -- NOT the wrench cursor's Can_Be_Repaired FUN_00452620, so
+// ClickRepairable=no (the Psychic Amplifier) does not stop the AI].
+bool World::ai_repair_on(int bi) {
+    if (bi < 0 || bi >= (int)buildings_.size()) return false;
+    Building& b = buildings_[(std::size_t)bi];
+    if (!b.alive || b.state != Building::State::Idle || b.being_repaired || b.selling || b.hp >= b.max_hp) return false;
+    if (w7_rules_.armed) {
+        b.being_repaired = true;
+        repair_sell_any_ = true;
+        return true;
+    }
+    return set_repair(bi, b.house, 1);   // a synthetic World keeps the G-65 path
+}
+
+void World::set_house_repair_delay(int h, int frames) {
+    if (h < 0) return;
+    if ((int)house_repair_delay_.size() <= h) {
+        house_repair_delay_.resize((std::size_t)h + 1, -1);
+        house_repair_clock_.resize((std::size_t)h + 1, 0.0);
+    }
+    house_repair_delay_[(std::size_t)h] = frames;
+}
+
+// fv7c (w7sus-misc amp) [RE: BuildingClass::Update 0x43FAA0 -> FUN_00450620,
+// docs/re/repair-sell.md §A7]: every computer house's buildings are repaired
+// by the per-building gate (IQ >= RepairSell, money >= CreditReserve, the
+// house repair latch clear, AIRepairable or captured), not only the houses
+// with an armed AI brain (those run the same gate in step_ai_houses 1b). The
+// latch window is the house's RepairDelay [RE-FALLBACK as G-65: exactly
+// RepairDelay, the lowest-index damaged Idle building first].
+void World::step_ai_repair(double dt) {
+    if (!w7_rules_.armed) return;
+    for (int h = 0; h < (int)house_repair_delay_.size() && h < house_count(); ++h) {
+        const int delay = house_repair_delay_[(std::size_t)h];
+        if (delay < 0 || human_commanded(h) || ai_enabled(h)) continue;
+        double& clock = house_repair_clock_[(std::size_t)h];
+        clock += dt * 15.0;
+        if (clock < delay || credits(h) < w7_rules_.ai_credit_reserve) continue;
+        for (int bi = 0; bi < (int)buildings_.size(); ++bi) {
+            const Building& b = buildings_[(std::size_t)bi];
+            if (!b.alive || b.house != h || b.state != Building::State::Idle || b.being_repaired || b.selling ||
+                b.hp >= b.max_hp)
+                continue;
+            if (!ai_may_repair(h, b)) continue;
+            if (ai_repair_on(bi)) { clock = 0.0; break; }
+        }
+    }
 }
 
 void World::step_ai_houses(double dt) {
@@ -3583,7 +3666,8 @@ void World::step_ai_houses(double dt) {
                 if (!b.alive || b.house != h || b.state != Building::State::Idle ||
                     b.being_repaired || b.selling || b.hp >= b.max_hp)
                     continue;
-                if (set_repair(bi, h, 1)) { rec.state.repair_clock = 0.0; break; }
+                if (!ai_may_repair(h, b)) continue;   // fv7c: IQ + AIRepairable gate
+                if (ai_repair_on(bi)) { rec.state.repair_clock = 0.0; break; }
             }
         }
 
@@ -4010,10 +4094,8 @@ void World::ai_note_damage(bool building, int victim, int attacker_house, int dm
         const int t = ai_unit_type_of(rec, u);
         strength = u.max_hp;
         cost = (t >= 0) ? rec.cfg.team.unit_roster[(std::size_t)t].cost : u.max_hp;
-        // W7-04-18: a hit ToProtect unit asks for help (ai_unit.cpp).
-        if (t >= 0 && t < (int)rec.cfg.roster_to_protect.size() && rec.cfg.roster_to_protect[(std::size_t)t] &&
-            attacker_house != vh)
-            ai_protect_reqs_.push_back(AiProtectReq{victim, attacker_house});
+        // (W7-04-18's ToProtect request moved to World::call_for_help in fv7c:
+        // the type flag + the real attacker from the hit log, every computer house.)
     }
     if (strength <= 0) strength = 1;
     const int delta = om::ftol(((double)cost * ((double)dmg / (double)strength)));
@@ -5458,7 +5540,6 @@ void World::step(double dt) {
         HitGuard(World* w, bool on) : saved(hit_log().sink) { hit_log().sink = on ? &w->w7_hits_ : nullptr; }
         ~HitGuard() { hit_log().sink = saved; }
     } hit_guard(this, w7_rules_.armed);
-    ai_protect_reqs_.clear();   // W7-04-18: transient, this step's hits only
     // W2-SK-15: tombstoned units keep their slot (every target / team member /
     // cargo / parasite / projectile owner is a stable unit INDEX, so slots are
     // never erased or reused), but a dead slot releases its heap storage: the
@@ -6014,6 +6095,7 @@ void World::step(double dt) {
     // the existing production/economy step, and ONLY when a house is
     // AI-flagged. The five demo scripts flag no AI house, so ai_any_ stays
     // false and this is a no-op -> byte-identical to before this phase.
+    if (!house_repair_delay_.empty()) step_ai_repair(dt);   // fv7c: unarmed computer houses
     if (ai_any_) {
         step_ai_houses(dt);
         step_ai_teams(dt);  // AFTER the base brain: base tick then team tick,

@@ -171,6 +171,8 @@ struct SaveAccess {
         save::io(ar, w.handicap_set_); save::mark(ar, "handicap_set_");
         save::io(ar, w.handicap_fp_); save::mark(ar, "handicap_fp_");
         save::io(ar, w.handicap_rof_); save::mark(ar, "handicap_rof_");
+        save::io(ar, w.house_repair_delay_); save::mark(ar, "house_repair_delay_");   // fv7c (save v40)
+        save::io(ar, w.house_repair_clock_); save::mark(ar, "house_repair_clock_");
         save::io(ar, w.ai_demand_ids_); save::mark(ar, "ai_demand_ids_");   // W4-SQ-12 (save v16)
         save::io(ar, w.ai_demand_counts_); save::mark(ar, "ai_demand_counts_");
         save::io(ar, w.aircraft_any_); save::mark(ar, "aircraft_any_");
@@ -179,6 +181,7 @@ struct SaveAccess {
         save::io(ar, w.buildings_); save::mark(ar, "buildings_");
         save::io(ar, w.passable_); save::mark(ar, "passable_");
         save::io(ar, w.water_passable_); save::mark(ar, "water_passable_");
+        save::io(ar, w.beach_); save::mark(ar, "beach_");   // fv7c (save v40)
         save::io(ar, w.naval_any_); save::mark(ar, "naval_any_");
         save::io(ar, w.occ_); save::mark(ar, "occ_");
         save::io(ar, w.grid_w_); save::mark(ar, "grid_w_");
@@ -278,6 +281,7 @@ struct SaveAccess {
         save::io(ar, w.w7_rules_); save::mark(ar, "w7_rules_");    // w7fix-combat (v35)
         save::io(ar, w.house_iq_); save::mark(ar, "house_iq_");
         save::io(ar, w.w7_hits_); save::mark(ar, "w7_hits_");
+        save::io(ar, w.campaign_team_flags_); save::mark(ar, "campaign_team_flags_");   // fv7c (save v40)
         save::io(ar, w.wall_leak_); save::mark(ar, "wall_leak_");   // W5-A diagonal wall gaps (save v21)
         save::io(ar, w.crush_wall_); save::mark(ar, "crush_wall_");  // P4 crushable / crushed walls (save v23)
         save::io(ar, w.wall_ov_type_); save::mark(ar, "wall_ov_type_");    // W6-04-05 map wall overlays (v25; re-registered on load)
@@ -677,9 +681,10 @@ template <class Ar> void fields(Ar& ar, HitRec& v) {   // w7fix-combat (v35)
 template <class Ar> void fields(Ar& ar, World::CombatW7Rules& v) {   // w7fix-combat (v35)
     io(ar, v.armed); io(ar, v.player_return_fire); io(ar, v.player_scatter); io(ar, v.iq_guard_area);
     io(ar, v.iq_auto_crush); io(ar, v.iq_scatter); io(ar, v.max_iq); io(ar, v.close_enough);
+    io(ar, v.iq_repair_sell); io(ar, v.ai_credit_reserve);   // fv7c (save v40)
     io(ar, v.normal_targeting_delay); io(ar, v.guard_area_targeting_delay); io(ar, v.incoming);
     io(ar, v.my_eff); io(ar, v.tgt_eff); io(ar, v.tgt_special); io(ar, v.tgt_strength); io(ar, v.tgt_distance);
-    io(ar, v.enemy_house_bonus); io(ar, v.call_for_help_budget);
+    io(ar, v.enemy_house_bonus); io(ar, v.call_for_help_budget); io(ar, v.base_defense_delay);
 }
 template <class Ar> void fields(Ar& ar, World::CrushRules& v) {   // W5-B (v20)
     io(ar, v.armed); io(ar, v.crush_leptons); io(ar, v.player_auto_crush); io(ar, v.ai_any_building);
@@ -827,7 +832,7 @@ template <class Ar> void fields(Ar& ar, UnitTypeW7& v) {
 template <class Ar> void fields(Ar& ar, UnitW7& v) {
     io(ar, v.t); io(ar, v.blink_left); io(ar, v.redisguise_left); io(ar, v.flash_seen); io(ar, v.hull_aiming);
     io(ar, v.paralysed_until); io(ar, v.host_raw_hit); io(ar, v.deploy_ready_at); io(ar, v.undeploy_at); io(ar, v.erased_by);
-    io(ar, v.depot_target); io(ar, v.mc_controller); io(ar, v.mc_victims); io(ar, v.mc_shot); io(ar, v.missile_holds);
+    io(ar, v.depot_target); io(ar, v.mc_controller); io(ar, v.mc_victims); io(ar, v.mc_shot);
 }
 template <class Ar> void fields(Ar& ar, BldW7& v) {
     io(ar, v.depot_next); io(ar, v.depot_client); io(ar, v.warp_unpowered); io(ar, v.garrison_target_building);
@@ -1200,6 +1205,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.ai);        // W7-01-08 AI guard clock (save v35)
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
+    io(ar, v.ai_repairable); io(ar, v.has_been_captured);   // fv7c (save v40)
     io(ar, v.type);
     io(ar, v.cx); io(ar, v.cy);
     io(ar, v.fw); io(ar, v.fh);

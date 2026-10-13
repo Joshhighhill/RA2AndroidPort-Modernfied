@@ -103,6 +103,12 @@ until 900 queue_ready(structure) == 1
 click cameo:NAPOWR
 place auto
 until 120 buildings(0,NAPOWR) >= 2
+# fv7c: the War Factory starts here, while the refinery ([NAWEAP] needs it)
+# still stands. Since the per-tile LandType (TMP terrain byte + CliffBack,
+# FUN_00544910 / FUN_0047D1C0) the AI raid reaches it ~25 frames earlier
+# than before -- it had died 12 frames after the old NAWEAP click already.
+click tab:0
+click cameo:NAWEAP                            @G-03:A
 click tab:1
 assert cameo(TESLA) == 1                      @G-26:A
 click cameo:NALASR
@@ -118,7 +124,6 @@ shot defence
 
 # --- 6. War Factory -> Rhino, Flak Track, War Miner ---------------------------------
 click tab:0
-click cameo:NAWEAP                            @G-03:A
 until 1800 queue_ready(structure) == 1        @G-03:A
 click cameo:NAWEAP                            @G-03:A
 place auto                                    @G-03:A

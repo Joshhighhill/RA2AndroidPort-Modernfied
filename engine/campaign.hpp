@@ -122,6 +122,9 @@ struct MapObjectRec {
     std::string tag;         // "" when None
     int veterancy = 0;
     int group = -1;
+    // fv7c [RE: [Structures] reader FUN_0044F810]: AISellable (field 8),
+    // AIRebuildable (9), AIRepairable (16) -- structures only.
+    bool ai_sellable = false, ai_rebuildable = false, ai_repairable = false;
 };
 // Field order per section [RE §4]; malformed lines (too few fields) are
 // skipped. Output order: [Structures], [Units], [Infantry], [Aircraft],
@@ -185,6 +188,12 @@ struct MapTeamType {
     bool use_transport_origin = false;
     bool transports_return = false;
     int transport_waypoint = -1;
+    // fv7c (13b 1b) [RE: TeamType +0xAD Aggressive, +0xAF Suicide, +0xF6
+    // IsBaseDefense -- read through Team +0x5D4 for EVERY house, campaign
+    // included]: published to the World each frame (World::set_campaign_team_flags).
+    bool aggressive = false;
+    bool suicide = false;
+    bool is_base_defense = false;
 };
 struct MapTeamData {
     std::vector<MapScript> scripts;

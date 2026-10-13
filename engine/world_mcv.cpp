@@ -135,6 +135,7 @@ void World::finish_deploy(int idx) {
     // Health carried as a ratio, floored at 1 [FUN_007C4D00 ftol, min 1].
     Building& nb = buildings_[static_cast<std::size_t>(b)];
     nb.hp = std::max(1, om::ftol(ratio * nb.max_hp));
+    nb.ai_repairable = !human_commanded(house);   // fv7c [RE: FUN_007383E0, non-human deploy]
     deploy_events_.push_back({DeployEvent::Kind::Deployed, idx, b, house});
 }
 

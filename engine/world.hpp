@@ -285,11 +285,19 @@ struct Unit {
 
     // --- Shroud/Fog phase [RE: shroud.md §2/§3] ---
     int sight = 0;                 // reveal radius (cells); copied from UnitCombat
-    std::uint8_t seen_by_mask = 0xFF;  // bit h set iff this unit's cell is visible
-                                       // to house h. DEFAULT 0xFF = seen by all =
+    // fv7c [RE: FUN_004F98B0 -- the original's per-house masks are 32-bit
+    // (1 << ArrayIndex)]: was uint8_t, so every house index >= 8 (ALL04
+    // PlayerAlt2 = 10, SOV09 has 13 houses) failed the targeting test and never
+    // auto-acquired a unit. Test through seen_by_house().
+    std::uint32_t seen_by_mask = 0xFFFFFFFFu;  // bit h set iff this unit's cell is visible
+                                       // to house h. DEFAULT all-ones = seen by all =
                                        // INERT (the combat.cpp:362 clause never
                                        // fires). Overwritten only by step_visibility
                                        // (behind shroud_any_). NOT read by world_hash.
+    // House index outside the 32-bit mask (or none) -> treated as seen (inert).
+    bool seen_by_house(int h) const {
+        return h < 0 || h >= 32 || ((seen_by_mask >> h) & 1u) != 0;
+    }
 
     // --- Engineer/Spy Capture phase: disguise [RE: capture.md §C] ---
     // A disguised unit RENDERS as `disguised_as_type` (a SHP image id) in
@@ -899,6 +907,8 @@ public:
         int iq_guard_area = 2;             // [IQ] GuardArea (Rules+0x1440)
         int iq_auto_crush = 2;             // [IQ] AutoCrush (Rules+0x1448)
         int iq_scatter = 2;                // [IQ] Scatter
+        int iq_repair_sell = 1;            // fv7c: [IQ] RepairSell (Rules+0x1444, FUN_00450620)
+        double ai_credit_reserve = 100.0;  // fv7c: [AI] CreditReserve (Rules+0x1758)
         int max_iq = 5;                    // [IQ] MaxIQLevels
         double close_enough = 2.25;        // [General] CloseEnough (Rules+0x1718), cells
         int normal_targeting_delay = 27;   // [General] NormalTargetingDelay (Rules+0xE08)
@@ -907,7 +917,12 @@ public:
         // FUN_0070C190 threat coefficients ([General] *CoefficientDefault).
         double my_eff = 200.0, tgt_eff = -200.0, tgt_special = 200.0, tgt_strength = -200.0,
                tgt_distance = -10.0, enemy_house_bonus = 400.0;
-        double call_for_help_budget = 1.0;   // Rules+0xB18 [SUSPECTED key]
+        // fv7c [RE: FUN_00707500; RulesClass reader FUN_0066CF70]: the call
+        // for help budget multiplier Rules+0xB18 = [AI] ComputerBaseDefenseResponse
+        // (rulesmd 3), and the attacker cooldown ftol(Rules+0x14D8 [General]
+        // BaseDefenseDelay (.25 min) x 900.0 @0x7E17F8) = 225 frames.
+        double call_for_help_budget = 3.0;
+        int base_defense_delay = 225;
     };
     void arm_combat_w7(const CombatW7Rules& r) { w7_rules_ = r; }
     // W7-07-21/22 [RE: CellClass::Incoming FUN_00481580]: does occupant `o`
@@ -934,6 +949,12 @@ public:
     bool can_retaliate(const Unit& victim, int a, int ab) const;
     // W7-07-09 [RE: FUN_00707500]: a computer victim calls its idle army.
     void call_for_help(int victim_house, int victim_unit, int victim_building, int attacker);
+    // fv7c: FUN_004D96B0, candidate `ci`'s call-for-help value against attacker `a`.
+    int help_value(int ci, int a, std::uint8_t team_flags) const;
+    // fv7c (13b 1b): per-unit campaign TeamType flags, published by the campaign
+    // runtime every logic frame (bit set below; index = unit index).
+    static constexpr std::uint8_t kTeamMember = 1, kTeamBaseDefense = 2, kTeamAggressive = 4, kTeamSuicide = 8;
+    void set_campaign_team_flags(std::vector<std::uint8_t> f) { campaign_team_flags_ = std::move(f); }
     // W7-07-12: attack-move (YR mission 29) [RE: FUN_00730CC0 / FootClass
     // FUN_004DEFF0]: move, engaging anything met on the way, then resume.
     void group_attack_move(int issuer, const std::vector<int>& ids, int cx, int cy);
@@ -1646,7 +1667,7 @@ public:
         // Island Patriots sit 7 cells from the Dreadnoughts and never blow up
         // the fleet's own missiles on deck in the original].
         if (rocket_on_launcher(v)) return true;
-        return v.an.submerged && house >= 0 && house < 8 && v.house != house &&
+        return v.an.submerged && house >= 0 && house < 32 && v.house != house &&
                !(v.an.detected_mask & (1u << house));
     }
     static bool rocket_on_launcher(const Unit& v) {
@@ -2430,6 +2451,14 @@ public:
     // the house's existing units. Read by units (refresh_vet_stats) AND
     // defence buildings (building_combat rearm).
     void set_house_handicap(int h, double firepower, double rof);
+    // fv7c: DifficultyClass RepairDelay (frames) of a computer house; arms the
+    // AI building repair for a house without an AI brain (step_ai_repair).
+    void set_house_repair_delay(int h, int frames);
+    void step_ai_repair(double dt);
+    // fv7c [RE: FUN_00450620 per-building gate]: may house h's AI start a
+    // repair on building b (IQ >= RepairSell, AIRepairable or captured)?
+    bool ai_may_repair(int h, const Building& b) const;
+    bool ai_repair_on(int bi);   // fv7c: Repair(1) without the click gate
     // W6-02-05: start an armed AI house's TeamDelays check clock at `secs`
     // (it fires when the clock reaches TeamDelays / 15).
     void set_ai_team_check_clock(int h, double frames) {   // Net L0: frames
@@ -2484,6 +2513,7 @@ public:
     // The height / deck / gate terrain unit u searches with (null = 2-D).
     // `gates` receives the cells of the Gate=yes buildings open to u.
     const PathTerrain* terrain_for(const Unit& u, PathTerrain& out, std::vector<int>& gates) const;
+    bool scatter_cell_ok(const Unit& u, int x, int y) const;   // fv7c: FUN_00742880 cell test
     // Deck availability per cell for a movement domain (null: none / water).
     const std::vector<std::uint8_t>* deck_grid(MovementDomain d) const;
     // Cells of Gate=yes buildings whose owner allies house h (sorted).
@@ -2609,9 +2639,9 @@ private:
     // per-unit rules -- Deployer infantry auto-deploy / undeploy and the
     // ToProtect call for help. Runs after step_ai_teams.
     void step_ai_unit_rules();
-    void ai_protect(int house, const HouseAiRec& rec, int victim, int attacker_house);
-    struct AiProtectReq { int victim = -1; int attacker_house = -1; };
-    std::vector<AiProtectReq> ai_protect_reqs_;   // this step's ToProtect hits (transient)
+    // (fv7c: the W7-04-18 ai_protect path was merged into call_for_help.)
+    std::vector<std::uint8_t> campaign_team_flags_;   // fv7c: set_campaign_team_flags (save v40)
+    std::vector<std::uint8_t> team_flags_;            // fv7c: this step's merged team flags (scratch)
     bool ai_house_out(int house) const;   // W6-03-04: house+0x1f5 (defeated)
     int ai_team_sw_state(int house, const HouseAiRec& rec, SuperweaponType t) const;   // W6-03-05
     void ai_raise_money(int house, HouseAiRec& rec);   // W6-03-08 (FUN_004fdb30)
@@ -2869,6 +2899,12 @@ private:
     std::vector<std::uint8_t> handicap_set_;
     std::vector<double> handicap_fp_;
     std::vector<double> handicap_rof_;
+    // fv7c [RE: FUN_00450620; house +0x245 repair latch re-armed by the +0x280
+    // timer from the house's DifficultyClass RepairDelay]: computer houses
+    // WITHOUT an armed AI brain (campaign houses before ProductionBegins):
+    // the delay in frames (-1 = unset) and the frames since the last start.
+    std::vector<int> house_repair_delay_;
+    std::vector<double> house_repair_clock_;
     void step_playfield();   // a unit moving inside gains IsInPlayfield
     std::vector<std::vector<std::string>> ai_demand_ids_;   // W4-SQ-12 (save v16)
     std::vector<std::vector<int>> ai_demand_counts_;
@@ -2908,6 +2944,10 @@ private:
     // first naval order (naval movement reuses step_units -- no separate step to
     // firewall, unlike flight's step_flight).
     std::vector<std::uint8_t> water_passable_;
+    // fv7c (13a #1): Beach cells (LandType 6 from the TMP terrain byte) --
+    // closed to Foot/Track/Wheel and Float (rulesmd [Beach] 0%), open to
+    // Hover (75%) and Amphibious (60%): part of the amphibious grid.
+    std::vector<std::uint8_t> beach_;
     mutable std::vector<std::uint8_t> amphib_passable_;   // W2-AN-10 scratch (amphib_grid)
     bool naval_any_ = false;
     Occupancy occ_;
@@ -3027,7 +3067,7 @@ private:
 
     // --- Wave-5 abilities (world_w5.cpp) ---
     WorldW5 w5_;
-    std::vector<std::uint8_t> w5_hide_, w5_own_;   // gap scratch (per frame, not saved)
+    std::vector<std::uint32_t> w5_hide_, w5_own_;   // gap scratch, a bit per house (fv7c: 32-bit, FUN_004F98B0)
     void w5_gap_pass(int phase);
     void w5_step_defuse();
     void w5_step_repair_ifv(double dt);

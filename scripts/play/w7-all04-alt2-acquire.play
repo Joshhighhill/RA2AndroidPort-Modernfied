@@ -1,0 +1,25 @@
+# W7-ALL04-ALT2 (fv7c, w7sus 13b #1): a house with index >= 8 auto-acquires.
+# ALL04's PlayerAlt2 is engine house 10 (PlayerControl, allied to the player).
+# Unit::seen_by_mask was uint8_t and only stamped for houses < 8, so every
+# house-10 unit failed the targeting test and never auto-acquired a unit
+# (the original's house masks are 32-bit, FUN_004F98B0). Three PlayerAlt2 GIs
+# are spawned on the plateau with two Russian1 Conscripts 3 cells away; the
+# GIs must pick them up by their own Guard scan.
+set render_every 600
+set on_quit continue
+set campaign ALL04u.MAP GDI
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+wait 30
+cheat spawn E1 10 cell 112 52
+cheat spawn E1 10 cell 112 53
+cheat spawn E1 10 cell 112 54
+cheat spawn E2 1 cell 109 52
+cheat spawn E2 1 cell 109 54
+wait 5
+dump
+until 90 ntgt(10) >= 3
+assert ntgt(10) >= 3
+dump
+end

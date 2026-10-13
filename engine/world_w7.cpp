@@ -11,6 +11,7 @@
 #include <algorithm>
 
 #include "combat.hpp"       // threat_value_unit, unit_in_weapon_range, HitLog
+#include "locomotion.hpp"   // leptons_per_frame (fv7c call for help)
 #include "orig_math.hpp"
 #include "veterancy.hpp"    // has_ability, is_elite
 #include "weapon_unit.hpp"  // unit_weapon_for_unit / _building, secondary_view
@@ -197,7 +198,7 @@ void World::order_scatter_from(int idx, int ax, int ay) {
         const int d = ((away + k) % 8 + 8) % 8;
         const int x = u.cell_x + kDx[d], y = u.cell_y + kDy[d];
         const bool taken = occ_.subcells() ? !occ_.can_enter(x, y, idx) : unit_at_cell(x, y) >= 0;
-        if (!walkable(x, y) || taken || building_at_cell(x, y) >= 0) continue;
+        if (!scatter_cell_ok(u, x, y) || taken || building_at_cell(x, y) >= 0) continue;   // fv7c
         const UnitTgt keep = u.tg;
         u.target = -1;
         u.target_building = -1;
@@ -211,45 +212,169 @@ void World::order_scatter_from(int idx, int ax, int ay) {
     }
 }
 
+// fv7c [RE: FUN_004D96B0, decompiled in D:\ra2-re\w7sus-combat-out\d1.txt]:
+// the value candidate `ci` adds to a call for help against attacker `a`.
+// ThreatPosed is TechnoClass vtbl+0x2C0 (FUN_00707FC0 -> type +0x670).
+//   - already targeting the attacker: -ThreatPosed (spent from the budget);
+//   - busy with an armed TarCom, in a non-base-defense team, or in Harvest: 0;
+//   - else ThreatPosed<<10 divided by the frames to close to weapon-0 range
+//     ((distance - range) / speed; a speed below 2 divides by 1), at least 1.
+int World::help_value(int ci, int a, std::uint8_t tf) const {
+    const Unit& u = units_[static_cast<std::size_t>(ci)];
+    const Unit& A = units_[static_cast<std::size_t>(a)];
+    const int threat = u.tg.t.threat_posed;
+    if (u.target == a) return -threat;
+    if (u.target >= 0 && u.target < static_cast<int>(units_.size()) &&
+        armed_unit(units_[static_cast<std::size_t>(u.target)]))
+        return 0;
+    if (u.target_building >= 0 && u.target_building < static_cast<int>(buildings_.size())) {
+        const Building& B = buildings_[static_cast<std::size_t>(u.target_building)];
+        if (B.type >= 0 && B.type < static_cast<int>(btypes().size()) && btypes()[static_cast<std::size_t>(B.type)].armed)
+            return 0;
+    }
+    if ((tf & kTeamMember) && !(tf & kTeamBaseDefense)) return 0;
+    if (unit_mission(u) == 10) return 0;   // Harvest
+    if (threat == 0) return 0;
+    const double rng = u.w_active == 0 ? u.w_range : (u.vet.base.range > 0.0 ? u.vet.base.range : u.w_range);
+    const int dist = om::ftol(om::hypot((u.fx - A.fx) * 256.0, (u.fy - A.fy) * 256.0));
+    const int d = dist - om::ftol(rng * 256.0);
+    if (d < 1) return threat << 10;
+    const int spd = leptons_per_frame(unit_speed_cps(ci));
+    int t = d / (spd < 2 ? 1 : spd);
+    if (t <= 1) t = 1;
+    const int v = (threat << 10) / t;
+    return v < 2 ? 1 : v;
+}
+
+// fv7c (13b #3/#4): ONE call for help, FUN_00707500 (gamemd 0x707500; listing
+// D:\ra2-re\w7-shc-B-out\b5.txt + disassembly 0x707560..0x707C33), for every
+// computer house -- it replaces the W7-04-18 skirmish-only ai_protect and the
+// earlier most-expensive-six stand-in. Callers: a ToProtect unit's hit
+// (TechnoClass::ReceiveDamage 0x701C74) and every building hit
+// (BuildingClass::ReceiveDamage 0x44223C), both with the real attacker from
+// the hit log, so splash and opportunity hits call too.
+//   head: no call for an allied attacker, a human victim house, an attacker
+//     in limbo, an armed campaign victim, an attacker that is not Infantry/Unit
+//     (an AircraftType: fixed-wing or a missile -- a Jumpjet Rocketeer IS
+//     infantry), an Insignificant victim, or while the attacker's +0x650
+//     cooldown runs;
+//   budget: attacker ThreatPosed x Rules+0xB18 (ComputerBaseDefenseResponse);
+//   candidates, infantry array then unit array: same owner, no team or an
+//     IsBaseDefense team, armed, Recruitable mission (campaign only;
+//     SessionType != 0 skips it), GetFireError(attacker, 0) != ILLEGAL,
+//     reachable, help_value != 0; a negative value is spent at once; the six
+//     best kept with the original's replace-the-minimum quirk;
+//   then sorted (exchange sort, descending), each recruit gets Mission
+//     Area_Guard (roll(0,99) >= 66, or a base-defense team) or Rescue, and
+//     TarCom = attacker; the spent ThreatPosed passing the budget stops it and
+//     arms the attacker's cooldown, ftol(BaseDefenseDelay x 900) frames.
+// [RE-OPEN, not modelled: the x100 / x10 value multipliers taken when the
+// victim's +0x218 equals itself; the unit-array tests UnitType +0x5EC, unit
+// +0x2E4 and victim +0x2DC; FUN_0056CC30 zone reachability -- a water/land
+// domain test stands in.] [RE-FALLBACK: Rescue (21) has no clone mission; it
+// is an attack order on the attacker. Area Guard keeps the recruit's area
+// guard home at its cell with the attacker as TarCom.]
 void World::call_for_help(int victim_house, int victim_unit, int victim_building, int attacker) {
     if (attacker < 0 || attacker >= static_cast<int>(units_.size())) return;
-    Unit& A = units_[static_cast<std::size_t>(attacker)];
-    // [RE: FUN_00707500 head] an allied attacker, a human victim house, an
-    // attacker that is neither infantry nor vehicle, an Insignificant victim,
-    // a campaign victim that is itself armed -- no call.
-    if (!live(A) || A.is_aircraft || allied_with(victim_house, A.house) || human_commanded(victim_house)) return;
+    const Unit& A = units_[static_cast<std::size_t>(attacker)];
+    if (!A.alive || A.die_time >= 0.0) return;
+    if (allied_with(victim_house, A.house) || human_commanded(victim_house)) return;
+    if (A.cargo_of >= 0 || A.garrison_of >= 0) return;   // +0x81 InLimbo
     if (victim_unit >= 0) {
         const Unit& V = units_[static_cast<std::size_t>(victim_unit)];
-        if (V.tg.t.insignificant) return;
         if (playfield_.campaign && armed_unit(V)) return;
+        if (V.tg.t.insignificant) return;
     }
     if (victim_building >= 0) {
         const Building& B = buildings_[static_cast<std::size_t>(victim_building)];
-        if (B.tg.insignificant) return;
         if (playfield_.campaign && B.type >= 0 && B.type < static_cast<int>(btypes().size()) &&
             btypes()[static_cast<std::size_t>(B.type)].armed)
             return;
+        if (B.tg.insignificant) return;
     }
-    // the attacker's call-for-help timer [SUSPECTED duration: 45 frames]
+    if (A.an.t.fixed_wing || A.an.t.missile) return;   // WhatAmI not 0xF / 1
     const int now = static_cast<int>(vet_frame_);
-    if (A.tg.help_frame > now) return;
-    A.tg.help_frame = now + 45;
-    // [RE: the two scans of FUN_00707500 (infantry, then units)]: same owner,
-    // recruitable, armed against the attacker (GetFireError != ILLEGAL), no
-    // TarCom; up to 6, the most valuable first.
-    std::vector<std::pair<int, int>> cand;   // (-cost, index)
-    for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
-        if (i == victim_unit) continue;
-        const Unit& u = units_[static_cast<std::size_t>(i)];
-        if (!live(u) || u.house != victim_house || u.is_aircraft || u.an.t.fixed_wing || u.frozen) continue;
-        if (u.target >= 0 || u.target_building >= 0 || u.attack_order || u.tg.overridden) continue;
-        if (!armed_unit(u) || unit_weapon_for_unit(u, A) < 0) continue;
-        if (u.is_harvester) continue;
-        if (!mission_recruitable(unit_mission(u)) || u.tg.team_suicide) continue;
-        cand.push_back({-u.tg.t.cost, i});
+    if (A.tg.help_frame > now) return;   // the +0x650 timer
+    int budget = A.tg.t.threat_posed * static_cast<int>(w7_rules_.call_for_help_budget);
+    const int nu = static_cast<int>(units_.size());
+    auto tflags = [&](int i) -> std::uint8_t {
+        return i < static_cast<int>(team_flags_.size()) ? team_flags_[static_cast<std::size_t>(i)] : 0;
+    };
+    int objs[6] = {0}, vals[6] = {0};
+    int count = 0, minv = 0;
+    for (int pass = 0; pass < 2; ++pass) {   // the infantry array, then the units
+        for (int i = 0; i < nu; ++i) {
+            if (budget < 1) break;
+            const Unit& u = units_[static_cast<std::size_t>(i)];
+            if (u.is_infantry != (pass == 0)) continue;
+            if (!live(u) || u.house != victim_house || u.garrison_of >= 0 || u.frozen) continue;
+            if (u.an.t.fixed_wing || u.an.t.spawned || u.an.t.missile) continue;   // AircraftClass
+            const std::uint8_t tf = tflags(i);
+            if ((tf & kTeamMember) && !(tf & kTeamBaseDefense)) continue;
+            if (!armed_unit(u)) continue;
+            if (u.deployed && !u.deploy_fire) continue;   // a deployed Desolator cannot go
+            if (playfield_.campaign && !mission_recruitable(unit_mission(u))) continue;
+            if (!unit_primary_can_fire_at(u, A)) continue;
+            // Movement zone stand-in: a ship only against an attacker on
+            // water; a land unit only against one it can walk to.
+            if (u.movement_domain == MovementDomain::Water && A.movement_domain != MovementDomain::Water) continue;
+            if (u.movement_domain == MovementDomain::Land && A.movement_domain == MovementDomain::Water) continue;
+            const int v = help_value(i, attacker, tf);
+            if (v == 0) continue;
+            if (v < 0) {
+                budget += v;
+            } else if (count < 6) {
+                objs[count] = i;
+                vals[count] = v;
+                ++count;
+            } else if (v > minv) {
+                int nm = v;
+                for (int k = 0; k < count; ++k) {
+                    if (vals[k] == minv) {
+                        vals[k] = v;
+                        objs[k] = i;
+                    } else if (vals[k] < nm) {
+                        nm = vals[k];
+                    }
+                }
+                minv = nm;
+            }
+        }
     }
-    std::sort(cand.begin(), cand.end());
-    for (std::size_t k = 0; k < cand.size() && k < 6; ++k) w7_override_attack(cand[k].second, attacker, -1);
+    int spent = 0;
+    if (budget > 0) {
+        for (int i = 0; i + 1 < count; ++i)
+            for (int j = i + 1; j < count; ++j)
+                if (vals[i] < vals[j]) {
+                    std::swap(vals[i], vals[j]);
+                    std::swap(objs[i], objs[j]);
+                }
+        for (int k = 0; k < count; ++k) {
+            const int ri = objs[k];
+            const bool base_def = (tflags(ri) & kTeamBaseDefense) != 0;
+            const int roll = combat_rng_.random(0, 99);
+            if (roll >= 66 || base_def) {
+                // Mission_Set(Area_Guard) + Assign_Target(attacker)
+                Unit& r = units_[static_cast<std::size_t>(ri)];
+                r.tg.overridden = false;
+                r.tg.mission = -1;
+                r.attack_order = false;
+                r.target_building = -1;
+                r.target = attacker;
+                r.tg.area_guard = true;
+                r.tg.home_x = r.cell_x;
+                r.tg.home_y = r.cell_y;
+                r.guard_x = r.cell_x;
+                r.guard_y = r.cell_y;
+            } else {
+                // Mission_Set(Rescue) + Assign_Target(attacker) [RE-FALLBACK]
+                order_unit_attack(ri, attacker);
+            }
+            spent += units_[static_cast<std::size_t>(ri)].tg.t.threat_posed;
+            if (spent > budget) break;
+        }
+    }
+    if (spent > budget) units_[static_cast<std::size_t>(attacker)].tg.help_frame = now + w7_rules_.base_defense_delay;
 }
 
 void World::wake_unit(int idx) {
@@ -286,8 +411,13 @@ void World::step_missions_w7() {
     // W7-04-19 / W7-07-12 [RE: FUN_00708710 head; TeamType Aggressive (+0xAD)
     // / Suicide (+0xAF)]: an Aggressive, non-Suicide AI team member scans on
     // the move; a Suicide member never retaliates.
+    // fv7c (13b 1b): campaign teams too -- the original reads the TeamType
+    // through Team +0x5D4 for every house (campaign_team_flags_, published by
+    // the campaign runtime each logic frame). team_flags_ also feeds the call
+    // for help's team test (FUN_00707500: no team, or an IsBaseDefense team).
     for (Unit& u : units_) u.tg.team_aggressive = u.tg.team_suicide = false;
     std::vector<std::uint8_t> in_team(static_cast<std::size_t>(nu), 0);
+    team_flags_.assign(static_cast<std::size_t>(nu), 0);
     for (const HouseAiRec& rec : ai_houses_) {
         if (!rec.is_ai) continue;
         const std::vector<TeamType>& tts = rec.cfg.team.aimd.teams;
@@ -299,8 +429,20 @@ void World::step_missions_w7() {
                 in_team[static_cast<std::size_t>(m)] = 1;
                 units_[static_cast<std::size_t>(m)].tg.team_aggressive = tt.aggressive && !tt.suicide;
                 units_[static_cast<std::size_t>(m)].tg.team_suicide = tt.suicide;
+                team_flags_[static_cast<std::size_t>(m)] |= static_cast<std::uint8_t>(
+                    kTeamMember | (tt.is_base_defense ? kTeamBaseDefense : 0));
             }
         }
+    }
+    for (int m = 0; m < nu && m < static_cast<int>(campaign_team_flags_.size()); ++m) {
+        const std::uint8_t f = campaign_team_flags_[static_cast<std::size_t>(m)];
+        if (!(f & kTeamMember)) continue;
+        team_flags_[static_cast<std::size_t>(m)] |= static_cast<std::uint8_t>(f & (kTeamMember | kTeamBaseDefense));
+        Unit& u = units_[static_cast<std::size_t>(m)];
+        u.tg.team_suicide = (f & kTeamSuicide) != 0;
+        u.tg.team_aggressive = (f & kTeamAggressive) && !(f & kTeamSuicide);
+        // (the idle-mode "not in a team" test below keeps its skirmish-only
+        // in_team; campaign members' idle transition is unchanged here)
     }
     std::vector<HitRec> hits;
     hits.swap(w7_hits_);
@@ -360,11 +502,9 @@ void World::step_missions_w7() {
             }
         }
         // W7-07-09 [RE: TechnoClass::ReceiveDamage 0x701C43 -> FUN_00707500]:
-        // a computer ToProtect=yes techno calls for help.
-        // (a skirmish AI house's ToProtect units are answered by ai_protect,
-        // ai_unit.cpp W7-04-18; this covers the campaign / other computer
-        // houses and every computer building)
-        if (v.tg.t.to_protect && h.attacker >= 0 && !ai_enabled(v.house))
+        // a computer ToProtect=yes techno calls for help. fv7c: every computer
+        // house (the skirmish AI's ai_protect path is merged in here).
+        if (v.tg.t.to_protect && h.attacker >= 0)
             call_for_help(v.house, h.victim, -1, h.attacker);
         // W7-07-24 / W7-02-09 / W7-04-20 / W7-09-11 [RE: 0x701ED5..0x702196,
         // InfantryClass::ReceiveDamage 0x518A6C]: the damage scatter. Not after

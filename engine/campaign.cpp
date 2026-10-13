@@ -245,6 +245,11 @@ std::vector<MapObjectRec> parse_map_objects(const ra2assets::Ini& map) {
         if (!head(r, f, i)) continue;
         r.facing = std::atoi(at(f, i).c_str());   // Facing
         r.tag = tag_of(at(f, i + 1));             // Tag
+        // fv7c: ...,Tag,AISellable,AIRebuildable,Powered,Upgrades,SpotLight,
+        // Upgrade1,Upgrade2,Upgrade3,AIRepairable,Nominal
+        r.ai_sellable = std::atoi(at(f, i + 2).c_str()) != 0;
+        r.ai_rebuildable = std::atoi(at(f, i + 3).c_str()) != 0;
+        r.ai_repairable = std::atoi(at(f, i + 10).c_str()) != 0;
         out.push_back(r);
     }
     for (const auto& kv : map.section("Units")) {
@@ -405,6 +410,9 @@ MapTeamData parse_map_teams(const ra2assets::Ini& map) {
         t.transports_return = yes(map.get(id, "TransportsReturnOnUnload", "no"));
         const std::string twp = strip(map.get(id, "TransportWaypoint", ""));
         t.transport_waypoint = twp.empty() ? -1 : map_waypoint_letters(twp);
+        t.aggressive = yes(map.get(id, "Aggressive", "no"));            // fv7c (+0xAD)
+        t.suicide = yes(map.get(id, "Suicide", "no"));                  // fv7c (+0xAF)
+        t.is_base_defense = yes(map.get(id, "IsBaseDefense", "no"));    // fv7c (+0xF6)
         d.teams.push_back(t);
     }
     return d;

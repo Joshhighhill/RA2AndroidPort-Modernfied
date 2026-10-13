@@ -123,79 +123,116 @@ TEST_CASE("W7-01-08: a computer GI deploys on an in-range attack target and unde
     CHECK(world.units()[0].deployed);
 }
 
-// [RE: FUN_00707500 via ReceiveDamage @0x701C43]: a hit ToProtect unit of a
-// computer house calls idle, unteamed units of its house onto the attacker.
-TEST_CASE("W7-04-18: an attacked ToProtect unit calls idle units onto its attacker") {
+// fv7c: the call for help (FUN_00707500) is ONE routine, World::call_for_help,
+// run from the W7 hit log for every computer house; the type's ToProtect flag
+// (not the AI roster) triggers it, and the candidates are ranked by
+// FUN_004D96B0 (ThreatPosed) within attacker ThreatPosed x 3.
+namespace {
+void arm_w7(ra2engine::World& world) {
+    ra2engine::World::CombatW7Rules r;
+    r.armed = true;
+    world.arm_combat_w7(r);
+}
+struct HelpRig {
+    ra2engine::World world{ra2fixture::mapsmd03_map()};
+    int vx = 0, vy = 0;
+    bool ok = false;
+    HelpRig() {
+        three_houses(world);
+        arm_w7(world);
+        const ra2assets::MapCell* c = ra2engine::pick_start_cell(ra2fixture::mapsmd03_map());
+        if (!c || !ring_cell(world, c->x, c->y, 0, vx, vy)) return;
+        ok = true;
+    }
+    int add(int r0, int house, ra2engine::UnitCombat u) {
+        int x = 0, y = 0;
+        if (!ring_cell(world, vx, vy, r0, x, y)) return -1;
+        world.add_combat_unit(x, y, house, u);
+        return (int)world.units().size() - 1;
+    }
+    bool helped(int i, int a) const {
+        const ra2engine::Unit& u = world.units()[(std::size_t)i];
+        return u.target == a;
+    }
+};
+ra2engine::UnitCombat protect_victim(bool to_protect) {
+    ra2engine::UnitCombat v = w7_gi(false);
+    v.tg.rules_id = "HARV";
+    v.tg.to_protect = to_protect;
+    v.strength = 100000;
+    v.damage = 0;
+    return v;
+}
+ra2engine::UnitCombat threat_gi(int threat) {
+    ra2engine::UnitCombat u = w7_gi(false);
+    u.tg.threat_posed = threat;
+    return u;
+}
+}  // namespace
+
+TEST_CASE("W7-04-18 / fv7c: an attacked ToProtect unit calls idle units onto its attacker (FUN_00707500)") {
     if (!ra2fixture::mapsmd03_available()) { MESSAGE("skipped: real map assets not found"); return; }
-    ra2engine::World world(ra2fixture::mapsmd03_map());
-    three_houses(world);
-    const ra2assets::MapCell* c = ra2engine::pick_start_cell(ra2fixture::mapsmd03_map());
-    REQUIRE(c != nullptr);
-    ra2engine::AiHouseConfig cfg;
-    cfg.team.unit_roster.resize(2);
-    cfg.team.unit_roster[0].id = "HARV";
-    cfg.team.unit_roster[1].id = "E2";
-    cfg.roster_to_protect = {1, 0};
-    world.enable_ai_house(1, cfg);
-    int vx = 0, vy = 0, ax = 0, ay = 0, hx = 0, hy = 0;
-    REQUIRE(ring_cell(world, c->x, c->y, 0, vx, vy));
-    ra2engine::UnitCombat victim = w7_gi(false);
-    victim.tg.rules_id = "HARV";
-    victim.strength = 100000;
-    victim.damage = 0;
-    world.add_combat_unit(vx, vy, 1, victim);                 // 0: the "miner"
-    REQUIRE(ring_cell(world, vx, vy, 3, ax, ay));
-    ra2engine::UnitCombat attacker = w7_gi(false);
-    attacker.strength = 100000;
-    world.add_combat_unit(ax, ay, 0, attacker);               // 1: the enemy
-    REQUIRE(ring_cell(world, vx, vy, 9, hx, hy));
-    ra2engine::UnitCombat helper = w7_gi(false);
-    helper.tg.rules_id = "E2";
-    helper.range = 1.0;                                       // cannot see the attacker itself
-    world.add_combat_unit(hx, hy, 1, helper);                 // 2: an idle defender
-    world.order_unit_attack(1, 0);
+    HelpRig g;
+    REQUIRE(g.ok);
+    const int v = g.add(0, 1, protect_victim(true));                 // the "miner"
+    ra2engine::UnitCombat atk = threat_gi(10);
+    atk.strength = 100000;
+    const int a = g.add(3, 0, atk);                                    // the enemy
+    ra2engine::UnitCombat helper = threat_gi(10);
+    helper.range = 1.0;                                                // cannot see the attacker itself
+    const int h = g.add(9, 1, helper);                                 // an idle defender
+    REQUIRE((v >= 0 && a >= 0 && h >= 0));
+    g.world.order_unit_attack(a, v);
     bool called = false;
     for (int f = 0; f < 120 && !called; ++f) {
-        world.step(1.0 / 15.0);
-        called = world.units()[2].target == 1 && world.units()[2].attack_order;
+        g.world.step(1.0 / 15.0);
+        called = g.helped(h, a);
     }
-    CHECK(world.units()[0].hp < 100000);   // the miner was hit
-    CHECK(called);                          // and its house answered
+    CHECK(g.world.units()[(std::size_t)v].hp < 100000);   // the miner was hit
+    CHECK(called);                                         // and its house answered
 }
 
-// W7-09-17: AI unit typing goes by the rules id, not the shared image.
-TEST_CASE("W7-09-17: a civilian TRUCKA is not typed as the AI's DTRUCK") {
+TEST_CASE("fv7c: the call for help needs GetFireError(attacker, 0) != ILLEGAL -- a dog is not sent at a tank") {
     if (!ra2fixture::mapsmd03_available()) { MESSAGE("skipped: real map assets not found"); return; }
-    ra2engine::World world(ra2fixture::mapsmd03_map());
-    three_houses(world);
-    const ra2assets::MapCell* c = ra2engine::pick_start_cell(ra2fixture::mapsmd03_map());
-    REQUIRE(c != nullptr);
-    ra2engine::AiHouseConfig cfg;
-    cfg.team.unit_roster.resize(1);
-    cfg.team.unit_roster[0].id = "DTRUCK";
-    cfg.team.unit_roster[0].combat.image = "TRUCKA";
-    cfg.roster_to_protect = {1};   // DTRUCK "ToProtect" here only to observe typing
-    world.enable_ai_house(1, cfg);
-    int vx = 0, vy = 0, ax = 0, ay = 0;
-    REQUIRE(ring_cell(world, c->x, c->y, 0, vx, vy));
-    ra2engine::UnitCombat truck = w7_gi(false);
-    truck.image = "TRUCKA";
-    truck.tg.rules_id = "TRUCKA";   // the civilian truck: same image, other type
-    truck.strength = 100000;
-    truck.damage = 0;
-    world.add_combat_unit(vx, vy, 1, truck);
-    REQUIRE(ring_cell(world, vx, vy, 3, ax, ay));
-    ra2engine::UnitCombat attacker = w7_gi(false);
-    attacker.strength = 100000;
-    world.add_combat_unit(ax, ay, 0, attacker);
-    int hx = 0, hy = 0;
-    REQUIRE(ring_cell(world, vx, vy, 9, hx, hy));
-    ra2engine::UnitCombat helper = w7_gi(false);
-    helper.tg.rules_id = "DTRUCK";
+    HelpRig g;
+    REQUIRE(g.ok);
+    const int v = g.add(0, 1, protect_victim(true));
+    ra2engine::UnitCombat tank = threat_gi(10);
+    tank.strength = 100000;
+    tank.armor = "heavy";
+    const int a = g.add(3, 0, tank);
+    ra2engine::UnitCombat dog = threat_gi(20);
+    dog.range = 1.0;
+    dog.verses = {100, 100, 100, 0, 0, 0, 0, 0, 0, 0, 0};   // [ParasiteDog]-like: 0% vs vehicles
+    const int d = g.add(2, 1, dog);
+    ra2engine::UnitCombat e2 = threat_gi(5);
+    e2.range = 1.0;
+    const int e = g.add(9, 1, e2);
+    REQUIRE((v >= 0 && a >= 0 && d >= 0 && e >= 0));
+    g.world.order_unit_attack(a, v);
+    bool e_called = false;
+    for (int f = 0; f < 120 && !e_called; ++f) {
+        g.world.step(1.0 / 15.0);
+        e_called = g.helped(e, a);
+    }
+    CHECK(e_called);
+    CHECK_FALSE(g.helped(d, a));
+}
+
+TEST_CASE("fv7c: a hit unit WITHOUT ToProtect calls nobody") {
+    if (!ra2fixture::mapsmd03_available()) { MESSAGE("skipped: real map assets not found"); return; }
+    HelpRig g;
+    REQUIRE(g.ok);
+    const int v = g.add(0, 1, protect_victim(false));
+    ra2engine::UnitCombat atk = threat_gi(10);
+    atk.strength = 100000;
+    const int a = g.add(3, 0, atk);
+    ra2engine::UnitCombat helper = threat_gi(10);
     helper.range = 1.0;
-    world.add_combat_unit(hx, hy, 1, helper);
-    world.order_unit_attack(1, 0);
-    for (int f = 0; f < 120; ++f) world.step(1.0 / 15.0);
-    CHECK(world.units()[0].hp < 100000);
-    CHECK(world.units()[2].target != 1);   // the TRUCKA is not a (protected) DTRUCK
+    const int h = g.add(9, 1, helper);
+    REQUIRE((v >= 0 && a >= 0 && h >= 0));
+    g.world.order_unit_attack(a, v);
+    for (int f = 0; f < 120; ++f) g.world.step(1.0 / 15.0);
+    CHECK(g.world.units()[(std::size_t)v].hp < 100000);
+    CHECK_FALSE(g.helped(h, a));
 }

@@ -1,0 +1,25 @@
+# W7-ALL04-AI-REPAIR (fv7c, w7sus-misc amp) [RE: FUN_00450620 via
+# BuildingClass::Update 0x43FAA0]: a computer house repairs a damaged building
+# only when house IQ >= [IQ] RepairSell, money >= [AI] CreditReserve, its
+# RepairDelay latch is clear and the building is AIRepairable ([Structures]
+# field 16) or captured. ALL04's Russian2 (IQ 4, 10000 credits) owns the
+# Psychic Amplifier NAPSYA (AIRepairable=1) and a Naval Yard NAYARD at (38,83)
+# (AIRepairable=0): the Amplifier heals, the yard does not.
+set render_every 600
+set on_quit continue
+set campaign ALL04u.MAP GDI
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+wait 30
+cheat damage_building 2:NAPSYA 300
+cheat damage_building 2:NAYARD 300
+let a0 = bhp(2,NAPSYA)
+let y0 = bhp(2,NAYARD)
+dump
+until 300 bhp(2,NAPSYA) > $a0
+assert bhp(2,NAPSYA) > $a0
+wait 300
+assert bhp(2,NAYARD) <= $y0
+dump
+end

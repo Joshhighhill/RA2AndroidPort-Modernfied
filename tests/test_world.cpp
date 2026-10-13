@@ -4075,7 +4075,7 @@ TEST_CASE("World shroud: add_combat_unit copies sight; seen_by_mask defaults 0xF
     c.image = "E1"; c.strength = 100; c.armor = "none"; c.sight = 5;
     ra2engine::Unit& u = world.add_combat_unit(5, 5, /*house=*/0, c);
     CHECK(u.sight == 5);
-    CHECK(u.seen_by_mask == 0xFF);   // INERT default = seen by all houses
+    CHECK(u.seen_by_mask == 0xFFFFFFFFu);   // INERT default = seen by all houses (fv7c: 32-bit)
 }
 
 TEST_CASE("World shroud: step_visibility reveals around a unit; sticky fog; inert when off [RE: shroud.md §3/§4]") {
@@ -4160,6 +4160,36 @@ TEST_CASE("World shroud: fogged enemy is not auto-acquired; visible enemy is [RE
     CHECK(world.visible_at(0, 9, 6));                     // now visible to house 0
     CHECK((world.units()[foe_i].seen_by_mask & 0x01) != 0);
     CHECK(world.units()[scan_i].target == foe_i);        // visible foe IS auto-acquired
+}
+
+TEST_CASE("World shroud: house index >= 8 auto-acquires a seen enemy (32-bit seen_by_mask) [RE: FUN_004F98B0]") {
+    // fv7c (13b #1): seen_by_mask was uint8_t and only stamped for houses < 8,
+    // so `mask & (1u << 10)` was always 0 and ALL04's PlayerAlt2 (house 10)
+    // never auto-acquired a unit. The original's house masks are 32-bit.
+    ra2assets::MapFile map;
+    if (!load_real_map_w(map)) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    ra2engine::World world(map);
+    REQUIRE(world.grid_w() > 16);
+    for (int h = 0; h <= 10; ++h)
+        world.set_house(h, {ra2engine::World::Side::Allied, h & 7, "", h, true});
+    REQUIRE(world.house_count() == 11);
+    ra2engine::UnitCombat sc;
+    sc.image = "E1"; sc.strength = 200; sc.armor = "none"; sc.sight = 5;
+    sc.damage = 40; sc.rof = 20; sc.range = 6.0; sc.verses = {100};
+    world.add_combat_unit(6, 6, /*house=*/10, sc);
+    const int scan_i = (int)world.units().size() - 1;
+    ra2engine::UnitCombat en;
+    en.image = "E2"; en.strength = 100; en.armor = "none"; en.sight = 3;
+    world.add_combat_unit(9, 6, /*house=*/1, en);
+    const int foe_i = (int)world.units().size() - 1;
+    world.enable_shroud(true);
+    world.step(1.0 / 15.0);
+    CHECK((world.units()[foe_i].seen_by_mask & (1u << 10)) != 0);   // stamped for house 10
+    CHECK(world.units()[foe_i].seen_by_house(10));
+    CHECK(world.units()[scan_i].target == foe_i);   // house 10 acquires the visible foe
 }
 
 TEST_CASE("World shroud: reshroud_house clears the victim's explored map [RE: shroud.md §7B]") {
@@ -4554,6 +4584,40 @@ TEST_CASE("world: step_repair_sell is a strict no-op with the firewall closed [R
     CHECK(world.house_credits(0) == doctest::Approx(before_credits));
     CHECK_FALSE(world.building_repairing(b));
     CHECK(world.repair_frame() == 100);        // the counter still advanced
+}
+
+// fv7c [RE: FUN_00450620 via BuildingClass::Update 0x43FAA0; repair-sell.md
+// §A7]: a computer house's building is repaired only when the house IQ >=
+// [IQ] RepairSell, money >= [AI] CreditReserve, the RepairDelay latch is clear
+// and the building is AIRepairable ([Structures] field 16) or captured.
+TEST_CASE("fv7c: AI building repair -- IQ, CreditReserve and AIRepairable gates (FUN_00450620)") {
+    struct Case { int iq; double credits; bool repairable; bool captured; bool expect; int type = 0; };
+    const Case cases[] = {
+        {5, 10000.0, true, false, true},    // repaired
+        {5, 10000.0, false, false, false},  // not AIRepairable (ALL04's Russian2 NAYARD)
+        {5, 10000.0, false, true, true},    // captured counts
+        {0, 10000.0, true, false, false},   // IQ below RepairSell (1)
+        {5, 50.0, true, false, false},      // below CreditReserve (100)
+        {5, 10000.0, true, false, true, 2}, // ClickRepairable=no: Repair(1) skips the cursor gate (NAPSYA)
+    };
+    for (const Case& c : cases) {
+        ra2assets::MapFile map;
+        ra2engine::World world(map);
+        wire_repair_economy(world);
+        ra2engine::World::CombatW7Rules r;
+        r.armed = true;
+        world.arm_combat_w7(r);
+        world.set_house_iq(1, c.iq);
+        world.set_house_repair_delay(1, 10);
+        const int b = world.add_building(c.type, 5, 5, 5, 4, /*house*/ 1, 1000, 0, 0.0, true);
+        world.buildings()[b].hp = 500;
+        world.buildings()[b].ai_repairable = c.repairable;
+        world.buildings()[b].has_been_captured = c.captured;
+        world.grant_credits_for_test(1, c.credits);
+        for (int k = 0; k < 15; ++k) world.step(1.0 / 15.0);
+        INFO("iq=" << c.iq << " credits=" << c.credits << " repairable=" << c.repairable);
+        CHECK(world.building_repairing(b) == c.expect);
+    }
 }
 
 TEST_CASE("world: set_repair refuses per the recovered gates [RE: repair-sell.md §A4/§C1]") {
