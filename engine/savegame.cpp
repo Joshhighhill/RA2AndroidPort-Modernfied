@@ -293,6 +293,15 @@ bool SaveAccess::valid_world(const World& w, std::string* why) {
     if (!w.passable_.empty() && w.passable_.size() != cells) return bad("passable grid");
     if (!w.water_passable_.empty() && w.water_passable_.size() != cells) return bad("water grid");
     if (w.houses_.size() > static_cast<std::size_t>(kMaxHouses)) return bad("house table");
+    {   // w8fix-layer: the occupancy planes match its grid
+        const Occupancy& o = w.occ_;
+        const std::size_t oc = static_cast<std::size_t>(o.w_) * static_cast<std::size_t>(o.h_);
+        if (o.w_ < 0 || o.h_ < 0 || o.owner_.size() != oc ||
+            (!o.spots_.empty() && o.spots_.size() != oc * Occupancy::kSpots) ||
+            (!o.owner_d_.empty() && o.owner_d_.size() != oc) ||
+            (o.owner_d_.empty() ? !o.spots_d_.empty() : o.spots_d_.size() != o.spots_.size()))
+            return bad("occupancy grid");
+    }
     const int nu = static_cast<int>(w.units_.size());
     const int nb = static_cast<int>(w.buildings_.size());
     const int nt = static_cast<int>(w.types_.empty() ? w.lookup_types_.size() : w.types_.size());

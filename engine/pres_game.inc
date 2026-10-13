@@ -830,7 +830,7 @@ private:
             }
             // W7-12-38: at the weapon's FLH (infantry too), [RE-FALLBACK: the
             // anim is not attached to the firer (SetOwnerObject 0x424ad0)].
-            fx_.spawn(name, u.fx, u.fy, u.level, lift, ox);
+            fx_.spawn(name, u.fx, u.fy, pres_unit_fx_level(w, u), lift, ox);   // w8fix-layer: deck
         }
         // W6-04-24: a slot-1 shot draws the Secondary's beam (Boris's Flare);
         // W7-12-30: the fired weapon's own beam flags.
@@ -838,7 +838,7 @@ private:
             double tx = 0, ty = 0, tl = 0;
             int tlev = 0;
             if (target_point(w, u.target, u.target_building, tx, ty, tlev, tl)) {
-                fx_.add_beam(u.fx, u.fy, u.level, std::max(lift, u.is_vehicle ? 18.0 : 15.0), tx, ty, tlev, tl, *wp,
+                fx_.add_beam(u.fx, u.fy, pres_unit_fx_level(w, u), std::max(lift, u.is_vehicle ? 18.0 : 15.0), tx, ty, tlev, tl, *wp,
                              house_color(w, u.house), ox);
                 // W7-12-31 [RE: EBolt::Fire 0x4c2980 -- ParticleSystem([General]
                 // DefaultSparkSystem=SparkSys) at the bolt end].
@@ -857,12 +857,12 @@ private:
                 int tlev = 0;
                 if (target_point(w, u.target, u.target_building, tx, ty, tlev, tl))
                     effects_.instant_line(wp->id.empty() ? effects_.unit_weapon(u.image, 0) : wp->id, u.fx * 256.0,
-                                          u.fy * 256.0, u.level * 104.0 + 60.0, tx * 256.0, ty * 256.0, tlev * 104.0 + 40.0);
+                                          u.fy * 256.0, pres_unit_fx_level(w, u) * 104.0 + 60.0, tx * 256.0, ty * 256.0, tlev * 104.0 + 40.0);
             }
             const auto& us = w.units();
             if (u.target >= 0 && u.target < static_cast<int>(us.size())) {
                 const ra2engine::Unit& t = us[u.target];
-                impact(u, u.w_damage, t.fx, t.fy, t.level, t.is_vehicle ? 10.0 : 6.0);
+                impact(u, u.w_damage, t.fx, t.fy, pres_unit_fx_level(w, t), t.is_vehicle ? 10.0 : 6.0);
             } else if (u.target_building >= 0 &&
                        u.target_building < static_cast<int>(w.buildings().size())) {
                 const ra2engine::Building& b = w.buildings()[u.target_building];
@@ -916,7 +916,7 @@ private:
         const auto& us = w.units();
         if (tu >= 0 && tu < static_cast<int>(us.size())) {
             const ra2engine::Unit& t = us[static_cast<std::size_t>(tu)];
-            x = t.fx; y = t.fy; level = t.level;
+            x = t.fx; y = t.fy; level = pres_unit_fx_level(w, t);   // w8fix-layer: a deck target
             lift = t.is_vehicle ? 10.0 : 8.0;
             return true;
         }
@@ -1230,7 +1230,8 @@ private:
     void infantry_death_fx(const ra2engine::World& w, const ra2engine::Unit& u, bool was_living, bool was_alive) {
         if (!u.ia.armed || u.is_vehicle || u.is_aircraft || u.cargo_of >= 0) return;
         if (!w.object_visible_at(g_local_house, u.cell_x, u.cell_y) && u.house != g_local_house) return;
-        const int lvl = level_at(w, u.fx, u.fy);
+        // w8fix-layer W8-02-03: a soldier dying on a deck dies on the deck.
+        const int lvl = level_at(w, u.fx, u.fy) + pres_unit_lift_levels(w, u);
         if (u.die_time >= 0.0 && was_living && u.ia.vanish) {
             static const char* kKey[11] = {nullptr, nullptr, nullptr, "InfantryExplode", "FlamingInfantry",
                                            nullptr, "InfantryHeadPop", "InfantryNuked", "InfantryVirus",
@@ -1306,7 +1307,7 @@ private:
                 const bool has_ammo = ammo.empty() || std::atoi(ammo.c_str()) < 0 || u.an.ammo > 0;
                 if (!ex_key.empty() && (ex_key[0] == 'y' || ex_key[0] == 't' || ex_key[0] == '1') && has_ammo)
                     pick = ex->size() - 1;
-                if (const FxAnimType* t = fx_.spawn((*ex)[pick], u.fx, u.fy, u.level, height * kFxLepPx)) {
+                if (const FxAnimType* t = fx_.spawn((*ex)[pick], u.fx, u.fy, pres_unit_fx_level(w, u), height * kFxLepPx)) {
                     snd_.play_at(t->report, u.fx, u.fy, "explosion");
                     ++explosions_;
                 }
@@ -1314,7 +1315,7 @@ private:
         }
         // W3-FX [RE: FUN_00700da0 death]: Min/MaxDebris debris (voxel
         // DebrisTypes / DebrisAnims / MetallicDebris), none when low over water.
-        const double z = u.level * 104.0 + height;
+        const double z = pres_unit_fx_level(w, u) * 104.0 + height;   // w8fix-layer: deck
         effects_.spawn_debris(pres_type_id(u), u.fx * 256.0, u.fy * 256.0, z, on_water(u.fx, u.fy) && height < 11.0);
     }
     // W7-12-13 [RE: FireDeathWeapon FUN_0070CAC0 -> a bullet of the weapon's

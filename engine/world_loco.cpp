@@ -114,14 +114,27 @@ void build_occupancy_cost(const std::vector<Unit>& units, const Occupancy& occ, 
     if (self < 0 || self >= static_cast<int>(units.size())) return;
     const Unit& me = units[static_cast<std::size_t>(self)];
     const bool me_inf = occ.is_infantry(self) && occ.subcells();
+    // w8fix-layer [RE: the deck and ground content chains +0xE8 / +0xE4]:
+    // the layer the mover would stand on in a deck cell -- deck-only cells
+    // (over water / a cliff) the deck, a deck over land or an amphibious
+    // mover its current layer; a ship always the water.
+    const std::vector<std::uint8_t>* dk =
+        (world && !me.is_naval && me.movement_domain != MovementDomain::Water) ? world->deck_grid(me.movement_domain)
+                                                                                : nullptr;
     for (std::size_t o = 0; o < units.size(); ++o) {
         if (static_cast<int>(o) == self) continue;
         const Unit& v = units[o];
         if (!live_on_map(v)) continue;
         const int x = v.cell_x, y = v.cell_y;
         if (x < 0 || y < 0 || x >= w || y >= h) continue;
+        int my_layer = 0;
+        if (dk && static_cast<std::size_t>(y) * w + x < dk->size()) {
+            const std::uint8_t d = (*dk)[static_cast<std::size_t>(y) * w + x];
+            my_layer = d == 2 ? 1 : d == 1 ? (me.on_deck ? 1 : 0) : 0;
+        }
+        if ((v.on_deck ? 1 : 0) != my_layer) continue;   // the other layer never blocks
         // An infantry mover shares a cell with a free sub-cell spot.
-        if (me_inf && occ.can_enter(x, y, self)) continue;
+        if (me_inf && occ.can_enter(x, y, self, my_layer)) continue;
         int c;
         if (me.enter_target == static_cast<int>(o)) c = 1;   // W7-11-12: the transport's own cell is OK
         else if (under_way(v)) c = blockage_mode ? 1000 : moving_block_cost(units, occ, static_cast<int>(o));
@@ -230,7 +243,8 @@ void arrive(StepEnv& e, Unit& u, int self) {
     u.loco.path_delay = 0.0;
     u.loco.blockage = -1.0;
     u.loco.temp_tries = 0;
-    e.occ.set(u.cell_x, u.cell_y, self);
+    e.occ.mark_layer(self, u.on_deck);
+    e.occ.set(u.cell_x, u.cell_y, self, u.on_deck);   // w8fix-layer: its own layer's plane
 }
 
 // Mark `tgt` (a neighbour of `from`) for unit u before entering it: the
@@ -254,11 +268,29 @@ Reserve reserve_cell(StepEnv& e, Unit& u, int self, Cellxy from, int from_layer,
     // rules the infantry is warned when the crusher commits to the cell and
     // squashed only if still there when it arrives (squash_on_arrival).
     const bool w7crush = e.w7crush();
+    // R-210 [RE: FUN_004D9B70]: the height gate on every step -- the layer
+    // the unit lands on (-1: a cliff, refused after the crush below).
+    layer = from_layer;
+    if (e.terrain) {
+        PathTerrain t;
+        if (const PathTerrain* tp = e.terrain_of_unit(u, t); tp && tp->level) {
+            const int dx = tgt.x - from.x, dy = tgt.y - from.y;
+            layer = (dx < -1 || dx > 1 || dy < -1 || dy > 1)
+                        ? -1
+                        : path_step_layer(*tp, e.w, from.x, from.y, from_layer, tgt.x, tgt.y);
+        }
+    }
+    // w8fix-layer W8-01-05 / W8-02-02 / W8-03-04 [RE: IsClearToMove
+    // FUN_004833B0 reads the occupation word of the mover's layer (+0x128 on
+    // the deck, +0x124 below); UnitClass::Crush 0x7404B0 walks the AltObject
+    // chain +0xE8 for a crusher on the bridge, else FirstObject +0xE4]: every
+    // occupancy test below sees only the plane of the layer entered.
+    const int L = layer < 0 ? (from_layer > 0 ? 1 : 0) : layer;
     if (u.crusher && u.is_vehicle) {
-        int victims[4] = {e.occ.at(tgt.x, tgt.y), -1, -1, -1};
+        int victims[4] = {e.occ.at(tgt.x, tgt.y, L), -1, -1, -1};
         if (e.occ.subcells())
             for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s)
-                victims[s - 1] = e.occ.spot_unit(tgt.x, tgt.y, s);
+                victims[s - 1] = e.occ.spot_unit(tgt.x, tgt.y, s, L);
         const int cell_ix = tgt.y * e.w + tgt.x;
         bool warn = false, elite = false;
         for (int o : victims) {
@@ -293,48 +325,37 @@ Reserve reserve_cell(StepEnv& e, Unit& u, int self, Cellxy from, int from_layer,
             }
         }
     }
-    // R-210 [RE: FUN_004D9B70]: the height gate on every step.
-    layer = from_layer;
-    if (e.terrain) {
-        PathTerrain t;
-        if (const PathTerrain* tp = e.terrain_of_unit(u, t); tp && tp->level) {
-            const int dx = tgt.x - from.x, dy = tgt.y - from.y;
-            layer = (dx < -1 || dx > 1 || dy < -1 || dy > 1)
-                        ? -1
-                        : path_step_layer(*tp, e.w, from.x, from.y, from_layer, tgt.x, tgt.y);
-            if (layer < 0) return Reserve::Cliff;
-        }
-    }
+    if (layer < 0) return Reserve::Cliff;
     if (e.occ.is_infantry(self)) {
         // W5-B R-061 [RE: FindInfantrySubposition FUN_00481090]: a spot in the
         // next cell -- the quadrant of the current in-cell position, else the
         // spot preference row; no free spot (or a vehicle there) blocks.
-        if (e.occ.spot_of(tgt.x, tgt.y, self) < 0) {
+        if (e.occ.spot_of(tgt.x, tgt.y, self, L) < 0) {
             int cur = e.occ.spot_of(from.x, from.y, self);
             if (cur < 0) cur = 0;
-            const int sp = e.occ.free_spot(tgt.x, tgt.y, cur, self & 3);
+            const int sp = e.occ.free_spot(tgt.x, tgt.y, cur, self & 3, L);
             if (sp < 0) return Reserve::Blocked;
-            e.occ.set_spot(tgt.x, tgt.y, self, sp);
+            e.occ.set_spot(tgt.x, tgt.y, self, sp, L);
         }
-    } else if (e.occ.at(tgt.x, tgt.y) != self || !e.occ.can_enter(tgt.x, tgt.y, self)) {
+    } else if (e.occ.at(tgt.x, tgt.y, L) != self || !e.occ.can_enter(tgt.x, tgt.y, self, L)) {
         // W7-07-21 (w7fix-combat): a cell held only by infantry this crusher
         // may squash is entered (the squash happens on arrival).
         bool crush_only = false;
-        if (w7crush && u.crusher && u.is_vehicle && !e.occ.can_enter(tgt.x, tgt.y, self)) {
+        if (w7crush && u.crusher && u.is_vehicle && !e.occ.can_enter(tgt.x, tgt.y, self, L)) {
             crush_only = true;
             for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s) {
-                const int o = e.occ.spot_unit(tgt.x, tgt.y, s);
+                const int o = e.occ.spot_unit(tgt.x, tgt.y, s, L);
                 if (o < 0 || o == self) continue;
                 if (o >= static_cast<int>(e.units.size())) { crush_only = false; break; }
                 const Unit& v = e.units[static_cast<std::size_t>(o)];
                 if (!(can_crush(u, v) && !e.allied(u.house, v.house) && v.alive && v.die_time < 0.0)) crush_only = false;
             }
-            const int own = e.occ.at(tgt.x, tgt.y);   // a vehicle owner (not us) still blocks
+            const int own = e.occ.at(tgt.x, tgt.y, L);   // a vehicle owner (not us) still blocks
             if (own >= 0 && own != self && (own >= static_cast<int>(e.units.size()) || !e.occ.is_infantry(own)))
                 crush_only = false;
         }
-        if (!crush_only && !e.occ.can_enter(tgt.x, tgt.y, self)) return Reserve::Blocked;
-        e.occ.set(tgt.x, tgt.y, self);   // reserve (now owns current + next)
+        if (!crush_only && !e.occ.can_enter(tgt.x, tgt.y, self, L)) return Reserve::Blocked;
+        e.occ.set(tgt.x, tgt.y, self, L);   // reserve (now owns current + next)
         if (e.have_speed) u.speed_mult = land_speed_mult(e.sc, u, e.w, e.h, tgt.x, tgt.y);   // W5-B R-062
     }
     return Reserve::Ok;
@@ -346,7 +367,7 @@ Reserve reserve_cell(StepEnv& e, Unit& u, int self, Cellxy from, int from_layer,
 void squash_on_arrival(StepEnv& e, Unit& u, int self) {
     if (!e.w7crush() || !u.crusher || !u.is_vehicle) return;
     for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s) {
-        const int o = e.occ.spot_unit(u.cell_x, u.cell_y, s);
+        const int o = e.occ.spot_unit(u.cell_x, u.cell_y, s, u.on_deck);   // w8fix-layer: its own layer
         if (o < 0 || o == self || o >= static_cast<int>(e.units.size())) continue;
         Unit& v = e.units[static_cast<std::size_t>(o)];
         if (!(can_crush(u, v) && !e.allied(u.house, v.house) && v.alive && v.die_time < 0.0 && v.cargo_of < 0))
@@ -393,7 +414,10 @@ bool repath(StepEnv& e, Unit& u, int self, int mode) {
 // The next cell `bc` cannot be entered this frame: the original's
 // Can_Enter-result state machine [RE: Drive FUN_004B2550, Walk FUN_00759CE0,
 // Hover FUN_00514D90, Ship FUN_006A1310, Basic_Path FUN_004D3840].
-void on_blocked(StepEnv& e, Unit& u, int self, Cellxy bc, bool cliff) {
+void on_blocked(StepEnv& e, Unit& u, int self, Cellxy bc, bool cliff, int layer) {
+    // w8fix-layer: the blocker is looked up on the plane of the layer the
+    // step would land on (a ship under a deck never blocks deck traffic).
+    const int LB = layer < 0 ? (u.on_deck ? 1 : 0) : layer;
     const UnitAnimSeq& seq = anim_for_image(e.anims, u.image);
     const LocoRules& lr = e.sc.loco;
     UnitLoco& L = u.loco;
@@ -405,10 +429,10 @@ void on_blocked(StepEnv& e, Unit& u, int self, Cellxy bc, bool cliff) {
     static const bool trace = std::getenv("RA2_LOCO_TRACE") != nullptr;   // diagnostics
     if (trace && L.path_delay <= 0.0)
         std::fprintf(stderr, "[loco] blocked u=%d %s at (%d,%d) next (%d,%d) occ=%d cliff=%d goal=(%d,%d) wait=%.1f\n", self,
-                     u.image.c_str(), u.cell_x, u.cell_y, bc.x, bc.y, e.occ.at(bc.x, bc.y), cliff ? 1 : 0,
+                     u.image.c_str(), u.cell_x, u.cell_y, bc.x, bc.y, e.occ.at(bc.x, bc.y, LB), cliff ? 1 : 0,
                      u.path.empty() ? -1 : u.path.back().x, u.path.empty() ? -1 : u.path.back().y, u.wait_time);
     if (trace && L.path_delay <= 0.0) {
-        const int oo = e.occ.at(bc.x, bc.y);
+        const int oo = e.occ.at(bc.x, bc.y, LB);
         if (oo >= 0 && oo < static_cast<int>(e.units.size()))
             std::fprintf(stderr, "[loco]   occupant %s house=%d moving=%d wait=%.1f\n", e.units[(std::size_t)oo].image.c_str(),
                          e.units[(std::size_t)oo].house, e.units[(std::size_t)oo].moving() ? 1 : 0,
@@ -417,11 +441,11 @@ void on_blocked(StepEnv& e, Unit& u, int self, Cellxy bc, bool cliff) {
     // The blocking occupant (none -> terrain: a cliff, a closed cell).
     int o = Occupancy::kEmpty;
     if (!cliff) {
-        o = e.occ.at(bc.x, bc.y);
+        o = e.occ.at(bc.x, bc.y, LB);
         if (o == self) o = Occupancy::kEmpty;
         if (o == Occupancy::kEmpty && e.occ.subcells())
             for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s) {
-                const int v = e.occ.spot_unit(bc.x, bc.y, s);
+                const int v = e.occ.spot_unit(bc.x, bc.y, s, LB);
                 if (v != Occupancy::kEmpty && v != self) { o = v; break; }
             }
         if (o >= static_cast<int>(e.units.size())) o = Occupancy::kEmpty;
@@ -486,10 +510,10 @@ void on_blocked(StepEnv& e, Unit& u, int self, Cellxy bc, bool cliff) {
         // (World::order_scatter -- scatter rules: w7fix-combat); the mover waits
         // and retries.
         if (e.sc.scatter_out) {
-            int occs[4] = {e.occ.at(bc.x, bc.y), -1, -1, -1};
+            int occs[4] = {e.occ.at(bc.x, bc.y, LB), -1, -1, -1};
             if (e.occ.subcells())
                 for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s)
-                    occs[s - 1] = e.occ.spot_unit(bc.x, bc.y, s);
+                    occs[s - 1] = e.occ.spot_unit(bc.x, bc.y, s, LB);
             for (int v : occs) {
                 if (v < 0 || v == self || v >= static_cast<int>(e.units.size())) continue;
                 const Unit& ov = e.units[static_cast<std::size_t>(v)];
@@ -551,7 +575,7 @@ void step_walk(StepEnv& e, Unit& u, int self, double cells_per_frame) {
         if (tgt.x != u.cell_x || tgt.y != u.cell_y) {
             const Reserve r = reserve_cell(e, u, self, {u.cell_x, u.cell_y}, u.on_deck, tgt, layer);
             if (r == Reserve::Stop) { arrive(e, u, self); return; }
-            if (r != Reserve::Ok) { on_blocked(e, u, self, tgt, r == Reserve::Cliff); return; }
+            if (r != Reserve::Ok) { on_blocked(e, u, self, tgt, r == Reserve::Cliff, layer); return; }
         }
         const double dx = tgt.x - u.fx;
         const double dy = tgt.y - u.fy;
@@ -562,8 +586,8 @@ void step_walk(StepEnv& e, Unit& u, int self, double cells_per_frame) {
             u.fy = tgt.y;
             u.cell_x = tgt.x;
             u.cell_y = tgt.y;
-            squash_on_arrival(e, u, self);   // W7-07-21
             if (e.terrain) u.on_deck = static_cast<std::uint8_t>(layer > 0 ? 1 : 0);   // R-210
+            squash_on_arrival(e, u, self);   // W7-07-21 (on the layer arrived on)
             budget -= (dist <= 1e-9 ? 0.0 : dist);
             ++u.path_idx;
             u.wait_time = 0.0;
@@ -591,7 +615,7 @@ void abort_track(StepEnv& e, Unit& u, int self) {
     u.loco.trk = -1;
     u.loco.accum = 0.0;
     e.occ.release_all_of(self, u.cell_x, u.cell_y);
-    e.occ.set(u.cell_x, u.cell_y, self);
+    e.occ.set(u.cell_x, u.cell_y, self, u.on_deck);
 }
 
 // [RE: Drive FUN_004B0E50 lines 101-188 / Ship FUN_0069FC80] the
@@ -679,7 +703,7 @@ void step_track(StepEnv& e, Unit& u, int self) {
             int layer0 = u.on_deck;
             const Reserve r0 = reserve_cell(e, u, self, {u.cell_x, u.cell_y}, u.on_deck, t0, layer0);
             if (r0 == Reserve::Stop) { arrive(e, u, self); return; }
-            if (r0 != Reserve::Ok) { on_blocked(e, u, self, t0, r0 == Reserve::Cliff); return; }
+            if (r0 != Reserve::Ok) { on_blocked(e, u, self, t0, r0 == Reserve::Cliff, layer0); return; }
             // Look one step ahead: a 45 / 90 degree bend is one curved track
             // over both cells (TurnTrack flag 8) when the second cell is free.
             bool two = false;
@@ -744,8 +768,8 @@ void step_track(StepEnv& e, Unit& u, int self) {
                 e.occ.release(u.cell_x, u.cell_y, self);
                 u.cell_x = L.trk_mx;
                 u.cell_y = L.trk_my;
-                squash_on_arrival(e, u, self);   // W7-07-21
                 if (e.terrain) u.on_deck = static_cast<std::uint8_t>(L.trk_layer_mid > 0 ? 1 : 0);
+                squash_on_arrival(e, u, self);   // W7-07-21 (on the layer arrived on)
                 ++u.path_idx;
                 L.trk_in_mid = true;
             }
@@ -762,10 +786,11 @@ void step_track(StepEnv& e, Unit& u, int self) {
         u.fy = L.trk_hy;
         u.cell_x = L.trk_hx;
         u.cell_y = L.trk_hy;
-        squash_on_arrival(e, u, self);   // W7-07-21
         u.body_facing = L.trk_face;
         if (e.terrain) u.on_deck = static_cast<std::uint8_t>(L.trk_layer_head > 0 ? 1 : 0);
-        e.occ.set(u.cell_x, u.cell_y, self);
+        squash_on_arrival(e, u, self);   // W7-07-21 (on the layer arrived on)
+        e.occ.mark_layer(self, u.on_deck);
+        e.occ.set(u.cell_x, u.cell_y, self, u.on_deck);
         ++u.path_idx;
         L.trk = -1;
         if (u.path_idx >= u.path.size()) {
@@ -801,7 +826,7 @@ void step_hover(StepEnv& e, Unit& u, int self) {
     }
     const Reserve r = reserve_cell(e, u, self, {u.cell_x, u.cell_y}, u.on_deck, t, layer);
     if (r == Reserve::Stop) { arrive(e, u, self); return; }
-    if (r != Reserve::Ok) { on_blocked(e, u, self, t, r == Reserve::Cliff); return; }
+    if (r != Reserve::Ok) { on_blocked(e, u, self, t, r == Reserve::Cliff, layer); return; }
     const double dx = t.x - u.fx, dy = t.y - u.fy;
     const double dist_head = om::sqrt(dx * dx + dy * dy) * 256.0;
     double err = 0.0;
@@ -830,8 +855,8 @@ void step_hover(StepEnv& e, Unit& u, int self) {
         u.fy = t.y;
         u.cell_x = t.x;
         u.cell_y = t.y;
-        squash_on_arrival(e, u, self);   // W7-07-21
         if (e.terrain) u.on_deck = static_cast<std::uint8_t>(layer > 0 ? 1 : 0);
+        squash_on_arrival(e, u, self);   // W7-07-21 (on the layer arrived on)
         u.path_idx = pi + 1;
         u.wait_time = 0.0;
         L.blockage = -1.0;
@@ -883,6 +908,7 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
         // Dead/dying, carried and airborne units never move here (combat
         // released a dying unit's cells; CB-2 aircraft fly in step_flight).
         if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.is_aircraft) continue;
+        occ.mark_layer(self, u.on_deck);   // w8fix-layer: the default plane of its claims
         const LocoKind kind = unit_loco_kind(u);
         const bool track = kind == LocoKind::Drive || kind == LocoKind::Ship;
         if (!u.moving() && track && u.loco.trk >= 0 &&
@@ -894,31 +920,34 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
             // meanwhile the unit backs onto its own cell centre instead.
             UnitLoco& L = u.loco;
             Cellxy ahead[2];
+            int al[2] = {0, 0};   // w8fix-layer: the layer of each cell ahead
             int n = 0;
-            if (L.trk_two && !L.trk_in_mid) ahead[n++] = {L.trk_mx, L.trk_my};
+            if (L.trk_two && !L.trk_in_mid) { al[n] = L.trk_layer_mid > 0; ahead[n++] = {L.trk_mx, L.trk_my}; }
+            al[n] = L.trk_layer_head > 0;
             ahead[n++] = {L.trk_hx, L.trk_hy};
             bool ok = true;
             for (int k = 0; k < n && ok; ++k)
-                if (occ.at(ahead[k].x, ahead[k].y) != self && !occ.can_enter(ahead[k].x, ahead[k].y, self)) ok = false;
+                if (occ.at(ahead[k].x, ahead[k].y, al[k]) != self && !occ.can_enter(ahead[k].x, ahead[k].y, self, al[k]))
+                    ok = false;
             u.path.clear();
             u.path.push_back({u.cell_x, u.cell_y});
             if (ok) {
                 for (int k = 0; k < n; ++k) {
-                    occ.set(ahead[k].x, ahead[k].y, self);
+                    occ.set(ahead[k].x, ahead[k].y, self, al[k]);
                     u.path.push_back(ahead[k]);
                 }
                 u.path_idx = 1;
                 L.pct_desired = std::min(L.pct_desired, 0.3);
             } else {
                 occ.release_all_of(self, u.cell_x, u.cell_y);
-                occ.set(u.cell_x, u.cell_y, self);
+                occ.set(u.cell_x, u.cell_y, self, u.on_deck);
                 L.trk = -1;
                 u.path_idx = 0;
             }
         }
         if (!u.moving()) {
             const UnitAnimSeq& seq = anim_for_image(anims, u.image);
-            occ.set(u.cell_x, u.cell_y, self);   // idle units own their cell
+            occ.set(u.cell_x, u.cell_y, self, u.on_deck);   // idle units own their cell (own layer)
             u.fx = u.cell_x;
             u.fy = u.cell_y;
             u.frame = seq_frame(seq.stand, u.facing, 0);

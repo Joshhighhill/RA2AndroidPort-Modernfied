@@ -116,3 +116,36 @@ Deviations / fallbacks:
 
 Evidence: `scripts/play/move-bridge-cliff.play`; unit tests
 `tests/test_bridge_cliff.cpp`, `tests/test_high_bridges.cpp` (R-210 case).
+
+## 6. The deck and the ground are separate layers (w8fix-layer, wave 8)
+
+[CONFIRMED-RE] A cell keeps two content chains, `FirstObject +0xE4` (the
+ground / water) and `AltObject +0xE8` (the high-bridge deck), and two
+occupation words `+0x124` / `+0x128`. Add / remove (`FUN_0047E7B0` /
+`FUN_0047E9A0`) pick the chain by the object's `OnBridge` byte `+0x8C`;
+`IsClearToMove` reads the bridge word for a deck mover; `UnitClass::Crush`
+`0x7404B0` walks only its own layer's chain. `MapClass::DamageArea`
+`0x489190` scans the deck chain of every ring cell when the impact cell has
+the bridge flag (`+0x140 & 0x100`) and the impact Z is above floor +
+BridgeHeight/2, else the ground chain -- never both. `FUN_00487C60` (cell
+height for the elevation bonus `0x6F6490` and the cliff tracer `0x4CC280`)
+is `Level + 4 * ((Flags >> 7) & 1)`. The jumpjet floor `FUN_0054D4B0`
+(verified in the disassembly) adds BridgeHeight over a bridge cell and looks
+one cell ahead along the facing; a bridge AHEAD adds BridgeHeight to the
+CURRENT floor (`ADD EDI` @0x54D596), then max / average.
+
+The clone: `Occupancy` has a second (deck) plane; queries take a layer
+(`kAnyLayer` = both, the placement / targeting view), claims take the layer
+the step lands on (`path_step_layer`), and the per-unit layer (`mark_layer`)
+is the default. `reserve_cell`, the crush victims and the squash, the blocked
+mover's scatter request, `build_occupancy_cost`, `order_scatter(_from)` and
+the Incoming scatter read only the mover's layer. `damage_area` /
+`an_area_damage` pick one layer by the impact Z; `unit_lept_z` / the
+projectile `unit_lz` / the rocket target point add 416 for a unit on a deck;
+`World::cell_bridge_level` is `FUN_00487C60` with the flag taken as the
+intact deck cell [RE-FALLBACK: which cells carry 0x80 was not traced -- the
+setter is not a plain OR on +0x140]; `World::jumpjet_floor` is
+`FUN_0054D4B0` (the `DAT_0089E648` step table is filled at run time: one
+cell per step assumed). Effects of a deck unit are drawn on the deck
+(`pres_unit_fx_level`); a landed jumpjet on a deck is drawn on it.
+Evidence: `tests/test_w8_layers.cpp`, `scripts/play/w8-layers.play`.

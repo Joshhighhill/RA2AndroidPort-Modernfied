@@ -197,8 +197,12 @@ void World::order_scatter_from(int idx, int ax, int ay) {
     for (int k = 0; k < 8; ++k) {
         const int d = ((away + k) % 8 + 8) % 8;
         const int x = u.cell_x + kDx[d], y = u.cell_y + kDy[d];
-        const bool taken = occ_.subcells() ? !occ_.can_enter(x, y, idx) : unit_at_cell(x, y) >= 0;
-        if (!scatter_cell_ok(u, x, y) || taken || building_at_cell(x, y) >= 0) continue;   // fv7c
+        // w8fix-layer [RE: FUN_00742880 -> IsCellOccupied on the mover's own
+        // layer]: a free spot on the plane of the layer the step lands on.
+        const int lay = scatter_cell_layer(u, x, y);
+        const bool taken = occ_.subcells() ? !occ_.can_enter(x, y, idx, lay < 0 ? Occupancy::kAnyLayer : lay)
+                                           : unit_at_cell(x, y) >= 0;
+        if (lay < 0 || taken || building_at_cell(x, y) >= 0) continue;   // fv7c
         const UnitTgt keep = u.tg;
         u.target = -1;
         u.target_building = -1;
@@ -463,11 +467,14 @@ void World::step_missions_w7() {
             const Unit& t = units_[static_cast<std::size_t>(h.victim)];
             const int cx = t.cell_x, cy = t.cell_y;
             bool elite = false;
+            // w8fix-layer [RE: Incoming walks one content chain -- the deck
+            // +0xE8 or the ground +0xE4]: only the target's own layer.
             for (const Unit& o : units_)
-                if (live(o) && o.cell_x == cx && o.cell_y == cy && is_elite(o.vet.veterancy)) elite = true;
+                if (live(o) && o.cell_x == cx && o.cell_y == cy && o.on_deck == t.on_deck && is_elite(o.vet.veterancy))
+                    elite = true;
             for (int o = 0; o < nu; ++o) {
                 const Unit& ou = units_[static_cast<std::size_t>(o)];
-                if (!live(ou) || ou.cell_x != cx || ou.cell_y != cy || ou.moving()) continue;
+                if (!live(ou) || ou.cell_x != cx || ou.cell_y != cy || ou.moving() || ou.on_deck != t.on_deck) continue;
                 if (ou.target >= 0 || ou.target_building >= 0) continue;
                 if (incoming_scatters(ou, elite, false)) order_scatter_from(o, h.ax, h.ay);
             }

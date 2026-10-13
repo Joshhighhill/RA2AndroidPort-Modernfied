@@ -24,7 +24,9 @@ inline bool pres_airborne(const ra2engine::Unit& u) { return u.is_aircraft && u.
 // A ground unit standing on a high-bridge deck.
 inline bool pres_on_high_deck(const ra2engine::World& w, const ra2engine::Unit& u) {
     if (!g_map_dressing || !g_map_dressing->layer_decks()) return false;
-    if (u.is_naval || u.is_aircraft || u.cargo_of >= 0) return false;
+    // w8fix-layer W8-05-02: only an AIRBORNE aircraft is off the deck layer --
+    // a jumpjet landed on a deck is an ordinary OnBridge unit (drawn on it).
+    if (u.is_naval || pres_airborne(u) || u.cargo_of >= 0) return false;
     if (!g_map_dressing->deck_cell(u.cell_x, u.cell_y)) return false;
     if (pres_high_deck_destroyed(w, u.cell_x, u.cell_y)) return false;
     if (w.terrain_armed()) return u.on_deck != 0;   // R-210: the unit's own layer
@@ -41,6 +43,14 @@ inline double pres_unit_key(const ra2engine::World& w, const ra2engine::Unit& u)
 // Levels the draw position is raised by (bridge deck).
 inline int pres_unit_lift_levels(const ra2engine::World& w, const ra2engine::Unit& u) {
     return pres_on_high_deck(w, u) ? kPresBridgeLevels : 0;
+}
+
+// w8fix-layer W8-02-03 [RE: an OnBridge object's Z includes BridgeHeight
+// (0x51F810), and anims are created at the object's coords]: the level an
+// effect of this unit (muzzle flash, beam end, impact, death anim, corpse)
+// is drawn at -- the deck's for a unit standing on one.
+inline int pres_unit_fx_level(const ra2engine::World& w, const ra2engine::Unit& u) {
+    return u.level + pres_unit_lift_levels(w, u);
 }
 
 // W5-PRES R-122 [RE: ObjectClass::SpawnParachuted 0x5F5150, SetOwnerObject

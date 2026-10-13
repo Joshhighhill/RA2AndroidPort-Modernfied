@@ -2514,6 +2514,7 @@ public:
     // `gates` receives the cells of the Gate=yes buildings open to u.
     const PathTerrain* terrain_for(const Unit& u, PathTerrain& out, std::vector<int>& gates) const;
     bool scatter_cell_ok(const Unit& u, int x, int y) const;   // fv7c: FUN_00742880 cell test
+    int scatter_cell_layer(const Unit& u, int x, int y) const;   // w8fix-layer: its landing layer, -1 refused
     // Deck availability per cell for a movement domain (null: none / water).
     const std::vector<std::uint8_t>* deck_grid(MovementDomain d) const;
     // Cells of Gate=yes buildings whose owner allies house h (sorted).
@@ -2521,6 +2522,17 @@ public:
     // Normalise u.on_deck to its cell: 0 off a deck, 1 on a deck-only cell.
     void sync_deck_layer(Unit& u) const;
     bool high_bridge_destroyed(int x, int y) const;
+    // w8fix-layer: an intact high-bridge deck over (x,y) -- the cell's
+    // CellFlags 0x100 stand-in (the deck layer exists).
+    bool deck_intact(int x, int y) const { return high_bridge_cell(x, y) && !high_bridge_destroyed(x, y); }
+    // w8fix-layer W8-03-08 [RE: FUN_00487C60 = Level + 4 * ((Flags +0x140 >> 7)
+    // & 1), read by the elevation bonus FUN_006F6490 and the cliff tracer
+    // FUN_004CC280 / FUN_004CC5A0; RE-FALLBACK mapping: the flag is taken as
+    // the intact deck cell]: a bridge cell counts BridgeLevels (4) higher.
+    int cell_bridge_level(int x, int y) const { return cell_level(x, y) + (deck_intact(x, y) ? 4 : 0); }
+    // w8fix-layer W8-05-03: a jumpjet's target floor (FUN_0054D4B0), leptons
+    // over its cell's ground (world.cpp, by step_flight).
+    double jumpjet_floor(const Unit& u) const;
     int break_high_bridge(int x, int y);                     // the whole span through (x,y) (or a neighbour)
     int repair_high_bridge_near(int b_idx);                  // hut repair (FUN_0056FB80)
     // Trigger Apply100Damage bridge call (FUN_006DFA00 -> FUN_00586BB0, up to
@@ -3032,7 +3044,8 @@ private:
     // Remove a unit from the game without dying (erase, §C2).
     void ability_erase_unit(int idx);
     // DamageArea [§E/§F]: all houses, units + buildings, linear falloff.
-    void ability_area_damage(int src_unit, double cx, double cy, const WeaponSpec& w, int damage);
+    void ability_area_damage(int src_unit, double cx, double cy, const WeaponSpec& w, int damage,
+                             int z_lift = 0);   // w8fix-layer: + leptons (a deck unit's 416)
     void ability_delay_kill(int b_idx, const WeaponSpec& w, double dist_leptons);   // P4
 public:
     // P4: arm the ability pass for building death weapons (GameScene, real play).

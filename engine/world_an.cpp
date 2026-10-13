@@ -241,7 +241,9 @@ bool World::rocket_target_point(int tu, int tb, double& x, double& y, double& z)
         const Unit& t = units_[tu];
         x = t.fx;
         y = t.fy;
-        z = (t.is_aircraft && t.altitude > 0.0) ? t.altitude : 0.0;
+        // w8fix-layer W8-04-02: a target on a deck is aimed at the deck
+        // (its coords carry BridgeHeight, 0x51F810).
+        z = (t.is_aircraft && t.altitude > 0.0) ? t.altitude : (t.on_deck ? 416.0 : 0.0);
         return true;
     }
     if (tb >= 0 && tb < static_cast<int>(buildings_.size()) && buildings_[tb].alive &&
