@@ -266,6 +266,16 @@ re-planned for the original speeds, area-guard scans and call for help: SOV01's 
 pillboxes out before walking past them; SOV09 lures the SEALs and then the Grizzlies out of the
 compound (Yuri 0 takes one) before the IFV shells the plants. SOV07 needed only the engine fix for
 two harvesters meeting head-on (UnitClass::Scatter 0x742880).
+fv7b (the w7r1/w7r2/w7r3 engine changes merged together, bisected with per-change toggles; no
+engine fault found, choreography only): `m-trn02-real` stays on each building until it falls and
+masses 12 GIs per sweep (WON f8938 on 9bf5ccd); `m-all03-real`'s regrouping Grizzlies go at a raider
+within 8 cells (Normal, WON f25095, `6a72c4b32241c0f8` on 844a88a); `m-all10-real`'s Rocketeers hunt
+with the tanks -- the invasion V3s now shell the base from their Approach_Target ring (Normal, WON
+f17211, `26ab47b1ab2f50ac` on 844a88a); `m-sov09-real`'s breaching IFV drives back to the gap before
+each lure hit (Easy, WON f19877 on 9bf5ccd; NOT WON after fv7c's unified call for help, which no
+longer draws the SEALs/Grizzlies out). `m-trn02-real` is NOT WON after fv7c: the per-tile LandType
+makes the Shore sandbar between the bases Beach (TMP byte 10, impassable to Foot) and the only bridge
+has a destroyed middle section (overlay 101), so no ground route joins the two bases.
 
 ## Multiplayer (agent S, engine/mp_pages.inc)
 
