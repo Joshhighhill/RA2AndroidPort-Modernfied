@@ -126,6 +126,20 @@ Full decompile of ApproachTarget's destination choice NOT done (content-
 anchored hunt deferred); our ring-assignment is a behavioral equivalent,
 flagged MEDIUM.
 
+**Update (w7r2, CONFIRMED-RE FUN_004D55B0 @0x4D5EE0..0x4D67B2, decompile in
+D:\ra2-re\last-out\at.txt):** the destination is chosen on rings round the
+target's centre. The start radius is the weapon range (less 0x80 past
+0x1FF; a building target adds (w+h)*0x40), stepped inward by 0x100 while it
+exceeds 204.8 leptons (DAT_007E8238). On each ring the 25 offsets of
+DAT_008214EC (0, ±1..6, ±8, ±16, ±24, ±32, ±48, ±64, in 1/256 turn) are tried
+about the facing from the target to the unit; the point is snapped to its
+cell centre and must pass the in-range test FUN_006F6750 (3-D, the building
+range rule) and be free (FUN_00577E90 / FUN_004833B0, else its 8 neighbours,
+table DAT_0089E5F8). A path-length check FUN_0042D0F0 (<= Chebyshev + 8)
+follows. With no candidate it falls back to NearbyLocation. The clone
+(combat.cpp, W7 rules only) follows this for building targets, without the
+path-length check.
+
 ---
 
 # Wave 3 (W3-B): the full DoType machine — recovered from gamemd.exe
