@@ -132,7 +132,11 @@ until 600 built(0,GAWEAP) > $n_GAWEAP
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 let n_GAREFN = built(0,GAREFN)
 until 900 can_build(GAREFN) == 1
 click tab:0
@@ -152,7 +156,11 @@ until 600 built(0,GAREFN) > $n_GAREFN
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 let n_GAPOWR = built(0,GAPOWR)
 until 900 can_build(GAPOWR) == 1
 click tab:0
@@ -172,7 +180,11 @@ until 600 built(0,GAPOWR) > $n_GAPOWR
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 let n_GAWEAP = built(0,GAWEAP)
 until 900 can_build(GAWEAP) == 1
 click tab:0
@@ -192,71 +204,64 @@ until 600 built(0,GAWEAP) > $n_GAWEAP
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 9
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 9
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 9
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 9
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 9
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 9
-if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click tab:3
-if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
-if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
-if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
-if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 9
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 9
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 9
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 9
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 9
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 9
 if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
@@ -266,32 +271,115 @@ if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 9
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 9
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 9
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 9
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 9
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click tab:3
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 9
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 9
 if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 9 and cameo(MTNK) == 1 then click cameo:MTNK
@@ -314,67 +402,56 @@ click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 18
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 18
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 18
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 18
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 18
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 18
-if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click tab:3
-if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
-if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
-if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
-if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 18
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 18
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 18
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 18
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 18
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 18
 if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
@@ -384,32 +461,115 @@ if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 18
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 18
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 18
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 18
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 18
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click tab:3
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 18
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 18
 if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 18 and cameo(MTNK) == 1 then click cameo:MTNK
@@ -432,67 +592,56 @@ click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 27
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 27
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 27
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 27
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 27
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 27
-if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click tab:3
-if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
-if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
-if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
-if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 27
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 27
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 27
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 27
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 27
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 27
 if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
@@ -502,32 +651,115 @@ if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 27
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 27
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 27
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 27
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 27
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click tab:3
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 27
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 27
 if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 27 and cameo(MTNK) == 1 then click cameo:MTNK
@@ -550,67 +782,56 @@ click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 30
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 30
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 30
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 30
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 30
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 30
-if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click tab:3
-if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
-if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
-if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
-if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 30
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 30
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 30
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 30
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
-waituntil 330 units(0,MTNK) >= 30
-if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 30
 if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
@@ -620,32 +841,115 @@ if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 30
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 30
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 30
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 30
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 30
 if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
 if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
-if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then click cell 90 127 alt
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click tab:3
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
+if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
+waituntil 330 units(0,MTNK) >= 30
+if outcome == RUNNING and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 then key t
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) < 8 then click unit 1:E2:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,SHK) < 8 then click unit 1:SHK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTK) < 8 then click unit 1:HTK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,HTNK) < 8 then click unit 1:HTNK:near soft
+if outcome == RUNNING and units(0,MTNK) > 0 and selected > 0 and sel_near(1,E2) >= 8 and sel_near(1,SHK) >= 8 and sel_near(1,HTK) >= 8 and sel_near(1,HTNK) >= 8 then click cell 90 127 alt
 waituntil 330 units(0,MTNK) >= 30
 if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click tab:3
 if units(0,MTNK) < 30 and cameo(MTNK) == 1 then click cameo:MTNK
