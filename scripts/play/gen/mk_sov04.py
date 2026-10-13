@@ -34,6 +34,12 @@ p.add("until 9000 campaign_frame >= 11400", "dump")
 p.select_types(["HTNK"]).add("click cell 108 48", "dump")
 p.train("HTNK", 3, 5, guard=True)
 p.add("until 3000 units(1,AMCV) >= 1 or buildings(1,GACNST) >= 1", "dump")
+# fv7e: with the faithful Beach block (fv7c, [Beach] Foot/Track/Wheel 0%) the
+# landing craft beach and unload on a different schedule: the first feint
+# infantry were already ashore (far to the south-west) while the MCV was still
+# aboard, so the target loop sent the Rhinos after them and the MCV deployed
+# unopposed. The Rhinos now hold at (108,48) until the MCV itself is ashore.
+p.add("until 3000 free(1,AMCV) >= 1 or buildings(1,GACNST) >= 1", "dump")
 p.train("SUB", 3, 3, guard=True)
 targets_u = ["AMCV", "MTNK", "E1", "GGI", "FV", "CMIN", "SENGINEER", "ENGINEER", "JUMPJET", "ASW"]
 targets_b = ["CAFARM06", "GACNST", "GAPILL", "GAPOWR", "GAREFN", "GAWEAP", "GAPILE", "GAAIRC", "GADEPT", "GAYARD"]
