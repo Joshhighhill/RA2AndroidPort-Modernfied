@@ -497,6 +497,16 @@ void World::an_chrono(int house, int sx, int sy, int tx, int ty) {
             lx = g[0].x;
             ly = g[0].y;
         }
+        // W8-06-05 [RE: FUN_00717600]: the destination layer. A cell with the
+        // bridge flag (+0x140 & 0x100, an intact high deck) scans AltObject
+        // (+0xE8, the deck list), otherwise FirstObject (+0xE4); the arrival
+        // is placed with OnBridge (+0x8C) = 1 and Z + BridgeHeight there. The
+        // clone puts a mover whose domain has a deck (land / amphibious) on
+        // the deck; a ship keeps the water layer under it (no ship deck).
+        auto dest_layer = [&](int x, int y) -> std::uint8_t {
+            return (high_bridge_cell(x, y) && !high_bridge_destroyed(x, y) && deck_grid(u.movement_domain)) ? 1 : 0;
+        };
+        std::uint8_t layer = dest_layer(lx, ly);
         bool blocked_by_curtain = false, inf_left = false;
         std::vector<int> frag;
         for (int j = 0; j < static_cast<int>(units_.size()); ++j) {
@@ -505,6 +515,7 @@ void World::an_chrono(int house, int sx, int sy, int tx, int ty) {
             if (!o.alive || o.die_time >= 0.0 || o.cargo_of >= 0) continue;
             if (o.is_aircraft && o.altitude > 0.0) continue;
             if (o.cell_x != lx || o.cell_y != ly) continue;
+            if ((o.on_deck != 0) != (layer != 0)) continue;   // W8-06-05: the other layer is untouched
             if (o.an.iron_left_frames > 0) blocked_by_curtain = true;
             else if (inf && !o.is_vehicle && !o.is_aircraft && !o.is_naval) inf_left = true;
             else frag.push_back(j);
@@ -519,6 +530,7 @@ void World::an_chrono(int house, int sx, int sy, int tx, int ty) {
             if (g.empty()) continue;
             lx = g[0].x;
             ly = g[0].y;
+            layer = dest_layer(lx, ly);
         }
         // [RE: 0x718DE0] water under a vehicle that is neither Hover (an
         // amphibious domain) nor Naval and not on a bridge deck: it SINKS
@@ -531,9 +543,14 @@ void World::an_chrono(int house, int sx, int sy, int tx, int ty) {
             kill(i);
             continue;
         }
+        // W8-06-06 [RE: Teleport locomotor 0x7188D9 -> ParasiteClass::ExitUnit
+        // 0x62A2A0]: the teleport ejects a riding Terror Drone / Squid beside
+        // the source cell, paralysed (as the CLEG / Chrono self-teleport).
+        if (u.parasite_on_me >= 0) parasite_exit(i, /*suppressed=*/false);
         occ_.release_all_of(i, -1, -1);
         u.cell_x = lx;
         u.cell_y = ly;
+        u.on_deck = layer;   // W8-06-05 [RE: FUN_00717600 OnBridge +0x8C]
         u.fx = lx;
         u.fy = ly;
         u.path.clear();

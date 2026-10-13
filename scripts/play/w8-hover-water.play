@@ -1,0 +1,86 @@
+# W8-04-04 / W8-04-05 Bay of Pigs (from the w8int-04 audit, p_bop.play):
+#  - HoverLocomotionClass::Process FUN_00514130 @0x514841: an LCRF / Robot Tank
+#    moving on Water spawns [General] Wake= every 10 frames;
+#  - Power_Off FUN_00516A10 + Process @0x514969..0x514A2C: a Robot Tank over
+#    water that loses its Robot Control Center spins, is dropped (0x5F3970)
+#    and dies on landing (ObjectClass::Update 0x5F3680: Health as C4Warhead).
+set render_every 0
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click button "Customize Battle"
+click map:xbayopigs.map
+click button "Use Map"
+wait 2
+click combo:country0
+click pick:America
+click combo:country1
+click pick:France
+click combo:ai1
+click "pick:Easy Enemy"
+click check:crates
+click slider:units=0
+click start
+until 120 scene == game
+require scene == game
+cheat credits 300000
+click unit 0:AMCV
+key d
+until 600 built(0,GACNST) == 1
+cheat w2 build GAPOWR
+cheat w2 build GAPOWR
+cheat w2 build GAPOWR
+cheat w2 build GAREFN
+cheat w2 build GAWEAP
+cheat w2 build GAYARD
+cheat w2 build GAROBO
+wait 10
+assert built(0,GAROBO) == 1
+wait 400
+# --- 1. DEST control: ship wakes while sailing --------------------------------
+cheat spawn DEST 0 building 0:GAYARD -4 +1
+wait 2
+click unit 0:DEST
+wait 1
+require selected == 1
+let w1 = fx_wakes
+assert sel_on_water == 1
+click point water_near_sel
+wait 60
+assert fx_wakes > $w1
+cheat w2 kill 0:DEST
+wait 100
+# --- 2. LCRF wakes on water ----------------------------------------------------
+cheat spawn LCRF 0 building 0:GAYARD -4 +1
+wait 2
+click unit 0:LCRF
+wait 1
+require selected == 1
+assert sel_on_water == 1
+let w2 = fx_wakes
+click point water_near_sel
+wait 80
+assert sel_on_water == 1
+assert fx_wakes > $w2 @W8-04-04
+until 400 sel_moving == 0
+# --- 3. Robot Tank: wakes, then loses power over water ---------------------------
+cheat w2 kill 0:LCRF
+wait 60
+cheat spawn ROBO 0 building 0:GAYARD -4 +1
+wait 2
+click unit 0:ROBO
+wait 1
+require selected == 1
+assert sel_on_water == 1
+let w3 = fx_wakes
+click point water_near_sel
+wait 80
+assert fx_wakes > $w3 @W8-04-04
+until 400 sel_moving == 0
+assert sel_on_water == 1
+assert units(0,ROBO) == 1
+cheat damage_building 0:GAROBO 999999
+until 60 buildings(0,GAROBO) == 0
+until 90 units(0,ROBO) == 0 @W8-04-05
+end

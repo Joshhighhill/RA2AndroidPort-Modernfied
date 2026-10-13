@@ -1,0 +1,46 @@
+# W8-01-07 [RE: 0x51D4C0 -- the enter/leave water sound edge lives in
+# InfantryClass::PlayAnim (+0x6E8 wet flag); a passenger in limbo plays no
+# anim]: a SEAL and Tanya treading water board an LCRF afloat. No
+# LeaveWaterSound at boarding; it plays at the unload onto land.
+set render_every 0
+set on_quit continue
+click button "Single Player"
+click button Skirmish
+require scene == lobby
+click button "Customize Battle"
+click map:xbayopigs.map
+click button "Use Map"
+wait 2
+click start
+until 120 scene == game
+require scene == game
+click unit 0:AMCV
+wait 1
+cheat spawn LCRF 0 cell 174 165
+cheat spawn GHOST 0 cell 172 163
+cheat spawn TANY 0 cell 172 162
+wait 5
+let lw0 = pres(leave_water)
+click unit 0:AMCV right
+click unit 0:GHOST
+wait 1
+click unit 0:LCRF
+until 400 cargo_total(0) >= 1
+click unit 0:TANY
+wait 1
+click unit 0:LCRF
+until 400 cargo_total(0) >= 2
+wait 5
+log BOARDED
+assert amphib_on_water(0) == 1 @W8-01-07
+assert pres(leave_water) == $lw0 @W8-01-07
+click unit 0:LCRF
+wait 1
+click cell 178 166
+until 600 amphib_on_water(0) == 0 and sel_moving == 0
+key d
+until 300 cargo_total(0) == 0
+wait 30
+log UNLOADED
+assert pres(leave_water) > $lw0 @W8-01-07
+end
