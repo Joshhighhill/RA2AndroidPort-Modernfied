@@ -1,0 +1,31 @@
+# TRN02-BRIDGE-REPAIR -- fv7d. Boot Camp 2: deploying the MCV fires
+# 'RedTeamRepairBridge' (Build Building Type GACNST) -> a RedTeam engineer
+# reinforcement whose script line 46 attacks the CABHUT. In the original a
+# computer-owned Infiltrate infantry (the loader 0x5243B9 sets Infiltrate for
+# every Engineer=) attacking a building is sent in to capture it
+# [RE: InfantryClass::Mission_Attack 0x51F0F0 -> Mission_Capture]; entering the
+# BridgeRepairHut repairs the bridge (Mission_Enter 0x519449). The bridge's
+# middle row (overlay 101 LOBRDG28, NoUseTileLandType=no) is the only ground
+# route between the bases: the Shore sandbar's Beach sub-tiles (TMP byte 10)
+# block Foot as in the original.
+set render_every 0
+set max_frames 3000
+set campaign trn02t.MAP GDI
+until 60 scene == campaign-load
+click start
+until 300 scene == game
+waituntil 900 units(0,AMCV) >= 1
+assert bridge_destroyed >= 1
+wait 200
+click unit 0:AMCV:0
+click cell 26 38
+waituntil 900 moving(0) == 0
+wait 60
+click unit 0:AMCV:0
+key d
+waituntil 600 buildings(0,GACNST) >= 1
+until 1500 units(1,ENGINEER) >= 1
+until 1500 bridge_destroyed == 0
+assert bridge_destroyed == 0
+assert units(1,ENGINEER) == 0
+end
