@@ -105,7 +105,7 @@ if (args.size() == 2 && args[0] == "map_levels") {
     return true;
 }
 // `cheat map_terrain PATH` (debug only): one line per cell
-// "x y level ramp speedland land water amph hbridge lowovl".
+// "x y level ramp speedland land water amph hbridge lowovl build playfield" (build: W8-03-01 static buildable, -1 unarmed).
 if (args.size() == 2 && args[0] == "map_terrain") {
     const int gw = world_.grid_w(), gh = world_.grid_h();
     const std::vector<std::uint8_t>& wg = world_.grid_for(ra2engine::MovementDomain::Water);
@@ -119,7 +119,10 @@ if (args.size() == 2 && args[0] == "map_terrain") {
               << world_.speed_land_at(x, y) << ' ' << (world_.walkable(x, y) ? 1 : 0) << ' '
               << (i < wg.size() ? (int)wg[i] : -1) << ' ' << (i < ag.size() ? (int)ag[i] : -1) << ' '
               << (world_.high_bridge_cell(x, y) ? (world_.high_bridge_destroyed(x, y) ? 2 : 1) : 0) << ' '
-              << world_.bridge_overlay_at(x, y) << '\n';
+              << world_.bridge_overlay_at(x, y) << ' '
+              << (i < world_.build_static().size() ? (int)world_.build_static()[i] : -1)   // W8-03-01
+              << ' ' << (world_.cell_in_playfield(x, y) ? 1 : 0)                          // LocalSize
+              << '\n';
         }
     return true;
 }

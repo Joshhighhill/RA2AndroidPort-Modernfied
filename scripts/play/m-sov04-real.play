@@ -1,7 +1,8 @@
 # P4: SOV04 (Korea) won with real orders only (no cheats). The SMCV deploys; the
-# base grows from the sidebar (`place auto` anchors on the player's first map
-# building -- the lamp post by the northern gem field, which, BaseNormal=yes like
-# the original, extends the base there): refineries, power, barracks, three war
+# base grows from the sidebar (`place near 61 143`, the ConYard: w8fix-place
+# W8-03-01 refuses gem/ore cells like the original FUN_0047C530, so the old
+# `place auto` anchor -- the lamp post by the northern gem field -- found no
+# legal cell any more): refineries, power, barracks, three war
 # factories, flak. Four Typhoons and ~50 Rhinos are trained while the 10-minute
 # timer runs; the feints and paradrops die to the Rhinos guarding the base. When
 # the Allied MCV lands, the type-selected Rhinos attack it, then every BadGuy1
@@ -23,15 +24,15 @@ click tab:0
 click cameo:NAREFN
 until 2400 queue_ready(structure) == 1
 click cameo:NAREFN
-place auto
+place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 until 600 built(0,NAREFN) > $n_NAREFN
 let n_NAPOWR = built(0,NAPOWR)
 until 900 can_build(NAPOWR) == 1
@@ -39,15 +40,15 @@ click tab:0
 click cameo:NAPOWR
 until 2400 queue_ready(structure) == 1
 click cameo:NAPOWR
-place auto
+place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 until 600 built(0,NAPOWR) > $n_NAPOWR
 let n_NAHAND = built(0,NAHAND)
 until 900 can_build(NAHAND) == 1
@@ -55,15 +56,15 @@ click tab:0
 click cameo:NAHAND
 until 2400 queue_ready(structure) == 1
 click cameo:NAHAND
-place auto
+place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 until 600 built(0,NAHAND) > $n_NAHAND
 let n_NAWEAP = built(0,NAWEAP)
 until 900 can_build(NAWEAP) == 1
@@ -71,15 +72,15 @@ click tab:0
 click cameo:NAWEAP
 until 2400 queue_ready(structure) == 1
 click cameo:NAWEAP
-place auto
+place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 until 600 built(0,NAWEAP) > $n_NAWEAP
 until 900 cameo(HTNK) == 1
 click tab:3
@@ -94,15 +95,15 @@ click tab:0
 click cameo:NAREFN
 until 2400 queue_ready(structure) == 1
 click cameo:NAREFN
-place auto
+place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 until 600 built(0,NAREFN) > $n_NAREFN
 let n_NAPOWR = built(0,NAPOWR)
 until 900 can_build(NAPOWR) == 1
@@ -110,15 +111,15 @@ click tab:0
 click cameo:NAPOWR
 until 2400 queue_ready(structure) == 1
 click cameo:NAPOWR
-place auto
+place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 until 600 built(0,NAPOWR) > $n_NAPOWR
 until 900 cameo(HTNK) == 1
 click tab:3
@@ -133,15 +134,15 @@ click tab:0
 click cameo:NAWEAP
 until 2400 queue_ready(structure) == 1
 click cameo:NAWEAP
-place auto
+place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 until 600 built(0,NAWEAP) > $n_NAWEAP
 let n_NAFLAK = built(0,NAFLAK)
 until 900 can_build(NAFLAK) == 1
@@ -149,15 +150,15 @@ click tab:1
 click cameo:NAFLAK
 until 2400 queue_ready(defense) == 1
 click cameo:NAFLAK
-place auto
+place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 until 600 built(0,NAFLAK) > $n_NAFLAK
 let n_NAPOWR = built(0,NAPOWR)
 until 900 can_build(NAPOWR) == 1
@@ -165,15 +166,15 @@ click tab:0
 click cameo:NAPOWR
 until 2400 queue_ready(structure) == 1
 click cameo:NAPOWR
-place auto
+place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 wait 1
-if placing == 1 then place auto
+if placing == 1 then place near 61 143
 until 600 built(0,NAPOWR) > $n_NAPOWR
 dump
 until 900 cameo(HTNK) == 1

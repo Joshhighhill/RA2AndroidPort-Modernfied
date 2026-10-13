@@ -1,0 +1,25 @@
+# w8fix-place W8-03-01 [RE: FUN_0047C530 slope +0x11C]: ALL01T, an MCV told
+# to deploy on the ramp at (62,102) never unfolds a ConYard over a sloped
+# cell: it drives to a flat ring offset or stays an MCV.
+set render_every 0
+set on_quit continue
+set campaign ALL01T.MAP GDI
+click start
+until 300 scene == game
+until 60 input_locked == 1
+until 1500 input_locked == 0
+wait 5
+cheat camp_killu 1 *
+let b0 = bad_place(0)
+let c0 = buildings(0,GACNST)
+cheat camp_spawn AMCV 0 62 102
+wait 3
+click unit 0:AMCV
+wait 1
+require selected == 1
+key d
+wait 600
+assert bad_place(0) == $b0
+log slope-mcv
+dump
+end

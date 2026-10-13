@@ -1,10 +1,12 @@
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gen import P
+NEAR = (61, 143)   # w8fix-place: the ConYard (SMCV deploys at 60,142)
 p = P("""# P4: SOV04 (Korea) won with real orders only (no cheats). The SMCV deploys; the
-# base grows from the sidebar (`place auto` anchors on the player's first map
-# building -- the lamp post by the northern gem field, which, BaseNormal=yes like
-# the original, extends the base there): refineries, power, barracks, three war
+# base grows from the sidebar (`place near 61 143`, the ConYard: w8fix-place
+# W8-03-01 refuses gem/ore cells like the original FUN_0047C530, so the old
+# `place auto` anchor -- the lamp post by the northern gem field -- found no
+# legal cell any more): refineries, power, barracks, three war
 # factories, flak. Four Typhoons and ~50 Rhinos are trained while the 10-minute
 # timer runs; the feints and paradrops die to the Rhinos guarding the base. When
 # the Allied MCV lands, the type-selected Rhinos attack it, then every BadGuy1
@@ -21,11 +23,11 @@ click unit 0:SMCV
 key d
 until 900 built(0,NACNST) >= 1
 """)
-p.build("NAREFN").build("NAPOWR").build("NAHAND").build("NAWEAP")
+p.build("NAREFN", near=NEAR).build("NAPOWR", near=NEAR).build("NAHAND", near=NEAR).build("NAWEAP", near=NEAR)
 p.train("HTNK", 3, 5)
-p.build("NAREFN").build("NAPOWR")
+p.build("NAREFN", near=NEAR).build("NAPOWR", near=NEAR)
 p.train("HTNK", 3, 5)
-p.build("NAWEAP").build("NAFLAK", tab=1, cat="defense").build("NAPOWR")
+p.build("NAWEAP", near=NEAR).build("NAFLAK", near=NEAR, tab=1, cat="defense").build("NAPOWR", near=NEAR)
 p.add("dump")
 for r in range(4):
     p.train("HTNK", 3, 5)

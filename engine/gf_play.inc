@@ -126,7 +126,7 @@ bool build_from_sidebar(Ctx& c, GameScene& g, const std::string& id, int conyard
                 const int ox = cy.cx + cy.fw + 1 + dx, oy = cy.cy + dy;
                 const ra2engine::PlacementCheck chk = ra2engine::placement_check(
                     ox, oy, d.fw, d.fh, 0, d.adjacent, w.passable(), w.grid_w(), w.grid_h(),
-                    w.occupancy(), w.buildings(), false);
+                    w.occupancy(), w.buildings(), false, nullptr, w.build_mask(d.wall));   // W8-03-01
                 if (!chk.ok) continue;
                 g.gf_click_cell(ox + d.fw / 2, oy + d.fh / 2, ra2engine::InputEvent::Left);
                 g.update(1.0 / 15.0);

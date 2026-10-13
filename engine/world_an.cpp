@@ -1722,21 +1722,43 @@ void World::step_air_naval(double dt) {
         if (!live(u)) continue;
         if (u.flight_state == FlightState::Cruising && !u.has_flight_goal && u.target < 0 &&
             u.target_building < 0) {
+            // W8-05-01 [RE: JumpjetLocomotionClass Descending FUN_0054C280
+            // @0x54C2AA..0x54C38E]: on a cell whose LandType is Water (2) or
+            // Beach (6) -- a high-bridge deck over the river keeps the tile's
+            // Water (BRIDGE1/2, BRIDGEB1 NoUseTileLandType=false) -- and not
+            // on an Enter mission, the jumpjet claims the cell and HOVERS at
+            // full height: it never lands there and never looks for land.
+            // Unloading there waits too (UnitClass Mission_Unload FUN_0073C560
+            // case 0 returns while the locomotor IsMoving +0x4C, which only a
+            // touch-down clears).
+            if (an_victim_naval_cell(u.cell_x, u.cell_y)) { u.an.landing = false; continue; }
+            // Elsewhere: Can_Enter_Cell (vtbl+0x1AC; SpeedType=Hover cannot
+            // enter Rock/Wall) and a free spot decide (@0x54C38F..0x54C44A).
             auto pad_ok = [&](int x, int y) {
-                return walkable(x, y) && occ_.is_free(x, y) && building_at_cell(x, y) < 0;
+                return walkable(x, y) && !an_victim_naval_cell(x, y) && occ_.is_free(x, y) &&
+                       building_at_cell(x, y) < 0;
             };
             if (pad_ok(u.cell_x, u.cell_y)) {
                 u.flight_state = FlightState::Descending;
                 u.an.landing = true;
                 aircraft_any_ = true;
             } else {
-                // Blocked landing spot: fly to the nearest free ground cell.
+                // Blocked: ILocomotion::Stop_Moving (FUN_0054B200) re-targets
+                // MapClass::NearByLocation (FUN_0056D750) for the unit's own
+                // SpeedType (Hover: water and beach are fine, Rock is not) --
+                // the nearest free hover-able cell, where it lands, or hovers
+                // again when that cell is water. [RE-FALLBACK: ring order and
+                // the 8-ring bound of NearByLocation's scan.]
+                auto hover_ok = [&](int x, int y) {
+                    return (walkable(x, y) || an_victim_naval_cell(x, y)) && occ_.is_free(x, y) &&
+                           building_at_cell(x, y) < 0;
+                };
                 bool found = false;
-                for (int r = 1; r <= 4 && !found; ++r)
+                for (int r = 1; r <= 8 && !found; ++r)
                     for (int oy = -r; oy <= r && !found; ++oy)
                         for (int ox = -r; ox <= r && !found; ++ox) {
                             if (std::max(std::abs(ox), std::abs(oy)) != r) continue;
-                            if (!pad_ok(u.cell_x + ox, u.cell_y + oy)) continue;
+                            if (!hover_ok(u.cell_x + ox, u.cell_y + oy)) continue;
                             u.flight_goal_x = u.cell_x + ox;
                             u.flight_goal_y = u.cell_y + oy;
                             u.has_flight_goal = true;
@@ -1750,6 +1772,10 @@ void World::step_air_naval(double dt) {
             u.an.landing = false;
             u.fx = u.cell_x;
             u.fy = u.cell_y;
+            // W8-05-01 [RE: FUN_0054C280 @0x54C5A9..0x54C5E9]: touching down
+            // on a bridge cell above its floor sets OnBridge (+0x8C).
+            u.on_deck = static_cast<std::uint8_t>(
+                high_bridge_cell(u.cell_x, u.cell_y) && !high_bridge_destroyed(u.cell_x, u.cell_y) ? 1 : 0);
             if (occ_.is_free(u.cell_x, u.cell_y)) occ_.set(u.cell_x, u.cell_y, i);
         }
     }

@@ -995,6 +995,21 @@ public:
     // target standing on this cell is a naval target (LandType Water 2 or
     // Beach 6). Unarmed land speed: the water grid.
     bool an_victim_naval_cell(int x, int y) const;
+    // W8-03-01 [RE: CellClass::CanThisExistHere FUN_0047C530]: the static
+    // buildable grid (LandType Buildable, flat, no non-ore overlay, not a
+    // bridge cell; building.hpp BuildMask). Empty = unarmed (every legacy
+    // world): placement stays the passability test. The real map arms it
+    // (main.cpp place_arm_overlay_terrain).
+    void set_build_static(std::vector<std::uint8_t> g) { build_static_ = std::move(g); }
+    const std::vector<std::uint8_t>& build_static() const { return build_static_; }
+    // The mask a placement / MCV deploy / AI base test passes to
+    // placement_check (nullptr when unarmed). `wall`: a Wall=yes type may
+    // stand on ore. The pointer is valid while this World lives.
+    const BuildMask* build_mask(bool wall) const {
+        if (build_static_.empty()) return nullptr;
+        build_mask_[wall ? 1 : 0] = BuildMask{&build_static_, &ore_, wall};
+        return &build_mask_[wall ? 1 : 0];
+    }
     int ramp_at(int x, int y) const {        // TMP ramp type (0 flat; unarmed 0)
         if (ramp_.empty() || x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return 0;
         return ramp_[static_cast<std::size_t>(y) * grid_w_ + x];
@@ -2398,7 +2413,17 @@ public:
     void order_occupy(int unit_idx, int b_idx);              // walk adjacent, then enter
     int group_occupy(int issuer, const std::vector<int>& ids, int b_idx);   // returns #ordered
     int group_occupy_count(int issuer, const std::vector<int>& ids, int b_idx) const;   // the same, dry run
-    void unload_occupants(int b_idx);                        // BuildingClass::UnloadOccupants
+    // BuildingClass::UnloadOccupants FUN_00457DD0. `place_inside`: the
+    // caller's second flag (the sell path FUN_00449B70 @0x44A4FC passes 1):
+    // with no free border cell the occupants are unlimboed on the
+    // foundation's last cell instead of KillOccupants FUN_004585B0(0).
+    void unload_occupants(int b_idx, bool place_inside = false);
+    // W8-03-10: the nearest free cell (nearest_free_cells ring order, on the
+    // unit's own domain grid) that unit `u` can step to from the host's cell
+    // (hx, hy) on layer `hlayer` -- the FootClass height gate FUN_004D9B70 the
+    // original's scatter from the host's coordinate applies. {-1,-1} = none.
+    // Sets *layer (0 ground / 1 deck) when given.
+    Cellxy nearest_exit_from_host(const Unit& u, int hx, int hy, int hlayer, int* layer = nullptr) const;
     // W4-SQ-02: a campaign reinforcement / garrison team member enters a
     // building at once (FUN_0065d320 all-infantry branch; the script 46
     // arrival). campaign_can_occupy: the type CanBeOccupied, live, idle,
@@ -2981,6 +3006,8 @@ private:
     // W5-B R-062 land speed (arming state; rebuilt by w5_arm_combat, not saved).
     bool land_speed_armed_ = false;
     std::vector<std::uint8_t> speed_land_, ramp_;
+    std::vector<std::uint8_t> build_static_;   // W8-03-01 (save v42)
+    mutable BuildMask build_mask_[2];          // scratch for build_mask() (not saved)
     std::vector<std::int8_t> level_grid_;
     LandSpeedRules land_rules_;
     LocoRules loco_rules_;   // W7 locomotion: PathDelay / BlockagePathDelay / CloseEnough / ConditionYellow / Hover*

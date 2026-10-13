@@ -162,10 +162,22 @@ foundation rect `(x, y, w, h)` (h including the Bib row) and `Adjacent = N`
 in-bounds, buildable terrain, and free of any object (the placement grid runs
 the same cell loop as occupancy claiming; the recovered occupy lists are the
 full W×H rect, `building-render.md` §2). The exact terrain-class predicate
-(which SpeedType/land types count as buildable) was not isolated in this hunt —
-[RE-FALLBACK: TS-lineage semantics per OpenRA/ModEnc: clear/buildable land, no
-water/cliffs/overlay obstacles] — our engine's existing passability +
-occupancy grid is the correct analogue.
+(which SpeedType/land types count as buildable) is **CellClass::CanThisExistHere
+`FUN_0047C530`** (wave 8, W8-03-01; reached from the MCV deploy legality
+`FUN_007154F0` and the placement test). In play (`DAT_00a8dcd3 == 0`) a
+building (speed type -1) is refused on a cell that carries ANY overlay
+(+0x44 != -1: ore, gems, rocks, crates, fences, bridges), except a Wall=yes
+type (+0x16BF) over a Tiberium overlay (`FUN_005FD510 != -1`) on a flat
+non-bridge cell (walls may be built on ore); a cell with the bridge flag
+(+0x140 & 0x100) or 0x400; a sloped cell (+0x11C != 0); and a cell whose
+LandType is not `Buildable=` (table `DAT_0089D9D0`, stride 0x24; rulesmd:
+Clear/Rough/Road yes, everything else no). WaterBound types test the water
+tile set instead. During map loading (`DAT_00a8dcd3 != 0`) overlays are
+allowed. The clone: `buildable_static` + `BuildMask` (engine/building.hpp),
+armed by `place_overlay_terrain` (main.cpp), used by the sidebar placement,
+MCV deploy and the AI base planner (the AIBaseSpacing ring keeps the
+passability probe). Was: [RE-FALLBACK] passability analogue -- wrong (ore,
+ramps and bridge decks were accepted).
 
 **Per-cell feedback**: the placement cursor art is `place.shp`
 (`conquer.mix`, 60×59 canvas, 38 frames — green/red cell diamonds and band
@@ -403,7 +415,7 @@ row y = `DAT_00B0A47C` = strip_top + strip_h + 7.
 | §8 low-power condition + penalty formula + clamps | `FUN_004FCC50` + TTB listing + rulesmd values (.5/.8/1) | **High** |
 | §8 power bar pip geometry, frames, capacity scale (400), color split (100-surplus band) | PowerClass draw/AI/scale decompiles + listings + frame-color decode | **High** (exact rounding-remainder distribution: Medium) |
 | §9 Adjacent scan rect, BaseNormal filter, human-only enforcement | `FUN_004A8DC0` decompile | **High** |
-| §9 per-cell terrain predicate | not isolated; occupy lists + engine analogue | **Low** ([RE-FALLBACK: OpenRA/ModEnc prose]) |
+| §9 per-cell terrain predicate | `FUN_0047C530` CanThisExistHere (wave 8) | **High** |
 | §10 54 steps, rate clamp, incremental spend, stall, refund-all, READY hold | FactoryClass fns decompiled | **High** |
 | §10 one-building-at-a-time; MaximumQueuedObjects=29 for unit queues | Start/Add path + rules key | **High** |
 | §10 prerequisite AND semantics, groups via [General] lists | `FUN_00505180` + loader | **High** (group-id numbering: [RE-FALLBACK: ModEnc], behaviorally forced) |

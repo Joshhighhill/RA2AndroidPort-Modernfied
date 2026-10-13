@@ -1997,8 +1997,14 @@ void World::step_cargo(double /*dt*/) {
             if (p < 0 || p >= static_cast<int>(units_.size())) continue;
             Unit& u = units_[p];
             std::vector<Cellxy> g;
-            if (!kill_all && unit_can_enter_cell(u, t.cell_x, t.cell_y))
-                g = nearest_free_cells({t.cell_x, t.cell_y}, 1, grid_for(u.movement_domain), grid_w_, grid_h_, occ_);
+            int glayer = 0;
+            // W8-03-10 [RE: unlimbo on the host's coordinate, then a scatter
+            // that steps through the FootClass height gate FUN_004D9B70]: the
+            // escape cell must be reachable from the host's cell and layer.
+            if (!kill_all && unit_can_enter_cell(u, t.cell_x, t.cell_y)) {
+                const Cellxy e = nearest_exit_from_host(u, t.cell_x, t.cell_y, t.on_deck, &glayer);
+                if (e.x >= 0) g.push_back(e);
+            }
             u.cargo_of = -1;
             if (g.empty()) {
                 u.alive = false;          // tombstone directly (no die anim)
@@ -2022,6 +2028,7 @@ void World::step_cargo(double /*dt*/) {
             u.target_building = -1;
             u.attack_order = false;
             occ_.set(g[0].x, g[0].y, p);
+            u.on_deck = static_cast<std::uint8_t>(glayer == 1 ? 1 : 0);   // W8-03-10
             if (map_) if (const ra2assets::MapCell* mc = map_->at(g[0].x, g[0].y)) u.level = mc->level;
             cargo_events_.push_back({CargoEvent::Kind::Eject, p, static_cast<int>(ti), g[0].x, g[0].y});
         }
@@ -3566,6 +3573,13 @@ bool World::ai_place_ready(int house, HouseAiRec& rec, QueueCat cat) {
         // modeled as an expanded-foundation probe].
         if (node.type == rec.cfg.catalog.naval_yard) return ai_naval_spot_ok(house, rec, t, cx, cy);
         const int s = rec.cfg.ai.base_spacing;
+        // W8-03-01 [RE: FUN_0047C530]: the foundation itself must be
+        // buildable (no ore / overlay / slope / bridge); the spacing ring
+        // keeps the passability probe.
+        const BuildMask* bm = build_mask(node.type == rec.cfg.catalog.wall);
+        if (bm && !placement_check(cx, cy, t.fw, t.fh, house, t.adjacent, passable_, grid_w_, grid_h_,
+                                   occ_, buildings_, /*bypass_adjacency=*/true, nullptr, bm).ok)
+            return false;
         return placement_check(cx - s, cy - s, t.fw + 2 * s, t.fh + 2 * s,
                                house, t.adjacent, passable_,
                                grid_w_, grid_h_, occ_, buildings_,
@@ -3958,6 +3972,11 @@ void World::step_ai_houses(double dt) {
                 // AIBaseSpacing(1) gap [RE-GATE APPLIED: ai-base.md §3].
                 if (d.type == cfg.catalog.naval_yard) return ai_naval_spot_ok(h, rec, t, cx, cy);
                 const int s = cfg.ai.base_spacing;
+                // W8-03-01: the foundation must be buildable (see ai_place_ready).
+                const BuildMask* bm = build_mask(d.type == cfg.catalog.wall);
+                if (bm && !placement_check(cx, cy, t.fw, t.fh, h, t.adjacent, passable_, grid_w_, grid_h_,
+                                           occ_, buildings_, /*bypass_adjacency=*/true, nullptr, bm).ok)
+                    return false;
                 return placement_check(cx - s, cy - s, t.fw + 2 * s, t.fh + 2 * s,
                                        h, t.adjacent, passable_,
                                        grid_w_, grid_h_, occ_, buildings_,
@@ -3980,7 +3999,8 @@ void World::step_ai_houses(double dt) {
                             const bool edge = y == db.cy - 1 || y == db.cy + db.fh || x == db.cx - 1 || x == db.cx + db.fw;
                             if (!edge) continue;
                             if (placement_check(x, y, t.fw, t.fh, h, t.adjacent, passable_, grid_w_, grid_h_,
-                                                occ_, buildings_, /*bypass_adjacency=*/true).ok)
+                                                occ_, buildings_, /*bypass_adjacency=*/true, nullptr,
+                                                build_mask(/*wall=*/true)).ok)
                                 loc = Cellxy{x, y};
                         }
                 }

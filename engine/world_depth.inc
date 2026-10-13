@@ -32,6 +32,7 @@ void depth_set_terrain(ra2engine::World& world, Assets& a) {
             any = true;
             if (!ra2engine::low_bridge_destroyed(id)) lt[i] = ra2assets::LandType::Road;
         }
+    place_overlay_terrain(world, a, lt);   // W8-03-02 rocks/fences/tracks + W8-03-01 buildable grid (w8fix-place)
     world.set_land_terrain(lt);
     if (any) world.set_bridges(std::move(ovl), tile);
     // W4-SQ-10: high-bridge decks (BRIDGE1/2 = runtime 0x18/0x19, BRIDGEB1/B2
