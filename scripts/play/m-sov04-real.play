@@ -227,6 +227,8 @@ if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
 if outcome == RUNNING and cameo(HTNK) == 1 then click cameo:HTNK
 until 3000 units(1,AMCV) >= 1 or buildings(1,GACNST) >= 1
 dump
+until 3000 free(1,AMCV) >= 1 or buildings(1,GACNST) >= 1
+dump
 if outcome == RUNNING and cameo(SUB) == 1 then click tab:3
 if outcome == RUNNING and cameo(SUB) == 1 then click cameo:SUB
 if outcome == RUNNING and cameo(SUB) == 1 then click cameo:SUB

@@ -2542,6 +2542,27 @@ private:
             v.live_members = (int)tm.members.size();
             bool all_idle = true, all_close = true;
             int lead = -1;
+            // fv7e [RE: TeamClass coordinate-move FUN_006EB030, the regroup
+            // callee of every move-family handler (3 FUN_006EBD30, 47
+            // FUN_006ED950, 53 FUN_006EEC60, 54 FUN_006EEF70, 58 FUN_006EDB20)]:
+            // a member farther than Stray from the team destination (+0x40)
+            // whose NavCom (+0x5A4) is empty gets Mission Move + the team
+            // destination again (vtbl+0x1E8(2), +0x480), and the line is not
+            // complete while one is out. A member shoved off its route (a
+            // vehicle pushed aside by CellClass::ScatterContent, UnitClass::
+            // Scatter 0x742880 replaces its destination) therefore resumes the
+            // team move; the clone took the stopped member as "arrived" (SOV02:
+            // an SAPC pushed to (92,50) at sea held its unload forever).
+            // [RE-FALLBACK: the clone's CloseEnough 2.25 arrival radius is
+            // kept for the straggler test, not Stray 2.0; an unreachable goal
+            // still ends on the all-idle fallback.]
+            bool coord_move = false;
+            if (tm.goal_x >= 0 && tm.st.issued && tm.st.pc >= 0 && tm.st.pc < (int)sc.actions.size()) {
+                const int act = sc.actions[(std::size_t)tm.st.pc].action;
+                coord_move = act == ra2engine::kSaMoveWaypoint || act == ra2engine::kSaMoveCell ||
+                             act == ra2engine::kSaMoveEnemyBuilding || act == ra2engine::kSaGatherEnemy ||
+                             act == ra2engine::kSaGatherBase || act == ra2engine::kSaMoveFriendlyBuilding;
+            }
             for (int m : tm.members) {
                 const ra2engine::Unit& u = w_.units()[(std::size_t)m];
                 if (!on_map(m)) {
@@ -2549,11 +2570,15 @@ private:
                     continue;
                 }
                 if (lead < 0) lead = m;
-                if (busy(u) || u.target >= 0 || u.target_building >= 0) all_idle = false;
                 if (tm.goal_x >= 0) {
                     const double dx = u.cell_x - tm.goal_x, dy = u.cell_y - tm.goal_y;
-                    if (dx * dx + dy * dy > 2.25 * 2.25) all_close = false;
+                    const bool out = dx * dx + dy * dy > 2.25 * 2.25;
+                    if (out) all_close = false;
+                    if (out && coord_move && frame_ - tm.issued_frame > 2 && !busy(u) && u.target < 0 &&
+                        u.target_building < 0 && !w_.order_fixed_wing(m, -1, -1, tm.goal_x, tm.goal_y))
+                        w_.order_unit_move(m, tm.goal_x, tm.goal_y);   // fv7e: FUN_006EB030 straggler
                 }
+                if (busy(u) || u.target >= 0 || u.target_building >= 0) all_idle = false;
             }
             // Transport bookkeeping for Unload (8) / Load (14) / WaitLoaded (43).
             for (int m : tm.members) {
