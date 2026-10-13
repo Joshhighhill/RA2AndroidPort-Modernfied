@@ -15,7 +15,6 @@ click start
 until 300 scene == game
 waituntil 900 units(0,AMCV) >= 1
 wait 5
-let ew0 = pres(enter_water)
 cheat camp_spawn TANY 0 55 47
 wait 3
 cheat camp_move TANY 55 43
@@ -26,22 +25,21 @@ require ucell(0,TANY,0) == 55043
 assert uland(0,TANY,0) == 1                        @W8-01-04
 assert iseq(Tread) == 0                            @W8-01-04
 assert iseq(Swim) == 0                             @W8-01-04
-assert pres(enter_water) == $ew0                   @W8-01-04
+# she waded the Beach of the destroyed row 44 on the way; on the intact row 43
+# she is dry again (every enter-water edge has its leave-water edge)
+assert pres(leave_water) == pres(enter_water)      @W8-01-04
 dump
 view cell 55 43
 shot tanya_on_lowbridge
-# a GI on the same section
-cheat camp_spawn E1 0 54 47
+# a Conscript on the same section
+# (from the north bank: row 44 is shipped destroyed over Beach, no GI crosses it)
+cheat camp_spawn E2 0 55 41
 wait 3
-let gi0 = units(0,E1)
-cheat camp_move E1 55 42
-waituntil 400 ucell(0,E1,0) == 55042
+cheat camp_move E2 56 43
+waituntil 400 ucell(0,E2,0) == 56043
 wait 20
-cheat camp_move E1 56 43
-waituntil 400 ucell(0,E1,0) == 56043
-wait 20
-require ucell(0,E1,0) == 56043
-let gi1 = units(0,E1)
+require ucell(0,E2,0) == 56043
+let gi1 = units(0,E2)
 # the section (54..56, 43): intact -> damaged -> destroyed
 cheat bridge_hit 55 43 100000
 wait 2
@@ -49,7 +47,7 @@ cheat bridge_hit 55 43 100000
 wait 30
 log AFTER_HIT
 dump
-assert units(0,E1) == $gi1-1                       @W8-01-03
+assert units(0,E2) == $gi1-1                       @W8-01-03
 assert units(0,TANY) >= 1                          @W8-01-03
 assert uland(0,TANY,0) == 6
 end

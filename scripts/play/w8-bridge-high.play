@@ -50,7 +50,6 @@ waituntil 900 ucell(0,GHOST,0) == 82051
 wait 30
 require ucell(0,GHOST,0) == 82051
 assert udeck(0,GHOST,0) == 0
-dump
 cheat bridge_hit 82 53 100000
 wait 30
 log COLLAPSED
