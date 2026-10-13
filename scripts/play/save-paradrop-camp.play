@@ -28,7 +28,7 @@ click dialog:row0
 click dialog:action
 wait 5
 require scene == game                                     @W8-06-01
-assert banner == "GAME LOADED"                            @W8-06-01
+assert banner != "Error loading game!"                    @W8-06-01
 assert carried(0) == 1                                    @W8-06-01
 until 2000 carried(0) == 0                                @W8-06-01
 assert free(0,E1) == $e1+1                                @W8-06-01

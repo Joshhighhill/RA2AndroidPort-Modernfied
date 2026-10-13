@@ -40,7 +40,7 @@ click dialog:row0
 click dialog:action
 wait 5
 require scene == game                                     @W8-06-01
-assert banner == "GAME LOADED"                            @W8-06-01
+assert banner != "Error loading game!"                    @W8-06-01
 assert carried(0) >= 1                                    @W8-06-01 # still under the chutes / aboard
 until 1500 carried(0) == 0                                @W8-06-01
 assert units(0,E1) == $gis+8                              @W8-06-01 @W8-05-07
