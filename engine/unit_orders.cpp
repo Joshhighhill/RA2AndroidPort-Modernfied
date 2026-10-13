@@ -102,6 +102,21 @@ void World::order_guard(int idx) {
     }
 }
 
+// fv7c (13a #3) [RE: UnitClass::Scatter FUN_00742880 -- the directional
+// branch accepts a neighbour only when the unit's own vtbl+0x1AC
+// (IsCellOccupied, with the height gate FUN_004D9B70) passes; NearbyLocation
+// takes the unit's own SpeedType / MovementZone]: the unit's movement domain
+// (a ship scatters to water -- it used to test the LAND grid, so a ship never
+// scattered) and the one-step height gate.
+bool World::scatter_cell_ok(const Unit& u, int x, int y) const {
+    if (!unit_can_enter_cell(u, x, y)) return false;
+    PathTerrain t;
+    std::vector<int> gates;
+    const PathTerrain* tp = terrain_for(u, t, gates);
+    if (tp && tp->level && path_step_layer(*tp, grid_w_, u.cell_x, u.cell_y, u.on_deck, x, y) < 0) return false;
+    return true;
+}
+
 void World::order_scatter(int idx, bool cell_push) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     Unit& u = units_[idx];
@@ -127,7 +142,7 @@ void World::order_scatter(int idx, bool cell_push) {
         // W5-B R-061: with sub-cells an infantry may scatter into a cell that
         // still has a free spot.
         const bool taken = occ_.subcells() ? !occ_.can_enter(x, y, idx) : unit_at_cell(x, y) >= 0;
-        if (!walkable(x, y) || taken || building_at_cell(x, y) >= 0) continue;
+        if (!scatter_cell_ok(u, x, y) || taken || building_at_cell(x, y) >= 0) continue;   // fv7c
         u.target = -1;
         u.target_building = -1;
         u.attack_order = false;

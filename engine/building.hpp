@@ -151,6 +151,12 @@ struct Building {
     // are set ONLY by World::set_repair / World::begin_sell, which no existing
     // demo calls.
     bool   being_repaired = false;  // [§A2 bldg+0x6E8] the per-building wrench toggle
+    // fv7c [RE: FUN_00450620 AI repair gate `HasBeenCaptured || +0x6CB`]:
+    // AIRepairable (+0x6CB) -- [Structures] field 16 (reader FUN_0044F810),
+    // true for an AI-placed building (FUN_00440500) and a non-human MCV deploy
+    // (FUN_007383E0); has_been_captured is set by a capture.
+    bool   ai_repairable = false;
+    bool   has_been_captured = false;
     bool   selling        = false;  // [§B2] mission 0x13 (Selling) is running
     double sell_time      = 0.0;    // seconds elapsed in the MIRRORED buildup [§B2]
     bool   sold           = false;  // died via sell, not combat (suppresses the explosion)

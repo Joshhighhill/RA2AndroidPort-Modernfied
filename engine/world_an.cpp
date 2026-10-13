@@ -182,12 +182,13 @@ void World::an_step_naval(double dt) {
         Unit& v = units_[j];
         v.an.detected_mask = 0;
         if (!v.an.submerged || !live(v)) continue;
-        v.an.detected_mask = static_cast<std::uint8_t>(1u << (v.house & 7));
+        // fv7c: 32-bit house mask (was uint8_t, `house & 7` aliased house 8+).
+        v.an.detected_mask = (v.house >= 0 && v.house < 32) ? (1u << v.house) : 0u;
         for (int i = 0; i < n; ++i) {
             const Unit& s = units_[i];
-            if (i == j || !s.an.t.sensors || !live(s) || s.house < 0 || s.house > 7) continue;
+            if (i == j || !s.an.t.sensors || !live(s) || s.house < 0 || s.house > 31) continue;
             if (cdist(s.fx, s.fy, v.fx, v.fy) <= s.an.t.sensors_sight)
-                v.an.detected_mask |= static_cast<std::uint8_t>(1u << s.house);
+                v.an.detected_mask |= (1u << s.house);
         }
     }
     // W2-AN-11 Naval Yard UnitRepair=yes: a damaged ship of the yard's house,
@@ -573,7 +574,7 @@ void World::an_spawn_tick(int i) {
                     if (d < 0.0 || dc < d) d = dc;
                 }
             }
-            if (d > std::max(sp_range, 1.0) + 1e-9) an_spawn_reset_target(i);
+            if (!range_infinite(sp_range) && d > std::max(sp_range, 1.0) + 1e-9) an_spawn_reset_target(i);   // fv7c
             else M().sp_status = 1;
         }
     } else if (M().sp_status == 1) {

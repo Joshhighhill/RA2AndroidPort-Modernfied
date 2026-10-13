@@ -11,6 +11,10 @@ namespace ra2engine {
 // a ground target.
 inline bool unit_airborne(const Unit& v) { return v.is_aircraft && v.altitude > 0.0; }
 
+// fv7c (13a #2) [RE: FUN_006F6750 head `if (weapon->Range == -0x200) return
+// true`]: Range=-2 (ASWLauncher, MakeupKit) is "always in range".
+inline bool range_infinite(double cells) { return static_cast<int>(cells * 256.0) == -0x200; }
+
 // The primary slot as a WeaponSlot view (for choose_weapon): valid, the
 // unit's ACTIVE-independent primary verses + AA/AG.
 WeaponSlot primary_view(const Unit& u);
@@ -22,6 +26,10 @@ const WeaponSlot& secondary_view(const Unit& u);
 // DeployFireWeapon slot. A BombDisarm weapon (DefuseKit) is -1 unless the
 // target carries an Ivan bomb (`target_bombed` for a building).
 int unit_weapon_for_unit(const Unit& u, const Unit& v);
+// fv7c [RE: TechnoClass::GetFireError(target, 0) != ILLEGAL (5), as
+// FUN_00707500 calls it @0x707702]: weapon index 0 (the primary) alone --
+// no fall-back to the secondary.
+bool unit_primary_can_fire_at(const Unit& u, const Unit& v);
 // W7-06-02: `in_water` = the structure's cell is Water / Beach (a Naval Yard),
 // World::an_victim_naval_cell -- then the NavalTargeting switch applies.
 int unit_weapon_for_building(const Unit& u, int armor_ix, bool target_bombed = false, bool in_water = false);

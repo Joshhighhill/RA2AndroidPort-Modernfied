@@ -7,6 +7,8 @@
 //   uhpn(h,ID,n) ucx/ucy/uspot/ulx/uly(h,ID,n)  n-th live unit of the type:
 //                            HP, cell, sub-cell spot, lepton position (+sub)
 //   bhp(h,ID) bmaxhp(h,ID)   first live building of the type
+//   ntgt(h)                  fv7c: live house-h units holding a unit target
+//   bheal(h,ID)              fv7c: house-h buildings of the type being repaired
 //   uspeed(h,ID,n) / uland(h,ID,n)  current cells/s and effective LandType
 //                            of the unit's cell (W5-B R-062)
 // Points: ore_near (the ore cell nearest the first selected unit),
@@ -14,7 +16,7 @@
 //         from the selected unit, same row band).
     void w5_play_probe(ra2play::Probe& p) const {
         for (const char* f : {"max_cell_inf", "cells3", "uhpn", "ucx", "ucy", "uspot", "ulx", "uly",
-                              "bhp", "bmaxhp", "uspeed", "uland", "utgt", "umov", "uwait", "ucargo", "upath", "nenemy", "ndog", "utgtb", "ucell", "bc4n"})
+                              "bhp", "bmaxhp", "uspeed", "uland", "utgt", "ntgt", "bheal", "umov", "uwait", "ucargo", "upath", "nenemy", "ndog", "utgtb", "ucell", "bc4n"})
             p.zero_families.insert(f);
         p.set("subcells", world_.subcells_enabled() ? 1 : 0);
         std::map<std::pair<int, int>, int> per_cell[16];
@@ -36,6 +38,7 @@
             p.set("uspeed(" + k + ")", world_.unit_speed_cps(i));
             p.set("uland(" + k + ")", world_.speed_land_at(u.cell_x, u.cell_y));
             p.set("utgt(" + k + ")", u.target);
+            if (u.target >= 0) p.add("ntgt(" + std::to_string(u.house) + ")", 1);   // fv7c
             p.set("utgtb(" + k + ")", u.target_building);   // P3
             p.set("ucell(" + k + ")", u.cell_x * 1000 + u.cell_y);   // P3
             p.set("umov(" + k + ")", u.moving() ? 1 : 0);
@@ -71,6 +74,7 @@
             if (b.type < 0 || b.type >= (int)world_.btypes().size()) continue;
             const std::string k = std::to_string(b.house) + "," + world_.btypes()[(std::size_t)b.type].id;
             if (b.c4_applied) p.add("bc4n(" + k + ")", 1);   // P3: C4 planted, ticking
+            if (b.being_repaired) p.add("bheal(" + k + ")", 1);   // fv7c: AI/player repair running
             if (p.n.count("bhp(" + k + ")")) continue;
             p.set("bhp(" + k + ")", b.hp);
             p.set("bmaxhp(" + k + ")", b.max_hp);

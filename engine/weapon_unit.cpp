@@ -72,6 +72,16 @@ int unit_weapon_for_unit(const Unit& u, const Unit& v) {
     return slot;
 }
 
+bool unit_primary_can_fire_at(const Unit& u, const Unit& v) {
+    if (!slot_can_target(primary_view(u), unit_airborne(v), v.armor_ix)) return false;
+    const int slot = an_naval_slot(u.an.t, 0, u.w2.valid, v.an.naval_cell || (v.is_naval && v.an.in_water),
+                                   v.an.t.underwater, v.an.submerged,
+                                   v.an.t.organic || (!v.is_vehicle && !v.is_aircraft && !v.is_naval),
+                                   v.speed_type == 3, unit_airborne(v), false);
+    if (slot != 0) return false;
+    return !(v.bomb_frame < 0 && slot_bomb_disarm(u, 0));
+}
+
 int unit_weapon_for_building(const Unit& u, int armor_ix, bool target_bombed, bool in_water) {
     int want;
     if (u.deploy_fire && u.deployed) want = u.deploy_fire_slot == 1 && u.w2.valid ? 1 : 0;

@@ -262,7 +262,7 @@ void World::step_w5(double dt) {
                     if (!live(v) || !is_enemy(p.house, v.house) || v.an.submerged) return false;
                     if (!p.detect_disguise && disguise_fools(p.house, v)) return false;   // W7-01-02
                     if (rocket_on_launcher(v)) return false;
-                    if (p.house < 8 && !(v.seen_by_mask & (1u << p.house))) return false;
+                    if (!v.seen_by_house(p.house)) return false;   // fv7c: 32-bit house mask
                     const bool air = v.is_aircraft && v.altitude > 0.0;
                     if (air ? !p.w_aa : !p.w_ag) return false;
                     return om::hypot(v.fx - t.fx, v.fy - t.fy) <= range;
@@ -350,10 +350,10 @@ void World::w5_gap_pass(int phase) {
             const bool created = on && !b.w5.gap_on;
             b.w5.gap_on = on;
             if (!on) continue;
-            std::uint8_t mask = 0;
-            for (int h = 0; h < nh && h < 8; ++h)
+            std::uint32_t mask = 0;
+            for (int h = 0; h < nh && h < 32; ++h)
                 if (h != b.house && house_combatant(h) && !ai_enabled(h) && !are_allied(h, b.house))
-                    mask |= (std::uint8_t)(1u << h);
+                    mask |= (1u << h);
             if (!mask) continue;
             any = true;
             const int cx = b.cx + b.fw / 2, cy = b.cy + b.fh / 2;
@@ -371,7 +371,7 @@ void World::w5_gap_pass(int phase) {
         if (!any) { w5_hide_.clear(); w5_.gap_created = false; return; }
         const bool tick = w5_.gap_created || (w5_.frame % 120 == 0);
         w5_.gap_created = false;
-        for (int h = 0; h < nh && h < 8; ++h) {
+        for (int h = 0; h < nh && h < 32; ++h) {
             if (visible_[(std::size_t)h].empty()) continue;
             const bool spysat = map_reveal_[(std::size_t)h] != 0;
             if (!tick && !spysat) continue;
@@ -382,15 +382,15 @@ void World::w5_gap_pass(int phase) {
         w5_own_.assign(cells, 0);
         for (std::size_t c = 0; c < cells; ++c) {
             if (!w5_hide_[c]) continue;
-            for (int h = 0; h < nh && h < 8; ++h)
-                if (!visible_[(std::size_t)h].empty() && visible_[(std::size_t)h][c]) w5_own_[c] |= (std::uint8_t)(1u << h);
+            for (int h = 0; h < nh && h < 32; ++h)
+                if (!visible_[(std::size_t)h].empty() && visible_[(std::size_t)h][c]) w5_own_[c] |= (1u << h);
         }
         return;
     }
     // phase 1: a SpySat reveal does not lift an enemy gap (the gap raised the
     // cell's ShroudCounter; only own sight shows it).
     if (w5_hide_.empty()) return;
-    for (int h = 0; h < nh && h < 8; ++h) {
+    for (int h = 0; h < nh && h < 32; ++h) {
         if (!map_reveal_[(std::size_t)h] || visible_[(std::size_t)h].empty()) continue;
         for (std::size_t c = 0; c < cells; ++c)
             if ((w5_hide_[c] & (1u << h)) && !(w5_own_[c] & (1u << h))) {
@@ -650,7 +650,7 @@ void World::w5_step_airstrike() {
 }
 
 int World::w5_gap_hidden(int h) const {
-    if (h < 0 || h >= 8 || w5_hide_.empty() || h >= (int)explored_.size() || explored_[(std::size_t)h].empty())
+    if (h < 0 || h >= 32 || w5_hide_.empty() || h >= (int)explored_.size() || explored_[(std::size_t)h].empty())
         return 0;
     int n = 0;
     for (std::size_t c = 0; c < w5_hide_.size(); ++c)

@@ -343,16 +343,16 @@ bool w7_greatest_threat(const World& world, std::vector<Unit>& units, std::vecto
             for (int j : buckets[static_cast<std::size_t>(by) * bgw + bx]) {
                 if (j == i || !valid_target(units, world, u, j) ||
                     (!u.detect_disguise && world.disguise_fools(u.house, units[j])) ||   // W7-01-02
-                    !(units[j].seen_by_mask & (1u << u.house)) || !world.legal_threat_unit(u.house, units[j]) ||
+                    !units[j].seen_by_house(u.house) || !world.legal_threat_unit(u.house, units[j]) ||
                     (u.w_mind_control && units[j].tg.t.immune_psionics))
                     continue;
                 const Unit& v = units[static_cast<std::size_t>(j)];
                 const int ws = unit_weapon_for_unit(u, v);
                 if (ws < 0 || slot_verses(u, ws, v.armor_ix) <= 0.02) continue;   // W7-07-04
                 const double d = dist_leptons(u.fx, u.fy, v.fx, v.fy);
-                const double rng = (in_range_only || u.is_aircraft || (u.deploy_fire && u.deployed))
-                                       ? slot_range(u, ws) : acq;
-                if (d > rng * kLeptonsPerCell) continue;
+                const bool by_slot = in_range_only || u.is_aircraft || (u.deploy_fire && u.deployed);
+                const double rng = by_slot ? slot_range(u, ws) : acq;
+                if (!(by_slot && range_infinite(rng)) && d > rng * kLeptonsPerCell) continue;   // fv7c
                 cands.push_back({d, 0, j, -1});
             }
     if (u.abil.fire_kind == AbilityKind::None && !u.abil.c4) {
@@ -374,7 +374,7 @@ bool w7_greatest_threat(const World& world, std::vector<Unit>& units, std::vecto
             if (ws < 0 || slot_verses(u, ws, b.armor_ix) <= 0.02) continue;   // W7-07-04
             // the building path engages from weapon range only (it never
             // approaches an auto-acquired structure)
-            const double rng = slot_range(u, ws) * kLeptonsPerCell;
+            const double rng = range_infinite(slot_range(u, ws)) ? 1e18 : slot_range(u, ws) * kLeptonsPerCell;   // fv7c
             double bd = -1.0;
             for (const Cellxy& cell : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
                 const double d = dist_leptons(u.fx, u.fy, cell.x, cell.y);
@@ -795,6 +795,7 @@ bool weapon_in_range_from(const World& world, const Unit& u, int ux, int uy, int
         tx = lept_cell(tx) * 256;
         ty = lept_cell(ty) * 256;
     }
+    if (range_infinite(u.w_range)) return true;   // fv7c [RE: FUN_006F6750 head]
     int range = ftol_i(u.w_range * 256.0) + extra;
     if (u.w_proj.subject_to_elevation)
         range += elevation_bonus(world, world.cell_level(lept_cell(ux), lept_cell(uy)) -
@@ -1656,17 +1657,16 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                         // ImmuneToPsionics unit (map overrides merged).
                         if (j == i || !valid_target(units, world, u, j)
                             || (!u.detect_disguise && world.disguise_fools(u.house, units[j]))   // W7-01-02 [RE: 0x6F71D0]
-                            || !(units[j].seen_by_mask & (1u << u.house)) || !world.legal_threat_unit(u.house, units[j])
+                            || !units[j].seen_by_house(u.house) || !world.legal_threat_unit(u.house, units[j])
                             || (u.w_mind_control && units[j].tg.t.immune_psionics))
                             continue;
                         const Unit& v = units[j];
                         const double d = dist_leptons(u.fx, u.fy, v.fx, v.fy);
                         // Gap fix C: in range of the weapon that WOULD engage v; a
                         // ground unit scans its whole threat radius (W6-02-11).
-                        const double rng = (u.is_aircraft || (u.deploy_fire && u.deployed))
-                                               ? slot_range(u, unit_weapon_for_unit(u, v))
-                                               : acq;
-                        if (d <= rng * kLeptonsPerCell &&
+                        const bool by_slot = u.is_aircraft || (u.deploy_fire && u.deployed);
+                        const double rng = by_slot ? slot_range(u, unit_weapon_for_unit(u, v)) : acq;
+                        if (((by_slot && range_infinite(rng)) || d <= rng * kLeptonsPerCell) &&   // fv7c
                             (best == -1 || d < best_d || (d == best_d && j < best))) {
                             best = j;
                             best_d = d;
@@ -1704,7 +1704,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                             const int ws = unit_weapon_for_building(u, b.armor_ix, b.bomb_frame >= 0,
                                                                     world.an_victim_naval_cell(b.cx + b.fw / 2, b.cy + b.fh / 2));   // W7-06-02
                             if (ws < 0) continue;
-                            const double rng = slot_range(u, ws) * kLeptonsPerCell;
+                            const double rng = range_infinite(slot_range(u, ws)) ? 1e18 : slot_range(u, ws) * kLeptonsPerCell;   // fv7c
                             for (const Cellxy& cell : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
                                 const double d = dist_leptons(u.fx, u.fy, cell.x, cell.y);
                                 if (d <= rng && (bbest == -1 || d < bbest_d)) {

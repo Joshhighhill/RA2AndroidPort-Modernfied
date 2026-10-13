@@ -342,15 +342,60 @@ Assets load_assets(const std::string& dir, const ra2assets::MixFile& ra2,
 // .tmp TerrainType byte is NOT used (it was FALSIFIED for LandType). Cells with
 // no map entry stay Clear (land, never water). land_type_of_cell is const; `th`
 // is by ref only because the Assets member is non-const.
+// fv7c: [General] CliffBackImpassability (Rules+0x664, INI read @0x66EC08;
+// rulesmd sets 2). resolve_land_types has no Rules in hand and the engine
+// runs only the retail rulesmd (decision U-1), so the value is pinned here.
+constexpr int kCliffBackImpassability = 2;
 std::vector<ra2assets::LandType> resolve_land_types(const ra2assets::MapFile& map,
                                                     ra2engine::Theater& th,
                                                     int grid_w, int grid_h) {
+    // fv7c (13a #1) [RE: CellClass recalc FUN_0047D1C0 -> FUN_00544910 =
+    // DAT_008278F4[tmp_image+0x29], table {0,8,8,8,8,10,9,3,3,2,6,1,1,0,7,3}
+    // read from the exe]: the LandType is per SUB-TILE, the TMP image header's
+    // terrain-type byte (the same table w5_arm_combat's speed grid uses). The
+    // tile-set classification read YR's cliff set 78 (WaterCliffAPieces), the
+    // slope pieces, ... as Clear and every ShorePieces sub-tile as Beach; it
+    // stays only as the fall-back for a tile without a TMP header.
+    // Then [General] CliffBackImpassability (Rules+0x664, rulesmd 2): a
+    // Clear / Water / Beach / Ice cell with any of the six back neighbours
+    // (x,y-1) (x-1,y) (x+2,y+2) (x+1,y+1) (x+1,y-1) (x-1,y+1) 4+ levels higher
+    // becomes Rock. [RE-OPEN: the overlay branch of FUN_0047D1C0 (wall/rail
+    // overlays near a cliff) is not modelled.]
+    static const int kTab[16] = {0, 8, 8, 8, 8, 10, 9, 3, 3, 2, 6, 1, 1, 0, 7, 3};
     std::vector<ra2assets::LandType> lt(
         static_cast<std::size_t>(grid_w) * grid_h, ra2assets::LandType::Clear);
+    std::vector<int> lvl(lt.size(), 0);
     for (const ra2assets::MapCell& c : map.cells()) {
         if (c.x < 0 || c.y < 0 || c.x >= grid_w || c.y >= grid_h) continue;
-        lt[static_cast<std::size_t>(c.y) * grid_w + c.x] =
-            th.land_type_of_cell(c.tile);   // tile -> owning tile-set -> LandType
+        const std::size_t i = static_cast<std::size_t>(c.y) * grid_w + c.x;
+        lvl[i] = c.level;
+        const ra2assets::TmpFile* t = th.tmp_for_tile(c.tile);
+        const std::uint8_t* hdr = nullptr;
+        if (t && c.subtile < t->count()) {
+            try { hdr = t->image_header(c.subtile); } catch (const std::exception&) { hdr = nullptr; }
+        }
+        lt[i] = hdr ? static_cast<ra2assets::LandType>(kTab[hdr[41] & 15])
+                    : th.land_type_of_cell(c.tile);   // fall-back: tile-set class
+    }
+    const int cliff_back = kCliffBackImpassability;
+    if (cliff_back == 2) {
+        static const int kNb[6][2] = {{0, -1}, {-1, 0}, {2, 2}, {1, 1}, {1, -1}, {-1, 1}};
+        std::vector<ra2assets::LandType> out = lt;
+        for (int y = 0; y < grid_h; ++y)
+            for (int x = 0; x < grid_w; ++x) {
+                const std::size_t i = static_cast<std::size_t>(y) * grid_w + x;
+                const ra2assets::LandType l = lt[i];
+                if (l != ra2assets::LandType::Clear && l != ra2assets::LandType::Water &&
+                    l != ra2assets::LandType::Beach && l != ra2assets::LandType::Ice)
+                    continue;
+                for (const auto& d : kNb) {
+                    const int nx = x + d[0], ny = y + d[1];
+                    const int nl = (nx >= 0 && ny >= 0 && nx < grid_w && ny < grid_h)
+                                       ? lvl[static_cast<std::size_t>(ny) * grid_w + nx] : 0;
+                    if (nl >= lvl[i] + 4) { out[i] = ra2assets::LandType::Rock; break; }
+                }
+            }
+        lt.swap(out);
     }
     return lt;
 }
@@ -13937,7 +13982,9 @@ uint64_t shroud_fold(uint64_t h, const ra2engine::World& world) {
     }
     for (const ra2engine::Unit& u : world.units()) {
         if (!u.alive) continue;
-        h = fnv_mix(h, (uint64_t)u.seen_by_mask);
+        // fv7c: the mask is 32-bit now; fold the low byte (this gate has 3
+        // houses, and the old uint8_t default 0xFF folds unchanged).
+        h = fnv_mix(h, (uint64_t)(u.seen_by_mask & 0xFFu));
     }
     return h;
 }
@@ -14079,7 +14126,7 @@ DemoShroudResult simulate_shroud(Assets& a, UnitAssets& ua,
     world.units()[enemy_idx].fx = (double)ex;
     world.units()[enemy_idx].fy = (double)ey;
     world.step_visibility();                            // restamp seen_by_mask
-    const std::uint8_t enemy_mask = world.units()[enemy_idx].seen_by_mask;
+    const std::uint32_t enemy_mask = world.units()[enemy_idx].seen_by_mask;
     const bool enemy_unseen = (enemy_mask & 0x01) == 0;
     h = shroud_fold(h, world);                          // checkpoint D: fogged enemy mask
     {
@@ -16909,13 +16956,18 @@ DemoProjectileResult simulate_projectile(Assets& a, UnitAssets& ua, const Vehicl
             fail("arc");
     }
 
-    // 3) MISS: the Conscript target walks 3 cells away right after the launch;
-    //    the shell keeps flying to the old cell and detonates there harmlessly.
+    // 3) MISS: the target walks 3 cells away right after the launch; the shell
+    //    keeps flying to the old cell and detonates there harmlessly.
+    //    fv7c (13c #2): since the W7 speed model a Conscript walks the faithful
+    //    10 leptons/frame (Speed=4) and cannot clear its cell in the ~12-frame
+    //    shell flight -- the shell re-aims onto it (scenario 3b). The dodger
+    //    here is given Speed=10 (25 leptons/frame) so it does leave the cell.
     {
         ra2engine::World world = build_world(a, ua, 0);
         world.enable_projectiles(prules);
         spawn_squad(world, pc->x, pc->y, 1, 0, rhino.combat);
         spawn_squad(world, pc->x + 4, pc->y, 1, 1, ua.cons);
+        world.units()[1].speed_cps = speed_to_cps(10.0);   // the fast dodger
         order_attack_by(world, 0, 1);
         const int hp0 = world.units()[1].hp;
         int ox = 0, oy = 0;
@@ -16945,6 +16997,46 @@ DemoProjectileResult simulate_projectile(Assets& a, UnitAssets& ua, const Vehicl
         r.witness.emplace_back(b);
         if (!(have_det && det.victim == -1 && det.damage == 0 && world.units()[1].hp == hp0))
             fail("miss");
+    }
+
+    // 3b) REAIM (fv7c): the same dodge at the Conscript's faithful speed. It is
+    //    still inside the impact cell when the shell arrives, so the shell
+    //    re-aims onto it [RE: BulletClass::Update FUN_004666D0 tail
+    //    0x467D60..0x467E3E, DAT_007E1808 = 128.0]: full 90 x AP 25% = 22.
+    {
+        ra2engine::World world = build_world(a, ua, 0);
+        world.enable_projectiles(prules);
+        spawn_squad(world, pc->x, pc->y, 1, 0, rhino.combat);
+        spawn_squad(world, pc->x + 4, pc->y, 1, 1, ua.cons);
+        order_attack_by(world, 0, 1);
+        const int hp0 = world.units()[1].hp;
+        int ox = 0, oy = 0;
+        ra2engine::ProjectileEvent det;
+        bool launched = false, have_det = false;
+        for (int f = 1; f <= 900 && !have_det; ++f) {
+            const std::vector<ra2engine::ProjectileEvent> evs = step(world);
+            for (const ra2engine::ProjectileEvent& e : evs) {
+                if (e.attacker != 0) continue;
+                if (!launched && e.kind == ra2engine::ProjectileEvent::Launch) {
+                    launched = true;
+                    ox = world.units()[1].cell_x;
+                    oy = world.units()[1].cell_y;
+                    world.order_unit_move(1, ox, oy + 3);   // dodge
+                } else if (launched && e.kind == ra2engine::ProjectileEvent::Detonate) {
+                    det = e;
+                    have_det = true;
+                }
+            }
+        }
+        h = fnv_mix(h, world_hash(world));
+        char b[200];
+        std::snprintf(b, sizeof b,
+                      "[proj] reaim: old_cell=(%d,%d) impact_cell=(%d,%d) victim=%d damage=%d target_hp=%d/%d",
+                      ox, oy, ra2engine::lepton_to_cell(det.x), ra2engine::lepton_to_cell(det.y),
+                      det.victim, det.damage, world.units()[1].hp, hp0);
+        r.witness.emplace_back(b);
+        if (!(have_det && det.victim == 1 && det.damage == 22 && world.units()[1].hp == hp0 - 22))
+            fail("reaim");
     }
 
     // 4) KIROV: the bomb leaves at speed 1 from altitude - 140 (FLH), falls

@@ -8,6 +8,7 @@
 #include "combat.hpp"
 #include "occupancy.hpp"
 #include "ra2assets/map.hpp"
+#include "weapon_unit.hpp"  // fv7c range_infinite
 #include "world.hpp"
 
 using namespace ra2engine;
@@ -361,4 +362,25 @@ TEST_CASE("w7r1 cargo: an infantry created inside a transport holds no sub-cell 
     for (int f = 0; f < 60; ++f) w.step(1.0 / 15.0);
     REQUIRE(w.units()[0].cell_x != x0);
     CHECK(o.at(x0, y0) == Occupancy::kEmpty);   // nothing left behind
+}
+
+// fv7c (13a #2) [RE: FUN_006F8320 0x6F8520.. radius (max(GetWeaponRange(1),
+// GetWeaponRange(0)) >> 8) + 1 on the RAW ranges; FUN_006F6750 head `Range ==
+// -0x200 -> in range`]: ASWLauncher Range=-2 no longer stands in as 30 cells.
+TEST_CASE("fv7c: a Range=-2 secondary does not widen the threat scan, and is always in range") {
+    Rig r;
+    r.w.arm_combat_w7(armed_rules());
+    r.units.push_back(soldier(0, 0, r.occ, 0));
+    r.units[0].w2.valid = true;
+    r.units[0].w2.range = -2.0;                       // [ASWLauncher] Range=-2
+    r.units[0].w2.verses = std::vector<int>(11, 100);
+    r.units[0].w2.ag = true;
+    r.units.push_back(soldier(12, 1, r.occ, 1, 0));   // 12 cells: outside 4+1, inside the old 31
+    r.step(30);
+    CHECK(r.units[0].target == -1);
+    Unit asw = r.units[0];
+    asw.w_range = -2.0;                               // the ASW slot active
+    CHECK(weapon_in_range(r.w, asw, 25 * 256 + 128, 128, 0));
+    CHECK(range_infinite(-2.0));
+    CHECK_FALSE(range_infinite(-1.0));
 }

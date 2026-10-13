@@ -183,7 +183,7 @@ TEST_CASE("gapC defenses: a pillbox acquires, turns and kills; Powered goes offl
     CHECK_FALSE(w2.defense_power_ok(0));
 }
 
-TEST_CASE("gapC passability: water / cliff / wall cells close the Land grid, shore stays open (G-43)") {
+TEST_CASE("gapC passability: water / cliff / wall / beach cells close the Land grid (G-43; fv7c Beach)") {
     if (!ra2fixture::mapsmd03_available()) { MESSAGE("no install"); return; }
     World w(ra2fixture::mapsmd03_map());
     const int gw = w.grid_w(), gh = w.grid_h();
@@ -202,7 +202,11 @@ TEST_CASE("gapC passability: water / cliff / wall cells close the Land grid, sho
     CHECK_FALSE(w.walkable(picks[0] % gw, picks[0] / gw));
     CHECK_FALSE(w.walkable(picks[1] % gw, picks[1] / gw));
     CHECK_FALSE(w.walkable(picks[2] % gw, picks[2] / gw));
-    CHECK(w.walkable(picks[3] % gw, picks[3] / gw));
+    // fv7c (13a #1): the LandType is per sub-tile now, so Beach is blocked for
+    // Foot/Track/Wheel as rulesmd [Beach] says -- and open to the amphibious grid.
+    CHECK_FALSE(w.walkable(picks[3] % gw, picks[3] / gw));
+    CHECK(w.amphib_grid()[picks[3]] == 1);
+    CHECK(w.grid_for(MovementDomain::Water)[picks[3]] == 0);
     CHECK(w.grid_for(MovementDomain::Water)[picks[0]] == 1);   // ships still sail it
 }
 

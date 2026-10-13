@@ -1,5 +1,6 @@
 // Wave-7 AI per-unit rules: the computer houses' Deployer-infantry auto-deploy
-// (W7-01-08 / W7-02-04) and the ToProtect call for help (W7-04-18). A World
+// (W7-01-08 / W7-02-04). (The ToProtect call for help, W7-04-18, moved to
+// World::call_for_help in fv7c.) A World
 // member TU split out of world.cpp; runs after step_ai_teams inside the
 // ai_any_ firewall, and only for houses whose AiHouseConfig arms it
 // (auto_deploy_frames >= 0 / roster_to_protect non-empty: the skirmish AI).
@@ -100,71 +101,8 @@ void World::step_ai_unit_rules() {
             if (now > u.ai.guard_since + delay) order_deploy(i);
         }
     }
-    // W7-04-18: this step's ToProtect hits, in arrival order.
-    for (const AiProtectReq& r : ai_protect_reqs_) {
-        if (r.victim < 0 || r.victim >= (int)units_.size()) continue;
-        const int h = units_[(std::size_t)r.victim].house;
-        if (h < 0 || h >= (int)ai_houses_.size() || !ai_houses_[(std::size_t)h].is_ai) continue;
-        ai_protect(h, ai_houses_[(std::size_t)h], r.victim, r.attacker_house);
-    }
-    ai_protect_reqs_.clear();
 }
 
-// [RE: FUN_00707500, called from TechnoClass::ReceiveDamage @0x701C74 for a
-// ToProtect victim] -- refused when the victim's owner is human, the attacker
-// is allied, in limbo, or not an Infantry/Unit (aircraft and buildings are
-// ignored), or the victim type is Insignificant. It then walks the infantry and
-// unit arrays for same-house objects that are recruitable, not in a team (or in
-// a base-defense team), reachable in their movement zone (FUN_0056CC30) and
-// able to fire on the attacker (GetFireError != ILLEGAL), keeps the best six by
-// threat value and orders them to attack. [RE-FALLBACK: the six are picked
-// nearest-to-the-victim first instead of by threat value (FUN_004D96B0) and
-// the Rules+0xB18 threat budget is not modelled; a reinforcement is sent only
-// while no other own unit already attacks that attacker, standing in for the
-// attacker's +0x650 cooldown timer.]
-void World::ai_protect(int house, const HouseAiRec& rec, int victim, int attacker_house) {
-    const Unit& v = units_[(std::size_t)victim];
-    if (!v.alive || v.die_time >= 0.0 || v.tg.t.insignificant) return;
-    if (attacker_house < 0 || !is_enemy(house, attacker_house)) return;
-    int a = -1;
-    for (int i = 0; i < (int)units_.size(); ++i) {
-        const Unit& u = units_[(std::size_t)i];
-        if (u.house == attacker_house && u.alive && u.die_time < 0.0 && u.target == victim && !u.is_aircraft &&
-            u.cargo_of < 0) {
-            a = i;
-            break;
-        }
-    }
-    if (a < 0) return;
-    const Unit& au = units_[(std::size_t)a];
-    std::vector<char> in_team(units_.size(), 0);
-    for (const TeamInstance& t : rec.team_state.teams)
-        for (int m : t.members)
-            if (m >= 0 && m < (int)units_.size()) in_team[(std::size_t)m] = 1;
-    for (int i = 0; i < (int)units_.size(); ++i) {
-        const Unit& u = units_[(std::size_t)i];
-        if (i != victim && u.house == house && u.alive && u.die_time < 0.0 && u.target == a && u.attack_order)
-            return;   // help is already on its way
-    }
-    struct Cand { long long d2; int idx; };
-    std::vector<Cand> cands;
-    for (int i = 0; i < (int)units_.size(); ++i) {
-        const Unit& u = units_[(std::size_t)i];
-        if (i == victim || u.house != house || !u.alive || u.die_time >= 0.0 || in_team[(std::size_t)i]) continue;
-        if (u.is_harvester || u.cargo_of >= 0 || u.garrison_of >= 0 || u.frozen) continue;
-        if (u.moving() || u.attack_order || u.target >= 0 || u.target_building >= 0) continue;
-        if (u.w_damage <= 0 || !u.w_ag) continue;   // must be able to fire on a ground attacker
-        if (u.an.t.fixed_wing || u.an.t.spawned || u.an.t.missile) continue;
-        if (u.deployed && !u.deploy_fire) continue;   // a deployed Desolator cannot go
-        // Movement zone: a ship helps only against an attacker on water; a
-        // land unit only against one it can walk to (same domain or amphibious).
-        if (u.movement_domain == MovementDomain::Water && au.movement_domain != MovementDomain::Water) continue;
-        if (u.movement_domain == MovementDomain::Land && au.movement_domain == MovementDomain::Water) continue;
-        const long long dx = u.cell_x - v.cell_x, dy = u.cell_y - v.cell_y;
-        cands.push_back(Cand{dx * dx + dy * dy, i});
-    }
-    std::stable_sort(cands.begin(), cands.end(), [](const Cand& x, const Cand& y) { return x.d2 < y.d2; });
-    for (std::size_t k = 0; k < cands.size() && k < 6; ++k) order_unit_attack(cands[k].idx, a);
-}
+// (W7-04-18 ai_protect was merged into World::call_for_help, world_w7.cpp, in fv7c.)
 
 }  // namespace ra2engine

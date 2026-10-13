@@ -43,10 +43,11 @@ void resolve_an_type(const Rules& rules, const std::string& unit_id, const std::
         a.spawn_reload_frames = static_cast<int>(rules.section_double(unit_id, "SpawnReloadRate", 0.0));
         if (a.spawns.empty()) a.spawner_slot = -1;   // V3 tank etc: [General] V3RocketType
     }
-    // [ASWLauncher] Range=-2 ";infinite": a negative weapon range never limits
-    // the shot (the sonar contact does) -- 30 cells stands in for infinite.
-    if (r.combat.range < 0.0) r.combat.range = 30.0;
-    if (r.combat.secondary.valid && r.combat.secondary.range < 0.0) r.combat.secondary.range = 30.0;
+    // [ASWLauncher] Range=-2 ";infinite": fv7c (13a #2) keeps the RAW -2
+    // (-0x200 leptons). FUN_006F6750 starts with `if (Range == -0x200) return
+    // true` (range_infinite), while the threat scan FUN_006F8320 takes
+    // max(GetWeaponRange(1), GetWeaponRange(0)) of the raw values, so -2 loses
+    // to the 155mm's 8 (DEST scans 9 cells, not the 31 a 30-cell stand-in gave).
     // [V3Launcher]/[DredLauncher] spawn the [General] rocket types.
     if (a.spawner_slot < 0 && !primary.empty() && rules.section_flag(primary, "Spawner", false)) {
         a.spawner_slot = 0;
@@ -86,7 +87,7 @@ void resolve_an_type(const Rules& rules, const std::string& unit_id, const std::
     if (a.spawner_slot >= 0) {
         const std::string sw = a.spawner_slot == 1 ? secondary : primary;
         a.spawner_range = sw.empty() ? 0.0 : rules.weapon_range(sw);
-        if (a.spawner_range < 0.0) a.spawner_range = 30.0;   // Range=-2 "infinite" (ASWLauncher)
+        // Range=-2 "infinite" (ASWLauncher) stays raw: range_infinite (fv7c).
     }
     // W7-06-10 [RE: WeaponType IsSonic +0x130 (@0x770EF4), AmbientDamage +0x98
     // (@0x770EDC); the wave reads GetWeapon(0) of the firer, FUN_0075E150].

@@ -3,8 +3,11 @@
 // map's per-cell land type, decoded from the theater tile-set classification --
 // each map tile's owning [TileSetNNNN] set is matched against the theater
 // control INI's [General] set indices (WaterSet/ShorePieces/CliffSet/...). The
-// .tmp per-tile TerrainType byte was FALSIFIED for LandType (a direct decode
-// gave 9-15, zero Water), so this is a TILE-SET classification, NOT a byte read.
+// .tmp per-tile TerrainType byte was once judged FALSIFIED for LandType (a direct
+// decode gave 9-15, zero Water) -- WRONG (fv7c, 13a #1): the byte is an index
+// into the exe table DAT_008278F4 {0,8,8,8,8,10,9,3,3,2,6,1,1,0,7,3}
+// (FUN_00544910), where 9 is Water. engine/main.cpp resolve_land_types now
+// reads it per sub-tile; this TILE-SET classification is only its fall-back.
 // This is the net-new water-cell identification the engine lacked before CB-3
 // (spec "Current-engine reality"). No SDL/OS -- compiled into both
 // ra2assets_tests and ra2engine.
