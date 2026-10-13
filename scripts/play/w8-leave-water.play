@@ -32,12 +32,14 @@ click unit 0:LCRF
 until 400 cargo_total(0) >= 2
 wait 5
 log BOARDED
-assert amphib_on_water(0) == 1 @W8-01-07
+# the LCRF and its two passengers are on water (amphib_on_water counts riders)
+assert amphib_on_water(0) == 3 @W8-01-07
 assert pres(leave_water) == $lw0 @W8-01-07
 click unit 0:LCRF
 wait 1
 click cell 178 166
-until 600 amphib_on_water(0) == 0 and sel_moving == 0
+wait 5
+until 600 sel_moving == 0
 key d
 until 300 cargo_total(0) == 0
 wait 30

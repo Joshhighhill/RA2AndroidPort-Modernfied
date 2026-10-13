@@ -241,6 +241,8 @@ Keys reserved for later phases (scripts already assert them and report
 | `trn02-bridge-repair.play` | fv7d: TRN02 -- the MCV deploy fires `RedTeamRepairBridge`; the RedTeam engineer's script line 46 (attack CABHUT) sends it into the hut [RE: InfantryClass::Mission_Attack 0x51F0F0, Infiltrate set for Engineer= by the loader 0x5243B9] and the destroyed middle row of the only bridge is repaired (`bridge_destroyed == 0`). The Shore sandbar's Beach sub-tiles (TMP byte 10) stay impassable to Foot as in the original |
 | `pres-w7.play` | Wave 7 presentation (docs/gap/wave7/12-presentation.md): voices keyed by rules id (`voice(ID,field)`), EVA UnitReady / Canceled, group number, Desolator eruption, Robot Tank on/offline, drone move loop, Chrono wave beam, Prism split beams (`pres(fragment_beam)`), Rocketeer Hover/Fly, no UnitLost for V3 rockets (`pres(spawned_no_unit_lost)`), Kirov crash impact (`pres(crash_impact)`), Demo Truck DEMTEXP (`pres(death_weapon)`) |
 | `pres-w7-mc.play` | W7-10-05 / W7-12-23: SOV09 Yuri capture (mc-range orders) -> `mc_pairs`, `pres(mind_control)`, MINDANIM ring + link line shot |
+| `w8-hover-water.play` | W8-04-04 / W8-04-05 (Bay of Pigs): DEST, LCRF and Robot Tank wakes on water (`fx_wakes`, Hover every 10 frames, 0x514841); the Robot Tank over water dies after its Robot Control Center is destroyed (power-off spin, then the drop, 0x516A10 / 0x5F3680) |
+| `w8-leave-water.play` | W8-01-07 (Bay of Pigs): a SEAL and Tanya board an LCRF from water with no `pres(leave_water)`, and it plays on the unload onto land (0x51D4C0) |
 | `probe-*.play` | Harness self-checks / diagnostics (no gameplay claims) |
 
 The expected results on each tree are kept in `docs/gap/PLAYTEST-STATUS.md`.
