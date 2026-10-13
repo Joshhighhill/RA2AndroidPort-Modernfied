@@ -260,6 +260,12 @@ Scripts: `m-all02`, `m-all04`, `m-all08`, `m-sov03`, `m-sov05`, `m-sov06`,
 `m-sov09` (one per fixed W2-CA blocker class). Real-order (cheat-free) proofs include
 `m-sov01-real`, `m-all03-real`, `m-sov07-real` (WON, about 3 min) and `m-sov09-real` (opening + the
 first power-plant blackout); their generators live in `scripts/play/gen/` (edit those, not the `.play`).
+After wave 7 (w7r2) `m-sov01-real` (Normal, WON f9334, play_hash `a7c65a53fd1057a8`), `m-sov07-real`
+(Easy, WON f41455, `36097e32b872b66b`) and `m-sov09-real` (Easy, WON f18124, `2c627b73ef432b25`) were
+re-planned for the original speeds, area-guard scans and call for help: SOV01's army shoots the six
+pillboxes out before walking past them; SOV09 lures the SEALs and then the Grizzlies out of the
+compound (Yuri 0 takes one) before the IFV shells the plants. SOV07 needed only the engine fix for
+two harvesters meeting head-on (UnitClass::Scatter 0x742880).
 
 ## Multiplayer (agent S, engine/mp_pages.inc)
 

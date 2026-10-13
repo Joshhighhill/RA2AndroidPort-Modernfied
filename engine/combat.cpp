@@ -2,6 +2,7 @@
 #include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 
 #include <algorithm>
+#include <map>
 #include <cctype>
 #include <cmath>
 
@@ -113,8 +114,14 @@ bool forced_target_ok(const std::vector<Unit>& units, const World& world, const 
                       int idx) {
     if (idx < 0 || idx >= static_cast<int>(units.size()) || idx == self_idx) return false;
     const Unit& v = units[static_cast<std::size_t>(idx)];
+    // w7r2 [RE: GetFireError FUN_006FB5D0 -- the warhead's Verses against the
+    // target's armor gate every weapon]: an ability weapon is let through
+    // here (its slot data may not pass the AA/AG test), but not against an
+    // armor its warhead does 0 % to -- the dog's ParasiteDog jaw vs a vehicle
+    // (SOV09: a patrol team ordered at the IFV rode it to death as parasites).
     return v.alive && v.die_time < 0.0 && v.cargo_of < 0 && !world.unit_hidden_from(self.house, v) &&
-           (unit_weapon_for_unit(self, v) >= 0 || self.abil.fire_kind != AbilityKind::None);
+           (unit_weapon_for_unit(self, v) >= 0 ||
+            (self.abil.fire_kind != AbilityKind::None && verses_allows(primary_view(self).verses, v.armor_ix)));
 }
 
 // The Verses fraction (percent / 100) of slot `slot` of u against armor `ai`.
@@ -1104,6 +1111,9 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
     std::vector<MoveRequest> requests;
     const int n = static_cast<int>(units.size());
     const bool w7 = world.combat_w7().armed;   // w7fix-combat
+    // w7r2: firing positions handed out this pass (cell -> attackers), so a
+    // squad attacking one building spreads over distinct free cells.
+    std::map<std::size_t, int> approach_claims;
 
     // W2-SK-15: spatial buckets for the auto-acquire scan (was O(U^2): every
     // idle unit walked every unit). kBucket x kBucket cells, filled in
@@ -1285,6 +1295,68 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                         }
                     }
                 } else if (u.attack_order && !(u.deploy_fire && u.deployed)) {
+                    // w7r2 [RE: FootClass::Approach_Target FUN_004D55B0
+                    // @0x4D5EE0..0x4D67B2]: the original walks rings round the
+                    // target's centre, from the weapon range (less half a cell
+                    // past 0x1FF) inward in whole cells while > 204.8 leptons
+                    // (DAT_007E8238), trying the 25 offsets of DAT_008214EC
+                    // (0, +-1..6, +-8, +-16, +-24, +-32, +-48, +-64 in 1/256
+                    // turn) about the facing from the target to the unit. A
+                    // candidate's cell centre must pass FUN_006F6750 -- the
+                    // building in-range test above -- and be free
+                    // (FUN_00577E90 / FUN_004833B0, else its 8 neighbours
+                    // under the same tests). The clone used to head for the
+                    // nearest foundation cell and fan a group out round it
+                    // (assign_formation), so attackers stopped short of or past
+                    // the range ring and a whole squad walked round a pillbox
+                    // into the next one (SOV01). Ground land units under the
+                    // W7 rules; RE-FALLBACK: the path-length check
+                    // FUN_0042D0F0 (<= Chebyshev + 8) is not applied, the
+                    // A* goes to the nearest reachable cell instead.
+                    const bool w7_approach = w7 && !u.abil.c4 && !u.is_aircraft && !u.is_naval &&
+                                             u.movement_domain == MovementDomain::Land;
+                    const int b_extra = (b->fw + b->fh) * 64;
+                    auto in_range_from_cell = [&](int cx, int cy) {
+                        return weapon_in_range_from(world, u, cx * 256, cy * 256,
+                                                    world.cell_level(cx, cy) * kLevelLept, bax, bay, baz,
+                                                    b_extra);
+                    };
+                    auto cell_free = [&](int cx, int cy) {
+                        if (cx < 0 || cy < 0 || cx >= world.grid_w() || cy >= world.grid_h()) return false;
+                        if (cx == u.cell_x && cy == u.cell_y) return false;   // not a firing position (tested)
+                        const std::size_t k = static_cast<std::size_t>(cy) * world.grid_w() + cx;
+                        if (!world.passable()[k]) return false;
+                        if (!occ.can_enter(cx, cy, i)) return false;
+                        const auto it = approach_claims.find(k);
+                        return it == approach_claims.end() || it->second < (u.is_vehicle ? 1 : 3);
+                    };
+                    auto approach_cell = [&]() -> Cellxy {
+                        static const int kOff[25] = {0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6,
+                                                     8, -8, 16, -16, 24, -24, 32, -32, 48, -48, 64, -64};
+                        static const int kNx[8] = {0, 1, 1, 1, 0, -1, -1, -1};
+                        static const int kNy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
+                        const int dir = ((om::ftol(facing_u16_from_delta(unit_lept_x(u) - bax,
+                                                                         unit_lept_y(u) - bay)) >> 7) + 1) >> 1;
+                        int r = ftol_i(u.w_range * 256.0) + b_extra;
+                        if (r > 0x1FF) r -= 0x80;
+                        constexpr double kTwoPi = 6.283185307179586;
+                        for (; r > 204.8; r -= 256) {
+                            for (int a : kOff) {
+                                const double th = static_cast<double>(((dir + a) & 0xFF) * 256) * (kTwoPi / 65536.0);
+                                const int px = bax + om::ftol(om::sin(th) * r);
+                                const int py = bay - om::ftol(om::cos(th) * r);
+                                const int cx = (px + 128) >> 8, cy = (py + 128) >> 8;
+                                if (cx < 0 || cy < 0 || cx >= world.grid_w() || cy >= world.grid_h()) continue;
+                                if (!in_range_from_cell(cx, cy)) continue;
+                                if (cell_free(cx, cy)) return {cx, cy};
+                                for (int k = 0; k < 8; ++k)
+                                    if (cell_free(cx + kNx[k], cy + kNy[k]) &&
+                                        in_range_from_cell(cx + kNx[k], cy + kNy[k]))
+                                        return {cx + kNx[k], cy + kNy[k]};
+                            }
+                        }
+                        return {-1, -1};
+                    };
                     // Dedup mirrors the unit-pursuit branch below (f): only
                     // re-request when there's no live path, or the current
                     // path's goal has stopped being a firing position for the
@@ -1304,6 +1376,18 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                             if (g_best < 0.0 || d < g_best) g_best = d;
                         }
                         need = u.abil.c4 ? !c4_reach_from(g.x, g.y) : g_best > range_leptons;
+                        // w7r2: a firing position is judged by the in-range
+                        // test itself (3-D to the centre, range + (w+h)*64),
+                        // the rule the approach cell below is chosen by.
+                        if (w7_approach) need = !in_range_from_cell(g.x, g.y);
+                    }
+                    if (need && w7_approach) {
+                        const Cellxy c = approach_cell();
+                        if (c.x >= 0) {
+                            ++approach_claims[static_cast<std::size_t>(c.y) * world.grid_w() + c.x];
+                            requests.push_back({i, c.x, c.y, /*approach=*/false});
+                            continue;
+                        }
                     }
                     // P3 [RE: infantry-anim.md §7 -- FootClass::ApproachTarget
                     // heads for a FIRING POSITION near the target; RE-FALLBACK:

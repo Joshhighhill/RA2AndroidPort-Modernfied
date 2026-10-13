@@ -54,7 +54,12 @@ click tab:2
 click cameo:SENGINEER
 until 1200 units(0,SENGINEER) >= 1
 if units(0,E2) > 0 then click unit 0:E2:0
-if units(0,SENGINEER) > 0 then click unit 0:SENGINEER:0 shift
+key t
+key t
+click cell 97 92
+until 900 sel_moving == 0
+wait 300
+if units(0,SENGINEER) > 0 then click unit 0:SENGINEER:0
 key t
 key t
 click cell 97 92
@@ -109,6 +114,190 @@ click cameo:E2
 click cameo:E2
 click cameo:E2
 wait 1800
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click cell 82 85
+wait 30
+until 1500 sel_moving == 0
+dump
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+let pills = buildings(1,GAPILL)
+click building 1:GAPILL:near
+wait 30
+until 1200 buildings(1,GAPILL) < $pills
+dump
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+let pills = buildings(1,GAPILL)
+click building 1:GAPILL:near
+wait 30
+until 1200 buildings(1,GAPILL) < $pills
+dump
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click unit e:E1:near soft
+wait 50
+dump
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+click cell 61 64
+wait 30
+until 1500 sel_moving == 0
+wait 60
+dump
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+let pills = buildings(1,GAPILL)
+click building 1:GAPILL:near
+wait 30
+until 1200 buildings(1,GAPILL) < $pills
+dump
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+let pills = buildings(1,GAPILL)
+click building 1:GAPILL:near
+wait 30
+until 1200 buildings(1,GAPILL) < $pills
+dump
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+let pills = buildings(1,GAPILL)
+click building 1:GAPILL:near
+wait 30
+until 1200 buildings(1,GAPILL) < $pills
+dump
+if units(0,E2) > 0 then click unit 0:E2:0
+key t
+key t
+let pills = buildings(1,GAPILL)
+click building 1:GAPILL:near
+wait 30
+until 1200 buildings(1,GAPILL) < $pills
+dump
 if units(0,E2) > 0 then click unit 0:E2:0
 key t
 key t

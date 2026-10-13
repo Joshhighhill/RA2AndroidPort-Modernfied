@@ -102,14 +102,22 @@ void World::order_guard(int idx) {
     }
 }
 
-void World::order_scatter(int idx) {
+void World::order_scatter(int idx, bool cell_push) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     Unit& u = units_[idx];
     if (!orderable(u) || u.frozen || u.is_aircraft) return;
     // W7-01-19 [RE: ScatterObject 0x4C6BD0 -> TechnoClass::Scatter 0x51CEA0]:
     // X is ignored for a human's deployed unit and for a unit on the move.
     if (u.deployed && !house_is_computer(u.house)) return;
-    if (u.moving()) return;
+    // w7r2 [RE: UnitClass::Scatter FUN_00742880 @0x74294D..0x742978]: a unit
+    // with a Destination returns only when nokidding is 0. The blocked mover's
+    // CellClass::ScatterContent (Drive Move 6, 0x4B2CD6..0x4B2CE0) passes the
+    // empty coord with force = nokidding = 1, so a vehicle HELD UP on its own
+    // route is moved aside too (its destination replaced by a nearby cell,
+    // 0x742A9B NearbyLocation -> 0x742EA0 SetDestination). Without it two
+    // vehicles meeting head-on in a one-cell lane waited on each other forever
+    // (SOV07's harvesters at (74,61)/(75,61)).
+    if (u.moving() && !(cell_push && u.is_vehicle && u.wait_time > 0.0)) return;
     static const int kDx[8] = {0, 1, 1, 1, 0, -1, -1, -1};
     static const int kDy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
     const int start = combat_rng_.random(0, 7);   // deterministic sync-RNG pick

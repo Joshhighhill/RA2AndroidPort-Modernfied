@@ -2251,7 +2251,9 @@ public:
     // SetOwningHouse FUN_00700940).
     void set_unit_owner(int idx, int house);
     void order_guard(int idx);
-    void order_scatter(int idx);
+    // cell_push: the blocked-mover's CellClass::ScatterContent push (see
+    // unit_orders.cpp) -- a held-up vehicle with a destination moves too.
+    void order_scatter(int idx, bool cell_push = false);
     void group_stop(int issuer, const std::vector<int>& ids);
     void group_guard(int issuer, const std::vector<int>& ids);
     void group_scatter(int issuer, const std::vector<int>& ids);
