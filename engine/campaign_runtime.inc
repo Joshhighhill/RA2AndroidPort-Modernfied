@@ -2765,6 +2765,21 @@ private:
                         std::cerr << "[camp-debug] f" << frame_ << " team 46 arg " << c.arg << " type "
                                   << building_type_id(c.arg & 0xFFFF) << " -> b" << t << " occ="
                                   << (t >= 0 ? (int)w_.can_occupy(m, t) : -1) << "\n";
+                    // fv7d [RE: InfantryClass::Mission_Attack 0x51F0F0]: a
+                    // computer-owned Infiltrate infantry whose TarCom is a
+                    // building gets Assign_Destination(TarCom) + Mission
+                    // Capture (8) and walks in; Mission_Enter 0x519449 then
+                    // repairs a BridgeRepairHut's bridge or captures. The
+                    // INI loader sets Infiltrate (+0xEBE) for every
+                    // Engineer= type (0x5243B9). Without it TRN02's
+                    // RedTeamRepairBridge engineer stood idle at its
+                    // waypoint and the bridge stayed down. [RE-FALLBACK:
+                    // the Agent (spy) half of the same branch is not
+                    // routed here.]
+                    if (t >= 0 && w_.unit_is_engineer(u) && !w_.human_commanded(u.house)) {
+                        if (u.capture_target != t) w_.order_engineer_capture(m, t);
+                        continue;
+                    }
                     // An Occupier "attacking" an occupiable building it may
                     // enter goes inside (FUN_00457CE0 CanBeOccupiedBy -> the
                     // infantry's Enter path), the ALL03/04 garrison teams.
