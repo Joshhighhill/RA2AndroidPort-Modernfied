@@ -429,6 +429,7 @@ template <class Ar> void fields(Ar& ar, AnUnit& v) {   // W2-AN (save v9)
     io(ar, v.sp_launch); io(ar, v.sp_status); io(ar, v.sp_tgt_unit); io(ar, v.sp_tgt_bld);
     io(ar, v.sp_next_unit); io(ar, v.sp_next_bld); io(ar, v.launch_hold); io(ar, v.loaner);
     io(ar, v.crash_hp); io(ar, v.naval_cell); io(ar, v.shot_list); io(ar, v.radial_counter);
+    io(ar, v.para_passes); io(ar, v.para_overfly); io(ar, v.para_timer);   // v42: W8-05-07
 }
 template <class Ar> void fields(Ar& ar, SonicWave& v) {   // v35: W7-06-10
     io(ar, v.firer); io(ar, v.target_unit); io(ar, v.target_bld); io(ar, v.sx); io(ar, v.sy);

@@ -730,6 +730,13 @@ void World::an_step_spawners(double dt) {
 
 void World::an_step_fixed_wing(double dt) {
     const SwParams& P = an_.sw;
+    // W8-05-07: a superweapon plane's jump appends its trooper to units_;
+    // room for one per plane keeps the loop's Unit& valid.
+    {
+        std::size_t planes = 0;
+        for (const Unit& p : units_) planes += p.an.sortie == kParadrop && p.an.drop_left > 0;
+        if (planes) units_.reserve(units_.size() + planes);
+    }
     const int n = static_cast<int>(units_.size());
     for (int i = 0; i < n; ++i) {
         Unit& u = units_[i];
@@ -945,51 +952,41 @@ void World::an_step_fixed_wing(double dt) {
                 if (spawned && !home_ok) u.an.sortie = kReturn;   // owner lost: crashes below
                 break;
             case kParadrop: {
-                // PDPLANE: straight run over the drop site, then off the map.
-                // W4-SQ-06: a team plane drops its CARRIED members instead.
-                if (!u.cargo.empty()) {
-                    goal_x = u.an.drop_x;
-                    goal_y = u.an.drop_y;
-                    fly = true;
-                    if (cdist(u.fx, u.fy, u.an.drop_x, u.an.drop_y) * kLept <= P.paradrop_radius &&
-                        !an_drop_passenger(i)) {
-                        // No landing room left: the plane flies on and tries
-                        // again over its next cells (the original keeps
-                        // looping over the target; RE-FALLBACK).
-                        Unit& pl = units_[i];
-                        pl.an.drop_x = std::max(0, std::min(grid_w_ - 1, pl.an.drop_x + (pl.an.exit_x > pl.an.drop_x ? 1 : pl.an.exit_x < pl.an.drop_x ? -1 : 0)));
-                        pl.an.drop_y = std::max(0, std::min(grid_h_ - 1, pl.an.drop_y + (pl.an.exit_y > pl.an.drop_y ? 1 : pl.an.exit_y < pl.an.drop_y ? -1 : 0)));
-                    }
-                    break;
-                }
-                const bool dropping = u.an.drop_left > 0;
-                goal_x = dropping ? u.an.drop_x : u.an.exit_x;
-                goal_y = dropping ? u.an.drop_y : u.an.exit_y;
+                // W8-05-07 [RE: AircraftClass Mission_ParadropApproach
+                // FUN_004158E0 (returns 3) / Mission_ParadropOverfly
+                // FUN_00415960 (returns 5) / the jump FUN_00415C60]: the plane
+                // flies at the drop site; inside ParadropRadius (Rules+0x54C)
+                // Approach turns into Overfly and spends one pass (+0x6D3).
+                // Overfly drops ONE trooper every 5 frames while the plane is
+                // in the radius and in the playfield (FUN_00578020); a refused
+                // jump is retried 5 frames later. Out of the radius it loops
+                // back over the target (Approach) while passes remain, else it
+                // leaves with whoever is still aboard (Mission Retreat). Every
+                // jump resets the passes to 5. Team planes (W4-SQ-06) carry
+                // their members; the superweapon plane counts drop_left.
+                const bool aboard = (!u.cargo.empty() || u.an.drop_left > 0) && u.an.para_passes >= 0;
+                goal_x = aboard ? u.an.drop_x : u.an.exit_x;
+                goal_y = aboard ? u.an.drop_y : u.an.exit_y;
                 fly = true;
-                if (dropping && cdist(u.fx, u.fy, u.an.drop_x, u.an.drop_y) * kLept <= P.paradrop_radius) {
-                    // One paratrooper per frame onto free land cells near the site.
-                    int placed = 0;
-                    for (int r = 0; r <= 4 && !placed; ++r)
-                        for (int oy = -r; oy <= r && !placed; ++oy)
-                            for (int ox = -r; ox <= r && !placed; ++ox) {
-                                if (std::max(std::abs(ox), std::abs(oy)) != r) continue;
-                                const int cx = u.an.drop_x + ox, cy = u.an.drop_y + oy;
-                                if (!walkable(cx, cy) || !occ_.is_free(cx, cy) || building_at_cell(cx, cy) >= 0) continue;
-                                const int pi = an_spawn(u.an.drop_type, u.house, cx, cy);
-                                if (pi >= 0) {
-                                    // W7-01-07 [rules ParadropRadius / ParachuteMaxFallRate,
-                                    // PARACH, art Paradrop=]: the trooper jumps and falls
-                                    // under its parachute from the plane's height (the
-                                    // team-drop model, an_drop_passenger).
-                                    para_start(pi, units_[i].altitude);
-                                    placed = 1;
-                                    an_event(SwEvent::Dropped, units_[i].house, SuperweaponType::ParaDrop, cx, cy);
-                                }
-                            }
-                    Unit& pl = units_[i];
-                    if (placed) --pl.an.drop_left;
-                    else pl.an.drop_left = 0;   // no room: the rest stay aboard
-                } else if (!dropping && cdist(u.fx, u.fy, goal_x, goal_y) < 0.5) {
+                if (aboard) {
+                    if (u.an.para_timer > 0 && --u.an.para_timer > 0) break;
+                    const bool in_radius = cdist(u.fx, u.fy, u.an.drop_x, u.an.drop_y) * kLept <= P.paradrop_radius;
+                    if (!u.an.para_overfly) {   // Approach
+                        u.an.para_timer = 3;
+                        if (in_radius) {
+                            u.an.para_overfly = true;
+                            --u.an.para_passes;
+                        }
+                        break;
+                    }
+                    u.an.para_timer = 5;        // Overfly
+                    if (in_radius) {
+                        if (cell_in_playfield(u.cell_x, u.cell_y)) an_para_jump(i);
+                        break;
+                    }
+                    u.an.para_overfly = false;
+                    if (u.an.para_passes <= 0) u.an.para_passes = -1;   // no pass left: leave
+                } else if (cdist(u.fx, u.fy, goal_x, goal_y) < 0.5) {
                     units_[i].alive = false;   // left the map
                     units_[i].die_time = 1.0;
                     units_[i].deployed_away = true;   // W4-SQ-03: gone, not destroyed (no loss)
@@ -1344,11 +1341,6 @@ bool World::order_leave_map(int idx) {
     return true;
 }
 
-// One carried member jumps: it leaves the plane over the nearest free land
-// cell around the drop site and falls under its parachute from the plane's
-// height [RE-FALLBACK: the per-jump cadence and the landing-cell scan of the
-// ParadropApproach mission were not traced; one jump per frame onto the
-// first free cell of the rings around the target, as the SW plane does].
 // W7-01-07: a spawned superweapon paratrooper starts under its parachute at
 // `alt` leptons over its landing cell (which it keeps occupied).
 void World::para_start(int ui, double alt) {
@@ -1359,34 +1351,78 @@ void World::para_start(int ui, double alt) {
     u.ia.seq = -1;   // W3-B: the machine restarts on landing
 }
 
-bool World::an_drop_passenger(int i) {
-    Unit& pl = units_[i];
-    if (pl.cargo.empty()) return false;
-    for (int r = 0; r <= 6; ++r)
-        for (int oy = -r; oy <= r; ++oy)
-            for (int ox = -r; ox <= r; ++ox) {
-                if (std::max(std::abs(ox), std::abs(oy)) != r) continue;
-                const int cx = pl.an.drop_x + ox, cy = pl.an.drop_y + oy;
-                if (!walkable(cx, cy) || !occ_.is_free(cx, cy) || building_at_cell(cx, cy) >= 0) continue;
-                const int p = pl.cargo.front();
-                pl.cargo.erase(pl.cargo.begin());
-                if (p < 0 || p >= static_cast<int>(units_.size())) return true;
-                Unit& u = units_[p];
-                u.cargo_of = kParachuteCargo;
-                u.cell_x = cx;
-                u.cell_y = cy;
-                u.fx = cx;
-                u.fy = cy;
-                u.guard_x = cx;
-                u.guard_y = cy;
-                u.an.para_alt = std::max(1.0, pl.altitude);
-                if (const ra2assets::MapCell* mc = map_->at(cx, cy)) u.level = mc->level;
-                occ_.set(cx, cy, p);   // the landing cell is taken from the jump on
-                u.ia.seq = -1;         // W3-B: the machine restarts on landing
-                an_event(SwEvent::Dropped, pl.house, SuperweaponType::ParaDrop, cx, cy);
-                return true;
-            }
-    return false;
+// W8-05-07 [RE: FUN_00415C60, the paradrop plane's one jump]: the next
+// trooper leaves the plane at the plane's own position, 128 leptons
+// (DAT_007E1808) off its heading -- to the right (facing + 0x3FFF) when the
+// count left aboard is even, else to the left (0x415CAC) -- and falls onto
+// the cell under that point. The jump is refused (the trooper stays aboard
+// for the next Overfly tick) when the trooper cannot enter the cell
+// (Can_Enter_Cell vtbl+0x1AC: water, cliff, building), when the cell has no
+// free infantry spot (FindInfantrySubposition FUN_00481090: a vehicle there
+// or all three spots taken; the spot is chosen by the quadrant of the jump
+// point) or when it is outside the playfield (SpawnParachuted FUN_005F5150).
+// SpawnParachuted puts a trooper landing on a bridge cell on the deck
+// (OnBridge +0x8C). Every jump resets the plane's passes to 5 (0x415E93).
+// Replaces the R-038 RE-FALLBACK (one trooper per frame into the first free
+// whole cell around the target).
+bool World::an_para_jump(int i) {
+    if (i < 0 || i >= static_cast<int>(units_.size())) return false;
+    const Unit& pl = units_[static_cast<std::size_t>(i)];
+    const bool team = !pl.cargo.empty();
+    const int left = (team ? static_cast<int>(pl.cargo.size()) : pl.an.drop_left) - 1;   // +0x2FC after the DEC
+    if (left < 0) return false;
+    double jx = pl.fx, jy = pl.fy;
+    step_along_facing(jx, jy, pl.body_facing + ((left & 1) ? -16383.0 : 16383.0), 128.0);
+    const int cx = static_cast<int>(std::lround(jx)), cy = static_cast<int>(std::lround(jy));
+    if (cx < 0 || cy < 0 || cx >= grid_w_ || cy >= grid_h_) return false;
+    if (!walkable(cx, cy) || building_at_cell(cx, cy) >= 0 || !cell_in_playfield(cx, cy)) return false;
+    const int who = team ? pl.cargo.front() : static_cast<int>(units_.size());
+    if (team && (who < 0 || who >= static_cast<int>(units_.size()))) {
+        units_[static_cast<std::size_t>(i)].cargo.erase(units_[static_cast<std::size_t>(i)].cargo.begin());
+        return false;
+    }
+    // FindInfantrySubposition: the quadrant of the jump point in its cell.
+    const bool inf = team ? occ_.is_infantry(who) : occ_.subcells();
+    int spot = -1;
+    if (inf) {
+        const int ox = static_cast<int>(std::lround((jx - cx) * kLept));
+        const int oy = static_cast<int>(std::lround((jy - cy) * kLept));
+        spot = occ_.free_spot(cx, cy, spot_quadrant(ox, oy), who & 3);
+        if (spot < 0) return false;
+    } else if (!occ_.is_free(cx, cy)) {
+        return false;
+    }
+    const int house = pl.house;
+    const double alt = pl.altitude;
+    int p = who;
+    if (team) {
+        Unit& plane = units_[static_cast<std::size_t>(i)];
+        plane.cargo.erase(plane.cargo.begin());
+        Unit& u = units_[static_cast<std::size_t>(p)];
+        u.cell_x = cx;
+        u.cell_y = cy;
+        u.fx = cx;
+        u.fy = cy;
+        if (const ra2assets::MapCell* mc = map_ ? map_->at(cx, cy) : nullptr) u.level = mc->level;
+        if (spot >= 0) occ_.set_spot(cx, cy, p, spot);
+        else occ_.set(cx, cy, p);   // the landing cell is taken from the jump on
+    } else {
+        const std::string type = pl.an.drop_type;
+        p = an_spawn(type, house, cx, cy);
+        if (p < 0) return false;
+        if (spot >= 0) place_in_spot(p, spot);
+    }
+    Unit& u = units_[static_cast<std::size_t>(p)];
+    u.guard_x = cx;
+    u.guard_y = cy;
+    // SpawnParachuted @0x5F5150: a bridge cell puts it on the deck.
+    if (high_bridge_cell(cx, cy) && !high_bridge_destroyed(cx, cy)) u.on_deck = 1;
+    para_start(p, alt);
+    Unit& plane = units_[static_cast<std::size_t>(i)];
+    if (!team) --plane.an.drop_left;
+    plane.an.para_passes = 5;
+    an_event(SwEvent::Dropped, house, SuperweaponType::ParaDrop, cx, cy);
+    return true;
 }
 
 void World::an_step_parachutes(double dt) {
@@ -1409,7 +1445,7 @@ void World::an_step_parachutes(double dt) {
         if (u.an.para_alt > 0.0) continue;
         u.an.para_alt = 0.0;
         u.cargo_of = -1;   // touched down: an ordinary unit on its cell
-        if (occ_.at(u.cell_x, u.cell_y) != i) {
+        if (occ_.at(u.cell_x, u.cell_y) != i && occ_.spot_of(u.cell_x, u.cell_y, i) < 0) {   // W8-05-07: spot holders share a cell
             if (occ_.is_free(u.cell_x, u.cell_y)) occ_.set(u.cell_x, u.cell_y, i);
             else {
                 const std::vector<Cellxy> g = nearest_free_cells({u.cell_x, u.cell_y}, 1, passable_, grid_w_,

@@ -1,0 +1,37 @@
+# save-paradrop-camp.play -- W8-06-01: an ALL01T save taken while a
+# paratrooper hangs under its chute loads (it used to be refused and the
+# in-place campaign rebuild then crashed, 0xC0000005), the trooper keeps its
+# height and lands.
+set render_every 0
+set campaign ALL01T.MAP GDI
+click start
+until 300 scene == game
+until 60 input_locked == 1
+until 1500 input_locked == 0
+wait 5
+let e1 = free(0,E1)
+cheat pres_para E1 0 2 2 3000
+wait 2
+assert carried(0) == 1                                    @W8-06-01
+key f10
+wait 2
+click "menu:SAVE GAME"
+wait 2
+click dialog:action
+wait 5
+log SAVED
+key f10
+wait 2
+click "menu:LOAD GAME"
+wait 2
+click dialog:row0
+click dialog:action
+wait 5
+require scene == game                                     @W8-06-01
+assert banner != "Error loading game!"                    @W8-06-01
+assert carried(0) == 1                                    @W8-06-01
+until 2000 carried(0) == 0                                @W8-06-01
+assert free(0,E1) == $e1+1                                @W8-06-01
+wait 60
+log STILL-RUNNING
+end

@@ -163,6 +163,16 @@ struct AnUnit {
     // W4-SQ-06 (save v16): a paratrooper's height while it falls under its
     // parachute (cargo_of == kParachuteCargo); 0 on the ground.
     double para_alt = 0.0;
+    // W8-05-07 (save v42) [RE: AircraftClass Mission_ParadropApproach
+    // FUN_004158E0 / Mission_ParadropOverfly FUN_00415960 / FUN_00415C60]:
+    // the paradrop plane's mission state. para_passes = +0x6D3 (5 from the
+    // ctor FUN_00413D20 @0x413D74, -1 on each approach into ParadropRadius,
+    // back to 5 on every jump; -1 here = gave up, leaving); para_overfly =
+    // Overfly (else Approach); para_timer = frames until the mission runs
+    // again (Approach returns 3, Overfly 5).
+    int para_passes = 5;
+    bool para_overfly = false;
+    int para_timer = 0;
     // W7 (save v35): the locomotor speed state. jj_speed = JumpjetLocomotion
     // CurSpeed (loco +0x74, leptons/frame, FUN_0054CDA0); fly_throttle =
     // FlyLocomotion CurrentSpeed (loco +0x48, fraction of type+0x678,

@@ -2795,7 +2795,7 @@ private:
     void an_nuke_detonate(const SwStrike& s);
     void an_storm_bolt(SwStrike& s, int x, int y);
     void an_paradrop(int house, SuperweaponType type, int cx, int cy);
-    bool an_drop_passenger(int plane);   // W4-SQ-06: one carried paratrooper out
+    bool an_para_jump(int plane);   // W8-05-07: one trooper out (FUN_00415C60)
     void an_step_parachutes(double dt);  // W4-SQ-06: falling paratroopers
     void an_chrono(int house, int sx, int sy, int dx, int dy);
     void an_iron_curtain(int house, int cx, int cy);

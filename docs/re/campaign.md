@@ -231,8 +231,9 @@ briefing audio file in `mission.ini`.
    * otherwise the objects are unlimboed at the waypoint (8-neighbour retries);
      an all-infantry group next to a building exits from it (KickOutUnit).
    The clone follows this; RE-FALLBACKs: the edge cell (straight off the drop
-   point on screen instead of a random edge cell), one jump per frame onto the
-   free cells around the waypoint, ParachuteMaxFallRate fall.
+   point on screen instead of a random edge cell), ParachuteMaxFallRate fall.
+   The jumps follow the plane's paradrop missions (W8-05-07, see
+   aircraft.md §Paradrop missions).
    `CreateTeam` recruits the house's idle on-map units of the TaskForce types;
    a computer house's AI production also trains the missing ones
    [RE-FALLBACK, RE-W4-SQ-2].
