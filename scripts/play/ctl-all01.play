@@ -43,8 +43,17 @@ assert selected_type(TANY) == 1
 shot sel
 # Liberty Island is up the screen from the pier: scroll up until the island's
 # pier cell is visible, then order the move there.
+# fv8a: wait for the Soviet landing party (hovercraft unload ~f710-735 onto
+# Liberty Island's south shore, x59-66 y83-87) to move inland before the swim:
+# since fv7c's per-sub-tile LandType (FUN_00544910, faithful) Tanya crosses the
+# shore ~30 frames sooner and, ordered at once, walks under a move order (no
+# return fire) through the 8 conscripts and dies (Mis_A1 Tanya-death = LOST).
+# Bisected: bbb159f PASS, 844a88a FAIL; A/B with the TMP byte ignored = PASS.
+wait 60
 hold up 10
 wait 12
+move cell 62 77 onscreen
+assert cursor_name == move                    @W4-MC-01
 click cell 62 77 onscreen                     @W4-MC-01
 wait 1
 assert sel_moving >= 1                        @W4-MC-01
