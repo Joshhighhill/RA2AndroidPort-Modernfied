@@ -49,6 +49,14 @@ and Yuri 0 takes one of the two Grizzlies that answer, which with the IFVs
 kills the other; then the plants. Engine fix found on the way: an ability
 weapon (the dog's ParasiteDog jaw) no longer holds a target its warhead does
 0 % to (a patrol team ordered the dogs at the IFV, which they rode to death).
+fv7d (after fv7c's unified call for help, FUN_00707500 -- faithful: every
+hit on a building with an attacker calls, recruits stop once their ThreatPosed
+passes attacker ThreatPosed x 3): three SEAL lures and three Grizzly lures;
+after the blackout both IFVs wait well south of the wall (an idle IFV chased a
+target into the compound and the President died in the crossfire); the
+President's guard is no longer taken first (the three GDI SEALs on his stop
+answer it) -- Yuri 2 stands at (62,67), in reach of both ends of his walk, and
+takes him at once (Easy, WON f27447).
 Run from the repo root: python scripts/play/gen/mk_sov09.py
 """
 import os
@@ -62,10 +70,10 @@ HEADER = """# R3: SOV09 (Mexico) WON with real orders only (no cheats), Easy. Ge
 # Yuris pulled back at battle control; the British engineer (mind-controlled)
 # captures the Alliance barracks; the mind-controlled IFV shoots the south
 # patrol and breaches the compound's south wall; Yuri 2 takes the east IFV;
-# two lures draw out the SEALs (shot by the IFVs) and the Grizzlies (Yuri 0
-# takes one); from the gap the IFV destroys three power plants: output < 575,
-# Prisms offline; a Yuri takes the President's south guard, another the
-# President.
+# three + three lures draw out the SEALs (shot by the IFVs) and the Grizzlies (Yuri 0
+# takes one); from the gap the IFV destroys power plants: output < 575,
+# Prisms offline; the IFVs back off south; Yuri 2 takes the President from
+# (62,67).
 set render_every 900
 set on_quit continue
 set campaign sov09u.MAP Nod 0
@@ -110,8 +118,16 @@ DOG_PARK = (_cells("MK_SOV09_DOG_PARK", "26,50") or [None])[0]
 FV_ROUTE = _cells("MK_SOV09_FV_ROUTE", "40,77 48,82 64,82 66,77")
 FV_HOLD = int(os.environ.get("MK_SOV09_FV_HOLD", "60"))
 LURE = int(os.environ.get("MK_SOV09_LURE", "1"))   # 0: the pre-wave-7 plan (fails)
+ESCORT_POSTS = _cells("MK_SOV09_ESCORT_POSTS", "65,76 67,76")
 BREACH_POLLS = int(os.environ.get("MK_SOV09_BREACH_POLLS", "30"))
 LURE_POLLS = int(os.environ.get("MK_SOV09_LURE_POLLS", "60"))
+# fv7d: three SEAL lures, then three Grizzly lures. A building hit calls for
+# help (BuildingClass::ReceiveDamage 0x44223C -> FUN_00707500) with a budget of
+# the IFV's ThreatPosed 10 x ComputerBaseDefenseResponse 3 = 30, so each lure
+# draws about two recruits (SEAL 25 / Grizzly 15 ThreatPosed), then the
+# attacker's BaseDefenseDelay cooldown; one lure per kind no longer empties
+# the compound.
+PHASES = os.environ.get("MK_SOV09_PHASES", "AAABBB")
 
 
 def drive(p, spec, x, y, polls=60):
@@ -279,14 +295,15 @@ def main(out):
                       f"if {far} then click cell {x} {y}")
 
         def yuri0_poll():
-            c = "units(1,MTNK) > 0 and units(6,MTNK) == 0 and units(6,YURI) > 0"
-            p.add(f"if {c} then click xy 500 400 right", f"if {c} then click unit 6:YURI:0",
-                  f"if {c} then click unit 1:MTNK:near soft")
+            # fv7b (fv7c unified call for help, FUN_00707500): the Grizzlies
+            # may stay in the compound; clicking the nearest one walked Yuri 0
+            # in under the Prisms. Yuri 0 now waits at its post and takes a
+            # Grizzly that comes within its reach on its own.
             back = "units(6,MTNK) > 0 and ucell(6,YURI,0) != 44087 and upath(6,YURI,0) != 44087"
             p.add(f"if {back} then click xy 500 400 right", f"if {back} then click unit 6:YURI:0",
                   f"if {back} then click cell 44 87")
 
-        for phase in ("A", "B"):
+        for phase in PHASES:
             # fv7b: since w7r3 (a Prism Tower no longer shoots at airborne
             # units -- FUN_007718B0 AA legality) the opening plays out a
             # little differently and the idle breaching IFV had drifted to
@@ -300,6 +317,10 @@ def main(out):
             for _ in range(LURE_POLLS):
                 if phase == "B":
                     yuri0_poll()
+                else:   # fv7b: an idle Yuri 0 walked off after a target into the compound
+                    c = "units(6,YURI) > 0 and ucell(6,YURI,0) != 62081 and upath(6,YURI,0) != 62081"
+                    p.add(f"if {c} then click xy 500 400 right", f"if {c} then click unit 6:YURI:0",
+                          f"if {c} then click cell 62 81")
                 hold_posts()
                 p.add("wait 20")
             p.add("dump")
@@ -312,11 +333,20 @@ def main(out):
     p.add(f"repeat {PLANT_POLLS // 20}")   # 20 polls, then the Yuri check
     for _ in range(20):
         base = "power_out(1) >= 575 and units(6,FV) > 0"
-        for c in (f"{base} and utgt(6,FV,0) != -1", f"{base} and utgtb(6,FV,0) == -1"):
+        conds = (f"{base} and utgt(6,FV,0) != -1", f"{base} and utgtb(6,FV,0) == -1")
+        for c in conds:
             p.add(f"if {c} then click xy 500 400 right", f"if {c} then click unit 6:FV:0",
                   f"if {c} then click building 1:GAPOWR:near")
         if LURE:   # (w7r2) the captured Grizzlies stay on their posts meanwhile
-            for k, (gx, gy) in enumerate([(64, 78), (68, 78)]):
+            # fv7b (fv7c unified call for help, FUN_00707500): a Grizzly that
+            # stayed in the compound answers the shelling at the IFV; the
+            # escort posts are now beside the gap (out of every Prism's 8
+            # cells), within reach of it, and the captured IFV joins them.
+            c = ("power_out(1) >= 575 and units(6,FV) > 1 and ucell(6,FV,9) != 68077"
+                 " and upath(6,FV,9) != 68077 and nenemy(6,FV,9) > 6")
+            p.add(f"if {c} then click xy 500 400 right", f"if {c} then click unit 6:FV:9",
+                  f"if {c} then click cell 68 77")
+            for k, (gx, gy) in enumerate(ESCORT_POSTS):
                 c = (f"power_out(1) >= 575 and units(6,MTNK) > {k} and ucell(6,MTNK,{k}) != {gx * 1000 + gy}"
                      f" and upath(6,MTNK,{k}) != {gx * 1000 + gy} and nenemy(6,MTNK,{k}) > 6")
                 p.add(f"if {c} then click xy 500 400 right", f"if {c} then click unit 6:MTNK:{k}",
@@ -332,7 +362,13 @@ def main(out):
     p.add("until 900 power_out(1) < 575", "assert power_out(1) < 575",
           "assert outcome == RUNNING", "dump", "shot blackout")
     # 6. the IFV clears the gap; Yuris 1 and 2 walk up to it
-    order(p, "6:FV:0", "cell 70 74")
+    # fv7d: after the blackout an idle IFV picks a target in the compound and
+    # chases it in (both IFVs drove to (60,62) and the President died in the
+    # crossfire: LOST). Both go well south of the wall instead and are kept
+    # there while the Yuris walk up.
+    SAFE = [("6:FV:0", 66, 86), ("6:FV:9", 72, 86)]
+    for spec, x, y in SAFE:
+        drive(p, spec, x, y, 15)
     # (w7r2: Yuri 2 comes from (56,84), Yuri 1 from the west)
     order(p, "6:YURI:2", "cell 62 80")
     for (x, y) in [(40, 77), (44, 78), (53, 78), (58, 78), (58, 76), (62, 76), (64, 74)]:
@@ -342,21 +378,48 @@ def main(out):
         if (x, y) == (64, 74):
             order(p, "6:YURI:2", "cell 65 74")
         p.add("wait 30", "until 1500 umov(6,YURI,1) == 0 and umov(6,YURI,2) == 0")
+        for spec, x, y in SAFE:   # fv7d: the IFVs stay out of the compound
+            k = spec.replace(":", ",")
+            c = f"units(6,FV) > 0 and ucell({k}) != {x * 1000 + y} and upath({k}) != {x * 1000 + y}"
+            p.add(f"if {c} then click xy 500 400 right", f"if {c} then click unit {spec} soft",
+                  f"if {c} then click cell {x} {y}")
+        if os.environ.get("MK_SOV09_DBG"):
+            p.add("dump")
     p.add("dump")
     # 7. Yuri 1, just inside the gap, takes the British guard SEAL south of
     #    the President from 7.3 cells (beyond its 6 + 1 acquisition)
-    go(p, "6:YURI:1", 66, 70, 600)
-    for _ in range(8):
-        c = "units(6,GHOST) == 0"
-        p.add(f"if {c} then click xy 500 400 right", f"if {c} then click unit 6:YURI:1",
-              f"if {c} then click unit 4:GHOST:near soft", "wait 40")
-    p.add("dump")
+    # fv7d: skipped. With the faithful threat scans and call for help the
+    # three GDI SEALs on the President's stop answer a capture next to them
+    # (the taken SEAL is shot, then Yuri 1). From (67,68) Yuri 2 is 7.6 cells
+    # from the stop -- inside the Yuri's 8, outside every SEAL's MP5 (6) -- so
+    # the guard need not be taken first.
+    if os.environ.get("MK_SOV09_STEP7", "0") == "1":
+        go(p, "6:YURI:1", 66, 70, 600)
+        # fv7d: the guard SEAL stands at (61,61), 10.3 cells from (66,70) and out of
+        # sight: Yuri 1 steps on to (63,68), 7.3 cells from it, and the view is
+        # brought over the SEAL before the click.
+        go(p, "6:YURI:1", 63, 68, 600)
+        p.add("view cell 62 64", "wait 2")
+        for _ in range(8):
+            c = "units(6,GHOST) == 0"
+            p.add(f"if {c} then click xy 500 400 right", f"if {c} then click unit 6:YURI:1",
+                  f"if {c} then click unit 4:GHOST:near soft", "wait 40")
+            if os.environ.get("MK_SOV09_DBG"):
+                p.add("dump")
+        p.add("dump")
     # 8. Yuri 2 at (67,68); the President is taken when he steps onto (64,61)
+    # fv7d: the stand is (62,67) (env MK_SOV09_PRES_STAND): within 8 cells of
+    # both ends of the President's walk, (63,60) and (64,61), and 12+ from the
+    # American dogs (75,59)/(52,59), whose 10-cell scan took Yuri 2 at (67,68).
+    # Left idle there it takes the nearest SEAL by itself and the GDI SEALs
+    # come for it, so the President is clicked at once, wherever he stands.
+    STAND = _cells("MK_SOV09_PRES_STAND", "62,67")[0]
     go(p, "6:YURI:2", 66, 71, 600)
-    go(p, "6:YURI:2", 67, 68, 600)
-    p.add("dump")
+    go(p, "6:YURI:2", 63, 70, 600)
+    go(p, "6:YURI:2", STAND[0], STAND[1], 600)
+    p.add("view cell 65 64", "wait 2", "dump")
     for _ in range(30):
-        c = "outcome == RUNNING and ucell(3,PRES,0) == 64061"
+        c = "outcome == RUNNING" if os.environ.get("MK_SOV09_PRES_ANY", "1") == "1" else "outcome == RUNNING and ucell(3,PRES,0) == 64061"
         p.add(f"if {c} then click xy 500 400 right", f"if {c} then click unit 6:YURI:2",
               f"if {c} then click unit 3:PRES:0", "wait 30")
     p.add("until 900 outcome != RUNNING", "dump", "end expect WON")

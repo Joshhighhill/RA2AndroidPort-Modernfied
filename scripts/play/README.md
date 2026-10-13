@@ -280,6 +280,17 @@ has a destroyed middle section (overlay 101), so no ground route joins the two b
 original's map too -- the route is the bridge, which the RedTeam engineer repairs at the CABHUT once the
 player deploys (`RedTeamRepairBridge`); the clone gave the computer engineer an attack order instead of
 the original's Capture/Enter (InfantryClass::Mission_Attack 0x51F0F0). `m-trn02-real` WON again (f9460).
+fv7d: `m-sov09-real` WON again (Easy, f27447, `819650fe268955ad`). fv7c's call for help is faithful (every
+building hit with an attacker calls FUN_00707500; recruits stop once their ThreatPosed passes the IFV's 10 x
+ComputerBaseDefenseResponse 3), so one lure draws about two units: the script now lures three times for the
+SEALs and three for the Grizzlies, parks both IFVs south of the wall after the blackout, and Yuri 2 takes the
+President from (62,67) without first taking his guard (the three GDI SEALs on his stop answer that).
+`move-bridge-cliff` section 1 now aims at (55,58): (57,58) is Water08 sub 3, TMP byte 15 = Rock in the original.
+Still failing on master and on fv7d with identical play_hash (not caused by the per-tile LandType: an A/B with
+the old tile-set classes and Beach passable still fails): `m-sov01-real` (the army dies at the pillboxes,
+f~9800) and `m-sov02-real` (one SAPC never lands, f1515). `m-sov04-real` fails (all Rhinos lost) but passes
+with Beach passable: its Rhinos used to take the coast's Beach cells; with the faithful Beach block they go
+round and arrive late -- a re-tune.
 
 ## Multiplayer (agent S, engine/mp_pages.inc)
 
