@@ -286,11 +286,19 @@ ComputerBaseDefenseResponse 3), so one lure draws about two units: the script no
 SEALs and three for the Grizzlies, parks both IFVs south of the wall after the blackout, and Yuri 2 takes the
 President from (62,67) without first taking his guard (the three GDI SEALs on his stop answer that).
 `move-bridge-cliff` section 1 now aims at (55,58): (57,58) is Water08 sub 3, TMP byte 15 = Rock in the original.
-Still failing on master and on fv7d with identical play_hash (not caused by the per-tile LandType: an A/B with
-the old tile-set classes and Beach passable still fails): `m-sov01-real` (the army dies at the pillboxes,
-f~9800) and `m-sov02-real` (one SAPC never lands, f1515). `m-sov04-real` fails (all Rhinos lost) but passes
-with Beach passable: its Rhinos used to take the coast's Beach cells; with the faithful Beach block they go
-round and arrive late -- a re-tune.
+fv7e (all three WON / PASS again on the same Normal difficulty): `m-sov02-real` (PASS f1038, `cb52931ddc171560`)
+was an engine fault, not the Beach rule or the unload height gate. Since fv7c an amphibious SAPC blocked at sea
+can be pushed aside (ScatterContent -> UnitClass::Scatter 0x742880, cells tested by the unit's own movement
+domain); SAPC u105 was pushed (93,49) -> (92,50), stopped there, and the campaign team took the idle member as
+"arrived", so its Unload line held at sea forever. The original's coordinate move (TeamClass FUN_006EB030, the
+callee of every move-family script action) re-sends a member farther than Stray from the team destination
+whose NavCom is empty, and the line completes only when all are in; the campaign runtime now does the same.
+`m-sov01-real` WON again (Normal, f10229, `c4a58326930c54d2`) with that fix and no script change (one
+'Initial Paratroopers' member stranded 3 cells off its drop point is re-sent; the fight unfolds differently --
+a fragile win, not a re-tune). `m-sov04-real` WON again (Normal, f13439, `6a302d236c36f477`): with the faithful
+Beach block the landing craft unload on a different schedule, the feint infantry were ashore before the MCV, and
+the target loop sent the Rhinos after them south-west; the generator now holds the Rhinos at (108,48) until
+`free(1,AMCV) >= 1` (choreography).
 
 ## Multiplayer (agent S, engine/mp_pages.inc)
 
