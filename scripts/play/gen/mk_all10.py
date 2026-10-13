@@ -47,7 +47,12 @@ p.select_types(["E1", "JUMPJET"]).add(f"click cell {LAB[0]} {LAB[1]}", "wait 300
 # the V3s first.
 HUNT_R = VAR.get("hunt_r", 22)
 HUNT_TYPES = ["DOG", "E2", "SHK", "FLAKT", "HTK", "HTNK", "V3"]   # ascending priority (the last click wins)
-HUNTERS = VAR.get("hunters", ["MTNK", "FV", "MGTK"])
+# fv7b: since w7r2's Approach_Target rings (FUN_004D55B0) the invasion's V3
+# launchers shell the base from their range ring, outside the Prisms', and
+# the BadGuy MCVs (unstuck by the ScatterContent push) build up; the base was
+# razed by f8400 (LOST). The two Rocketeers -- out of reach of the V3s and
+# Rhinos -- hunt with the tanks.
+HUNTERS = VAR.get("hunters", ["MTNK", "FV", "MGTK", "JUMPJET"])
 LAB_TYPES = ["DOG", "E2", "SHK", "FLAKT", "HTK", "HTNK", "V3", "IVAN", "TERROR", "SENGINEER"]
 
 

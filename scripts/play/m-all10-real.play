@@ -39,6 +39,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -66,6 +67,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -93,6 +95,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -120,6 +123,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -147,6 +151,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -174,6 +179,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -201,6 +207,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -228,6 +235,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -255,6 +263,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -282,6 +291,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -309,6 +319,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -336,6 +347,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -363,6 +375,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -390,6 +403,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -417,6 +431,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -444,6 +459,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -471,6 +487,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -498,6 +515,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -525,6 +543,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -552,6 +571,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -579,6 +599,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -606,6 +627,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -633,6 +655,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -660,6 +683,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -704,6 +728,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -731,6 +756,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -758,6 +784,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -785,6 +812,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -812,6 +840,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -839,6 +868,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -866,6 +896,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -893,6 +924,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -920,6 +952,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -947,6 +980,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -974,6 +1008,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1001,6 +1036,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1028,6 +1064,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1055,6 +1092,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1082,6 +1120,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1109,6 +1148,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1136,6 +1176,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1163,6 +1204,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1190,6 +1232,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1217,6 +1260,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1244,6 +1288,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1271,6 +1316,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1298,6 +1344,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1325,6 +1372,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1369,6 +1417,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1396,6 +1445,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1423,6 +1473,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1450,6 +1501,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1477,6 +1529,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1504,6 +1557,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1531,6 +1585,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1558,6 +1613,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1585,6 +1641,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1612,6 +1669,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1639,6 +1697,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1666,6 +1725,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1693,6 +1753,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1720,6 +1781,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1747,6 +1809,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1774,6 +1837,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1801,6 +1865,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1828,6 +1893,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1855,6 +1921,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1882,6 +1949,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1909,6 +1977,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1936,6 +2005,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1963,6 +2033,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -1990,6 +2061,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2041,6 +2113,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2068,6 +2141,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2095,6 +2169,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2122,6 +2197,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2149,6 +2225,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2176,6 +2253,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2203,6 +2281,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2230,6 +2309,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2257,6 +2337,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2284,6 +2365,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2311,6 +2393,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2338,6 +2421,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2365,6 +2449,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2392,6 +2477,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2419,6 +2505,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2446,6 +2533,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2473,6 +2561,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2500,6 +2589,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2527,6 +2617,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2554,6 +2645,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2581,6 +2673,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2608,6 +2701,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2635,6 +2729,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2662,6 +2757,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2706,6 +2802,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2733,6 +2830,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2760,6 +2858,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2787,6 +2886,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2814,6 +2914,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2841,6 +2942,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2868,6 +2970,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2895,6 +2998,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2922,6 +3026,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2949,6 +3054,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -2976,6 +3082,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -3003,6 +3110,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -3030,6 +3138,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -3057,6 +3166,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -3084,6 +3194,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -3111,6 +3222,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -3138,6 +3250,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -3165,6 +3278,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -3192,6 +3306,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -3219,6 +3334,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -3246,6 +3362,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -3273,6 +3390,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -3300,6 +3418,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -3327,6 +3446,7 @@ waituntil 100 queue_ready(structure) == 1
 if queue_ready(structure) == 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if queue_ready(structure) == 0 and units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if queue_ready(structure) == 0 and units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if queue_ready(structure) == 0 and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and outcome == RUNNING then key t
 if queue_ready(structure) == 0 and sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -3380,6 +3500,7 @@ click cameo:FV
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -3442,6 +3563,7 @@ wait 100
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -3504,6 +3626,7 @@ wait 100
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -3566,6 +3689,7 @@ wait 100
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -3628,327 +3752,7 @@ wait 100
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
-if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
-if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
-if sel_near(1,E2) < 22 then click unit 1:E2:near soft
-if sel_near(2,E2) < 22 then click unit 2:E2:near soft
-if sel_near(6,E2) < 22 then click unit 6:E2:near soft
-if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
-if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
-if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
-if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
-if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
-if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
-if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
-if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
-if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
-if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
-if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
-if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
-if sel_near(1,V3) < 22 then click unit 1:V3:near soft
-if sel_near(2,V3) < 22 then click unit 2:V3:near soft
-if sel_near(6,V3) < 22 then click unit 6:V3:near soft
-if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
-if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if outcome == RUNNING then click cell 97 170 soft
-if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
-if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
-if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
-if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
-if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
-if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
-if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
-if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
-if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
-if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
-if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
-if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
-if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
-if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
-if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
-if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
-if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
-if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
-if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
-if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
-if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
-if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
-if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
-if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
-if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
-if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
-if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
-if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
-if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
-if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
-wait 100
-dump
-until 900 cameo(MTNK) == 1
-click tab:3
-click cameo:MTNK
-click cameo:MTNK
-click cameo:MTNK
-click cameo:MTNK
-click cameo:MTNK
-until 900 cameo(FV) == 1
-click tab:3
-click cameo:FV
-if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if units(0,FV) > 0 then click unit 0:FV:0 shift soft
-if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
-if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
-if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
-if sel_near(1,E2) < 22 then click unit 1:E2:near soft
-if sel_near(2,E2) < 22 then click unit 2:E2:near soft
-if sel_near(6,E2) < 22 then click unit 6:E2:near soft
-if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
-if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
-if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
-if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
-if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
-if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
-if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
-if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
-if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
-if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
-if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
-if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
-if sel_near(1,V3) < 22 then click unit 1:V3:near soft
-if sel_near(2,V3) < 22 then click unit 2:V3:near soft
-if sel_near(6,V3) < 22 then click unit 6:V3:near soft
-if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
-if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if outcome == RUNNING then click cell 97 170 soft
-if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
-if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
-if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
-if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
-if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
-if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
-if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
-if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
-if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
-if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
-if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
-if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
-if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
-if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
-if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
-if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
-if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
-if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
-if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
-if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
-if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
-if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
-if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
-if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
-if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
-if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
-if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
-if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
-if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
-if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
-wait 100
-if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if units(0,FV) > 0 then click unit 0:FV:0 shift soft
-if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
-if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
-if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
-if sel_near(1,E2) < 22 then click unit 1:E2:near soft
-if sel_near(2,E2) < 22 then click unit 2:E2:near soft
-if sel_near(6,E2) < 22 then click unit 6:E2:near soft
-if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
-if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
-if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
-if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
-if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
-if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
-if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
-if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
-if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
-if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
-if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
-if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
-if sel_near(1,V3) < 22 then click unit 1:V3:near soft
-if sel_near(2,V3) < 22 then click unit 2:V3:near soft
-if sel_near(6,V3) < 22 then click unit 6:V3:near soft
-if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
-if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if outcome == RUNNING then click cell 97 170 soft
-if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
-if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
-if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
-if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
-if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
-if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
-if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
-if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
-if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
-if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
-if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
-if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
-if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
-if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
-if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
-if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
-if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
-if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
-if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
-if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
-if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
-if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
-if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
-if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
-if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
-if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
-if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
-if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
-if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
-if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
-wait 100
-if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if units(0,FV) > 0 then click unit 0:FV:0 shift soft
-if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
-if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
-if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
-if sel_near(1,E2) < 22 then click unit 1:E2:near soft
-if sel_near(2,E2) < 22 then click unit 2:E2:near soft
-if sel_near(6,E2) < 22 then click unit 6:E2:near soft
-if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
-if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
-if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
-if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
-if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
-if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
-if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
-if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
-if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
-if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
-if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
-if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
-if sel_near(1,V3) < 22 then click unit 1:V3:near soft
-if sel_near(2,V3) < 22 then click unit 2:V3:near soft
-if sel_near(6,V3) < 22 then click unit 6:V3:near soft
-if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
-if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if outcome == RUNNING then click cell 97 170 soft
-if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
-if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
-if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
-if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
-if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
-if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
-if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
-if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
-if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
-if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
-if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
-if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
-if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
-if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
-if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
-if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
-if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
-if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
-if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
-if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
-if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
-if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
-if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
-if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
-if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
-if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
-if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
-if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
-if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
-if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
-wait 100
-if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if units(0,FV) > 0 then click unit 0:FV:0 shift soft
-if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
-if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
-if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
-if sel_near(1,E2) < 22 then click unit 1:E2:near soft
-if sel_near(2,E2) < 22 then click unit 2:E2:near soft
-if sel_near(6,E2) < 22 then click unit 6:E2:near soft
-if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
-if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
-if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
-if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
-if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
-if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
-if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
-if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
-if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
-if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
-if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
-if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
-if sel_near(1,V3) < 22 then click unit 1:V3:near soft
-if sel_near(2,V3) < 22 then click unit 2:V3:near soft
-if sel_near(6,V3) < 22 then click unit 6:V3:near soft
-if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
-if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if outcome == RUNNING then click cell 97 170 soft
-if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
-if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
-if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
-if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
-if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
-if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
-if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
-if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
-if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
-if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
-if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
-if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
-if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
-if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
-if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
-if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
-if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
-if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
-if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
-if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
-if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
-if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
-if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
-if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
-if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
-if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
-if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
-if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
-if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
-if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
-wait 100
-if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if units(0,FV) > 0 then click unit 0:FV:0 shift soft
-if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -4022,6 +3826,7 @@ click cameo:FV
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -4084,6 +3889,7 @@ wait 100
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -4146,6 +3952,7 @@ wait 100
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -4208,6 +4015,7 @@ wait 100
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -4270,327 +4078,7 @@ wait 100
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
-if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
-if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
-if sel_near(1,E2) < 22 then click unit 1:E2:near soft
-if sel_near(2,E2) < 22 then click unit 2:E2:near soft
-if sel_near(6,E2) < 22 then click unit 6:E2:near soft
-if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
-if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
-if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
-if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
-if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
-if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
-if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
-if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
-if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
-if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
-if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
-if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
-if sel_near(1,V3) < 22 then click unit 1:V3:near soft
-if sel_near(2,V3) < 22 then click unit 2:V3:near soft
-if sel_near(6,V3) < 22 then click unit 6:V3:near soft
-if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
-if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if outcome == RUNNING then click cell 97 170 soft
-if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
-if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
-if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
-if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
-if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
-if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
-if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
-if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
-if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
-if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
-if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
-if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
-if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
-if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
-if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
-if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
-if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
-if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
-if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
-if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
-if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
-if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
-if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
-if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
-if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
-if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
-if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
-if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
-if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
-if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
-wait 100
-dump
-until 900 cameo(MTNK) == 1
-click tab:3
-click cameo:MTNK
-click cameo:MTNK
-click cameo:MTNK
-click cameo:MTNK
-click cameo:MTNK
-until 900 cameo(FV) == 1
-click tab:3
-click cameo:FV
-if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if units(0,FV) > 0 then click unit 0:FV:0 shift soft
-if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
-if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
-if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
-if sel_near(1,E2) < 22 then click unit 1:E2:near soft
-if sel_near(2,E2) < 22 then click unit 2:E2:near soft
-if sel_near(6,E2) < 22 then click unit 6:E2:near soft
-if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
-if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
-if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
-if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
-if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
-if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
-if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
-if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
-if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
-if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
-if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
-if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
-if sel_near(1,V3) < 22 then click unit 1:V3:near soft
-if sel_near(2,V3) < 22 then click unit 2:V3:near soft
-if sel_near(6,V3) < 22 then click unit 6:V3:near soft
-if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
-if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if outcome == RUNNING then click cell 97 170 soft
-if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
-if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
-if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
-if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
-if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
-if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
-if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
-if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
-if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
-if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
-if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
-if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
-if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
-if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
-if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
-if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
-if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
-if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
-if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
-if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
-if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
-if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
-if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
-if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
-if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
-if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
-if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
-if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
-if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
-if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
-wait 100
-if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if units(0,FV) > 0 then click unit 0:FV:0 shift soft
-if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
-if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
-if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
-if sel_near(1,E2) < 22 then click unit 1:E2:near soft
-if sel_near(2,E2) < 22 then click unit 2:E2:near soft
-if sel_near(6,E2) < 22 then click unit 6:E2:near soft
-if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
-if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
-if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
-if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
-if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
-if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
-if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
-if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
-if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
-if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
-if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
-if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
-if sel_near(1,V3) < 22 then click unit 1:V3:near soft
-if sel_near(2,V3) < 22 then click unit 2:V3:near soft
-if sel_near(6,V3) < 22 then click unit 6:V3:near soft
-if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
-if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if outcome == RUNNING then click cell 97 170 soft
-if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
-if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
-if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
-if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
-if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
-if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
-if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
-if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
-if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
-if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
-if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
-if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
-if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
-if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
-if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
-if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
-if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
-if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
-if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
-if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
-if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
-if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
-if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
-if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
-if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
-if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
-if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
-if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
-if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
-if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
-wait 100
-if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if units(0,FV) > 0 then click unit 0:FV:0 shift soft
-if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
-if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
-if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
-if sel_near(1,E2) < 22 then click unit 1:E2:near soft
-if sel_near(2,E2) < 22 then click unit 2:E2:near soft
-if sel_near(6,E2) < 22 then click unit 6:E2:near soft
-if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
-if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
-if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
-if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
-if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
-if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
-if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
-if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
-if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
-if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
-if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
-if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
-if sel_near(1,V3) < 22 then click unit 1:V3:near soft
-if sel_near(2,V3) < 22 then click unit 2:V3:near soft
-if sel_near(6,V3) < 22 then click unit 6:V3:near soft
-if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
-if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if outcome == RUNNING then click cell 97 170 soft
-if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
-if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
-if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
-if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
-if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
-if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
-if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
-if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
-if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
-if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
-if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
-if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
-if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
-if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
-if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
-if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
-if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
-if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
-if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
-if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
-if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
-if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
-if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
-if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
-if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
-if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
-if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
-if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
-if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
-if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
-wait 100
-if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if units(0,FV) > 0 then click unit 0:FV:0 shift soft
-if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
-if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
-if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
-if sel_near(1,E2) < 22 then click unit 1:E2:near soft
-if sel_near(2,E2) < 22 then click unit 2:E2:near soft
-if sel_near(6,E2) < 22 then click unit 6:E2:near soft
-if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
-if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
-if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
-if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
-if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
-if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
-if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
-if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
-if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
-if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
-if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
-if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
-if sel_near(1,V3) < 22 then click unit 1:V3:near soft
-if sel_near(2,V3) < 22 then click unit 2:V3:near soft
-if sel_near(6,V3) < 22 then click unit 6:V3:near soft
-if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
-if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
-if outcome == RUNNING then key t
-if outcome == RUNNING then key t
-if outcome == RUNNING then click cell 97 170 soft
-if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
-if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
-if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
-if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
-if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
-if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
-if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
-if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
-if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
-if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
-if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
-if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
-if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
-if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
-if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
-if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
-if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
-if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
-if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
-if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
-if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
-if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
-if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
-if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
-if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
-if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
-if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
-if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
-if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
-if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
-wait 100
-if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
-if units(0,FV) > 0 then click unit 0:FV:0 shift soft
-if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -4664,6 +4152,7 @@ click cameo:FV
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -4726,6 +4215,7 @@ wait 100
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -4788,6 +4278,7 @@ wait 100
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -4850,6 +4341,7 @@ wait 100
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -4912,6 +4404,7 @@ wait 100
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -4985,6 +4478,7 @@ click cameo:FV
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -5047,6 +4541,7 @@ wait 100
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -5109,6 +4604,7 @@ wait 100
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -5171,6 +4667,7 @@ wait 100
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
@@ -5233,6 +4730,659 @@ wait 100
 if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
 if units(0,FV) > 0 then click unit 0:FV:0 shift soft
 if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
+if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
+if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
+if sel_near(1,E2) < 22 then click unit 1:E2:near soft
+if sel_near(2,E2) < 22 then click unit 2:E2:near soft
+if sel_near(6,E2) < 22 then click unit 6:E2:near soft
+if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
+if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
+if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
+if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
+if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
+if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
+if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
+if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
+if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
+if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
+if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
+if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
+if sel_near(1,V3) < 22 then click unit 1:V3:near soft
+if sel_near(2,V3) < 22 then click unit 2:V3:near soft
+if sel_near(6,V3) < 22 then click unit 6:V3:near soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING then click cell 97 170 soft
+if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
+if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
+if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
+if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
+if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
+if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
+if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
+if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
+if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
+if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
+if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
+if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
+if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
+if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
+if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
+if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
+if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
+if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
+if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
+if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
+if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
+if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
+if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
+if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
+if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
+if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
+if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
+if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
+if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
+if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
+wait 100
+dump
+until 900 cameo(MTNK) == 1
+click tab:3
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+until 900 cameo(FV) == 1
+click tab:3
+click cameo:FV
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
+if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
+if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
+if sel_near(1,E2) < 22 then click unit 1:E2:near soft
+if sel_near(2,E2) < 22 then click unit 2:E2:near soft
+if sel_near(6,E2) < 22 then click unit 6:E2:near soft
+if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
+if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
+if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
+if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
+if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
+if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
+if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
+if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
+if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
+if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
+if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
+if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
+if sel_near(1,V3) < 22 then click unit 1:V3:near soft
+if sel_near(2,V3) < 22 then click unit 2:V3:near soft
+if sel_near(6,V3) < 22 then click unit 6:V3:near soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING then click cell 97 170 soft
+if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
+if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
+if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
+if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
+if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
+if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
+if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
+if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
+if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
+if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
+if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
+if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
+if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
+if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
+if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
+if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
+if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
+if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
+if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
+if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
+if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
+if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
+if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
+if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
+if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
+if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
+if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
+if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
+if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
+if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
+wait 100
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
+if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
+if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
+if sel_near(1,E2) < 22 then click unit 1:E2:near soft
+if sel_near(2,E2) < 22 then click unit 2:E2:near soft
+if sel_near(6,E2) < 22 then click unit 6:E2:near soft
+if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
+if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
+if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
+if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
+if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
+if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
+if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
+if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
+if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
+if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
+if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
+if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
+if sel_near(1,V3) < 22 then click unit 1:V3:near soft
+if sel_near(2,V3) < 22 then click unit 2:V3:near soft
+if sel_near(6,V3) < 22 then click unit 6:V3:near soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING then click cell 97 170 soft
+if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
+if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
+if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
+if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
+if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
+if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
+if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
+if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
+if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
+if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
+if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
+if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
+if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
+if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
+if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
+if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
+if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
+if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
+if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
+if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
+if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
+if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
+if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
+if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
+if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
+if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
+if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
+if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
+if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
+if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
+wait 100
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
+if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
+if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
+if sel_near(1,E2) < 22 then click unit 1:E2:near soft
+if sel_near(2,E2) < 22 then click unit 2:E2:near soft
+if sel_near(6,E2) < 22 then click unit 6:E2:near soft
+if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
+if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
+if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
+if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
+if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
+if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
+if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
+if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
+if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
+if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
+if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
+if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
+if sel_near(1,V3) < 22 then click unit 1:V3:near soft
+if sel_near(2,V3) < 22 then click unit 2:V3:near soft
+if sel_near(6,V3) < 22 then click unit 6:V3:near soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING then click cell 97 170 soft
+if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
+if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
+if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
+if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
+if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
+if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
+if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
+if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
+if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
+if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
+if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
+if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
+if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
+if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
+if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
+if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
+if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
+if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
+if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
+if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
+if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
+if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
+if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
+if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
+if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
+if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
+if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
+if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
+if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
+if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
+wait 100
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
+if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
+if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
+if sel_near(1,E2) < 22 then click unit 1:E2:near soft
+if sel_near(2,E2) < 22 then click unit 2:E2:near soft
+if sel_near(6,E2) < 22 then click unit 6:E2:near soft
+if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
+if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
+if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
+if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
+if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
+if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
+if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
+if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
+if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
+if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
+if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
+if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
+if sel_near(1,V3) < 22 then click unit 1:V3:near soft
+if sel_near(2,V3) < 22 then click unit 2:V3:near soft
+if sel_near(6,V3) < 22 then click unit 6:V3:near soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING then click cell 97 170 soft
+if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
+if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
+if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
+if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
+if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
+if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
+if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
+if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
+if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
+if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
+if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
+if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
+if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
+if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
+if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
+if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
+if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
+if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
+if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
+if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
+if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
+if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
+if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
+if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
+if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
+if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
+if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
+if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
+if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
+if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
+wait 100
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
+if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
+if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
+if sel_near(1,E2) < 22 then click unit 1:E2:near soft
+if sel_near(2,E2) < 22 then click unit 2:E2:near soft
+if sel_near(6,E2) < 22 then click unit 6:E2:near soft
+if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
+if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
+if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
+if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
+if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
+if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
+if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
+if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
+if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
+if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
+if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
+if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
+if sel_near(1,V3) < 22 then click unit 1:V3:near soft
+if sel_near(2,V3) < 22 then click unit 2:V3:near soft
+if sel_near(6,V3) < 22 then click unit 6:V3:near soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING then click cell 97 170 soft
+if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
+if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
+if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
+if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
+if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
+if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
+if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
+if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
+if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
+if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
+if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
+if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
+if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
+if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
+if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
+if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
+if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
+if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
+if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
+if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
+if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
+if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
+if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
+if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
+if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
+if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
+if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
+if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
+if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
+if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
+wait 100
+dump
+until 900 cameo(MTNK) == 1
+click tab:3
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+until 900 cameo(FV) == 1
+click tab:3
+click cameo:FV
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
+if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
+if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
+if sel_near(1,E2) < 22 then click unit 1:E2:near soft
+if sel_near(2,E2) < 22 then click unit 2:E2:near soft
+if sel_near(6,E2) < 22 then click unit 6:E2:near soft
+if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
+if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
+if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
+if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
+if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
+if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
+if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
+if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
+if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
+if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
+if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
+if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
+if sel_near(1,V3) < 22 then click unit 1:V3:near soft
+if sel_near(2,V3) < 22 then click unit 2:V3:near soft
+if sel_near(6,V3) < 22 then click unit 6:V3:near soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING then click cell 97 170 soft
+if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
+if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
+if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
+if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
+if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
+if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
+if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
+if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
+if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
+if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
+if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
+if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
+if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
+if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
+if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
+if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
+if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
+if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
+if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
+if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
+if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
+if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
+if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
+if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
+if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
+if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
+if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
+if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
+if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
+if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
+wait 100
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
+if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
+if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
+if sel_near(1,E2) < 22 then click unit 1:E2:near soft
+if sel_near(2,E2) < 22 then click unit 2:E2:near soft
+if sel_near(6,E2) < 22 then click unit 6:E2:near soft
+if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
+if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
+if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
+if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
+if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
+if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
+if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
+if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
+if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
+if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
+if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
+if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
+if sel_near(1,V3) < 22 then click unit 1:V3:near soft
+if sel_near(2,V3) < 22 then click unit 2:V3:near soft
+if sel_near(6,V3) < 22 then click unit 6:V3:near soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING then click cell 97 170 soft
+if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
+if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
+if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
+if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
+if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
+if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
+if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
+if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
+if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
+if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
+if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
+if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
+if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
+if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
+if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
+if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
+if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
+if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
+if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
+if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
+if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
+if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
+if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
+if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
+if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
+if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
+if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
+if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
+if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
+if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
+wait 100
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
+if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
+if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
+if sel_near(1,E2) < 22 then click unit 1:E2:near soft
+if sel_near(2,E2) < 22 then click unit 2:E2:near soft
+if sel_near(6,E2) < 22 then click unit 6:E2:near soft
+if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
+if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
+if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
+if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
+if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
+if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
+if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
+if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
+if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
+if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
+if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
+if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
+if sel_near(1,V3) < 22 then click unit 1:V3:near soft
+if sel_near(2,V3) < 22 then click unit 2:V3:near soft
+if sel_near(6,V3) < 22 then click unit 6:V3:near soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING then click cell 97 170 soft
+if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
+if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
+if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
+if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
+if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
+if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
+if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
+if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
+if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
+if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
+if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
+if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
+if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
+if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
+if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
+if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
+if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
+if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
+if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
+if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
+if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
+if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
+if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
+if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
+if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
+if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
+if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
+if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
+if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
+if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
+wait 100
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
+if sel_near(2,DOG) < 22 then click unit 2:DOG:near soft
+if sel_near(6,DOG) < 22 then click unit 6:DOG:near soft
+if sel_near(1,E2) < 22 then click unit 1:E2:near soft
+if sel_near(2,E2) < 22 then click unit 2:E2:near soft
+if sel_near(6,E2) < 22 then click unit 6:E2:near soft
+if sel_near(1,SHK) < 22 then click unit 1:SHK:near soft
+if sel_near(2,SHK) < 22 then click unit 2:SHK:near soft
+if sel_near(6,SHK) < 22 then click unit 6:SHK:near soft
+if sel_near(1,FLAKT) < 22 then click unit 1:FLAKT:near soft
+if sel_near(2,FLAKT) < 22 then click unit 2:FLAKT:near soft
+if sel_near(6,FLAKT) < 22 then click unit 6:FLAKT:near soft
+if sel_near(1,HTK) < 22 then click unit 1:HTK:near soft
+if sel_near(2,HTK) < 22 then click unit 2:HTK:near soft
+if sel_near(6,HTK) < 22 then click unit 6:HTK:near soft
+if sel_near(1,HTNK) < 22 then click unit 1:HTNK:near soft
+if sel_near(2,HTNK) < 22 then click unit 2:HTNK:near soft
+if sel_near(6,HTNK) < 22 then click unit 6:HTNK:near soft
+if sel_near(1,V3) < 22 then click unit 1:V3:near soft
+if sel_near(2,V3) < 22 then click unit 2:V3:near soft
+if sel_near(6,V3) < 22 then click unit 6:V3:near soft
+if outcome == RUNNING and units(0,E1) > 0 then click unit 0:E1:0 soft
+if outcome == RUNNING and units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
+if outcome == RUNNING then key t
+if outcome == RUNNING then key t
+if outcome == RUNNING then click cell 97 170 soft
+if outcome == RUNNING and sel_near(1,DOG) < 12 then click unit 1:DOG:near soft
+if outcome == RUNNING and sel_near(2,DOG) < 12 then click unit 2:DOG:near soft
+if outcome == RUNNING and sel_near(6,DOG) < 12 then click unit 6:DOG:near soft
+if outcome == RUNNING and sel_near(1,E2) < 12 then click unit 1:E2:near soft
+if outcome == RUNNING and sel_near(2,E2) < 12 then click unit 2:E2:near soft
+if outcome == RUNNING and sel_near(6,E2) < 12 then click unit 6:E2:near soft
+if outcome == RUNNING and sel_near(1,SHK) < 12 then click unit 1:SHK:near soft
+if outcome == RUNNING and sel_near(2,SHK) < 12 then click unit 2:SHK:near soft
+if outcome == RUNNING and sel_near(6,SHK) < 12 then click unit 6:SHK:near soft
+if outcome == RUNNING and sel_near(1,FLAKT) < 12 then click unit 1:FLAKT:near soft
+if outcome == RUNNING and sel_near(2,FLAKT) < 12 then click unit 2:FLAKT:near soft
+if outcome == RUNNING and sel_near(6,FLAKT) < 12 then click unit 6:FLAKT:near soft
+if outcome == RUNNING and sel_near(1,HTK) < 12 then click unit 1:HTK:near soft
+if outcome == RUNNING and sel_near(2,HTK) < 12 then click unit 2:HTK:near soft
+if outcome == RUNNING and sel_near(6,HTK) < 12 then click unit 6:HTK:near soft
+if outcome == RUNNING and sel_near(1,HTNK) < 12 then click unit 1:HTNK:near soft
+if outcome == RUNNING and sel_near(2,HTNK) < 12 then click unit 2:HTNK:near soft
+if outcome == RUNNING and sel_near(6,HTNK) < 12 then click unit 6:HTNK:near soft
+if outcome == RUNNING and sel_near(1,V3) < 12 then click unit 1:V3:near soft
+if outcome == RUNNING and sel_near(2,V3) < 12 then click unit 2:V3:near soft
+if outcome == RUNNING and sel_near(6,V3) < 12 then click unit 6:V3:near soft
+if outcome == RUNNING and sel_near(1,IVAN) < 12 then click unit 1:IVAN:near soft
+if outcome == RUNNING and sel_near(2,IVAN) < 12 then click unit 2:IVAN:near soft
+if outcome == RUNNING and sel_near(6,IVAN) < 12 then click unit 6:IVAN:near soft
+if outcome == RUNNING and sel_near(1,TERROR) < 12 then click unit 1:TERROR:near soft
+if outcome == RUNNING and sel_near(2,TERROR) < 12 then click unit 2:TERROR:near soft
+if outcome == RUNNING and sel_near(6,TERROR) < 12 then click unit 6:TERROR:near soft
+if outcome == RUNNING and sel_near(1,SENGINEER) < 12 then click unit 1:SENGINEER:near soft
+if outcome == RUNNING and sel_near(2,SENGINEER) < 12 then click unit 2:SENGINEER:near soft
+if outcome == RUNNING and sel_near(6,SENGINEER) < 12 then click unit 6:SENGINEER:near soft
+wait 100
+if units(0,MTNK) > 0 then click unit 0:MTNK:0 soft
+if units(0,FV) > 0 then click unit 0:FV:0 shift soft
+if units(0,MGTK) > 0 then click unit 0:MGTK:0 shift soft
+if units(0,JUMPJET) > 0 then click unit 0:JUMPJET:0 shift soft
 if outcome == RUNNING then key t
 if outcome == RUNNING then key t
 if sel_near(1,DOG) < 22 then click unit 1:DOG:near soft
