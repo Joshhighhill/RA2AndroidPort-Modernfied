@@ -114,8 +114,14 @@ bool forced_target_ok(const std::vector<Unit>& units, const World& world, const 
                       int idx) {
     if (idx < 0 || idx >= static_cast<int>(units.size()) || idx == self_idx) return false;
     const Unit& v = units[static_cast<std::size_t>(idx)];
+    // w7r2 [RE: GetFireError FUN_006FB5D0 -- the warhead's Verses against the
+    // target's armor gate every weapon]: an ability weapon is let through
+    // here (its slot data may not pass the AA/AG test), but not against an
+    // armor its warhead does 0 % to -- the dog's ParasiteDog jaw vs a vehicle
+    // (SOV09: a patrol team ordered at the IFV rode it to death as parasites).
     return v.alive && v.die_time < 0.0 && v.cargo_of < 0 && !world.unit_hidden_from(self.house, v) &&
-           (unit_weapon_for_unit(self, v) >= 0 || self.abil.fire_kind != AbilityKind::None);
+           (unit_weapon_for_unit(self, v) >= 0 ||
+            (self.abil.fire_kind != AbilityKind::None && verses_allows(primary_view(self).verses, v.armor_ix)));
 }
 
 // The Verses fraction (percent / 100) of slot `slot` of u against armor `ai`.
