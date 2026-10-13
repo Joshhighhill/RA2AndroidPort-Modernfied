@@ -169,7 +169,11 @@ shot ai
 # --- 9. every unit has a working weapon (Prism Tank: WeaponCount/Weapon1) -----------
 assert weapon_damage(E1) > 0
 assert weapon_damage(MTNK) > 0
-cheat spawn SREF 0 building 0:GAWEAP +4 +4
+# w7 (fv7a): the Easy AI's Rhinos now shell the passive base from weapon range
+# (a human house's idle units answer no call for help, FUN_00707500), and the
+# war factory may be gone by now -- spawn the Prism Tank by the ConYard then.
+if buildings(0,GAWEAP) >= 1 then cheat spawn SREF 0 building 0:GAWEAP +4 +4
+if buildings(0,GAWEAP) == 0 then cheat spawn SREF 0 building 0:GACNST +0 +4
 wait 2
 assert weapon_damage(SREF) > 0                @G-41:C
 assert weapon_range(SREF) > 0                 @G-41:C

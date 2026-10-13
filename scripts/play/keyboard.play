@@ -48,9 +48,16 @@ click unit 0:E1
 click unit 0:E1 +6 +2
 wait 2
 assert moving(0) >= 1
+let sx0 = sel_cx
+let sy0 = sel_cy
 key j
-wait 2
+# Stop finishes entering the cell already reserved (unit_orders.cpp); with the
+# original Walk speed (w7fix-move: raw leptons, no GameSpeedBias) that hop takes
+# a few frames, so wait for it -- an un-stopped GI walks 6 cells (>> 30 frames).
+until 30 sel_moving == 0                                 @R-140:E
+wait 30
 assert sel_moving == 0                                   @R-140:E
+assert sel_cx <= $sx0+1 and sel_cx >= $sx0-1 and sel_cy <= $sy0+1 and sel_cy >= $sy0-1   @R-140:E
 # CombatantSelect (P): every armed own unit on screen
 key p
 assert selected >= 4                                     @R-150:E
