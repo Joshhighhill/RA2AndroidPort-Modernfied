@@ -125,9 +125,12 @@ def main(out):
     # 2. Yuri 0: round the west side, the British engineer, the Alliance barracks
     go(p, "6:YURI:0", 26, 74, 1500)
     go(p, "6:YURI:0", 25, 47, 1500)
-    order(p, "6:YURI:0", "unit 5:SENGINEER:0")
-    p.add("until 900 units(6,SENGINEER) >= 1")
-    order(p, "6:SENGINEER:0", "building 2:GAPILE:0")
+    pick(p, "6:YURI:0").add(
+        "# W7-09-17: the civilian house's engineer is rules id ENGINEER (the probe used to",
+        "# report the image-matched Soviet SENGINEER).",
+        "click unit 5:ENGINEER:0")
+    p.add("until 900 units(6,ENGINEER) >= 1")
+    order(p, "6:ENGINEER:0", "building 2:GAPILE:0")
     order(p, "6:YURI:0", "cell 25 66")
     p.add("until 900 buildings(0,GAPILE) >= 1",
           "until 900 can_build(DOG) == 1", "click tab:2", "click cameo:DOG", "click cameo:DOG",

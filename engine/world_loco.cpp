@@ -496,7 +496,10 @@ void on_blocked(StepEnv& e, Unit& u, int self, Cellxy bc, bool cliff) {
                 // (a unit busy with a target keeps it: Scatter only moves an
                 // idle one -- w7fix-combat; IQ / PlayerScatter gate in
                 // World::incoming_scatters when the W7 rules are armed)
-                if (live_on_map(ov) && !ov.moving() && e.allied(u.house, ov.house) && ov.target < 0 &&
+                // (w7r2 [RE: FUN_00742880]: a vehicle held up on its own
+                // route -- not under way -- is pushed too; order_scatter)
+                const bool parked = !ov.moving() || (ov.is_vehicle && !under_way(ov));
+                if (live_on_map(ov) && parked && e.allied(u.house, ov.house) && ov.target < 0 &&
                     ov.target_building < 0 && ov.attack_cell_x < 0 && ov.enter_target < 0 &&
                     (!e.sc.world || !e.sc.world->combat_w7().armed ||
                      e.sc.world->incoming_scatters(ov, false, /*nokidding=*/true)))

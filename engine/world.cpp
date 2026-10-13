@@ -5527,7 +5527,7 @@ void World::step(double dt) {
                    (any_gate || terrain_armed()) ? &st : nullptr);
         std::sort(scatter.begin(), scatter.end());
         scatter.erase(std::unique(scatter.begin(), scatter.end()), scatter.end());
-        for (int s : scatter) order_scatter(s);
+        for (int s : scatter) order_scatter(s, /*cell_push=*/true);
     }
 
     // P5 Crates [RE: veterancy.md C4/C5]: pickup by any unit now standing on a
