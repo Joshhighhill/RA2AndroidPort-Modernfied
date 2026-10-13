@@ -34,6 +34,9 @@ struct SaveAccess {
         save::io(ar, o.owner_);
         save::io(ar, o.spots_);   // v20: W5-B infantry sub-cell spots
         save::io(ar, o.inf_);
+        save::io(ar, o.owner_d_);   // v42: w8fix-layer deck plane
+        save::io(ar, o.spots_d_);
+        save::io(ar, o.lay_);
     }
     template <class Ar> static void ore_field(Ar& ar, OreField& f) {
         save::io(ar, f.w_);

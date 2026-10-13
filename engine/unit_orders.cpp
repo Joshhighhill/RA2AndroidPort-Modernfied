@@ -108,13 +108,17 @@ void World::order_guard(int idx) {
 // takes the unit's own SpeedType / MovementZone]: the unit's movement domain
 // (a ship scatters to water -- it used to test the LAND grid, so a ship never
 // scattered) and the one-step height gate.
-bool World::scatter_cell_ok(const Unit& u, int x, int y) const {
-    if (!unit_can_enter_cell(u, x, y)) return false;
+bool World::scatter_cell_ok(const Unit& u, int x, int y) const { return scatter_cell_layer(u, x, y) >= 0; }
+
+// w8fix-layer: the layer (0 ground, 1 deck) a scatter step into (x,y) lands
+// on, -1 when the cell is refused.
+int World::scatter_cell_layer(const Unit& u, int x, int y) const {
+    if (!unit_can_enter_cell(u, x, y)) return -1;
     PathTerrain t;
     std::vector<int> gates;
     const PathTerrain* tp = terrain_for(u, t, gates);
-    if (tp && tp->level && path_step_layer(*tp, grid_w_, u.cell_x, u.cell_y, u.on_deck, x, y) < 0) return false;
-    return true;
+    if (tp && tp->level) return path_step_layer(*tp, grid_w_, u.cell_x, u.cell_y, u.on_deck, x, y);
+    return u.on_deck ? 1 : 0;
 }
 
 void World::order_scatter(int idx, bool cell_push) {
@@ -141,8 +145,12 @@ void World::order_scatter(int idx, bool cell_push) {
         const int x = u.cell_x + kDx[d], y = u.cell_y + kDy[d];
         // W5-B R-061: with sub-cells an infantry may scatter into a cell that
         // still has a free spot.
-        const bool taken = occ_.subcells() ? !occ_.can_enter(x, y, idx) : unit_at_cell(x, y) >= 0;
-        if (!scatter_cell_ok(u, x, y) || taken || building_at_cell(x, y) >= 0) continue;   // fv7c
+        // w8fix-layer [RE: FUN_00742880 -> IsCellOccupied on the mover's own
+        // layer]: a free spot on the plane of the layer the step lands on.
+        const int lay = scatter_cell_layer(u, x, y);
+        const bool taken = occ_.subcells() ? !occ_.can_enter(x, y, idx, lay < 0 ? Occupancy::kAnyLayer : lay)
+                                           : unit_at_cell(x, y) >= 0;
+        if (lay < 0 || taken || building_at_cell(x, y) >= 0) continue;   // fv7c
         u.target = -1;
         u.target_building = -1;
         u.attack_order = false;

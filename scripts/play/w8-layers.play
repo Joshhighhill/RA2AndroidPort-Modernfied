@@ -1,0 +1,88 @@
+# w8fix-layer (wave-8 root causes 3 and 6) on ALL01T, east high bridge (deck x=82, y 51..55)
+# after the engineer repairs it at the hut:
+#  1. W8-03-04: an own SEAL swims under the deck at (82,53); a Grizzly crossing the deck
+#     neither waits for it nor pushes it [RE: CellClass +0xE4 / +0xE8 chains, IsClearToMove 0x4833B0].
+#  2. W8-01-05: three Grizzlies parked on the deck; a SEAL swims the river under them
+#     (78,52) -> (88,52) [RE: the two occupation words +0x124 / +0x128].
+#  3. W8-04-02: the own MCV parked on the deck at (82,53) is untouched while a Destroyer shells
+#     landing craft under it in the same cell [RE: DamageArea 0x489190 reads one layer].
+set render_every 0
+set campaign ALL01T.MAP GDI
+click start
+until 300 scene == game
+require scene == game
+until 60 input_locked == 1
+until 1500 input_locked == 0
+wait 5
+cheat camp_killu 1 *
+cheat camp_spawn E1 0 62 38
+cheat camp_move E1 70 38
+until 900 buildings(0,GAGATE_A) >= 1
+cheat camp_spawn ENGINEER 0 82 46
+wait 5
+click unit 0:ENGINEER
+wait 1
+require selected == 1
+click building 4:CABHUT
+until 900 bridge_destroyed <= 4
+
+log ==== 1: a SEAL resting under the deck, a Grizzly crosses above it
+cheat camp_spawn GHOST 0 82 53
+wait 5
+assert ucell(0,GHOST,0) == 82053 @W8-03-04
+assert udeck(0,GHOST,0) == 0
+cheat camp_spawn MTNK 0 82 47
+wait 2
+cheat camp_move MTNK 82 58
+waituntil 600 ucell(0,MTNK,0) == 82058
+assert ucell(0,MTNK,0) == 82058 @W8-03-04
+assert ucell(0,GHOST,0) == 82053 @W8-03-04
+cheat camp_killu 0 MTNK
+cheat camp_killu 0 GHOST
+wait 5
+
+log ==== 2: three Grizzlies parked on the deck, a SEAL swims under them
+cheat camp_spawn MTNK 0 82 49
+cheat camp_spawn MTNK 0 82 49
+cheat camp_spawn MTNK 0 82 49
+wait 2
+cheat camp_move MTNK 82 52
+waituntil 600 udeck(0,MTNK,0) == 1
+wait 200
+dump
+cheat camp_spawn GHOST 0 78 52
+wait 5
+cheat camp_move GHOST 88 52
+waituntil 600 ucell(0,GHOST,0) == 88052
+assert ucell(0,GHOST,0) == 88052 @W8-01-05
+assert udeck(0,GHOST,0) == 0
+cheat camp_killu 0 MTNK
+cheat camp_killu 0 GHOST
+wait 5
+
+log ==== 3: the MCV on the deck, a Destroyer shells landing craft under it
+cheat spawn AMCV 0 cell 82 49
+wait 2
+click unit 0:AMCV
+wait 1
+click cell 82 53
+until 600 ucell(0,AMCV,0) == 82053
+assert udeck(0,AMCV,0) == 1
+assert uheight(0,AMCV,0) == 6
+let h0 = uhpn(0,AMCV,0)
+cheat spawn DEST 0 cell 86 52
+cheat spawn LCRF 1 cell 82 53
+wait 3
+assert ucell(1,LCRF,0) == 82053
+assert udeck(1,LCRF,0) == 0
+cheat camp_attacku DEST 1 LCRF
+until 1500 units(1,LCRF) == 0
+assert uhpn(0,AMCV,0) == $h0 @W8-04-02
+repeat 2
+cheat spawn LCRF 1 cell 82 53
+wait 3
+cheat camp_attacku DEST 1 LCRF
+until 1500 units(1,LCRF) == 0
+endrepeat
+assert uhpn(0,AMCV,0) == $h0 @W8-04-02
+end

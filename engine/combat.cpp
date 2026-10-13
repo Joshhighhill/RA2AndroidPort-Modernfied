@@ -732,7 +732,13 @@ int modify_damage(int damage, const std::vector<int>& verses, int armor_ix, doub
 int unit_lept_x(const Unit& u) { return ftol_i(u.fx * 256.0 + u.sub_x); }   // + W5-B sub-cell offset
 int unit_lept_y(const Unit& u) { return ftol_i(u.fy * 256.0 + u.sub_y); }
 int unit_lept_z(const Unit& u) {
-    return u.level * kLevelLept + (unit_airborne(u) ? ftol_i(u.altitude) : 0);
+    // w8fix-layer W8-03-08 / W8-04-02 [RE: an OnBridge object's Z carries
+    // BridgeHeight (0x51F810 adds DAT_00A8E19C; JumpjetLoco Descending
+    // @0x54C5A9 lands at floor + BridgeHeight)]: a ground unit on a deck
+    // stands 4 levels (416 leptons) up. A flier's altitude already counts the
+    // deck (step_flight's floor, FUN_0054D4B0).
+    if (unit_airborne(u)) return u.level * kLevelLept + ftol_i(u.altitude);
+    return (u.level + (u.on_deck ? 4 : 0)) * kLevelLept;
 }
 
 void building_aim_lept(const Building& b, int level, int& x, int& y, int& z) {
@@ -758,7 +764,9 @@ bool cliff_blocks(const World& world, int ax, int ay, int az, int bx, int by, in
     int pcx = acx, pcy = acy;
     for (int k = 0; k < n; ++k) {
         const int cx = lept_cell(ax + sx * k), cy = lept_cell(ay + sy * k);
-        if (world.cell_level(cx, cy) - world.cell_level(pcx, pcy) > 3) return true;
+        // w8fix-layer W8-03-08 [RE: FUN_004CC280 reads FUN_00487C60: a deck
+        // cell counts 4 levels higher]
+        if (world.cell_bridge_level(cx, cy) - world.cell_bridge_level(pcx, pcy) > 3) return true;
         pcx = cx;
         pcy = cy;
     }
@@ -798,8 +806,8 @@ bool weapon_in_range_from(const World& world, const Unit& u, int ux, int uy, int
     if (range_infinite(u.w_range)) return true;   // fv7c [RE: FUN_006F6750 head]
     int range = ftol_i(u.w_range * 256.0) + extra;
     if (u.w_proj.subject_to_elevation)
-        range += elevation_bonus(world, world.cell_level(lept_cell(ux), lept_cell(uy)) -
-                                            world.cell_level(lept_cell(tx), lept_cell(ty)));
+        range += elevation_bonus(world, world.cell_bridge_level(lept_cell(ux), lept_cell(uy)) -   // w8fix-layer:
+                                            world.cell_bridge_level(lept_cell(tx), lept_cell(ty)));   // FUN_00487C60
     // An airborne shooter measures in the ground plane (FUN_006F6750's
     // TechnoClass+0x29B branch: 2-D distance + the airburst lowering).
     if (dist3_i(tx - ux, ty - uy, unit_airborne(u) ? 0 : tz - uz) > range) return false;
@@ -918,6 +926,12 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
     const int rings = spread_ring_count(ftol_i(shooter.w_cell_spread));
     const int icx = lept_cell(ix), icy = lept_cell(iy);
     const int ground_z = world.cell_level(icx, icy) * kLevelLept;
+    // w8fix-layer W8-04-02 / W8-05-06 [RE: DamageArea FUN_00489190: when the
+    // impact cell has the bridge flag (+0x140 & 0x100) and the impact Z is
+    // above floor + BridgeHeight/2 the ring loop walks every cell's AltObject
+    // chain +0xE8 (the deck objects), else FirstObject +0xE4 -- never both]:
+    // the blast hits one layer only.
+    const bool deck_blast = world.deck_intact(icx, icy) && iz > ground_z + 4 * kLevelLept / 2;
     // Ring membership of a cell offset: its index in the scan order, else -1.
     auto ring_index = [&](int dx, int dy) {
         if (dx < -11 || dx > 11 || dy < -11 || dy > 11) return -1;
@@ -941,6 +955,7 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
         if (j == src_unit) continue;                                 // the source itself
         const bool air = unit_airborne(w);
         if (air && iz <= ground_z) continue;     // ground burst: the air layer is not scanned
+        if (!air && (w.on_deck != 0) != deck_blast) continue;   // w8fix-layer: the other chain
         const int wx = unit_lept_x(w), wy = unit_lept_y(w), wz = unit_lept_z(w);
         int k = 0;
         if (!air) {

@@ -1397,6 +1397,7 @@ void World::order_unit_move(int idx, int gx, int gy) {
         // enter, which would block other units forever); re-assert only the
         // current cell.
         occ_.release_all_of(idx, u.cell_x, u.cell_y);
+        occ_.mark_layer(idx, u.on_deck);   // w8fix-layer: on its own layer's plane
         occ_.set(u.cell_x, u.cell_y, idx);
     }
     // CB-3 Naval [RE-GATE APPLIED: naval.md §1]: select the domain grid -- Land
@@ -2186,10 +2187,17 @@ void World::step_flight(double dt) {
         //    (Descending) at the state's rate; hold at cruise when Cruising
         //    [RE-GATE APPLIED: aircraft.md §2].
         const bool descending = (u.flight_state == FlightState::Descending);
-        const double target = descending ? 0.0 : u.cruise_altitude;
+        // w8fix-layer W8-05-03 [RE: JumpjetLoco integrator FUN_0054CDA0: while
+        // Ascending / Hovering / Cruising the height is held over the target
+        // floor FUN_0054D4B0 -- BridgeHeight over a deck, the one-cell look-
+        // ahead -- and Z moves toward floor + JumpjetHeight by at most
+        // JumpjetClimb per frame, up and down]: `floor` is in leptons over the
+        // current cell's ground (the altitude's reference).
+        const double floor = descending ? 0.0 : jumpjet_floor(u);
+        const double target = descending ? 0.0 : floor + u.cruise_altitude;
         const double rate = descending ? u.descend_rate : u.climb_rate;
         u.altitude = step_altitude(u.altitude, target, rate * dt);
-        u.flight_state = advance_flight_state(u.flight_state, u.altitude, u.cruise_altitude);
+        u.flight_state = advance_flight_state(u.flight_state, u.altitude - floor, u.cruise_altitude);
 
         // 2) W7-05-15 JumpjetLocomotionClass horizontal model (ILocomotion
         //    vtable 0x7EBD68). Per logic frame: the state handler sets the
@@ -2245,9 +2253,45 @@ void World::step_flight(double dt) {
             u.fx = std::clamp(u.fx, 0.0, static_cast<double>(std::max(0, grid_w_ - 1)));
             u.fy = std::clamp(u.fy, 0.0, static_cast<double>(std::max(0, grid_h_ - 1)));
         }
-        u.cell_x = static_cast<int>(std::lround(u.fx));
-        u.cell_y = static_cast<int>(std::lround(u.fy));
+        // w8fix-layer W8-05-03: the absolute Z is continuous over a cell edge
+        // (the original keeps an absolute Z; the clone's altitude is over the
+        // current cell's ground, so a cliff edge re-bases it instead of
+        // snapping the flier 4 levels).
+        const int ncx = static_cast<int>(std::lround(u.fx)), ncy = static_cast<int>(std::lround(u.fy));
+        if (map_ && (ncx != u.cell_x || ncy != u.cell_y)) {
+            const int l0 = cell_level(u.cell_x, u.cell_y), l1 = cell_level(ncx, ncy);
+            if (l0 != l1) u.altitude = std::max(0.0, u.altitude + static_cast<double>((l0 - l1) * 104));
+            u.level = l1;
+        }
+        u.cell_x = ncx;
+        u.cell_y = ncy;
     }
+}
+
+// w8fix-layer W8-05-03 [RE: FUN_0054D4B0, verified in the disassembly
+// 0x54D4B0..0x54D5A8]: the jumpjet's target floor. A = the floor of the
+// unit's cell (FUN_00484F90) + BridgeHeight when that cell is a bridge
+// (+0x140 & 0x100). Not moving (CurSpeed <= 0): A. Moving: B = the floor of
+// the cell one step ahead along the 8-way facing ((raw >> 12) + 1 >> 1 & 7,
+// DAT_0089E648 -- RE-FALLBACK: one cell per step, the table is filled at run
+// time); a bridge AHEAD adds BridgeHeight to A (EDI @0x54D596 -- as in the
+// binary); then B when A < B, else (A + B) / 2. In leptons over the current
+// cell's ground (slopes: RE-FALLBACK, a cell's floor is its level).
+double World::jumpjet_floor(const Unit& u) const {
+    if (!map_) return 0.0;
+    const int cx = u.cell_x, cy = u.cell_y;
+    const int base = cell_level(cx, cy);
+    int a = deck_intact(cx, cy) ? 416 : 0;
+    if (u.an.jj_speed <= 0.0) return a;
+    static const int kDx[8] = {0, 1, 1, 1, 0, -1, -1, -1};
+    static const int kDy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
+    const int raw = static_cast<int>(std::lround(u.body_facing)) & 0xFFFF;
+    const int d = (((raw >> 12) + 1) >> 1) & 7;
+    const int ax = static_cast<int>(std::floor(u.fx + 0.5)) + kDx[d];
+    const int ay = static_cast<int>(std::floor(u.fy + 0.5)) + kDy[d];
+    const int b = (cell_level(ax, ay) - base) * 104;
+    if (deck_intact(ax, ay)) a += 416;
+    return a < b ? b : (a + b) / 2;
 }
 
 // --- AI-1 base-planning phase [RE: ai-base.md] ------------------------------
@@ -5599,6 +5643,8 @@ void World::step(double dt) {
         if (terrain_armed()) {
             for (Unit& u : units_)
                 if (u.alive) sync_deck_layer(u);
+            for (std::size_t i = 0; i < units_.size(); ++i)   // w8fix-layer
+                occ_.mark_layer(static_cast<int>(i), units_[i].on_deck);
             PathTerrain base;
             base.level = &level_grid_;
             base.slope = ramp_.size() == level_grid_.size() ? &ramp_ : nullptr;
@@ -6162,7 +6208,10 @@ constexpr double kProjPi = 3.14159265358979323846;
 
 int unit_lx(const Unit& u) { return ftol(u.fx * 256.0 + u.sub_x); }   // W5-B: + sub-cell spot
 int unit_ly(const Unit& u) { return ftol(u.fy * 256.0 + u.sub_y); }
-int unit_lz(const Unit& u) { return u.is_aircraft ? ftol(u.altitude) : 0; }
+// w8fix-layer W8-05-03 / W8-04-02 [RE: an OnBridge object's coords carry
+// BridgeHeight (0x51F810)]: a ground unit on a deck is aimed at (and fires
+// from) the deck, 416 leptons over its cell's ground.
+int unit_lz(const Unit& u) { return u.is_aircraft ? ftol(u.altitude) : (u.on_deck ? 416 : 0); }
 int dist3(int ax, int ay, int az, int bx, int by, int bz) {
     const double dx = ax - bx, dy = ay - by, dz = az - bz;
     return ftol(om::sqrt(dx * dx + dy * dy + dz * dz));

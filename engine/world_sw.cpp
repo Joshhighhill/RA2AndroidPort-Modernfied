@@ -300,16 +300,23 @@ void World::an_area_damage(int house, double cx, double cy, int damage, double s
                            double z, int wall_flags, int inf_death) {
     const double radius = std::max(0.5, std::round(spread)) * kLept;
     const std::vector<int> vv(verses.begin(), verses.end());
+    // w8fix-layer W8-04-02 / W8-05-06 [RE: DamageArea FUN_00489190 -- an
+    // impact cell with the bridge flag and Z above floor + BridgeHeight/2
+    // scans the deck chain +0xE8 of every cell, else the ground chain +0xE4]:
+    // one layer per blast (z is the height over the impact cell's ground).
+    const bool deck_blast = deck_intact(static_cast<int>(std::lround(cx)), static_cast<int>(std::lround(cy))) && z > 208.0;
     for (int j = 0; j < static_cast<int>(units_.size()); ++j) {
         const Unit& w = units_[j];
         if (!w.alive || w.die_time >= 0.0 || w.cargo_of >= 0) continue;
         if (!hit_air && w.is_aircraft && w.altitude > 0.0) continue;
         if (spare_house && w.house == house) continue;
+        const bool w_air = w.is_aircraft && w.altitude > 0.0;
+        if (!w_air && (w.on_deck != 0) != deck_blast) continue;   // w8fix-layer: the other chain
         double d = om::hypot((w.fx - cx) * kLept, (w.fy - cy) * kLept);
         // W4: an explosion above the ground (a rocket shot down in flight) is
         // measured in 3-D [FUN_00489190 distance], so ground objects far below
         // take nothing. z = 0 (every other caller) is the old 2-D test.
-        if (z > 0.0) d = om::hypot(d, z - ((w.is_aircraft && w.altitude > 0.0) ? w.altitude : 0.0));
+        if (z > 0.0) d = om::hypot(d, z - (w_air ? w.altitude : (w.on_deck ? 416.0 : 0.0)));
         if (d > radius) continue;
         const double scale = 1.0 - (1.0 - pmax) * (d / radius);
         const int dmg = damage_vs(om::ftol(damage * scale), vv, w.armor_ix);

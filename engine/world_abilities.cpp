@@ -98,7 +98,7 @@ bool World::order_deploy(int idx) {
                     ws.prone_damage = w.prone_damage;
                     ws.inf_death = w.inf_death;
                     ws.wall_flags = w.wall_flags;
-                    ability_area_damage(idx, u.fx, u.fy, ws, w.damage);
+                    ability_area_damage(idx, u.fx, u.fy, ws, w.damage, u.on_deck ? 416 : 0);
                     u.fire_flash = 0.4;
                 }
                 u.w7.undeploy_at = u.w7.t.undeploy_delay >= 0
@@ -271,7 +271,8 @@ void World::ability_damage_building(int b_idx, int dmg) {
 // It used to be a 2-D linear falloff with one hit per building at its nearest
 // cell (an Ivan left a Battle Lab at 50/500). The blast centre is (cx, cy) in
 // cells at that cell's ground level; the source unit is excluded.
-void World::ability_area_damage(int src_unit, double cx, double cy, const WeaponSpec& w, int damage) {
+void World::ability_area_damage(int src_unit, double cx, double cy, const WeaponSpec& w, int damage,
+                                int z_lift) {
     Unit shooter;
     shooter.alive = false;   // never a real unit
     shooter.house = (src_unit >= 0 && src_unit < static_cast<int>(units_.size()))
@@ -286,7 +287,9 @@ void World::ability_area_damage(int src_unit, double cx, double cy, const Weapon
     shooter.w6.wall_flags = w.wall_flags;   // W6-04-04
     const int ix = ability_ftol(cx * kAbilityLeptonsPerCell);
     const int iy = ability_ftol(cy * kAbilityLeptonsPerCell);
-    const int iz = cell_level(static_cast<int>(std::lround(cx)), static_cast<int>(std::lround(cy))) * 104;
+    // w8fix-layer W8-04-02: a unit on a deck explodes at the deck (z_lift =
+    // BridgeHeight), so DamageArea picks the deck layer [RE: FUN_00489190].
+    const int iz = cell_level(static_cast<int>(std::lround(cx)), static_cast<int>(std::lround(cy))) * 104 + z_lift;
     // P4 [RE: FUN_00700DA0 @0x701327]: a lethal CausesDelayKill hit on an
     // EligibleForDelayKill building starts the delay instead.
     const AreaBuildingHook delay = [&](int b, int dmg, int dist) {
@@ -551,7 +554,7 @@ void World::ability_death_pass() {
             }
             if (dw.valid && dw.kind != AbilityKind::IvanBomb) {
                 ability_events_.push_back({Ev::Kind::DeathWeapon, i, -1, dw.damage, 0, false});
-                ability_area_damage(i, u.fx, u.fy, dw, dw.damage);
+                ability_area_damage(i, u.fx, u.fy, dw, dw.damage, u.on_deck ? 416 : 0);
                 if (dw.rad_level > 0)
                     rad_.detonate(u.cell_x, u.cell_y, ability_ftol(dw.cell_spread), dw.rad_level,
                                   ability_frame_, ability_rules_);
@@ -560,7 +563,8 @@ void World::ability_death_pass() {
             if (u.bomb_frame >= 0) {
                 u.bomb_frame = -1;
                 ability_events_.push_back({Ev::Kind::BombBlast, u.bomb_owner, i, 0, 0, false});
-                ability_area_damage(-1, u.fx, u.fy, ability_rules_.ivan_warhead, ability_rules_.ivan_damage);
+                ability_area_damage(-1, u.fx, u.fy, ability_rules_.ivan_warhead, ability_rules_.ivan_damage,
+                                    u.on_deck ? 416 : 0);
             }
             // §B3: the riding drone pops out, unless suppressed.
             if (u.parasite_on_me >= 0) {
@@ -681,7 +685,7 @@ void World::step_abilities(double dt) {
         u.deploy_next_fire = F + std::max(1, rof);
         ability_events_.push_back({Ev::Kind::Eruption, i, -1, u.cell_x, u.cell_y, false});
         u.ia.erupt = true;   // W7-02-05: the DeployedFire sequence (presentation only)
-        ability_area_damage(i, u.fx, u.fy, w, w.damage);
+        ability_area_damage(i, u.fx, u.fy, w, w.damage, u.on_deck ? 416 : 0);
         if (w.rad_level > 0)
             rad_.detonate(u.cell_x, u.cell_y, ability_ftol(w.cell_spread), w.rad_level, ability_frame_,
                           ability_rules_);
@@ -862,7 +866,8 @@ void World::step_abilities(double dt) {
         if (!bomb_due(u.bomb_frame, ability_frame_)) continue;
         u.bomb_frame = -1;
         ability_events_.push_back({Ev::Kind::BombBlast, u.bomb_owner, i, 0, 0, false});
-        ability_area_damage(-1, u.fx, u.fy, ability_rules_.ivan_warhead, ability_rules_.ivan_damage);
+        ability_area_damage(-1, u.fx, u.fy, ability_rules_.ivan_warhead, ability_rules_.ivan_damage,
+                                    u.on_deck ? 416 : 0);
     }
     for (int b = 0; b < static_cast<int>(buildings_.size()); ++b) {
         Building& bb = buildings_[b];
