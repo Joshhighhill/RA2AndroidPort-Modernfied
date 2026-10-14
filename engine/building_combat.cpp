@@ -253,7 +253,11 @@ void World::step_building_combat(double dt) {
         building_aim_lept(b, cell_level(b.cx, b.cy), bx, by, bz);
         auto in_range = [&](const Unit& v, int slot) {
             const WeaponSlot& ws = t.weapon[slot];
-            Unit sh;
+            // W9-02-07: ONE scratch shooter, reused (a default Unit was
+            // constructed + destroyed per candidate unit per defence per
+            // frame); only w_range / w_proj are ever set on it, the rest stays
+            // default, so the range test is unchanged.
+            static thread_local Unit sh;
             sh.w_range = t.guard_range > 0.0 ? std::max(t.guard_range, ws.range) : ws.range;
             sh.w_proj = ws.proj;
             const int tx = unit_lept_x(v), ty = unit_lept_y(v), tz = unit_lept_z(v);
@@ -317,7 +321,7 @@ void World::step_building_combat(double dt) {
                 const int s = bld_slot(o);
                 if (s < 0 || !t.weapon[s].valid || !t.weapon[s].ag) return false;
                 const WeaponSlot& ws = t.weapon[s];
-                Unit sh;
+                static thread_local Unit sh;   // W9-02-07 (see in_range)
                 sh.w_range = t.guard_range > 0.0 ? std::max(t.guard_range, ws.range) : ws.range;
                 sh.w_proj = ws.proj;
                 int ox = 0, oy = 0, oz = 0;

@@ -140,6 +140,7 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/world_an.cpp      # W2-AN naval / aircraft
     ${RA2_ROOT}/engine/ai_unit.cpp       # W7 AI auto-deploy + ToProtect
     ${RA2_ROOT}/engine/savegame.cpp
+    ${RA2_ROOT}/engine/net_frame_crc.cpp   # W9-01-04 per-frame lockstep CRC
     ${RA2_ROOT}/engine/bridges.cpp
     ${RA2_ROOT}/engine/world_depth.cpp
     ${RA2_ROOT}/engine/inf_anim.cpp      # W3-B infantry DoType machine

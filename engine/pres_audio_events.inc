@@ -567,7 +567,11 @@ private:
             p.wrench = b.being_repaired;
         }
         // Bridge repaired (a hut entered): fewer destroyed bridge cells.
-        if (w.bridges_enabled()) {
+        // W9-02-08: recounted only when a bridge cell changed (bridge_version
+        // bumps on every section / high-bridge state change) -- it was a
+        // full-map scan on every logic tick.
+        if (w.bridges_enabled() && (w5_bridge_dead_ < 0 || w.bridge_version() != w5_bridge_ver_)) {
+            w5_bridge_ver_ = w.bridge_version();
             const int d = w.bridge_cells_destroyed();
             if (w5_bridge_dead_ >= 0 && d < w5_bridge_dead_) {
                 double bx = 0, by = 0;
@@ -848,3 +852,4 @@ private:
     double w5_yellow_ = 0.5;
     std::uint32_t w5_rng_ = 0x5EED5u;   // audio-local (never the sim RNG)
     int w5_bridge_dead_ = -1;
+    std::uint32_t w5_bridge_ver_ = 0;   // W9-02-08: bridge_version at the last count

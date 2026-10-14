@@ -26,14 +26,15 @@ LockstepConfig make_session_config(const NetGameConfig& c) {
 
 NetManager& with_connections(NetManager& net, const NetGameConfig& c) {
     for (const auto& r : c.remotes) net.create_connection(r.first, r.second);
-    // Set_Timing at session start (net-protocol.md §8): LAN (max(RT + 2, 30),
-    // -1, 600) from FUN_005DBD30 (RT unknown yet -> 30); the spawner's
-    // Internet values (60, -1, 600).
+    // Set_Timing at session start (net-protocol.md §8): (max(RT + 2, 30), -1,
+    // 600) from FUN_005DBD30 (RT unknown yet -> 30). W9-01-06: the Internet
+    // session starts with the same original values -- RT is the lobby's
+    // measured round trip on this NetManager -- instead of the CnCNet
+    // spawner's (60, -1, 600), whose 1 s first retry made one lost order
+    // packet stall the game for about a second until the 128-frame re-tune
+    // (Set_Timing(RT + 10, ...)) caught up.
     const uint32_t rt = net.response_time();
-    if (c.mode == GameMode::Internet)
-        net.set_timing({60, 0xFFFFFFFFu, 600});
-    else
-        net.set_timing({std::max<uint32_t>(rt + 2, 30), 0xFFFFFFFFu, 600});
+    net.set_timing({std::max<uint32_t>(rt + 2, 30), 0xFFFFFFFFu, 600});
     return net;
 }
 

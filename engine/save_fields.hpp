@@ -37,6 +37,12 @@ struct SaveAccess {
         save::io(ar, o.owner_d_);   // v42: w8fix-layer deck plane
         save::io(ar, o.spots_d_);
         save::io(ar, o.lay_);
+        // W9-02-01: the per-unit claim index is derived -- rebuilt from the
+        // planes on the first release_all_of after a load.
+        if constexpr (Ar::kLoading) {
+            o.claims_.clear();
+            o.claims_dirty_ = true;
+        }
     }
     template <class Ar> static void ore_field(Ar& ar, OreField& f) {
         save::io(ar, f.w_);

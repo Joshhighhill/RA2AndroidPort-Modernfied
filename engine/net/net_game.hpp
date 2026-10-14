@@ -18,6 +18,8 @@
 // Sync hash: the caller supplies the hash function; it is called only on
 // frames F % hash_every == 0 and the last value is reused in between, so all
 // peers feed identical CRCs every frame and the cost is paid once per period.
+// W9-01-04: matches use hash_every 1 with the cheap per-frame CRC
+// (net_frame_crc), like the original's ComputeFrameCRC every frame.
 //
 // World-free (only ra2engine::Command), SDL-free: unit-tested in
 // ra2assets_tests with two real Worlds over a LoopbackHub.
@@ -46,10 +48,12 @@ struct NetGameConfig {
     // the master's TIMING events adapt both to the measured round trip.
     uint32_t frame_send_rate = 5;
     uint32_t max_ahead = 10;
-    // The TIMING fps cap the master computes with (global GameSpeed): the
-    // clone's fixed 15 Hz logic is the original's speed 4 (60 / 4 = 15 fps).
+    // The TIMING fps cap the master computes with (global GameSpeed 0xA8DAC8):
+    // 0 -> 60, 1 -> 45, n -> 60 / n fps. W9-01-01: a match is set from the
+    // lobby's Game Speed (default 1 = 45 fps); 4 (= 15 fps) stays the default
+    // for the unit tests' fixed-step drivers.
     int game_speed = 4;
-    int hash_every = 1;                                // full-state hash period (frames)
+    int hash_every = 1;                                // sync CRC period (frames; 1 = every frame)
     int crc_check_from_frame = -1;                     // -1: the original 256-frame grace
     uint32_t init_patience_ms = 180000;                // frame 0: how long to wait for slow loaders
 };

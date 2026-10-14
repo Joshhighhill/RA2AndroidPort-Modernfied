@@ -1462,6 +1462,23 @@ int World::unit_at_cell(int x, int y) const {
     return -1;
 }
 
+namespace {
+// W9-02-02 / W9-02-03: did the move order just given reach `g` (a path that
+// ends there)? find_path_nearest settles for the nearest reachable cell, so a
+// path ending elsewhere is the original's path failure (Basic_Path
+// FUN_004D3840). Movers that never path (aircraft, teleporters, a frozen
+// unit) are not judged.
+bool next_to_foundation(const Building& b, Cellxy g) {
+    const int dx = g.x < b.cx ? b.cx - g.x : g.x >= b.cx + b.fw ? g.x - (b.cx + b.fw - 1) : 0;
+    const int dy = g.y < b.cy ? b.cy - g.y : g.y >= b.cy + b.fh ? g.y - (b.cy + b.fh - 1) : 0;
+    return dx <= 1 && dy <= 1;
+}
+bool reaches(const Unit& u, Cellxy g) {
+    if (u.is_aircraft || u.abil.teleporter || u.frozen) return true;
+    return u.moving() && u.path.back().x == g.x && u.path.back().y == g.y;
+}
+}  // namespace
+
 void World::order_unit_move(int idx, int gx, int gy) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     Unit& u = units_[idx];
@@ -1581,7 +1598,7 @@ void World::order_unit_move(int idx, int gx, int gy) {
     // unit -- every unit cost is >= 1, so it is then already the cheapest;
     // otherwise the search runs again with the unit costs.
     if (path.size() > 1 && path_meets_units(path, occ_, idx)) {
-        std::vector<std::uint16_t> cost;
+        std::vector<std::uint16_t>& cost = occupancy_cost_scratch();   // W9-02-06 / W9-02-10: no per-order 69k alloc
         build_occupancy_cost(units_, occ_, grid_w_, grid_h_, idx, false, this, cost);
         std::vector<Cellxy> p2 =
             u.movement_domain == MovementDomain::Land
@@ -2225,6 +2242,12 @@ void World::step_cargo(double /*dt*/) {
             const std::vector<Cellxy> g = nearest_free_cells(
                 {t.cell_x, t.cell_y}, 1, passable_, grid_w_, grid_h_, occ_);
             if (!g.empty()) order_unit_move(static_cast<int>(i), g[0].x, g[0].y);
+            // W9-02-03 [RE: Basic_Path FUN_004D3840 path failure -> abandon]:
+            // no route -> the enter order ends (it was retried every frame).
+            if (g.empty() || !reaches(units_[i], g[0])) {
+                units_[i].enter_target = -1;
+                continue;
+            }
         }
     }
 
@@ -3337,11 +3360,16 @@ void World::step_capture(double dt) {
             } else if (!u.moving()) {
                 // Arrived-but-not-adjacent / path cancelled while standing: re-path
                 // to a free cell adjacent to the footprint (the transport re-path
-                // analogue). No free cell nearby -> keep standing, retried next frame.
+                // analogue). W9-02-02: no approach cell, or no route to it, ABANDONS
+                // the capture (abandon_unreachable_entry) -- it used to retry every
+                // frame forever (a full A* + order per frame, and the unit never moved).
                 Cellxy g;
-                if (engineer_approach_goal(b, u.cell_x, u.cell_y, passable_, grid_w_, grid_h_, occ_,
-                                           g))
-                    order_unit_move(static_cast<int>(i), g.x, g.y);
+                const bool have = engineer_approach_goal(b, u.cell_x, u.cell_y, passable_, grid_w_, grid_h_, occ_, g) &&
+                                  next_to_foundation(b, g);   // a farther cell never completes the entry
+                if (have) order_unit_move(static_cast<int>(i), g.x, g.y);
+                // The re-path only reaches somewhere NEAR the goal (find_path_nearest):
+                // no route to the approach cell itself is the original's path failure.
+                if (!have || !reaches(units_[i], g)) abandon_unreachable_entry(static_cast<int>(i));
             }
             continue;   // a unit never holds both a capture and an infiltrate intent
         }
@@ -3384,12 +3412,41 @@ void World::step_capture(double dt) {
                 // arrived, did nothing, NOT consumed (graceful fall-through).
             } else if (!u.moving()) {
                 Cellxy g;
-                if (engineer_approach_goal(b, u.cell_x, u.cell_y, passable_, grid_w_, grid_h_, occ_,
-                                           g))
-                    order_unit_move(static_cast<int>(i), g.x, g.y);
+                const bool have = engineer_approach_goal(b, u.cell_x, u.cell_y, passable_, grid_w_, grid_h_, occ_, g) &&
+                                  next_to_foundation(b, g);   // a farther cell never completes the entry
+                if (have) order_unit_move(static_cast<int>(i), g.x, g.y);
+                // The re-path only reaches somewhere NEAR the goal (find_path_nearest):
+                // no route to the approach cell itself is the original's path failure.
+                if (!have || !reaches(units_[i], g)) abandon_unreachable_entry(static_cast<int>(i));
             }
         }
     }
+}
+
+// W9-02-02 [RE: FootClass::Basic_Path FUN_004D3840 -- a path failure (no
+// route at all) to a destination more than one cell away ABANDONS the move:
+// SetDestination(null) + SetTarget(null) (vt+0x480 / +0x3C8); an AI-owned
+// unit QueueMission(Area_Guard 0xB); a team member is removed from its team
+// (TeamClass::Remove FUN_006E9DD0, called from 0x4D4032); evidence in
+// w7-loco2-out/REPORT.txt section 4(b) "Path failure"]: an engineer / spy / enterer
+// that cannot reach its target stops trying. Before W9 the clone re-pathed it
+// every frame forever (W9-02-02: 23-41 % of a late-game frame).
+void World::abandon_unreachable_entry(int idx) {
+    if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
+    Unit& u = units_[static_cast<std::size_t>(idx)];
+    u.capture_target = -1;
+    u.infiltrate_target = -1;
+    u.enter_target = -1;
+    if (!house_is_computer(u.house)) return;
+    if (ai_enabled(u.house)) {   // FUN_006E9DD0: out of its team
+        for (TeamInstance& t : ai_houses_[static_cast<std::size_t>(u.house)].team_state.teams)
+            for (int k = static_cast<int>(t.members.size()) - 1; k >= 0; --k)
+                if (t.members[static_cast<std::size_t>(k)] == idx) {
+                    t.members.erase(t.members.begin() + k);
+                    t.member_types.erase(t.member_types.begin() + k);
+                }
+    }
+    order_guard(idx);   // QueueMission(Area_Guard)
 }
 
 void World::register_tech_income(int b_idx, int amount, int delay) {
@@ -4744,6 +4801,15 @@ void World::ai_order_attack_building(int unit_idx, int b_idx) {
     commit_attack_target(unit_idx, /*target_unit=*/-1, b_idx);
 }
 
+bool World::unit_can_damage_building(const Unit& u, int b_idx) const {
+    // Mirrors combat.cpp's attack-building drop test exactly (W9-02-03).
+    if (b_idx < 0 || b_idx >= static_cast<int>(buildings_.size())) return false;
+    const Building& b = buildings_[static_cast<std::size_t>(b_idx)];
+    const int ws = unit_weapon_for_building(u, b.armor_ix, b.bomb_frame >= 0,
+                                            an_victim_naval_cell(b.cx + b.fw / 2, b.cy + b.fh / 2));
+    return ws >= 0 || u.abil.c4 || u.abil.fire_kind != AbilityKind::None;
+}
+
 void World::ai_fill_team_view(int house, const HouseAiRec& rec,
                               const TeamInstance& team, TeamView& v) const {
     v.members.clear();
@@ -4986,7 +5052,14 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
                 }
                 if (u.attack_order && (u.target >= 0 || u.target_building >= 0)) continue;
                 if (team_tu >= 0 && (!units_[team_tu].is_aircraft || u.w_aa)) { ai_order_attack(m, team_tu); continue; }
-                if (team_tb >= 0) { ai_order_attack_building(m, team_tb); continue; }
+                // W9-02-03 [RE: TeamClass::Coordinate_Attack FUN_006EA9F0 hands
+                // the team target to a member only while its TarCom is empty and
+                // never touches its NavCom while it is in Attack; the member's
+                // own GetFireError (FUN_006FB5D0) refuses a target its weapons
+                // cannot hurt]: a member that cannot damage the building is not
+                // (re-)ordered -- combat dropped it (combat.cpp target_building
+                // branch) and the team re-gave it, clearing the path, every frame.
+                if (team_tb >= 0 && unit_can_damage_building(u, team_tb)) { ai_order_attack_building(m, team_tb); continue; }
             }
             for (int m : team.members) {
                 if (m < 0 || m >= (int)units_.size()) continue;
@@ -4997,7 +5070,7 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
                 if (c.building_arg >= 0) {   // action 46: THAT building type
                     const int tb = ai_find_typed_building(house, rec, c.building_arg,
                                                           /*enemy=*/true, u.cell_x, u.cell_y);
-                    if (tb >= 0) ai_order_attack_building(m, tb);
+                    if (tb >= 0 && unit_can_damage_building(u, tb)) ai_order_attack_building(m, tb);   // W9-02-03
                     continue;
                 }
                 const int tu = ai_pick_quarry_unit(house, c.quarry, u.cell_x,
@@ -5005,7 +5078,7 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
                 if (tu >= 0) { ai_order_attack(m, tu); continue; }
                 const int tb = ai_pick_quarry_building(house, rec, c.quarry, u.cell_x,
                                                        u.cell_y, rec.team_state.rng);
-                if (tb >= 0) ai_order_attack_building(m, tb);
+                if (tb >= 0 && unit_can_damage_building(u, tb)) ai_order_attack_building(m, tb);   // W9-02-03
             }
             break;
         }
@@ -5030,6 +5103,12 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
                 Unit& u = units_[(std::size_t)m];
                 if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0) continue;
                 if (!can_load(units_, tr, m)) continue;
+                // W9-02-03 [RE: TeamClass Load FUN_006EC760 -- a member already
+                // in Mission_Enter (7) is left alone; the first one that is not
+                // gets QueueMission(Enter) + SetDestination(transport) and the
+                // handler RETURNS (one member per pass)]: before W9 every
+                // not-yet-loaded member was re-pathed to the transport every frame.
+                if (u.enter_target == tr) continue;
                 cargo_any_ = true;
                 u.target = -1;
                 u.target_building = -1;
@@ -5037,6 +5116,7 @@ void World::ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& te
                 u.unload_pending = false;
                 u.enter_target = tr;
                 order_unit_move(m, t.cell_x, t.cell_y);
+                break;
             }
             break;
         }

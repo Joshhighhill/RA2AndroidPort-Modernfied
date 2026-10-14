@@ -614,6 +614,10 @@ void build_occupancy_cost(const std::vector<Unit>& units, const Occupancy& occ, 
                           bool blockage_mode, const World* world, std::vector<std::uint16_t>& out);
 // True when a cell of `path` after its first is held by a unit other than self.
 bool path_meets_units(const std::vector<Cellxy>& path, const Occupancy& occ, int self);
+// W9-02-06: the shared per-thread cost grid build_occupancy_cost resets
+// incrementally (pass it as `out`; never keep a reference across calls that
+// may build a cost for another mover).
+std::vector<std::uint16_t>& occupancy_cost_scratch();
 
 void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passable,
                 const std::vector<std::uint8_t>& water_passable, int w, int h,
@@ -862,6 +866,8 @@ class World {
 public:
     // P7 Save/Load: the serializer (engine/save_fields.hpp) visits private state.
     friend struct SaveAccess;
+    // W9-01-04: the per-frame lockstep CRC reads sim state (net_frame_crc.cpp).
+    friend struct NetCrcAccess;
 
     explicit World(const ra2assets::MapFile& map);
 
@@ -2796,6 +2802,14 @@ private:
     void commit_attack_target(int unit_idx, int target_unit, int target_building);
     void ai_order_attack(int unit_idx, int target_idx);
     void ai_order_attack_building(int unit_idx, int b_idx);
+    // W9-02-03: the combat drop rule for an attack-building order (combat.cpp
+    // target_building branch, GetFireError FUN_006FB5D0): true iff one of the
+    // unit's weapons can hurt the building (or it carries C4 / a fire ability).
+    bool unit_can_damage_building(const Unit& u, int b_idx) const;
+    // W9-02-02 [RE: Basic_Path FUN_004D3840 path failure]: drop the unit's
+    // capture / infiltrate / enter intent; an AI unit leaves its team and
+    // guards the spot.
+    void abandon_unreachable_entry(int idx);
     void ai_execute_team_command(int house, HouseAiRec& rec, TeamInstance& team,
                                  const TeamCommand& c);
     bool ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat);

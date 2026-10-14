@@ -79,6 +79,12 @@ void LockstepSession::set_process_time_sample(uint32_t total_ms, uint32_t frames
     proc_frames_ = frames;
 }
 
+void LockstepSession::note_process_time(double ms) {
+    ext_proc_ = true;
+    ext_proc_ms_ += ms > 0.0 ? ms : 0.0;
+    ++ext_proc_frames_;
+}
+
 // --------------------------------------------------------------- sending
 void LockstepSession::send_framesync() {
     // FUN_00649A70: 14 bytes, DATA_NOACK, to every connection.
@@ -210,6 +216,16 @@ int LockstepSession::slowest_peer() const {
         }
     }
     return best;
+}
+
+uint32_t LockstepSession::peer_lag_frames() const {
+    uint32_t lag = 0;
+    for (const auto& kv : peers_) {
+        if (kv.second.their_frame < 0) continue;
+        const int64_t d = static_cast<int64_t>(frame_) - kv.second.their_frame;
+        if (d > static_cast<int64_t>(lag)) lag = static_cast<uint32_t>(d);
+    }
+    return lag;
 }
 
 void LockstepSession::kick_slowest() {
@@ -540,7 +556,13 @@ void LockstepSession::begin_frame(uint32_t frame_crc) {
             default: break;
         }
         net_.set_timing({rt + 10, 0xFFFFFFFFu, std::max<uint32_t>(rt * 8 + 15, 0x78)});
-        const uint16_t avg = proc_frames_ ? static_cast<uint16_t>(proc_ms_ / proc_frames_) : 0;
+        uint16_t avg = proc_frames_ ? static_cast<uint16_t>(proc_ms_ / proc_frames_) : 0;
+        if (ext_proc_) {   // W9-01-03: the driver's own processing time (no waits)
+            const double a = ext_proc_frames_ ? ext_proc_ms_ / ext_proc_frames_ : 0.0;
+            avg = static_cast<uint16_t>(std::min(65535.0, a));
+            ext_proc_ms_ = 0.0;
+            ext_proc_frames_ = 0;
+        }
         Event pt = ev::process_time(cfg_.local_house, avg);
         pt.frame = frame_;
         add_to_outlist(pt);
