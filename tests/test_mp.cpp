@@ -536,3 +536,145 @@ TEST_CASE("mp: mini JSON for the ra2lobbyd control plane") {
     CHECK(j.u32("v3") == 4000000000u);
     CHECK_FALSE(j.flag("private"));
 }
+
+// ---------------------------------------------------------------------------
+// W9-04 (phone multiplayer)
+// ---------------------------------------------------------------------------
+namespace {
+bool chat_has(const LobbyBase& l, const std::string& needle) {
+    for (const auto& c : l.chat_log())
+        if (c.text.find(needle) != std::string::npos) return true;
+    return false;
+}
+int chat_count(const LobbyBase& l, const std::string& needle) {
+    int n = 0;
+    for (const auto& c : l.chat_log())
+        if (c.text.find(needle) != std::string::npos) ++n;
+    return n;
+}
+}  // namespace
+
+TEST_CASE("mp: W9-04-07 lobby AWAY -- a backgrounded (frozen) client / host is not dropped") {
+    std::uint64_t t = 0;
+    MemNet hub(t);
+    MpNet& eh = hub.add(1);
+    MpNet& ec = hub.add(2);
+    LobbyHost host(eh, ident("Host", 1), host_model());
+    LobbyClient c(ec, mem_peer(1), ident("Phone", 2));
+    REQUIRE(pump(host, {&c}, t, [&] { return c.state() == LobbyClient::State::Joined; }));
+
+    // The phone CLIENT goes to the background for 40 s (frozen: no update).
+    c.away(false, 90);
+    for (int i = 0; i < 400; ++i) { t += 100; host.update(t); }
+    CHECK(host.members() == 1);
+    CHECK(chat_has(host, "Phone is away (90 s)"));
+    c.resume(t);
+    c.away(true, 0);
+    pump(host, {&c}, t, [&] { return chat_has(host, "Phone is back."); }, 100);
+    CHECK(chat_has(host, "Phone is back."));
+    pump(host, {&c}, t, [] { return false; }, 200);   // 10 s of normal play: still fine
+    CHECK(c.state() == LobbyClient::State::Joined);
+    CHECK(host.members() == 1);
+
+    // The phone HOST goes to the background for 40 s (e.g. sending the room
+    // code in a messenger); the client keeps running.
+    MpOptions o = host.model().opt;
+    host.away(false, 90);
+    for (int i = 0; i < 400; ++i) { t += 100; c.update(t); }
+    CHECK(c.state() == LobbyClient::State::Joined);
+    CHECK(chat_has(c, "The host is away (90 s)."));
+    host.resume(t);
+    host.away(true, 0);
+    o.credits = 6000;   // a change right after the return reaches the client
+    host.set_options(o);
+    REQUIRE(pump(host, {&c}, t, [&] { return c.model().opt.credits == 6000; }, 200));
+    CHECK(chat_has(c, "The host is back."));
+    CHECK(c.state() == LobbyClient::State::Joined);
+    CHECK(host.members() == 1);
+
+    // Longer than the announced time (+ the 15 s silence): dropped as before.
+    c.away(false, 20);
+    for (int i = 0; i < 400; ++i) { t += 100; host.update(t); }   // 40 s > 20 + 15
+    CHECK(host.members() == 0);
+}
+
+TEST_CASE("mp: W9-04-07 without AWAY a 20 s freeze still drops the peer (unchanged)") {
+    std::uint64_t t = 0;
+    MemNet hub(t);
+    MpNet& eh = hub.add(1);
+    MpNet& ec = hub.add(2);
+    LobbyHost host(eh, ident("Host", 1), host_model());
+    LobbyClient c(ec, mem_peer(1), ident("C", 2));
+    REQUIRE(pump(host, {&c}, t, [&] { return c.state() == LobbyClient::State::Joined; }));
+    for (int i = 0; i < 200; ++i) { t += 100; host.update(t); }
+    CHECK(host.members() == 0);
+}
+
+TEST_CASE("mp: W9-04-13 the host sees a cross-platform refusal too (once per player)") {
+    std::uint64_t t = 0;
+    MemNet hub(t);
+    MpNet& eh = hub.add(1);
+    MpIdentity hi = ident("Host", 1);
+    hi.platform = 1;
+    LobbyHost host(eh, hi, host_model());
+    MpNet& e2 = hub.add(2);
+    MpIdentity droid = ident("Droid", 2);
+    droid.platform = 2;
+    LobbyClient c(e2, mem_peer(1), droid);
+    pump(host, {&c}, t, [&] { return c.state() == LobbyClient::State::Rejected; });
+    CHECK(c.reject_reason() == RejectReason::Platform);
+    pump(host, {&c}, t, [] { return false; }, 40);
+    CHECK(chat_count(host, "Droid (Android) tried to join") == 1);
+    CHECK(chat_has(host, "Cross-platform"));
+}
+
+TEST_CASE("mp: W9-04-13 LAN beacon carries the host platform + cross-platform flag (older beacons decode)") {
+    LanBeacon b;
+    b.room = "R";
+    b.host = "H";
+    b.map = "M";
+    b.version = "v";
+    b.platform = 2;
+    b.cross_platform = true;
+    const auto d = encode_beacon(b);
+    LanBeacon back;
+    REQUIRE(decode_beacon(d.data(), d.size(), back));
+    CHECK(back.platform == 2);
+    CHECK(back.cross_platform);
+    // A beacon from an older build: no trailing platform byte.
+    const std::vector<std::uint8_t> old(d.begin(), d.end() - 1);
+    REQUIRE(decode_beacon(old.data(), old.size(), back));
+    CHECK(back.platform == 0);
+    CHECK(back.room == "R");
+    CHECK(std::string(platform_name(1)) == "PC");
+    CHECK(std::string(platform_name(2)) == "Android");
+}
+
+TEST_CASE("mp: W9-04-10 the host's address to type prefers Wi-Fi / LAN over mobile data") {
+    auto ip = [](int a, int b, int c, int d) {
+        return (std::uint32_t(a) << 24) | (std::uint32_t(b) << 16) | (std::uint32_t(c) << 8) | std::uint32_t(d);
+    };
+    // A phone: cellular 10.x (rmnet) and CGNAT, Wi-Fi 192.168.x, loopback.
+    std::vector<LocalIf> ifs = {
+        {ip(127, 0, 0, 1), 0xFF000000u, "lo"},
+        {ip(10, 34, 1, 7), 0xFFFFFFFCu, "rmnet_data0"},
+        {ip(100, 70, 3, 2), 0xFFC00000u, "v4-rmnet_data1"},
+        {ip(192, 168, 1, 5), 0xFFFFFF00u, "wlan0"},
+    };
+    std::vector<std::uint32_t> r = rank_local_ipv4s(ifs);
+    REQUIRE(r.size() == 3u);
+    CHECK(r[0] == ip(192, 168, 1, 5));
+    CHECK(r.back() == ip(100, 70, 3, 2));
+    // A LAN using 10.x on Wi-Fi beats a cellular 192.168.x (unusual carrier).
+    ifs = {{ip(192, 168, 0, 9), 0xFFFFFF00u, "ccmni0"}, {ip(10, 0, 0, 4), 0xFFFFFF00u, "wlan0"}};
+    r = rank_local_ipv4s(ifs);
+    CHECK(r[0] == ip(10, 0, 0, 4));
+    // Unknown names (Windows): RFC 1918 192.168 > 172.16 > 10, VPN-ish public last.
+    ifs = {{ip(10, 1, 1, 1), 0, ""}, {ip(172, 20, 0, 2), 0, ""}, {ip(192, 168, 50, 2), 0, ""}, {ip(169, 254, 3, 3), 0, ""}};
+    r = rank_local_ipv4s(ifs);
+    REQUIRE(r.size() == 4u);
+    CHECK(r[0] == ip(192, 168, 50, 2));
+    CHECK(r[1] == ip(172, 20, 0, 2));
+    CHECK(r[2] == ip(10, 1, 1, 1));
+    CHECK(r[3] == ip(169, 254, 3, 3));
+}

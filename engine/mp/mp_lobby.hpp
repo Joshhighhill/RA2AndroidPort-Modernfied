@@ -16,6 +16,10 @@
 //                                <- GO(rev, seed, peer table) -> MpSessionConfig
 //   SIGN_OFF                     <-> slot freed / room closed
 //   PING (DATA_NOACK, 2 s)       <-> peer lost after 15 s of silence
+//   AWAY (0x41, clone)           <-> W9-04-07: an Android app went to the
+//                                    background (frozen): its silence is
+//                                    excused for the announced seconds; BACK
+//                                    ends it (the host resends the options)
 //
 // Pure + clock-injected (now in ms) so it runs in ra2assets_tests; the UI
 // calls update(now_ms()) every frame. SDL-free.
@@ -103,6 +107,14 @@ public:
     // client ACKed it (or after 3 s).
     StartCheck start(std::uint32_t seed);
     void close();                   // SIGN_OFF to everyone
+    // W9-04-07: the host's app goes to the background (back = false, the
+    // clients excuse `seconds` of silence) / returns (back = true).
+    void away(bool back, std::uint16_t seconds);
+    // W9-04-07: the first update after the app was frozen: the silence of
+    // every peer is measured from now (its own clock jumped), un-ACKed
+    // packets are dropped (their resend timers expired while frozen) and
+    // the options go out again.
+    void resume(std::uint64_t now);
 
     std::function<void(const std::string&)> on_event;   // join / leave lines for the log
     int members() const { return static_cast<int>(peers_.size()); }
@@ -110,7 +122,9 @@ public:
     PeerId peer_of_slot(int slot) const;
 
 private:
-    struct Peer { int slot = -1; std::uint64_t heard = 0; std::uint64_t pinged = 0; };
+    struct Peer { int slot = -1; std::uint64_t heard = 0; std::uint64_t pinged = 0;
+                  std::uint64_t away_until = 0;   // W9-04-07: silence excused until (0 none)
+    };
     void handle(PeerId from, const std::vector<std::uint8_t>& body, std::uint64_t now);
     void broadcast_options(std::uint64_t now);
     void send_options(PeerId to, std::uint64_t now);
@@ -119,6 +133,7 @@ private:
     LobbyChannel ch_;
     MpIdentity me_;
     std::map<PeerId, Peer> peers_;
+    std::vector<std::uint64_t> told_platform_;   // W9-04-13: refused players already announced
     bool dirty_ = false, going_ = false;
     std::uint64_t now_ = 0, go_at_ = 0;
 };
@@ -133,6 +148,10 @@ public:
     void set_ready(bool ready);
     void chat(const std::string& text);
     void leave();
+    // W9-04-07: see LobbyHost::away / resume.
+    void away(bool back, std::uint16_t seconds);
+    void resume(std::uint64_t now);
+    bool host_away(std::uint64_t now) const { return now < host_away_until_; }
     // The UI tells whether the host's map is installed locally (digest match).
     std::function<bool(const MpMap&)> have_map;
 
@@ -151,6 +170,7 @@ private:
     RejectReason reason_ = RejectReason::None;
     bool ready_ = false, has_map_ = true;
     std::uint64_t now_ = 0, last_query_ = 0, heard_ = 0, pinged_ = 0;
+    std::uint64_t host_away_until_ = 0;   // W9-04-07: the host announced AWAY
     int queries_ = 0;
     // GAME_OPTIONS reassembly
     std::uint32_t asm_rev_ = 0;

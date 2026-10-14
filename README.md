@@ -2977,6 +2977,35 @@ The native `.so` list and the source lists come from the same
 Game assets are **never** bundled (copyright); they are read at run time from
 the app's external files dir (see "Assets on device" below).
 
+### Patches to SDL's Java (W9-04)
+
+SDL's Java glue is vendored under `android/app/src/main/java/org/libsdl/app/`
+(SDL 2.30.9, the same release as the native pin `D:\ra2-deps\SDL2-2.30.9` /
+`build/_deps/sdl2-src`). The native SDL sources are NOT patched; the
+desktop build is unaffected. `SDLActivity.java` carries these `RA2 PATCH`
+changes (search for the marker):
+
+- **Soft-keyboard text (W9-04-01).** SDL 2.30.9's `SDLInputConnection`
+  started every IME session with an empty hidden `EditText`; on Android 11+
+  (API 30+) it diffs that `EditText` instead of synthesising a backspace, so the
+  keyboard's delete key could never erase text the engine already had (a
+  pre-filled name or server address). `SDLActivity.ra2SetImeField(text,
+  kind, max)` (called from `engine/platform_os.cpp os_android_ime_field`
+  before `SDL_StartTextInput`, via `ime_open` in `engine/app_robust.inc`)
+  seeds the session with the field's text and length limit and restarts a
+  live session; `deleteSurroundingText` deletes from that copy on every API
+  level and synthesises a backspace only for one past its start; a
+  `KEYCODE_DEL` key event keeps the copy in step.
+- **Keyboard per field (W9-04-14).** `DummyEdit.onCreateInputConnection`
+  picks the layout from the field kind: an address = URI layout, a room
+  code = capitals, names / addresses / codes without suggestions or
+  autocorrect, a Done action (Send for chat) instead of a multi-line Enter
+  (the action reaches the engine as Enter).
+
+`RA2Activity.netBindLan` (W9-04-10) binds the process to the Wi-Fi /
+Ethernet network while the LAN pages are used when mobile data is the
+default network (`os_android_bind_lan`).
+
 ### Prerequisites
 
 - **Android SDK** (command-line tools) with `platforms;android-34`,

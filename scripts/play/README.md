@@ -343,7 +343,7 @@ commits (chat: sends). Probe `edit(<id>)`, `focus`, `status`.
 |---|---|---|
 | `mp-lan` | `button:Host Game`, `button:Join Game`, `button:Join by IP`, `button:Back`, `edit:nick`, `edit:ip`, `game:<i>` | `lan_games`, `lan_listening`, `lan_sel`, `lan_game_host(i)`, `lan_game_room(i)`, `nick` |
 | `mp-online` | `button:Connect`, `button:Host Game`, `button:Host Private`, `button:Join Game`, `button:Join Code`, `button:Back`, `edit:server`, `edit:nick`, `edit:code`, `room:<i>` | `online_state` (`idle/connecting/hello/ready/failed`), `rooms`, `room_code(i)`, `server_name`, `motd`, `online_error` |
-| `mp-lobby` | `button:Start Game` / `button:Customize Battle` (host), `button:Ready` / `button:Not Ready` (client), `button:Back`, `edit:chat`, `combo:kind<N>` (host, rows 1-7), `combo:country<N>` / `combo:color<N>` / `combo:team<N>` / `combo:start<N>` (rows you may edit), with a list open `pick:<label>` / `item:<i>` / `list:up` / `list:down`, `check:short|mcv|crates|superweapons`, `slider:speed|credits|units=<v>` (host), `map:<file>` + `button:Use Map` / `button:Cancel` while choosing | `mp_role` (`host/client`), `mp_net` (`lan/online`), `mp_state` (`joining/joined/rejected/lost/started`), `reject_reason`, `local_slot`, `members`, `rev`, `players`, `humans`, `max_players`, `map`, `map_digest`, `room_code`, `where`, `lan_port`, `credits`, `unit_count`, `game_speed`, `check(<id>)`, `can_start`, `choosing`, `combo_open`, per slot N `slot_kind(N)` (`Open/Closed/Human/AI`), `slot_name(N)`, `slot_ready(N)`, `slot_has_map(N)`, `country(N)`, `color(N)`, `team(N)`, `start(N)`, `ai(N)`; `chat_count`, `chat_last` (`"Name: text"`), `ready` (client) |
+| `mp-lobby` | `button:Start Game` / `button:Customize Battle` (host), `button:Ready` / `button:Not Ready` (client), `button:Back`, `edit:chat`, `combo:kind<N>` (host, rows 1-7), `combo:country<N>` / `combo:color<N>` / `combo:team<N>` / `combo:start<N>` (rows you may edit), with a list open `pick:<label>` / `item:<i>` / `list:up` / `list:down`, `check:short|mcv|crates|superweapons|aitakeover|crossplatform`, `slider:speed|credits|units=<v>` (host), `map:<file>` + `button:Use Map` / `button:Cancel` while choosing | `mp_role` (`host/client`), `mp_net` (`lan/online`), `mp_state` (`joining/joined/rejected/lost/started`), `reject_reason`, `local_slot`, `members`, `rev`, `players`, `humans`, `max_players`, `map`, `map_digest`, `room_code`, `where`, `lan_port`, `credits`, `unit_count`, `game_speed`, `check(<id>)`, `can_start`, `choosing`, `combo_open`, per slot N `slot_kind(N)` (`Open/Closed/Human/AI`), `slot_name(N)`, `slot_ready(N)`, `slot_has_map(N)`, `country(N)`, `color(N)`, `team(N)`, `start(N)`, `ai(N)`; `chat_count`, `chat_last` (`"Name: text"`), `ready` (client) |
 | `game` (a network match) | the usual game targets | NET-PLAY keys (only in a match): `net` (1), `sim_frame`, `net_frame`, `net_stalled`, `net_stalls`, `net_players`, `net_max_ahead`, `net_fsr`, `net_left` (our EXIT executed), `net_exiting`, `net_end` (the match ended: out of sync / mismatch / timeout), `net_end_title`, `net_oos_frame`, `net_chat_open`, `net_away`, `net_hash`, `net_hash_avg_us`, `net_house_out(h)` |
 
 Network is real time (wall clock), not the harness's virtual clock: wait
@@ -356,3 +356,20 @@ and that the match starts. `scripts/play/net-match.ps1` [`-Online`] [`-DesyncAt 
 plays a whole 3000-frame match between two processes (net-*-host/join.play)
 and compares the two machines' sync-hash trails (`[net] trail f=N crc=X`
 on stderr); in a match Enter opens the chat line (`type`, `key enter`).
+
+**Phone multiplayer (W9-04, `docs/gap/wave9/04-phone-touch-mp.md`).**
+`ime screenkb` makes the run behave as a soft-keyboard platform (Android:
+leaving an edit hides the keyboard); `ime hide` is the keyboard's own Back
+(SDL stops text input behind the page's back). Probe keys on every MP page:
+`text_input_active` (SDL's text-input state), `ime_seed` / `ime_kind` (the
+text and keyboard kind the IME session was seeded with: 0 name, 1 address
+(URI), 2 room code, 3 chat), `touch_page` (touch metrics: wider list strips,
+near-miss taps land on the nearest target within 16 dp). Lobby: `map_list_top`
+(the first visible map while choosing; a `touch drag` on the list scrolls it,
+a `touch drag` from a slider moves it), Esc / Android Back asks first
+(`confirm_open`, `confirm:yes|no`). Match: `text_input_active`, `cam_x`,
+`cam_y`, `mouse_present`. A finger hold on an edit pastes the clipboard (a
+PASTE chip also shows inside the focused edit on touch). Scripts:
+`mp-touch-phone.play` (keyboard, snapping, drags, Back confirm),
+`mp-touch-resume.play` (background / foreground in a match: no phantom-mouse
+edge scroll, no stall).

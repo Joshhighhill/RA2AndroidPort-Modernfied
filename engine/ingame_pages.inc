@@ -69,8 +69,8 @@ public:
             const ra2engine::SbRect a = shell_row(0);
             const int top = std::min(a.y, e.y);
             const SDL_Rect d = ui_xform().dev(e.x, top, std::max(e.x + e.w, a.x + a.w) - e.x, e.y + e.h - top);
-            set_text_input_rect_logical(d.x, d.y, d.w, d.h);
-            SDL_StartTextInput();
+            // W9-04-01: the IME starts from the description (its delete key erases it).
+            ime_open(d.x, d.y, d.w, d.h, desc_, ra2engine::kOsImeText, 0);
             replace_ = !desc_.empty();   // R-152: the prefilled text is selected
         }
     }

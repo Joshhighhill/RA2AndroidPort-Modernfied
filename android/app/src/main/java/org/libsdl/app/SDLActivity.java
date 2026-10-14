@@ -212,6 +212,45 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     protected static SDLSurface mSurface;
     protected static DummyEdit mTextEdit;
     protected static boolean mScreenKeyboardShown;
+
+    // RA2 PATCH (W9-04-01/-14): the engine field the soft keyboard edits.
+    // SDL 2.30.9's SDLInputConnection starts every IME session with an EMPTY
+    // hidden EditText, so on Android 11+ (API 30+, where deleteSurroundingText
+    // is diffed against that EditText instead of synthesising '\b') the IME's
+    // delete key could never erase text the engine already had (a pre-filled
+    // name / server address). The engine now seeds the IME with the field's
+    // text, its kind (keyboard layout) and its length limit before
+    // SDL_StartTextInput (ra2SetImeField, called through JNI).
+    public static final int RA2_IME_TEXT = 0;   // a name: no suggestions
+    public static final int RA2_IME_URI = 1;    // an address: URI layout, no suggestions
+    public static final int RA2_IME_CODE = 2;   // a room code: capitals, no suggestions
+    public static final int RA2_IME_CHAT = 3;   // chat: plain text, Send action
+    static String sRa2ImeText = "";
+    static int sRa2ImeKind = RA2_IME_CHAT;
+    static int sRa2ImeMax = 0;                  // 0 = no limit
+
+    /**
+     * RA2 PATCH: called by the engine (JNI, any thread) when an edit gains
+     * focus or the engine changed its text: the next IME session starts from
+     * `text`. A live session is restarted so the keyboard sees the new text.
+     * Posted on the same handler as SDL's ShowTextInputTask, so a seed sent
+     * before SDL_StartTextInput is in place when the session opens.
+     */
+    public static void ra2SetImeField(final String text, final int kind, final int max) {
+        if (mSingleton == null) return;
+        mSingleton.commandHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                sRa2ImeText = text != null ? text : "";
+                sRa2ImeKind = kind;
+                sRa2ImeMax = max;
+                if (mTextEdit != null && mTextEdit.hasFocus()) {
+                    InputMethodManager imm = (InputMethodManager) SDL.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+                    imm.restartInput(mTextEdit);
+                }
+            }
+        });
+    }
     protected static ViewGroup mLayout;
     protected static SDLClipboardHandler mClipboardHandler;
     protected static Hashtable<Integer, PointerIcon> mCursors;
@@ -1936,12 +1975,42 @@ class DummyEdit extends View implements View.OnKeyListener {
 
     @Override
     public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
-        ic = new SDLInputConnection(this, true);
+        // RA2 PATCH (W9-04-01/-14): seed the session with the engine field's
+        // text (so the IME's delete key can erase it) and pick the keyboard
+        // per field kind: an address gets the URI layout, a room code
+        // capitals, names and addresses no suggestions / autocorrect, and
+        // the action key is Done (Send for chat) instead of a new line.
+        final String seed = SDLActivity.sRa2ImeText;
+        final int kind = SDLActivity.sRa2ImeKind;
+        SDLInputConnection c = new SDLInputConnection(this, true);
+        final int seeded = c.seed(seed, SDLActivity.sRa2ImeMax);
+        ic = c;
 
-        outAttrs.inputType = InputType.TYPE_CLASS_TEXT |
-                             InputType.TYPE_TEXT_FLAG_MULTI_LINE;
-        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI |
-                              EditorInfo.IME_FLAG_NO_FULLSCREEN /* API 11 */;
+        switch (kind) {
+        case SDLActivity.RA2_IME_URI:
+            outAttrs.inputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI |
+                                 InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
+            outAttrs.imeOptions = EditorInfo.IME_ACTION_DONE;
+            break;
+        case SDLActivity.RA2_IME_CODE:
+            outAttrs.inputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS |
+                                 InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD |
+                                 InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
+            outAttrs.imeOptions = EditorInfo.IME_ACTION_DONE;
+            break;
+        case SDLActivity.RA2_IME_TEXT:
+            outAttrs.inputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
+            outAttrs.imeOptions = EditorInfo.IME_ACTION_DONE;
+            break;
+        default:
+            outAttrs.inputType = InputType.TYPE_CLASS_TEXT;
+            outAttrs.imeOptions = EditorInfo.IME_ACTION_SEND;
+            break;
+        }
+        outAttrs.imeOptions |= EditorInfo.IME_FLAG_NO_EXTRACT_UI |
+                               EditorInfo.IME_FLAG_NO_FULLSCREEN /* API 11 */;
+        outAttrs.initialSelStart = seeded;
+        outAttrs.initialSelEnd = seeded;
 
         return ic;
     }
@@ -1962,8 +2031,38 @@ class SDLInputConnection extends BaseInputConnection {
         return mEditText.getEditableText();
     }
 
+    // RA2 PATCH (W9-04-01): start from the engine field's text, cursor at the
+    // end, as already committed (no events are generated for it). The length
+    // filter mirrors the engine edit's limit, so characters the engine drops
+    // never pile up in the IME's copy (a later delete would then erase real
+    // characters). Returns the seeded length.
+    int seed(String text, int max) {
+        if (max > 0) {
+            mEditText.setFilters(new android.text.InputFilter[] { new android.text.InputFilter.LengthFilter(max) });
+        }
+        mEditText.setText(text != null ? text : "");
+        final Editable e = mEditText.getEditableText();
+        Selection.setSelection(e, e.length());
+        mCommittedText = e.toString();
+        return e.length();
+    }
+
     @Override
     public boolean sendKeyEvent(KeyEvent event) {
+        // RA2 PATCH (W9-04-01): some IMEs delete with a KEYCODE_DEL key event
+        // (it reaches the engine as SDLK_BACKSPACE): keep the IME's copy of
+        // the text in step, without generating a second backspace.
+        if (event.getKeyCode() == KeyEvent.KEYCODE_DEL && event.getAction() == KeyEvent.ACTION_DOWN) {
+            final Editable e = getEditable();
+            if (e != null) {
+                final int end = Selection.getSelectionEnd(e);
+                if (end > 0) {
+                    final int start = Character.offsetByCodePoints(e, end, -1);
+                    e.delete(start, end);
+                    mCommittedText = e.toString();
+                }
+            }
+        }
         /*
          * This used to handle the keycodes from soft keyboard (and IME-translated input from hardkeyboard)
          * However, as of Ice Cream Sandwich and later, almost all soft keyboard doesn't generate key presses
@@ -2005,16 +2104,20 @@ class SDLInputConnection extends BaseInputConnection {
 
     @Override
     public boolean deleteSurroundingText(int beforeLength, int afterLength) {
-        if (Build.VERSION.SDK_INT <= 29 /* Android 10.0 (Q) */) {
-            // Workaround to capture backspace key. Ref: http://stackoverflow.com/questions>/14560344/android-backspace-in-webview-baseinputconnection
-            // and https://bugzilla.libsdl.org/show_bug.cgi?id=2265
-            if (beforeLength > 0 && afterLength == 0) {
-                // backspace(s)
-                while (beforeLength-- > 0) {
-                    nativeGenerateScancodeForUnichar('\b');
-                }
-                return true;
-           }
+        // RA2 PATCH (W9-04-01): SDL synthesised '\b' only on API <= 29 and
+        // left the hidden EditText alone; on API 30+ it diffed that (empty)
+        // EditText, so text it did not know could never be deleted. Now the
+        // EditText holds the engine field's text (seed()) on every API
+        // level: delete what it has (updateText() turns that into one '\b'
+        // per character) and synthesise '\b' only for the part of a
+        // backspace that reaches past its start (text it does not know).
+        if (beforeLength > 0) {
+            final Editable e = getEditable();
+            final int have = e != null ? Math.max(0, Selection.getSelectionStart(e)) : 0;
+            for (int extra = beforeLength - have; extra > 0; --extra) {
+                nativeGenerateScancodeForUnichar('\b');
+            }
+            beforeLength = Math.min(beforeLength, have);
         }
 
         if (!super.deleteSurroundingText(beforeLength, afterLength)) {

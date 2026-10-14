@@ -80,6 +80,16 @@ inline std::uint8_t platform_code() {
 #endif
 }
 
+// W9-04-13: a platform tag for the lists and the refusal notice ("" unknown).
+inline const char* platform_name(std::uint8_t code) {
+    switch (code) {
+        case 1: return "PC";
+        case 2: return "Android";
+        case 3: return "Android x86";
+        default: return "";
+    }
+}
+
 struct MpMap {
     std::string file;              // multimd.mix entry, e.g. "xmp01t4.map"
     std::string digest;            // the map's [Digest] 1= value (the original compares it, §7.1)

@@ -19,7 +19,8 @@
 // 0x0A SIGN_OFF, 0x0B GO, 0x0C MESSAGE, 0x0D PING, 0x13 READY_TO_GO); the
 // chat packet (0x0C) uses the exact original layout (sender name at +4,
 // chat mask +0x2F, UTF-16 text +0x30, colour +0x110, game-name hash +0x114).
-// The clone-only slot request is 0x40 (outside the original 0x00-0x2F range).
+// The clone-only slot request is 0x40 and the lobby AWAY / BACK 0x41 (outside
+// the original 0x00-0x2F range).
 // The options string inside GAME_OPTIONS / GO is the original comma layout
 // starting with the seed (mp_options.hpp).
 //
@@ -46,6 +47,7 @@ enum LobbyCmd : std::uint32_t {
     kCmdPing = 0x0D,
     kCmdReadyToGo = 0x13,
     kCmdSlotRequest = 0x40,   // clone extension
+    kCmdAway = 0x41,          // clone extension (W9-04-07): u8 back, u16 seconds
 };
 
 // --- body helpers (little-endian, bounds-checked) ---------------------------

@@ -51,8 +51,19 @@ bool resolve(const std::string& host_port, std::uint16_t default_port, Addr& out
 // which misses an Android hotspot's clients (05 §3.1).
 std::vector<std::uint32_t> broadcast_targets();
 // The machine's own non-loopback IPv4 addresses (shown in the host's lobby
-// for "Join by IP").
+// for "Join by IP"), BEST FIRST (W9-04-10): rank_local_ipv4s.
 std::vector<std::uint32_t> local_ipv4s();
+// W9-04-10: order local interfaces for "the address to type": a Wi-Fi /
+// Ethernet / hotspot interface with a private (RFC 1918) address first --
+// 192.168/16, then 172.16/12, then 10/8 -- and a phone's mobile-data
+// (rmnet*, ccmni*, v4-rmnet*, clat*, pdp*, wwan*), VPN (tun*, ppp*, ipsec*),
+// carrier-grade NAT 100.64/10 and link-local 169.254/16 addresses last.
+// (The old numeric sort put a cellular 10.x before the Wi-Fi 192.168.x.)
+struct LocalIf {
+    std::uint32_t ip = 0, mask = 0;
+    std::string name;                 // "" when the OS does not say (Windows)
+};
+std::vector<std::uint32_t> rank_local_ipv4s(const std::vector<LocalIf>& ifs);
 
 // Non-blocking TCP client stream with an internal receive buffer and
 // line splitting (the ra2lobbyd control plane is JSON lines).

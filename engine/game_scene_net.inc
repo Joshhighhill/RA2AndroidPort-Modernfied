@@ -33,6 +33,13 @@
     bool net_chat_open_ = false;
     std::string net_chat_text_;
     bool net_bg_away_ = false;                 // we announced AWAY (app in background)
+    // W9-04-04/-08: the background we return from.
+    std::uint64_t net_bg_at_ = 0;              // wall ms of AppBackground
+    bool net_bg_touch_ = false;                // the last pointer before it was a finger
+    ra2engine::Camera net_bg_cam_;             // the camera before it
+    std::uint64_t net_resume_hold_until_ = 0;  // wall ms: our stall timers held until then
+    std::uint64_t net_ignore_mouse_until_ = 0; // wall ms: a phantom mouse is ignored until then
+    SDL_Rect net_chat_box_{0, 0, 0, 0};        // W9-04-02: the open chat line
     std::uint32_t net_last_trail_ = 0xFFFFFFFFu;
     double net_hash_ms_sum_ = 0.0, net_hash_ms_max_ = 0.0;
     std::uint32_t net_hash_n_ = 0;
@@ -285,6 +292,7 @@
                                        [&](const NetAway& w) { return now >= w.until_ms || !net_->game->is_remote(w.house); }),
                         net_away_.end());
         if (!net_away_.empty()) net_->game->session().hold_wait();
+        if (now < net_resume_hold_until_) net_->game->session().hold_wait();   // W9-04-08: back from the background
         for (const auto& r : net_->game->take_removed())
             std::cerr << "[net] connection to house " << r.first << (r.second ? " lost" : " closed") << "\n";
         // Our EXIT executed (or nobody is left to tell): the scene moves on.
@@ -332,6 +340,9 @@
         if (ev.kind == ra2engine::InputEvent::AppBackground) {
             if (!net_bg_away_) {
                 net_bg_away_ = true;
+                net_bg_at_ = ra2mp::now_ms();
+                net_bg_touch_ = !mouse_present_;
+                net_bg_cam_ = cam_;
                 net_->game->send_away(false, kNetAwaySeconds);
                 SDL_Log("[lifecycle] background in a network game: AWAY sent (%u s)", kNetAwaySeconds);
                 pres_log(0, "net sent away");
@@ -341,9 +352,45 @@
         if (ev.kind == ra2engine::InputEvent::AppForeground) {
             if (net_bg_away_) {
                 net_bg_away_ = false;
+                const std::uint64_t now = ra2mp::now_ms();
+                const std::uint64_t away_ms = now - net_bg_at_;
                 net_->game->send_away(true, 0);
-                SDL_Log("[lifecycle] foreground in a network game: BACK sent");
+                SDL_Log("[lifecycle] foreground in a network game: BACK sent (away %llu ms)",
+                        static_cast<unsigned long long>(away_ms));
                 pres_log(0, "net sent back");
+                // W9-04-08: our own stall timers ran on while the app was
+                // frozen; the first poll after the return compared a stale
+                // wait start against the timeout and kicked the very peers
+                // that were holding for our AWAY. Restart them now and hold
+                // them for the frame-wait dialog time (LAN 7 s / Internet
+                // 12 s), so the packets that arrived meanwhile are read
+                // before any timeout is judged.
+                const ra2::net::WaitTimeouts to = ra2::net::wait_timeouts(net_->game->config().mode);
+                net_->game->session().hold_wait();
+                net_resume_hold_until_ = now + static_cast<std::uint64_t>(to.dialog_frame) * 16;
+                // Away longer than the others hold for us (our AWAY countdown,
+                // then their stall timeout): they have removed us already.
+                const std::uint64_t others_wait_ms =
+                    1000ull * kNetAwaySeconds + static_cast<std::uint64_t>(to.total) * 16 + 10000;
+                if (away_ms > others_wait_ms && !net_end_dialog_ && net_->game->session().players() > 1) {
+                    net_end_dialog_ = true;
+                    net_end_title_ = "Removed from the game";
+                    net_end_text_ = "You were away for " + std::to_string(away_ms / 1000) +
+                                    " s; the other players waited " + std::to_string(others_wait_ms / 1000) +
+                                    " s and continued without you.";
+                    std::cerr << "[net] away " << away_ms << " ms > " << others_wait_ms << " ms: removed\n";
+                    pres_log(0, "net end away-too-long");
+                }
+                // W9-04-04: on a phone the return can bring a synthetic mouse
+                // event at the window corner, which made the camera
+                // edge-scroll into the black. The player was using a finger:
+                // stay in touch mode, ignore mouse events for a moment and
+                // put the camera back where it was.
+                if (net_bg_touch_) {
+                    mouse_present_ = false;
+                    net_ignore_mouse_until_ = now + 1500;
+                }
+                cam_ = net_bg_cam_;
             }
             return true;
         }
@@ -351,6 +398,20 @@
     }
 
     // --- input: chat box, stall / end dialogs -----------------------------
+    // W9-04-02/-12: the chat line's rect (the IME pans the view to keep it
+    // above the keyboard) and (re)opening the keyboard on it, seeded with
+    // the line's text (W9-04-01).
+    SDL_Rect net_chat_box_rect() const {
+        const double sc = hud_touch_scale();
+        const int h = static_cast<int>(28 * sc);
+        const int y = kWinH - h - static_cast<int>(70 * sc);
+        const int sw = static_cast<int>((hud_text_width("Send") + 24) * sc);
+        return SDL_Rect{16, y, std::max(200, playfield_w_ - 48 - sw), h};
+    }
+    void net_chat_ime() {
+        const SDL_Rect b = net_chat_box_rect();
+        ime_open(b.x, b.y, b.w, b.h, net_chat_text_, ra2engine::kOsImeChat, 100);
+    }
     void net_chat_send() {
         std::string t = net_chat_text_;
         while (!t.empty() && t.back() == ' ') t.pop_back();
@@ -407,6 +468,7 @@
                     while (!net_chat_text_.empty() && (static_cast<unsigned char>(net_chat_text_.back()) & 0xC0) == 0x80);
                 } else if (ev.key == ra2engine::kKeyDelete) {
                     net_chat_text_.clear();
+                    ime_sync(net_chat_text_, ra2engine::kOsImeChat, 100);
                 }
                 return true;   // every key goes to the chat line while it is open
             }
@@ -414,16 +476,23 @@
                 net_chat_send();
                 return true;
             }
+            // W9-04-02: the keyboard's Back hid the keyboard (SDL_StopTextInput)
+            // but the line stays open: a tap on it (or on Chat) brings the
+            // keyboard back.
+            if (down && (net_hit(net_chat_box_, ev.x, ev.y) || net_hit(net_btn_chat_, ev.x, ev.y))) {
+                if (!SDL_IsTextInputActive()) net_chat_ime();
+                return true;
+            }
             return false;
         }
         if (down && net_hit(net_btn_chat_, ev.x, ev.y)) {
             net_chat_open_ = true;
-            SDL_StartTextInput();   // Android: the soft keyboard
+            net_chat_ime();   // Android: the soft keyboard, at the chat line (W9-04-12)
             return true;
         }
         if (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEnter && !menu_.open_) {
             net_chat_open_ = true;
-            SDL_StartTextInput();
+            net_chat_ime();
             return true;
         }
         return false;
@@ -467,12 +536,13 @@
         } else {
             net_btn_chat_ = SDL_Rect{0, 0, 0, 0};
         }
+        net_chat_box_ = SDL_Rect{0, 0, 0, 0};
         if (net_chat_open_) {
-            const int h = static_cast<int>(28 * sc);
-            const int y = kWinH - h - static_cast<int>(70 * sc);
+            const SDL_Rect box = net_chat_box_rect();   // W9-04-12: the same rect the IME was given
+            const int h = box.h, y = box.y;
             const std::string send = "Send";
             const int sw = static_cast<int>((hud_text_width(send) + 24) * sc);
-            SDL_Rect box{16, y, std::max(200, playfield_w_ - 48 - sw), h};
+            net_chat_box_ = box;
             net_box(ren, box);
             const bool caret = (SDL_GetTicks() / 500) % 2 == 0;
             hud_text(ren, tc, "Say: " + net_chat_text_ + (caret ? "_" : ""), box.x + 6, y + static_cast<int>(8 * sc),
@@ -540,6 +610,10 @@
         p.set_s("net_end_title", net_end_title_);
         p.set("net_oos_frame", static_cast<double>(net_->game->session().out_of_sync().frame));
         p.set("net_chat_open", net_chat_open_ ? 1 : 0);
+        p.set("text_input_active", SDL_IsTextInputActive() ? 1 : 0);   // W9-04-02
+        p.set("cam_x", cam_.x);                                        // W9-04-04
+        p.set("cam_y", cam_.y);
+        p.set("mouse_present", mouse_present_ ? 1 : 0);
         p.set("net_away", static_cast<double>(net_away_.size()));
         p.set("net_hash", static_cast<double>(net_->game->last_hash()));
         p.set("net_hash_avg_us", net_hash_n_ ? 1000.0 * net_hash_ms_sum_ / net_hash_n_ : 0.0);

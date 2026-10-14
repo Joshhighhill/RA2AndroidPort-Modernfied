@@ -47,7 +47,7 @@ std::vector<std::uint8_t> encode_beacon(const LanBeacon& b) {
     std::vector<std::uint8_t> o(kMagic, kMagic + 4);
     put16(o, b.net_proto);
     o.push_back(b.type);
-    o.push_back(static_cast<std::uint8_t>((b.started ? 1 : 0) | (b.password ? 2 : 0)));
+    o.push_back(static_cast<std::uint8_t>((b.started ? 1 : 0) | (b.password ? 2 : 0) | (b.cross_platform ? 4 : 0)));
     put32(o, b.sim_ver);
     put32(o, b.rules_crc);
     put16(o, b.game_port);
@@ -58,6 +58,7 @@ std::vector<std::uint8_t> encode_beacon(const LanBeacon& b) {
     put_str(o, b.host, 16);
     put_str(o, b.map, 48);
     put_str(o, b.version, 24);
+    o.push_back(b.platform);   // W9-04-13 (appended)
     return o;
 }
 
@@ -83,6 +84,7 @@ bool decode_beacon(const std::uint8_t* p, std::size_t n, LanBeacon& out) {
     const std::uint8_t flags = u8();
     b.started = (flags & 1) != 0;
     b.password = (flags & 2) != 0;
+    b.cross_platform = (flags & 4) != 0;
     b.sim_ver = u32();
     b.rules_crc = u32();
     b.game_port = u16();
@@ -94,6 +96,7 @@ bool decode_beacon(const std::uint8_t* p, std::size_t n, LanBeacon& out) {
         b.host = str(16);
         b.map = str(48);
         b.version = str(24);
+        if (k < n) b.platform = u8();   // W9-04-13: absent from older builds
     }
     if (bad || (b.type != 1 && b.type != 2)) return false;
     out = b;

@@ -13,6 +13,9 @@
 // u8 flags(bit0 started, bit1 password) u32 sim_ver u32 rules_crc
 // u16 game_port u8 players u8 max u32 nonce, then u8-length-prefixed
 // room name (<=32), host nick (<=16), map name (<=48), engine version (<=24).
+// W9-04-13 (appended; older decoders ignore it): flags bit2 = the host's
+// "Cross-platform (exp.)" option, then u8 host platform (mp_model.hpp
+// platform_code(); 0 = an older build that did not send it).
 // SDL-free.
 #include <cstdint>
 #include <functional>
@@ -35,6 +38,8 @@ struct LanBeacon {
     std::uint8_t players = 1, max = 8;
     std::uint32_t nonce = 0;        // per-host-instance id (de-duplicates interfaces)
     std::string room, host, map, version;
+    std::uint8_t platform = 0;      // W9-04-13: host platform (0 unknown)
+    bool cross_platform = false;    // W9-04-13: the host admits other platforms
 };
 
 std::vector<std::uint8_t> encode_beacon(const LanBeacon& b);

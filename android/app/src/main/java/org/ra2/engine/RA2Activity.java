@@ -6,6 +6,9 @@ import android.graphics.Rect;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -119,6 +122,58 @@ public class RA2Activity extends SDLActivity implements AudioManager.OnAudioFocu
             Log.i(TAG, "multicast lock " + (on ? "acquired" : "released"));
         } catch (RuntimeException e) {
             Log.w(TAG, "multicast lock: " + e);
+        }
+    }
+
+    /*
+     * W9-04-10: LAN play goes over Wi-Fi (or Ethernet). When mobile data is
+     * the DEFAULT network -- a Wi-Fi without internet (a LAN-party router, a
+     * friend's hotspot without data) -- Android routes a socket that is not
+     * bound to a network over mobile data, so the LAN beacons, the join and
+     * the match never reach the other phones. While the LAN pages (browser,
+     * lobby, match) are in use the engine binds the process to the Wi-Fi
+     * network: every socket created from then on (the lobby's / match's UDP
+     * socket) uses it. The Internet page unbinds (the server is reached over
+     * the default network). Called from native code (platform_os.cpp
+     * os_android_bind_lan).
+     * Returns 0 no Wi-Fi / Ethernet network, 1 it is already the default
+     * network, 2 bound to it (mobile data stays the default).
+     */
+    public int netBindLan(boolean on) {
+        if (Build.VERSION.SDK_INT < 23) return 1;
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return 0;
+            if (!on) {
+                cm.bindProcessToNetwork(null);
+                Log.i(TAG, "LAN: process network binding cleared");
+                return 1;
+            }
+            Network lan = null;
+            for (Network n : cm.getAllNetworks()) {
+                NetworkCapabilities c = cm.getNetworkCapabilities(n);
+                if (c == null) continue;
+                if (c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                    c.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
+                    lan = n;
+                    break;
+                }
+            }
+            if (lan == null) {
+                cm.bindProcessToNetwork(null);
+                Log.i(TAG, "LAN: no Wi-Fi / Ethernet network");
+                return 0;
+            }
+            if (lan.equals(cm.getActiveNetwork())) {
+                cm.bindProcessToNetwork(null);
+                return 1;
+            }
+            final boolean ok = cm.bindProcessToNetwork(lan);
+            Log.i(TAG, "LAN: mobile data is the default network; process bound to Wi-Fi: " + ok);
+            return ok ? 2 : 0;
+        } catch (RuntimeException e) {
+            Log.w(TAG, "LAN bind: " + e);
+            return 0;
         }
     }
 

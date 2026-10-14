@@ -44,6 +44,9 @@ public:
     };
     TouchGestures() = default;
     explicit TouchGestures(Config c) : cfg_(c) {}
+    // W9-04-06: the Platform scales the slop to 8 dp on a phone.
+    void set_slop(int px) { if (px > 0) cfg_.slop_px = px; }
+    int slop() const { return cfg_.slop_px; }
 
     void finger_down(int64_t id, int x, int y, uint32_t t_ms);
     void finger_move(int64_t id, int x, int y, uint32_t t_ms);

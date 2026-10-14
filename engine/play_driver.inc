@@ -407,6 +407,17 @@ private:
         // ends the running scene as an activity restart does (destructors run,
         // the autosave is kept) and starts again from the app's startup path
         // (the Resume page, else the main menu).
+        // W9-04-02/-03: `ime hide` = the soft keyboard's Back (SDL stops text
+        // input behind the scene's back); `ime screenkb` = behave as a
+        // soft-keyboard platform for the rest of the run (Android).
+        if (op == "ime") {
+            ++pc_;
+            const std::string a = lower(c.args[0]);
+            if (a == "hide") SDL_StopTextInput();
+            else if (a == "screenkb") g_ime_force_screen_kb = true;
+            else fail(c, "ime hide|screenkb");
+            return kNext;
+        }
         if (op == "lifecycle") {
             ++pc_;
             const std::string a = lower(c.args[0]);

@@ -437,18 +437,21 @@ private:
         play_ui("menu:acbclose");
     }
     void set_editing(bool on) {
-        if (on == editing_) return;
+        // W9-04-02: a tap on the edit while editing brings the keyboard back
+        // after the IME's Back hid it.
+        if (on == editing_ && (!on || SDL_IsTextInputActive())) return;
+        const bool was = editing_;
         editing_ = on;
         // Show the soft keyboard on Android; restore the previous text-input
         // state on leave (desktop SDL starts with text input active).
         if (on) {
-            text_was_active_ = SDL_IsTextInputActive();
+            if (!was) text_was_active_ = SDL_IsTextInputActive();
             const ra2engine::SbRect e = name_rect();   // W2-AR-15: keep the edit in view
             const SDL_Rect d = xform().dev(e.x, e.y, e.w, e.h);
-            set_text_input_rect_logical(d.x, d.y, d.w, d.h);
-            SDL_StartTextInput();
+            // W9-04-01: the IME starts from the name (its delete key erases it).
+            ime_open(d.x, d.y, d.w, d.h, st_.name, ra2engine::kOsImeText, ra2engine::kLobbyNameMax);
         }
-        else if (!text_was_active_) SDL_StopTextInput();
+        else if (ime_screen_keyboard() || !text_was_active_) SDL_StopTextInput();   // W9-04-03
     }
     void play_ui(const char* key) const {
         if (art_.audio && art_.audio->sys.enabled && art_.audio->sys.mixer)

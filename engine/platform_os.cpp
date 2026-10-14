@@ -1,5 +1,6 @@
 #include "platform_os.hpp"
 #include <atomic>
+#include <cstdint>
 
 #ifdef __ANDROID__
 #include <SDL.h>
@@ -91,6 +92,8 @@ bool os_log_to_file_if_no_console(const std::string& path) {
 }
 bool os_android_open_importer() { return false; }
 void os_android_multicast_lock(bool) {}
+void os_android_ime_field(const std::string&, int, int) {}
+int os_android_bind_lan(bool) { return 1; }
 #else
 bool os_log_to_file_if_no_console(const std::string&) { return false; }
 std::string win_registry_install_dir() { return {}; }
@@ -125,9 +128,73 @@ void os_android_multicast_lock(bool on) {
     if (cls) env->DeleteLocalRef(cls);
     env->DeleteLocalRef(act);
 }
+int os_android_bind_lan(bool on) {
+    JNIEnv* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
+    jobject act = static_cast<jobject>(SDL_AndroidGetActivity());
+    if (!env || !act) return 1;
+    jclass cls = env->GetObjectClass(act);
+    jmethodID m = cls ? env->GetMethodID(cls, "netBindLan", "(Z)I") : nullptr;
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    int r = 1;
+    if (m) r = env->CallIntMethod(act, m, static_cast<jboolean>(on ? JNI_TRUE : JNI_FALSE));
+    if (env->ExceptionCheck()) { env->ExceptionClear(); r = 1; }
+    if (cls) env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(act);
+    return r;
+}
+// W9-04-01/-14: SDLActivity.ra2SetImeField(String, int, int) (RA2 patch of
+// the vendored SDL Java). The UTF-8 text goes over as UTF-16 (NewString: no
+// modified-UTF-8 pitfalls); a malformed byte becomes '?' so the IME's copy
+// keeps one character per engine code point.
+void os_android_ime_field(const std::string& text, int kind, int max) {
+    std::u16string w;
+    for (std::size_t i = 0; i < text.size();) {
+        const unsigned char c = static_cast<unsigned char>(text[i]);
+        std::uint32_t cp = '?';
+        std::size_t n = 1;
+        if (c < 0x80) cp = c;
+        else if ((c >> 5) == 6) { n = 2; cp = c & 0x1F; }
+        else if ((c >> 4) == 14) { n = 3; cp = c & 0x0F; }
+        else if ((c >> 3) == 30) { n = 4; cp = c & 0x07; }
+        else n = 0;
+        bool ok = n > 0 && i + n <= text.size();
+        for (std::size_t k = 1; ok && k < n; ++k) {
+            const unsigned char cc = static_cast<unsigned char>(text[i + k]);
+            if ((cc & 0xC0) != 0x80) ok = false;
+            else cp = (cp << 6) | (cc & 0x3F);
+        }
+        if (!ok) { cp = '?'; n = 1; }
+        if (cp >= 0x10000) {
+            cp -= 0x10000;
+            w += static_cast<char16_t>(0xD800 + (cp >> 10));
+            w += static_cast<char16_t>(0xDC00 + (cp & 0x3FF));
+        } else {
+            w += static_cast<char16_t>(cp);
+        }
+        i += n;
+    }
+    JNIEnv* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
+    jobject act = static_cast<jobject>(SDL_AndroidGetActivity());
+    if (!env || !act) return;
+    jclass cls = env->GetObjectClass(act);   // RA2Activity: inherits SDLActivity's statics
+    jmethodID m = cls ? env->GetStaticMethodID(cls, "ra2SetImeField", "(Ljava/lang/String;II)V") : nullptr;
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    if (m) {
+        jstring js = env->NewString(reinterpret_cast<const jchar*>(w.data()), static_cast<jsize>(w.size()));
+        if (js) {
+            env->CallStaticVoidMethod(cls, m, js, static_cast<jint>(kind), static_cast<jint>(max));
+            env->DeleteLocalRef(js);
+        }
+    }
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    if (cls) env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(act);
+}
 #else
 bool os_android_open_importer() { return false; }
 void os_android_multicast_lock(bool) {}
+void os_android_ime_field(const std::string&, int, int) {}
+int os_android_bind_lan(bool) { return 1; }
 #endif
 #endif
 

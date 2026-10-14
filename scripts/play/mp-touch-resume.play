@@ -1,0 +1,42 @@
+# mp-touch-resume -- W9-04-04 / -08 (docs/gap/wave9/04-phone-touch-mp.md):
+# a phone returns from the background during a network match. The return
+# can bring a synthetic mouse event at the window corner; it must neither
+# switch the game to mouse mode nor edge-scroll the camera into the black.
+# One process: a LAN host with one AI (a one-human lockstep session).
+set render_every 300
+ime screenkb
+require scene == "shell:Main Menu"
+touch tap button Network
+require scene == mp-lan
+touch tap button "Host Game"
+require scene == mp-lobby
+touch tap combo:kind1
+touch tap "pick:Brutal Enemy"
+until 30 slot_kind(1) == AI
+until 30 can_start == 1
+touch tap button "Start Game"
+until 3000 scene == game
+require scene == game
+require net == 1
+until 600 sim_frame >= 30
+# The player uses a finger (a tap on the open map = touch mode).
+touch tap xy 400 360
+wait 5
+assert mouse_present == 0
+let cx = cam_x
+let cy = cam_y
+lifecycle background
+wait 2
+lifecycle foreground
+wait 1
+# The phantom mouse at the corner right after the return.
+move xy 0 0
+wait 60
+assert mouse_present == 0                                  @no-mouse-mode
+assert cam_x == $cx                                        @cam-unchanged-x
+assert cam_y == $cy                                        @cam-unchanged-y
+# W9-04-08: no stall / kick from our own stale timers after the return.
+assert net_end == 0
+assert net_players == 1
+until 300 net_stalled == 0
+end
