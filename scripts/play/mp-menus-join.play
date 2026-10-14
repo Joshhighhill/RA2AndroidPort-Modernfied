@@ -12,7 +12,7 @@ key delete
 type "Joiner"
 key enter
 until 2000000 lan_players >= 1 @W9-03-11
-assert lan_player(0) == Hosty @W9-03-11
+until 2000000 lan_player(0) == Hosty @W9-03-11
 until 2000000 lobby_chat_last == "Hosty: hi lobby" @W9-03-11
 click edit:lobbychat
 type "hi host"
@@ -50,7 +50,7 @@ assert local_house == 1
 assert mode_rules == MPMWMD.ini @W9-03-04
 until 3000000 sim_frame >= 60
 # W9-03-03: the joiner's Diplomacy marks ITS row (house 1) as self.
-click diplomacy
+click button diplomacy
 until 10 menu_page == diplomacy
 assert diplomacy_name(0) == Hosty @W9-03-03
 assert diplomacy_name(1) == Joiner @W9-03-03

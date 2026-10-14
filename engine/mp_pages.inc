@@ -1659,7 +1659,8 @@ public:
         edits_.push_back(mpui::Edit{"lobbychat", {12, 376, 458, 19}, "", 100, true});
         browser_.rules_crc = mpui::rules_crc();
         if (!browser_.open()) status_ = "Could not open the LAN discovery port.";
-        browser_.set_presence(prefs_.nick, mpui::random_u32());
+        presence_nonce_ = mpui::random_u32();
+        browser_.set_presence(prefs_.nick, presence_nonce_);
         list_.r = {172, 58, 298, 196};
         list_.visible = 12;
         list_.item_h = 16;
@@ -1693,7 +1694,7 @@ private:
         if (!n.empty() && n != prefs_.nick) {
             prefs_.nick = n;
             prefs_.save();
-            browser_.set_presence(prefs_.nick, mpui::random_u32());
+            browser_.set_presence(prefs_.nick, presence_nonce_);   // same player, new name
         }
     }
     void press(int act) override {
@@ -1850,6 +1851,7 @@ private:
     ra2mp::LanBrowser browser_;
     ShellList list_, players_;
     Text t_;
+    std::uint32_t presence_nonce_ = 0;
 };
 
 // ===========================================================================

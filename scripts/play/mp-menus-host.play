@@ -13,7 +13,7 @@ type "Hosty"
 key enter
 # W9-03-11: the guest shows in Players; lobby chat both ways.
 until 2000000 lan_players >= 1 @W9-03-11
-assert lan_player(0) == Joiner @W9-03-11
+until 2000000 lan_player(0) == Joiner @W9-03-11
 click edit:lobbychat
 type "hi lobby"
 key enter
@@ -65,7 +65,7 @@ assert mode_rules == MPMWMD.ini @W9-03-04
 assert rule(GAREFN.TechLevel) == 11 @W9-03-04
 until 3000000 sim_frame >= 60
 # W9-03-03: Diplomacy rows are the players' names; our row is "self".
-click diplomacy
+click button diplomacy
 until 10 menu_page == diplomacy
 assert diplomacy_name(0) == Hosty @W9-03-03
 assert diplomacy_name(1) == Joiner @W9-03-03
