@@ -69,7 +69,7 @@ std::vector<std::pair<std::string, std::uint64_t>> econ_rules_field_digests(cons
     d("units", r.units); d("unit_anims", r.unit_anims); d("unit_has_anim", r.unit_has_anim);
     d("factory_types", r.factory_types); d("groups", r.groups); d("water_bound", r.water_bound);
     d("wall", r.wall); d("wall_fill_range", r.wall_fill_range); d("buildup_total", r.buildup_total);
-    d("base_normal", r.base_normal); d("bld_allowed", r.bld_allowed); d("unit_build_limit", r.unit_build_limit);
+    d("base_normal", r.base_normal); d("build_off_ally", r.build_off_ally); d("ally_eligible", r.ally_eligible); d("bld_allowed", r.bld_allowed); d("unit_build_limit", r.unit_build_limit);
     d("build_speed", r.build_speed); d("low_power_mod", r.low_power_mod); d("multiple_factory", r.multiple_factory);
     d("wall_coefficient", r.wall_coefficient); d("max_queued", r.max_queued); d("wall_rules", r.wall_rules);
     for (std::size_t i = 0; i < r.units.size(); ++i) {

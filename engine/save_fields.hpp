@@ -1023,6 +1023,8 @@ template <class Ar> void fields(Ar& ar, PlayerEconRules& v) {
     io(ar, v.wall_fill_range);
     io(ar, v.buildup_total);
     io(ar, v.base_normal);
+    io(ar, v.build_off_ally);   // W9-05-09 (w9fix-match)
+    io(ar, v.ally_eligible);
     io(ar, v.bld_allowed);
     io(ar, v.unit_build_limit);
     io(ar, v.build_speed);

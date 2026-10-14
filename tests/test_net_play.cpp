@@ -438,6 +438,7 @@ TEST_CASE("net play: REMOVEPLAYER sender rules (W9-05-12)") {
     CHECK_FALSE(g.removeplayer_allowed(1, 2));   // a peer griefing another peer
     CHECK_FALSE(g.removeplayer_allowed(0, 5));   // not a human house of this match
     CHECK_FALSE(g.removeplayer_allowed(7, 7));   // not a player at all
+}
 
 // W9-05-03/06: ALLY (one-way, then mutual) and DESTRUCT travel as EventClass
 // records and apply on the same frame on both machines: the full-state hash
