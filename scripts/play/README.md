@@ -115,6 +115,10 @@ frame after. Click / right-click away from the edges (e.g. `click xy 900 650
 right nopark`), or use `touch` gestures, which never edge-scroll.
 
 **Touch (wave 6).** `touch tap|dtap|hold <target>` / `touch drag|boxdrag|pan2`
+(xy|cell X1 Y1 X2 Y2, or `rel <target> FX1 FY1 FX2 FY2`; any point may also be
+`rel <target> FX FY [DX DY]`: a fraction of the target rectangle, 0 = left / top,
+1 = right / bottom, plus window pixels -- scripts then follow a layout change;
+lobby targets `slider:<id>` (the track) and `list:maps` (the map list) exist for it)
 drive the real `TouchGestures`. A `hold` lasts 700 ms (the hold fires at
 450 ms). Keys: `touch_ui`, `touch_bar_open`, `touch_banner`, `touch_mode`,
 `touch_aim` (the building a sell / repair tap has marked, -1 none),
