@@ -4681,24 +4681,32 @@ the lobby's resolved start waypoints and the local house; the GameScene then:
 * sends local orders through `NetGame::issue` (EventClass records, `Frame = now + MaxAhead`);
   they come back from `Execute_DoList` with everyone else's on their frame and are applied at
   that tick's start in the original's order -- local orders never short-cut the queue;
-* ticks at a fixed **15 Hz** (the lobby speed is not used; the TIMING fps cap is GameSpeed 4)
-  and only when `NetGame::step` says Run; ticks are never dropped (a backlog runs up to 4 per
-  frame). Start values from the original (net-protocol.md §8): LAN FrameSendRate 5 /
-  MaxAhead 10, Internet 5 / 15; the host's TIMING events resize both from the measured round
-  trip (RA2.INI `[Net] FrameSendRate=` / `MaxAhead=` override the start values). At 15 Hz
-  MaxAhead 10 means an order lands ~0.7 s after the click (the original at speed 4 behaves
-  the same);
+* ticks at the session's **DesiredFrameRate** (W9-01-01, docs/re/gamespeed.md §2a): 30 fps
+  until the host's first TIMING (frame 256), then `min(1000 / slowest PROCESS_TIME, cap)` with
+  the lobby Game Speed cap (0 -> 60, **1 -> 45** (default), n -> 60/n fps); on the Internet with
+  MaxAhead > 30, +10 ms per frame for each quarter of MaxAhead the most-behind peer lags. One
+  tick per rendered frame at most and no catch-up after a stall (the original's frame timer just
+  waits). PROCESS_TIME is the tick's plus the last render's work, without any wait (W9-01-03), so
+  a slow phone lowers everyone's rate instead of making the others stall. The in-game Options
+  speed slider sends a GAMESPEED event (any player; every peer applies it at the same frame and
+  the host's next TIMING follows). Start values from the original (net-protocol.md §8): LAN
+  FrameSendRate 5 / MaxAhead 10, Internet 5 / 15, Set_Timing `(max(RT+2, 30), -1, 600)` for both
+  (W9-01-06); the TIMING events resize them (RA2.INI `[Net] FrameSendRate=` / `MaxAhead=`
+  override the start values). Measured order delay at 45 fps: LAN 333 ms, Internet at 100 ms
+  one way 680 ms -- the original's figures;
 * drains the World's per-frame presentation event queues (fire / ability / garrison /
   projectile) at tick end, because those queues are part of the hashed save bytes.
 
-**Sync check.** The FRAMEINFO CRC is a full-state hash: FNV-1a over `save_world(world)` (every
-World member, bit-exact doubles) plus the scene's FreeUnit tracker, folded to 32 bits. Measured
-on the desktop (Release, 2 players, frames 0-3000 of the test match): **3.6 ms average, 6.1 ms
-max** per hash. So it runs every **N = 15 frames** (once a second; RA2.INI `[Net] HashEvery=`
-overrides) and the last value is fed in between -- every machine feeds identical CRCs each
-frame, a divergence is caught at the first compared frame after the next hash (in the test,
-diverged at 600 -> compared frame 615, both machines stopped at 630, i.e. within 2 s; the two
-TXT files named `econ_`, the member the test changed). The original's 256-frame grace after the start
+**Sync check.** W9-01-04: the FRAMEINFO CRC is `net_frame_crc` (engine/net_frame_crc.cpp),
+computed **every frame** like the original's ComputeFrameCRC FUN_0064D520: a rotl1 + term fold
+over every unit (cell, exact position bits, facings, health, targets, cargo, harvester load),
+building (type, owner, origin, health, state), projectile and crate, every house's wallet and
+production slots, and the state of every sim RNG stream, plus the scene's FreeUnit tracker.
+Cost on xmp27t8 (20-min 2-AI soak): **9.7 us average, 37 us max**, against 37.6 ms / 122 ms for
+the old full-World hash (FNV-1a over `save_world`, 8 MB), which stays as a debug mode
+(RA2.INI `[Net] FullHash=1` or `RA2_NET_FULL_HASH=1`; then every 15 frames, `[Net] HashEvery=`
+overrides). A divergence is caught on the first compared frame after it (the net-play test:
+diverged at 400, detected within the same FrameSendRate window). The original's 256-frame grace after the start
 applies; a different frame-0 state (different rules / map / roster) is "Scenarios do not match"
 at once. On a mismatch the game shows the original's TXT_OUT_OF_SYNC message, writes
 `Saved Games/DESYNC_F<frame>_H<house>.SAV` (this machine's full save) and `.TXT` (frames, both
