@@ -208,3 +208,11 @@ tasks.register('ra2CopyNotices', Copy) {
     from(rootProject.file('../THIRD_PARTY_NOTICES.md'))
     into("$buildDir/generated/ra2-notices")
 }
+// Every lint task reads the generated assets folder (the release "vital"
+// lint model/report tasks, which a debug build never runs), so it must run
+// after the copy; otherwise Gradle 8 refuses the release build.
+tasks.configureEach { t ->
+    if (t.name.toLowerCase().contains('lint') && t.name != 'ra2CopyNotices') {
+        t.dependsOn('ra2CopyNotices')
+    }
+}
