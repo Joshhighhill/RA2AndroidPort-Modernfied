@@ -1,0 +1,90 @@
+# net-ally-host -- HOST half of the W9-05 diplomacy pair test
+# (scripts/play/net-match.ps1 -Pair ally starts this, then net-ally-join.play).
+# Hosty (house 0) + Joiner (house 1) + an Easy AI (house 2), Battle mode
+# (AlliesAllowed=yes, AllyChangeAllowed=yes). Hosty offers an alliance from
+# the Diplomacy page (ALLY 0x03, one-way: MakeAlly FUN_004F9990), waits for
+# Joiner's reply (mutual), then places beacons (YR, 3 per player, global
+# 0x20/0x21) that its ally sees. Runs 1500 logic frames; both machines'
+# sync-hash trails must be identical.
+set render_every 3000
+set max_frames 6000000
+set on_quit continue
+click button Network
+require scene == mp-lan
+click edit:nick
+key delete
+type "Hosty"
+key enter
+click button "Host Game"
+require scene == mp-lobby
+# A 4-player map (the default one has 2 starts): room for the AI in slot 2.
+click button "Customize Battle"
+require choosing == 1
+click map:xarena.map
+click button "Use Map"
+require choosing == 0
+assert max_players == 4
+click combo:country0
+click pick:America
+# Slot 2: an Easy AI (the joiner takes the first open slot, 1).
+click combo:kind2
+click "pick:Easy Enemy"
+until 30 slot_kind(2) == AI
+log waiting for the joiner
+until 3000000 humans == 2
+until 3000000 slot_ready(1) == 1
+until 3000000 can_start == 1
+click button "Start Game"
+until 3000000 scene == game
+require scene == game
+require net == 1
+assert local_house == 0
+assert net_players == 2
+assert allies_allowed == 1                                @W9-05-03
+assert ally_change_allowed == 1                           @W9-05-03
+assert player_name(1) == Joiner                           @W9-05-10
+until 600000 sim_frame >= 40
+
+# --- the Diplomacy page: self row, live Allies box, ALLY to Joiner ----------
+click button:diplomacy
+wait 2
+assert menu_page == "diplomacy"
+assert dip_self == 0                                      @W9-05-11
+assert dip_name(1) == Joiner                              @W9-05-10
+assert dip_ally_enabled(1) == 1                           @W9-05-03
+assert dip_ally_enabled(2) == 0                           # ToggleAlliance: humans only
+assert dip_ally(1) == 0
+click dip:ally:1
+until 20000 ally_view(1) == 1                            @W9-05-03
+assert ally_of_me(1) == 0                                 # one way until Joiner answers
+assert dip_events >= 1
+log waiting for the reply
+until 20000 ally_of_me(1) == 1                          @W9-05-03
+assert dip_events >= 2
+assert ally_view(2) == 0
+
+# --- beacons: 3 per player, the 4th refused, Delete removes the selected one -
+key b
+click xy 300 300
+until 600 beacons(0) == 1                                 @W9-05-08
+key b
+click xy 360 320
+key b
+click xy 420 340
+until 600 beacons(0) == 3                                 @W9-05-08
+key b
+click xy 480 360
+wait 5
+assert beacons(0) == 3                                    @W9-05-08
+key "Keypad ."
+until 600 beacons(0) == 2                                 @W9-05-08
+key b
+click xy 480 360
+until 600 beacons(0) == 3
+shot ally_beacons
+waituntil 6000000 sim_frame >= 1500 or net_end == 1
+assert net_end == 0
+shot net_end
+log net match done
+dump
+end

@@ -480,12 +480,14 @@ TEST_CASE("command apply: production / placement / select reach the scene host")
     apply_command(w, p, nullptr);
 }
 
-TEST_CASE("command apply: ALLY toggles the pair, ALLCHEER cheers, SPECIAL_PLACE without a SW is refused") {
+TEST_CASE("command apply: ALLY toggles the sender's view, ALLCHEER cheers, SPECIAL_PLACE without a SW is refused") {
     NEED_MAP();
     World w(ra2fixture::mapsmd03_map());
     int x = 0, y = 0;
     REQUIRE(open_area(w, 4, x, y));
-    for (int h = 0; h < 2; ++h) {
+    // W9-05-03: three combatants (MakeAlly never allies the last enemy) and
+    // EVENT_ALLY is ONE-WAY (house 0's own view of house 1).
+    for (int h = 0; h < 3; ++h) {
         World::HouseRec rec;
         rec.alliance_team = h;
         w.set_house(h, rec);
@@ -496,6 +498,7 @@ TEST_CASE("command apply: ALLY toggles the pair, ALLCHEER cheers, SPECIAL_PLACE 
     al.value = 1;
     apply_command(w, al);
     CHECK(w.are_allied(0, 1) != before);
+    CHECK_FALSE(w.are_allied(1, 0));
     apply_command(w, al);
     CHECK(w.are_allied(0, 1) == before);
     const int a = add_unit(w, x, y, 0);

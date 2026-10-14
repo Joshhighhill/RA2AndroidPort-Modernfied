@@ -1,0 +1,56 @@
+# ui-replay-touch -- W9-05-01: every UI action reaches the simulation as a
+# COMMAND. Played with --record by scripts/play/ui-replay.ps1, which then
+# --replays the command log with no UI at all: a UI path that changes the
+# World directly (the touch cameo-menu Cancel did: world_.econ_abandon on the
+# local peer only -- a lockstep desync) makes the replay's state hash differ.
+# Touch only, NO cheats (a cheat is not a command either).
+set canvas 974x548
+set render_every 0
+set on_quit continue
+touch tap button "Single Player"
+touch tap button Skirmish
+require scene == lobby
+click start
+until 90 scene == game
+require scene == game
+touch tap unit 0:AMCV
+wait 2
+touch tap touch:CMD
+touch tap touch:DPLY
+until 450 built(0,GACNST) == 1
+wait 30
+# --- the cameo popup: PAUSE / RESUME / CANCEL (W6-01-03), all commands ------
+touch tap cameotab:GAPOWR
+wait 2
+touch tap cameo:GAPOWR
+wait 15
+touch hold cameo:GAPOWR
+wait 2
+assert cameo_menu == 1
+touch tap cmenu:PAUSE
+wait 10
+touch hold cameo:GAPOWR
+wait 2
+touch tap cmenu:RESUME
+wait 20
+touch hold cameo:GAPOWR
+wait 2
+touch tap cmenu:CANCEL                                    @W9-05-01
+wait 5
+assert queue(structure) == ""                             @W9-05-01
+# --- once more, cancelled late in the build (a big refund) ---------------
+touch tap cameo:GAPOWR
+wait 120
+touch hold cameo:GAPOWR
+wait 2
+touch tap cmenu:CANCEL                                    @W9-05-01
+wait 5
+assert queue(structure) == ""
+# --- a power plant built and placed through the touch flow ------------------
+touch tap cameo:GAPOWR
+until 1800 queue_ready(structure) == 1
+touch tap cameo:GAPOWR
+place auto
+until 600 built(0,GAPOWR) == 1
+wait 60
+end

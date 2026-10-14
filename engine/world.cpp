@@ -560,7 +560,12 @@ bool World::is_enemy(int a, int b) const {
 void World::enable_victory(bool on, bool short_game) {
     victory_enabled_ = on;
     short_game_      = short_game;
-    if (on) { house_defeated_.assign(house_count(), 0); winning_team_ = -1; }
+    if (on) {
+        house_defeated_.assign(house_count(), 0);
+        winning_team_ = -1;
+        game_over_ = false;
+        victory_defeats_seen_ = 0;
+    }
 }
 
 bool World::house_defeated(int h) const {
@@ -613,16 +618,119 @@ void World::step_victory() {
                                           : (blds[h] == 0 && unts[h] == 0);
         if (defeated) house_defeated_[h] = 1;
     }
-    // WIN = exactly one alliance-team of combatant houses survives (last-team-
-    // standing). While >= 2 combatant teams survive -> -1. Neutral never counts.
-    int surviving_team = -1; bool multiple = false;
+    victory_end_check();
+}
+
+// W9-05-04 [RE: tail of MPlayer_Defeated FUN_004FBED0 -- "All remaining are
+// allied" / "Saw game completion due to player defeat"]: the original asks
+// "is the game over?" each time a house is defeated (never on an alliance
+// change). It is over when every pair of living, non-passive houses is
+// MUTUALLY allied (the dynamic Allies masks; lobby teams count only through
+// the alliances they made), or one house is left, or no human is left alive.
+// Every living house then wins (Flag_To_Win), the defeated lose
+// (Flag_To_Lose). [RE-FALLBACK: the Internet-mode "Allies win" branch -- a
+// defeated player whose living allies won is flagged a winner -- is not
+// taken.] With the static team model (no pair matrix) "mutually allied" is
+// "same team", so the result is the old last-team-standing rule. The check
+// also runs for a resign (resign_house sets the flag outside this pass):
+// it counts the defeats it has seen.
+void World::victory_end_check() {
+    const int n = house_count();
+    int defeats = 0;
+    for (int h = 0; h < n && h < (int)house_defeated_.size(); ++h)
+        if (house_combatant(h) && house_defeated_[h]) ++defeats;
+    if (game_over_ || defeats <= victory_defeats_seen_) return;
+    victory_defeats_seen_ = defeats;
+    auto alive = [&](int h) { return house_combatant(h) && !house_defeated(h) && !passive_house(h); };
+    auto human = [&](int h) { return is_human(h) && !ai_enabled(h); };
+    int living = 0, humans_alive = 0;
+    bool had_humans = false, enemies = false;
     for (int h = 0; h < n; ++h) {
-        if (!house_combatant(h) || house_defeated_[h]) continue;
-        const int t = house_team(h);
-        if (surviving_team == -1) surviving_team = t;
-        else if (t != surviving_team) { multiple = true; break; }
+        if (house_combatant(h) && human(h)) had_humans = true;
+        if (!alive(h)) continue;
+        ++living;
+        if (human(h)) ++humans_alive;
+        for (int k = 0; k < n && !enemies; ++k)
+            if (k != h && alive(k) && !(allied_with(h, k) && allied_with(k, h))) enemies = true;
     }
-    winning_team_ = (!multiple && surviving_team != -1) ? surviving_team : -1;
+    if (enemies && living != 1 && !(had_humans && humans_alive == 0)) return;
+    game_over_ = true;
+    winning_team_ = -1;
+    for (int h = 0; h < n; ++h)
+        if (alive(h)) { winning_team_ = house_team(h); break; }
+}
+
+// --- W9-05-03 in-game diplomacy ----------------------------------------------
+bool World::can_ally(int a, int b) const {
+    // Is_Allowed_To_Ally FUN_00501360.
+    const int n = house_count();
+    if (a < 0 || b < 0 || a >= n || b >= n || a == b) return false;
+    if (allied_with(a, b)) return false;                      // already allied
+    if (!house_combatant(b) || passive_house(b)) return false;   // the neutral / special houses
+    if (house_defeated(a)) return false;
+    int living = 0, mine = 0;   // living non-passive houses; those a allies (a included)
+    for (int h = 0; h < n; ++h) {
+        if (!house_combatant(h) || house_defeated(h) || passive_house(h)) continue;
+        ++living;
+        if (allied_with(a, h)) ++mine;
+    }
+    return living != mine + 1;   // never ally the last enemy
+}
+
+World::AllyChange World::make_ally(int a, int b) {
+    if (!can_ally(a, b)) return AllyChange::None;
+    set_ally_view(a, b, true);   // a.Allies |= 1 << b (one way)
+    // a's anger toward b is cleared (FUN_005045B0(-anger)).
+    if (ai_enabled(a)) ai_add_anger(a, b, -ai_anger(a, b));
+    // a's objects drop the targets they hold on houses a now allies
+    // (the TechnoClass::Array loop, vfunc +0x3C8 SetTarget(nullptr)).
+    const int nu = (int)units_.size(), nb = (int)buildings_.size();
+    auto unit_ally = [&](int i) {
+        return i >= 0 && i < nu && units_[(std::size_t)i].house != a && allied_with(a, units_[(std::size_t)i].house);
+    };
+    for (Unit& u : units_) {
+        if (u.house != a) continue;
+        if (unit_ally(u.target)) u.target = -1;
+        if (u.target_building >= 0 && u.target_building < nb &&
+            buildings_[(std::size_t)u.target_building].house != a &&
+            allied_with(a, buildings_[(std::size_t)u.target_building].house))
+            u.target_building = -1;
+    }
+    for (Building& bl : buildings_) {
+        if (bl.house != a) continue;
+        if (unit_ally(bl.def_target)) bl.def_target = -1;
+        if (unit_ally(bl.garrison_target)) bl.garrison_target = -1;
+    }
+    return allied_with(b, a) ? AllyChange::Formed : AllyChange::Requested;
+}
+
+World::AllyChange World::make_enemy(int a, int b) {
+    const int n = house_count();
+    if (a < 0 || b < 0 || a >= n || b >= n || a == b) return AllyChange::None;
+    if (passive_house(a) || passive_house(b)) return AllyChange::None;
+    if (ai_enabled(a)) ai_add_anger(a, b, 1);
+    if (!allied_with(a, b)) return AllyChange::None;
+    set_ally_view(a, b, false);
+    if (!allied_with(b, a)) return AllyChange::Broken;
+    set_ally_view(b, a, false);   // the war is mutual
+    if (ai_enabled(a)) ai_add_anger(a, b, 1);
+    return AllyChange::BrokenMutual;
+}
+
+World::AllyChange World::toggle_alliance(int a, int b) {
+    // EventClass::Execute case 3: IsAlliedWith(b) ? MakeEnemy : MakeAlly.
+    return allied_with(a, b) ? make_enemy(a, b) : make_ally(a, b);
+}
+
+bool World::alliance_toggle_allowed(int a, int b) const {
+    // ToggleAlliance FUN_007309C0: not defeated, another human house, and
+    // AlliesAllowed + AllyChangeAllowed (Rules+0x14B5 / +0x14BB).
+    const int n = house_count();
+    if (a < 0 || b < 0 || a >= n || b >= n || a == b) return false;
+    if (!allies_allowed_ || !ally_change_allowed_) return false;
+    if (house_defeated(a) || house_defeated(b)) return false;
+    if (!house_combatant(b) || !is_human(b) || ai_enabled(b)) return false;
+    return true;
 }
 
 void World::set_house(int h, HouseRec rec) {
@@ -3428,8 +3536,10 @@ void World::step_visibility() {
         u.seen_by_mask = m;
     }
     // Shroud/Fog [RE: shroud.md §7A]: a latched house sees the whole map.
+    // W9-05-05 [RE: MPlayer_Defeated FUN_004FBED0 -> FUN_005779D0(player)]:
+    // a defeated human of a network game observes with the map revealed.
     for (int h = 0; h < house_count(); ++h)
-        if (map_reveal_[h]) reveal_all_house(h);
+        if (map_reveal_[h] || (observer_reveal_ && house_defeated(h) && is_human(h))) reveal_all_house(h);
     w5_gap_pass(1);   // wave-5: a SpySat does not lift an enemy gap
     // AllyReveal [RE: multihouse.md §3, D4]: OR-merge allied houses' explored_/
     // visible_ (shroud sharing) AFTER per-house sight + seen_by_mask are computed,

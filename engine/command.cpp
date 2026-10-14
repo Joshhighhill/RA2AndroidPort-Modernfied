@@ -384,12 +384,30 @@ void apply_command(World& w, const Command& c, CommandHost* host) {
             (void)w.fire_superweapon_at(H, static_cast<SuperweaponType>(c.value), c.cx, c.cy, c.cx2, c.cy2);
             return;
         case EventType::Ally: {
-            // [RE: EVENT_ALLY toggles the sender's alliance with HouseID]
+            // W9-05-03 [RE: EventClass::Execute FUN_004C6BD0 case 3: the
+            // sender's IsAlliedWith(HouseID) ? MakeEnemy FUN_004F9DB0 :
+            // MakeAlly FUN_004F9990 -- ONE-WAY, no longer the symmetric pair
+            // toggle]. The sender-side gates (ToggleAlliance FUN_007309C0:
+            // AlliesAllowed / AllyChangeAllowed, a human target) are
+            // re-checked here too (hardening: every peer has the same rules).
             const int other = c.value;
             if (other < 0 || other >= w.house_count() || other == H) return;
-            w.set_pair_alliance(H, other, !w.are_allied(H, other));
+            if (!w.allies_allowed() || !w.ally_change_allowed()) return;
+            const World::AllyChange ch = w.toggle_alliance(H, other);
+            if (host && ch != World::AllyChange::None) host->diplomacy(H, other, ch);
             return;
         }
+        case EventType::Destruct:
+            // W9-05-06 [RE: EVENT_DESTRUCT -> HouseClass FUN_004FC7A0 sets
+            // ToDie (+0x1F6) unless already won / lost; HouseClass::AI then
+            // blows the house up and MPlayer_Defeated runs]. [RE-FALLBACK:
+            // the clone resigns the house at once (resign_house).]
+            if (H >= 0 && H < w.house_count() && w.victory_enabled() && !w.house_defeated(H) &&
+                w.house_outcome(H) == 0) {
+                w.resign_house(H);
+                if (host) host->destructed(H);
+            }
+            return;
         case EventType::AllCheer:
             w.make_house_cheer(H);
             return;

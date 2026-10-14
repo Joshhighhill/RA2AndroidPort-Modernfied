@@ -211,6 +211,12 @@
             case C::AllToCheer: hotkey_cheer(); return true;
             case C::CenterOnRadarEvent: hotkey_radar_event(ev.t_ms); return true;
             case C::ScreenCapture: screencap_pending_ = true; return true;
+            // W9-05-03 ToggleAlliance [RE: 0x536C50 -> FUN_007309C0] / W9-05-08
+            // PlaceBeacon [RE: 0x536DD0 -> FUN_00730B00] / Delete [RE:
+            // FUN_00730AE0 -> FUN_00431390]: a network game only.
+            case C::ToggleAlliance: hotkey_toggle_alliance(); return true;
+            case C::PlaceBeacon: hotkey_place_beacon(); return true;
+            case C::Delete: hotkey_delete_beacon(); return true;
             default:
                 // W5-E [RE]: PlaceBeacon FUN_00536DD0 and ToggleAlliance /
                 // PageUser FUN_00537B80 / Taunts act only in a network game

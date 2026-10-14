@@ -335,7 +335,8 @@ target_compile_definitions(ra2assets_tests PRIVATE RA2_SOURCE_DIR="${CMAKE_CURRE
 # engine/net (original-format networking) [RE: docs/re/net-protocol.md].
 target_sources(ra2assets_tests PRIVATE ${RA2_NET_SOURCES}
     tests/test_net_wire.cpp tests/test_net_event.cpp tests/test_net_lockstep.cpp
-    tests/test_net_play.cpp)   # NET-PLAY: two real Worlds in lockstep
+    tests/test_net_play.cpp    # NET-PLAY: two real Worlds in lockstep
+    tests/test_w9_match.cpp)   # W9-05: diplomacy / victory / DESTRUCT / BuildOffAlly / beacons / UI tripwire
 target_include_directories(ra2assets_tests PRIVATE third_party include engine)
 target_link_libraries(ra2assets_tests PRIVATE ra2assets)
 if (WIN32)

@@ -34,6 +34,8 @@
             g->sim_sel_.clear();
             for (int i : ids) g->sim_sel_.set(i);
         }
+        // W9-05-03: TXT_HAS_ALLIED / TXT_AT_WAR + the alliance EVA (every peer).
+        void diplomacy(int h, int other, ra2engine::World::AllyChange ch) override { g->mp_on_diplomacy(h, other, ch); }
     };
     SceneCmdHost cmd_host_{this};
 
@@ -41,6 +43,9 @@
     void issue(ra2engine::Command c) {
         if (replaying_) return;   // a replay takes its commands from the log only
         if (net_) {   // NET-PLAY: through the session (frame now + MaxAhead), back via net_gate()
+            // W9-05-05 [RE: FUN_00730B00 & co. refuse an observer]: a defeated
+            // player watching on issues no orders.
+            if (observer_) return;
             if (!net_local_left_ && !net_end_dialog_) net_->game->issue(c);
             return;
         }
