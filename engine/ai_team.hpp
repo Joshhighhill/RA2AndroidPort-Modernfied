@@ -133,6 +133,11 @@ struct TeamView {
     // W2-SK-09: every non-transport live member is aboard the team's
     // transport (true when the team has no transport).
     bool all_loaded = true;
+    // fv9a [RE: FUN_006EC760]: a member still has to be told to board (alive,
+    // not aboard, loadable, not already entering the transport). The Load line
+    // holds while this is true -- the handler orders ONE member per pass and
+    // sets the line-complete flag (team+0x80) only on a pass that orders none.
+    bool load_pending = false;
     // W6-03-05 [RE: FUN_006ef1d0 (55) / FUN_006ef3c0 (56) / FUN_006ef690
     // (57)], for the CURRENT line: 1 = the house's Curtain/Sphere is charged
     // and its power is full -> fire and complete; 2 = still charging but past

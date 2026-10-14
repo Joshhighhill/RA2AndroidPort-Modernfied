@@ -145,6 +145,11 @@ click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
 click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
+click cameo:MTNK
 let n_GAWEAP = built(0,GAWEAP)
 until 900 can_build(GAWEAP) == 1
 click tab:0

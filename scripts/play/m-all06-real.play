@@ -4751,840 +4751,840 @@ if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:M
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 if outcome == RUNNING and units(1) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(1) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(1) > 0 then key t
 if outcome == RUNNING and units(1) > 0 then key t
-if outcome == RUNNING and units(1) > 0 then click unit 1:*:0
+if outcome == RUNNING and units(1) > 0 then click unit 1:*:0 soft
 if outcome == RUNNING and units(1) > 0 then wait 200
 if outcome == RUNNING and units(1) > 0 then dump
 if outcome == RUNNING and units(2) > 0 and units(0,MTNK) > 0 then click unit 0:MTNK:0
 if outcome == RUNNING and units(2) > 0 and selected_type(MTNK) == 0 and units(0,MTNK) > 1 then click unit 0:MTNK:1
 if outcome == RUNNING and units(2) > 0 then key t
 if outcome == RUNNING and units(2) > 0 then key t
-if outcome == RUNNING and units(2) > 0 then click unit 2:*:0
+if outcome == RUNNING and units(2) > 0 then click unit 2:*:0 soft
 if outcome == RUNNING and units(2) > 0 then wait 200
 if outcome == RUNNING and units(2) > 0 then dump
 until 3000 outcome == WON

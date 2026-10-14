@@ -2244,8 +2244,12 @@ void World::step_cargo(double /*dt*/) {
             if (!g.empty()) order_unit_move(static_cast<int>(i), g[0].x, g[0].y);
             // W9-02-03 [RE: Basic_Path FUN_004D3840 path failure -> abandon]:
             // no route -> the enter order ends (it was retried every frame).
+            // fv9a: an AI member also leaves its team and guards (Basic_Path's
+            // TeamClass::Remove FUN_006E9DD0 + QueueMission(Area_Guard)), so a
+            // team Load line (which now holds until no member is left to order,
+            // FUN_006EC760) never re-orders an unreachable member forever.
             if (g.empty() || !reaches(units_[i], g[0])) {
-                units_[i].enter_target = -1;
+                abandon_unreachable_entry(static_cast<int>(i));
                 continue;
             }
         }
@@ -4835,12 +4839,16 @@ void World::ai_fill_team_view(int house, const HouseAiRec& rec,
     {   // W2-SK-09: is everybody aboard the team's transport?
         const int tr = ai_team_transport(team);
         v.all_loaded = true;
+        v.load_pending = false;
         if (tr >= 0)
             for (int m : team.members) {
                 if (m == tr || m < 0 || m >= (int)units_.size()) continue;
                 const Unit& u = units_[(std::size_t)m];
                 if (!u.alive || u.die_time >= 0.0) continue;
-                if (u.cargo_of != tr && can_load(units_, tr, m)) { v.all_loaded = false; break; }
+                if (u.cargo_of != tr && can_load(units_, tr, m)) v.all_loaded = false;
+                // fv9a: the same member test as the Load fan-out below
+                // (ai_execute_team_command, TeamCommand::Kind::Load).
+                if (u.cargo_of < 0 && can_load(units_, tr, m) && u.enter_target != tr) v.load_pending = true;
             }
     }
     // Base center + enemy centroid reuse the AI-1 view (ConYard-first center,

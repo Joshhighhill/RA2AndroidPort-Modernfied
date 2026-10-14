@@ -312,8 +312,14 @@ TeamCommand step_team(TeamInstance& team, const TeamView& view,
                 // deploy]: the caller fans the order out; 43 holds the line
                 // until everyone is aboard [RE-FALLBACK: 60 s cap].
                 case OpClass::Load:
+                    // fv9a [RE: FUN_006EC760]: the handler orders ONE member per
+                    // pass (QueueMission(Enter) + SetDestination(transport), then
+                    // returns) and sets team+0x80 only on a pass with nobody left
+                    // to order; a one-shot Load (advance at once) boarded a single
+                    // member since w9fix-speed's one-per-pass fan-out, and 43
+                    // WaitLoaded then sat out its 900-frame cap.
+                    if (!view.load_pending) { advance(); return c; }
                     c.kind = TeamCommand::Kind::Load;
-                    advance();
                     return c;
                 case OpClass::Unload:
                     c.kind = TeamCommand::Kind::Unload;

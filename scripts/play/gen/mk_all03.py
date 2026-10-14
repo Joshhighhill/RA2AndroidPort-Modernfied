@@ -40,7 +40,14 @@ p.build("GAPOWR").build("GAWEAP")
 # takes ~480 frames at one factory, so the AI raid reached the lone war factory
 # before the army stood. The Grizzlies now train as soon as the first war
 # factory stands while two more war factories go up (MultipleFactory 0.8).
-p.train("MTNK", 3, 10)
+# fv9a: since the faithful team Load (FUN_006EC760: the line holds until every
+# member is ordered aboard; w9fix-speed's one-per-pass fan-out had boarded ONE
+# member and 43 WaitLoaded sat out its cap) the House-1 Flak Track team rides
+# in loaded and the raids thin the first 10 Grizzlies before the batch stands;
+# the factory then idled while the script waited (credits piled up to 27k) and
+# the base fell. Like a player, queue 15 up front (14..15 and RAID_R 7..9 WON;
+# 10, 13, 16+ lost or ran out).
+p.train("MTNK", 3, int(os.environ.get("MK_ALL03_TRAIN0", "15")))
 if PILLS_AT == "weap":
     for xy in PILLS:
         p.build("GAPILL", tab=1, cat="defense", near=xy)
