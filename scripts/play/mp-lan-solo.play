@@ -9,7 +9,7 @@ assert button_enabled(Network) == 1
 assert button_enabled(Internet) == 1
 click button Network
 require scene == mp-lan
-assert page == Network
+assert page == Lobby
 # Name edit: Delete clears, then type.
 click edit:nick
 key delete

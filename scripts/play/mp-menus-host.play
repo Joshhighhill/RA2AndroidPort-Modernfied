@@ -1,0 +1,90 @@
+# mp-menus-host -- HOST half of the wave-9 menus pair (scripts/play/mp-menus-pair.ps1;
+# never run alone). Both players meet on the Network Lobby page (Players list +
+# lobby chat), the host makes a game, edits the lobby in a burst right after
+# the guest joins (W9-01-08), plays a Megawealth match (W9-03-04) and quits
+# through 0xB6: score page with the players' names, Continue -> Network.
+set render_every 2000
+set max_frames 4000000
+click button Network
+require scene == mp-lan
+click edit:nick
+key delete
+type "Hosty"
+key enter
+# W9-03-11: the guest shows in Players; lobby chat both ways.
+until 2000000 lan_players >= 1 @W9-03-11
+assert lan_player(0) == Joiner @W9-03-11
+click edit:lobbychat
+type "hi lobby"
+key enter
+until 2000000 lobby_chat_last == "Joiner: hi host" @W9-03-11
+shot w9p_host_lan_lobby
+click button New
+require scene == mp-lobby
+assert lan_port == 50020
+log waiting for the joiner
+until 2000000 humans == 2
+# W9-01-08: the original's scenario -- an 8-player map and six AIs set in a
+# burst right after the joiner arrived; the joiner must stay.
+click button "Customize Battle"
+click map:xmp27t8.map
+click button "Use Map"
+click combo:kind2
+click "pick:Brutal Enemy"
+click combo:kind3
+click "pick:Brutal Enemy"
+click combo:kind4
+click "pick:Brutal Enemy"
+click combo:kind5
+click "pick:Brutal Enemy"
+click combo:kind6
+click "pick:Brutal Enemy"
+click combo:kind7
+click "pick:Brutal Enemy"
+until 2000000 players == 8
+# 20 s with the joiner seated (the host drops a silent peer after 15 s).
+until 4000000 humans_stable_s >= 20
+assert humans == 2 @W9-01-08
+assert members == 1 @W9-01-08
+# Megawealth: humans only (the AIs leave), its own map.
+click button "Customize Battle"
+click mode:5
+until 10 mode_sel == 5
+click button "Use Map"
+assert game_mode == 5 @W9-03-04
+assert players == 2 @W9-03-04
+until 2000000 slot_has_map(1) == 1
+until 2000000 slot_ready(1) == 1
+until 1000 can_start == 1
+shot w9p_host_screen
+click button "Start Game"
+until 3000000 scene == game
+require scene == game
+require net == 1
+assert mode_rules == MPMWMD.ini @W9-03-04
+assert rule(GAREFN.TechLevel) == 11 @W9-03-04
+until 3000000 sim_frame >= 60
+# W9-03-03: Diplomacy rows are the players' names; our row is "self".
+click diplomacy
+until 10 menu_page == diplomacy
+assert diplomacy_name(0) == Hosty @W9-03-03
+assert diplomacy_name(1) == Joiner @W9-03-03
+assert diplomacy_self(0) == 1 @W9-03-03
+assert diplomacy_self(1) == 0 @W9-03-03
+key esc
+until 10 menu_open == 0
+key esc
+until 10 menu_open == 1
+assert menu_buttons == "GAME CONTROLS|ABORT MISSION|RESUME MISSION" @W9-03-10
+click "menu:ABORT MISSION"
+until 10 menu_page == abort
+assert menu_buttons == "QUIT|RESUME MISSION" @W9-05-06
+click "menu:QUIT"
+until 3000000 scene == result @W9-03-16
+assert score_header == "Multiplayer Score" @W9-03-16
+assert score_name(0) == Hosty @W9-03-16
+assert score_name(1) == Joiner @W9-03-16
+shot w9p_host_score
+click continue
+until 3000 scene == mp-lan @W9-03-16
+end

@@ -1,0 +1,131 @@
+# mp-menus-solo -- wave-9 menus (docs/gap/wave9/03-menus-vs-original.md) in ONE
+# process: the Network Lobby page 0xBB, the Host Screen 0xBC layout, the
+# Customize Battle game types (0x6B), the too-small-map refusal, Enter on an
+# OK box, the second-lobby map preview, then a one-human network match with
+# the multiplayer options menu 0xBBA, the 0xB6 Quit page and the multiplayer
+# score page -> back to the Network page.
+set render_every 1
+set max_frames 200000
+require scene == "shell:Main Menu"
+click button Network
+require scene == mp-lan
+# W9-03-11 / W9-03-19 / W9-03-22: the Lobby page and its buttons.
+assert page == Lobby @W9-03-19
+assert button_enabled(New) == 1 @W9-03-22
+assert button_enabled(Main_Menu) == 1 @W9-03-22
+assert button_enabled(Join_by_IP) == 0
+click edit:nick
+key delete
+type "Hosty"
+key enter
+# Lobby chat with nobody else on the page: our own line shows.
+click edit:lobbychat
+type "anyone?"
+key enter
+until 10 lobby_chat_last == "Hosty: anyone?" @W9-03-11
+shot w9_lan_lobby
+click button New
+require scene == mp-lobby
+assert page == "Host Screen" @W9-03-19
+# W9-03-01: no check-box / slider label / slider overlaps; headers drawn.
+assert layout_overlaps == 0 @W9-03-01
+assert header_count == 5 @W9-03-06
+assert slider_text(speed) != "" @W9-03-02
+assert check(buildoffally) == 1 @W9-03-05
+click check:buildoffally
+until 10 check(buildoffally) == 0 @W9-03-05
+click check:buildoffally
+until 10 check(buildoffally) == 1
+# W9-03-23: the preview is drawn in the first lobby.
+until 10 preview_w > 0 @W9-03-23
+# W9-03-04: Customize Battle lists the game types; Battle is current.
+assert game_mode == 1 @W9-03-04
+click button "Customize Battle"
+require choosing == 1
+assert mode_count >= 5 @W9-03-04
+assert button_enabled(Random_Map) == 0 @W9-03-04
+assert maps_of_mode(1) > 0
+assert maps_of_mode(5) > 0
+# Megawealth (5): its own map list; no AI rows in the lobby afterwards.
+click mode:5
+until 10 mode_sel == 5 @W9-03-04
+let mw = mode_map_count
+assert $mw > 0
+click button "Use Map"
+require choosing == 0
+assert game_mode == 5 @W9-03-04
+assert mode_ai_allowed == 0
+click combo:kind1
+assert combo_open == kind
+if combo_open == kind then click pick:Open
+assert players == 1
+# Back to Battle on a 4-player map: three seated players, then the
+# 2-player map is refused.
+click button "Customize Battle"
+click mode:1
+until 10 mode_sel == 1
+click map:xarena.map
+click button "Use Map"
+assert game_mode == 1
+assert max_players == 4
+click combo:kind1
+click "pick:Easy Enemy"
+until 30 slot_kind(1) == AI
+click combo:kind2
+click "pick:Easy Enemy"
+until 30 slot_kind(2) == AI
+assert players == 3
+let map0 = map
+click button "Customize Battle"
+require choosing == 1
+click map:hillbtwn.map
+click button "Use Map"
+# W9-03-13: TXT_SCENARIO_TOO_SMALL, the host stays in the chooser.
+until 10 confirm_open == 1 @W9-03-13
+assert choosing == 1 @W9-03-13
+shot w9_too_small
+# W9-03-25: Return answers the OK box.
+key enter
+until 10 confirm_open == 0 @W9-03-25
+assert players == 3 @W9-03-13
+click button Cancel
+require choosing == 0
+assert map == $map0 @W9-03-13
+shot w9_host_screen
+# W9-03-23: leave and host again -- the preview of the second lobby draws.
+click button Back
+require scene == mp-lan
+click button New
+require scene == mp-lobby
+until 10 preview_w > 0 @W9-03-23
+# A one-human network match (with a computer opponent).
+click combo:kind1
+click "pick:Brutal Enemy"
+until 30 slot_kind(1) == AI
+assert can_start == 1
+click button "Start Game"
+until 3000 scene == game
+require scene == game
+require net == 1
+until 600 sim_frame >= 30
+# W9-03-10: the multiplayer options menu 0xBBA.
+key esc
+until 10 menu_open == 1
+assert menu_net == 1 @W9-03-10
+assert menu_buttons == "GAME CONTROLS|ABORT MISSION|RESUME MISSION" @W9-03-10
+shot w9_mp_options
+click "menu:ABORT MISSION"
+until 10 menu_page == abort
+assert menu_buttons == "QUIT|RESUME MISSION" @W9-05-06
+shot w9_mp_quit
+click "menu:QUIT"
+# W9-03-16: the leaver gets the multiplayer score page.
+until 3000 scene == result @W9-03-16
+assert score_net == 1 @W9-03-16
+assert score_header == "Multiplayer Score" @W9-03-16
+assert score_name(0) == Hosty @W9-03-16
+assert outcome == LOST
+shot w9_mp_score
+click continue
+until 300 scene == mp-lan @W9-03-16
+end

@@ -96,7 +96,12 @@ public:
     void set_slot_kind(int slot, SlotKind kind, int ai = 1);
     void set_slot(int slot, int country, int color, int team, int start);
     void set_options(const MpOptions& o);
-    void set_map(const MpMap& m);
+    // false (nothing changed) when the seated players do not fit the map
+    // (W9-03-13: TXT_SCENARIO_TOO_SMALL; never kicks).
+    bool set_map(const MpMap& m);
+    // The MPModesMD.ini game type (MPModeIndex); humans-only modes open the
+    // AI rows, AlliesAllowed=no modes clear the teams.
+    void set_mode(int mode, bool ai_allowed, bool teams_allowed);
     void kick(int slot);
     void chat(const std::string& text);
     // Validates (can_start) and sends GO; started() turns true once every
@@ -144,6 +149,7 @@ public:
 private:
     void handle(const std::vector<std::uint8_t>& body, std::uint64_t now);
     void send_ready(std::uint64_t now);
+    void rebind_slot();
     LobbyChannel ch_;
     PeerId host_;
     MpIdentity me_;

@@ -6486,8 +6486,9 @@ public:
           // rules_ini_/art_ini_ are members constructed before rules_/art_ (mirrors
           // the old run_interactive's named-local Inis kept alive for the whole run).
           // W2-CA-04: a campaign mission's map overlays its rules sections.
-          rules_ini_(cfg.campaign_map.empty() ? load_ini_from_ra2md(dir_, "rulesmd.ini")
-                                              : camp::load_campaign_rules_ini(dir_, cfg.campaign_map)),
+          rules_ini_(!cfg.campaign_map.empty() ? camp::load_campaign_rules_ini(dir_, cfg.campaign_map)
+                     : !cfg.mode_rules.empty()  ? camp::load_mode_rules_ini(dir_, cfg.mode_rules)   // W9-03-04
+                                                : load_ini_from_ra2md(dir_, "rulesmd.ini")),
           rules_(Rules::load(rules_ini_)),
           art_ini_(load_ini_from_ra2md(dir_, "artmd.ini")),
           art_(Art::load(art_ini_)),
@@ -7595,6 +7596,7 @@ private:
         return x >= lay_.opt_btn.x && x < lay_.opt_btn.x + w && y >= lay_.opt_btn.y && y < lay_.opt_btn.y + h;
     }
     bool ui_handle(const ra2engine::InputEvent& ev) {
+        menu_.set_network(net_ != nullptr);   // W9-03-10: 0xBBA in a network match
         if (gf_abort_.open()) { gf_abort_answer(gf_abort_.handle(ev)); return true; }   // gF G-14
         if (sld_.is_open()) {
             switch (sld_.handle(ev)) {
@@ -7714,7 +7716,7 @@ private:
             InGameMenu::DipRow r;
             r.name = st.rows[i].name;
             r.kills = st.rows[i].kills;
-            r.self = h == 0;
+            r.self = h == local_house_;   // W9-03-03: the joiner's own row (was house 0)
             r.ally = world_.house_team(h) == world_.house_team(local_house_);
             const ra2assets::Rgba c = world_.house_palette(ba_.unit_pal, h)[24];
             r.color = SDL_Color{c.r, c.g, c.b, 255};

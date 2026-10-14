@@ -94,6 +94,22 @@ Ini load_campaign_rules_ini(const std::string& dir, const std::string& map_name)
     }
 }
 
+// W9-03-04: a multiplayer game type's rules (MPModesMD.ini: "Rules.INI
+// override" files such as MPMWMD.ini) -- the same section-wise overlay of
+// rulesmd.ini. [RE-FALLBACK: the original reads the override after the
+// rules (FUN_005D6FB0 stores the file name per mode); the merge call itself
+// was not traced.]
+Ini load_mode_rules_ini(const std::string& dir, const std::string& override_name) {
+    const Ini base = load_ini_from_ra2md(dir, "rulesmd.ini");
+    try {
+        const std::vector<uint8_t> raw = read_ra2md_file(dir, override_name);
+        return overlay_map_rules(base, Ini::parse(std::string(raw.begin(), raw.end())));
+    } catch (const std::exception& ex) {
+        std::cerr << "[mp] game type rules " << override_name << " unavailable (" << ex.what() << ")" << std::endl;
+        return base;
+    }
+}
+
 // W2-CA-03: who the campaign player is for the rules-driven roster.
 struct PlayerRules {
     std::string country;              // Owner=/Required/Forbidden key (a stock country)

@@ -100,6 +100,48 @@ bool decode_beacon(const std::uint8_t* p, std::size_t n, LanBeacon& out) {
     return true;
 }
 
+std::vector<std::uint8_t> encode_lobby_msg(const LanLobbyMsg& m) {
+    std::vector<std::uint8_t> o(kMagic, kMagic + 4);
+    put16(o, m.net_proto);
+    o.push_back(m.type);
+    o.push_back(0);
+    put32(o, m.nonce);
+    put16(o, m.id);
+    put_str(o, m.nick, 16);
+    if (m.type == 4) put_str(o, m.text, 120);
+    return o;
+}
+
+bool decode_lobby_msg(const std::uint8_t* p, std::size_t n, LanLobbyMsg& out) {
+    if (n < 15 || n > 512 || !std::equal(kMagic, kMagic + 4, reinterpret_cast<const char*>(p))) return false;
+    std::size_t k = 4;
+    auto u8 = [&]() -> std::uint8_t { return k < n ? p[k++] : 0; };
+    auto u16 = [&]() { const std::uint16_t lo = u8(); return static_cast<std::uint16_t>(lo | (u8() << 8)); };
+    auto u32 = [&]() { const std::uint32_t lo = u16(); return lo | (static_cast<std::uint32_t>(u16()) << 16); };
+    bool bad = false;
+    auto str = [&](std::size_t max) {
+        const std::size_t len = u8();
+        if (len > max || k + len > n) { bad = true; return std::string(); }
+        std::string s(reinterpret_cast<const char*>(p + k), len);
+        k += len;
+        for (char& c : s)
+            if (static_cast<unsigned char>(c) < 32) c = '?';
+        return s;
+    };
+    LanLobbyMsg m;
+    m.net_proto = u16();
+    m.type = u8();
+    (void)u8();
+    if (m.type != 3 && m.type != 4) return false;
+    m.nonce = u32();
+    m.id = u16();
+    m.nick = str(16);
+    if (m.type == 4) m.text = str(120);
+    if (bad || m.nick.empty()) return false;
+    out = m;
+    return true;
+}
+
 void lan_set_multicast_hook(std::function<void(bool)> h) {
     std::lock_guard<std::mutex> g(lock_mu());
     hook() = std::move(h);
@@ -184,7 +226,71 @@ bool LanBrowser::compatible(const LanGame& g, std::uint16_t proto, std::uint32_t
     return g.beacon.net_proto == proto && g.beacon.sim_ver == sim && g.beacon.rules_crc == rules;
 }
 
+void LanBrowser::set_presence(const std::string& nick, std::uint32_t nonce) {
+    nick_ = nick;
+    nonce_ = nonce;
+    last_presence_ = 0;   // announce at the next update
+}
+
+void LanBrowser::send_presence(const Addr& to) {
+    LanLobbyMsg m;
+    m.type = 3;
+    m.net_proto = net_proto;
+    m.nonce = nonce_;
+    m.nick = nick_;
+    const std::vector<std::uint8_t> b = encode_lobby_msg(m);
+    query_.send_to(to, b.data(), b.size());
+}
+
+void LanBrowser::say(const std::string& text) {
+    if (nick_.empty() || text.empty() || !query_.is_open()) return;
+    LanLobbyMsg m;
+    m.type = 4;
+    m.net_proto = net_proto;
+    m.nonce = nonce_;
+    m.id = next_id_++;
+    m.nick = nick_;
+    m.text = text.substr(0, 120);
+    const std::vector<std::uint8_t> b = encode_lobby_msg(m);
+    for (std::uint32_t ip : targets_) query_.send_to(Addr{ip, kLanBeaconPort}, b.data(), b.size());
+    for (const LanPlayer& p : players_) query_.send_to(p.from, b.data(), b.size());
+    chat_.push_back(LanChatLine{nick_, m.text});
+    seen_chat_.emplace_back(nonce_, m.id);
+}
+
+void LanBrowser::take_lobby(const Addr& from, const LanLobbyMsg& m, std::uint64_t now) {
+    if (nick_.empty() || m.nonce == nonce_ || m.net_proto != net_proto) return;
+    LanPlayer* p = nullptr;
+    for (LanPlayer& q : players_)
+        if (q.nonce == m.nonce) p = &q;
+    if (!p) {
+        players_.push_back(LanPlayer{m.nick, m.nonce, from, now, 0});
+        p = &players_.back();
+    }
+    p->nick = m.nick;
+    p->seen = now;
+    if (m.type == 3) {
+        p->from = from;   // presence comes from the sender's page socket
+        if (p->answered == 0 || now - p->answered >= kBeaconMs) {   // unicast answer
+            send_presence(from);
+            p->answered = now;
+        }
+        return;
+    }
+    const auto key = std::make_pair(m.nonce, m.id);
+    if (std::find(seen_chat_.begin(), seen_chat_.end(), key) != seen_chat_.end()) return;
+    seen_chat_.push_back(key);
+    if (seen_chat_.size() > 256) seen_chat_.erase(seen_chat_.begin());
+    chat_.push_back(LanChatLine{m.nick, m.text});
+    if (chat_.size() > 50) chat_.erase(chat_.begin());
+}
+
 void LanBrowser::take(const Addr& from, const std::uint8_t* p, int n, std::uint64_t now) {
+    LanLobbyMsg lm;
+    if (n >= 7 && (p[6] == 3 || p[6] == 4)) {
+        if (decode_lobby_msg(p, static_cast<std::size_t>(n), lm)) take_lobby(from, lm, now);
+        return;
+    }
     LanBeacon b;
     if (!decode_beacon(p, static_cast<std::size_t>(n), b) || b.type != 1) return;
     const Addr host{from.ip, b.game_port};
@@ -208,6 +314,13 @@ void LanBrowser::update(std::uint64_t now) {
     games_.erase(std::remove_if(games_.begin(), games_.end(),
                                 [&](const LanGame& g) { return now - g.seen > kExpireMs; }),
                  games_.end());
+    players_.erase(std::remove_if(players_.begin(), players_.end(),
+                                  [&](const LanPlayer& q) { return now - q.seen > kExpireMs; }),
+                   players_.end());
+    if (!nick_.empty() && query_.is_open() && (last_presence_ == 0 || now - last_presence_ >= kBeaconMs)) {
+        for (std::uint32_t ip : targets_) send_presence(Addr{ip, kLanBeaconPort});
+        last_presence_ = now;
+    }
     if (query_.is_open() && (last_query_ == 0 || now - last_query_ >= kQueryMs)) {
         LanBeacon q;
         q.type = 2;

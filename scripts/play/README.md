@@ -337,14 +337,20 @@ Pages: `shell:Main Menu` -> `button:Network` (scene `mp-lan`) /
 `button:Internet` (scene `mp-online`) -> `mp-lobby` -> `game` (NET-PLAY:
 the lockstep match; the old `mp-start` placeholder page is gone). Edits on every page: `edit:<id>`; while an
 edit has focus `type "..."` appends, `key delete` clears it, `key enter`
-commits (chat: sends). Probe `edit(<id>)`, `focus`, `status`.
+commits (chat: sends). Probe `edit(<id>)`, `focus`, `status`, `status_line`
+(what the status line 0x695 shows: the hovered control's STT tooltip, else a
+notice such as TXT_ONLY_HOST_CAN_MODIFY, else `status`), `tooltip`. Wave 9
+(w9fix-menus) renamed the buttons to the original's (`New` / `Join` / `Main
+Menu`, `Accept`); the old names (`Host Game`, `Join Game`, `Back`, `Ready`)
+stay as target aliases.
 
 | Scene | Targets | Probe keys |
 |---|---|---|
-| `mp-lan` | `button:Host Game`, `button:Join Game`, `button:Join by IP`, `button:Back`, `edit:nick`, `edit:ip`, `game:<i>` | `lan_games`, `lan_listening`, `lan_sel`, `lan_game_host(i)`, `lan_game_room(i)`, `nick` |
+| `mp-lan` (the Lobby page 0xBB, header `Lobby`) | `button:New`, `button:Join`, `button:Join by IP`, `button:Main Menu`, `edit:nick`, `edit:ip`, `edit:lobbychat`, `game:<i>`, `player:<i>` | `lan_games`, `lan_listening`, `lan_sel`, `lan_game_host(i)`, `lan_game_room(i)`, `lan_players` / `lan_player(i)` (others on the page), `lobby_chat_count`, `lobby_chat_last` (`"Name: text"`), `nick` |
 | `mp-online` | `button:Connect`, `button:Host Game`, `button:Host Private`, `button:Join Game`, `button:Join Code`, `button:Back`, `edit:server`, `edit:nick`, `edit:code`, `room:<i>` | `online_state` (`idle/connecting/hello/ready/failed`), `rooms`, `room_code(i)`, `server_name`, `motd`, `online_error` |
-| `mp-lobby` | `button:Start Game` / `button:Customize Battle` (host), `button:Ready` / `button:Not Ready` (client), `button:Back`, `edit:chat`, `combo:kind<N>` (host, rows 1-7), `combo:country<N>` / `combo:color<N>` / `combo:team<N>` / `combo:start<N>` (rows you may edit), with a list open `pick:<label>` / `item:<i>` / `list:up` / `list:down`, `check:short|mcv|crates|superweapons`, `slider:speed|credits|units=<v>` (host), `map:<file>` + `button:Use Map` / `button:Cancel` while choosing | `mp_role` (`host/client`), `mp_net` (`lan/online`), `mp_state` (`joining/joined/rejected/lost/started`), `reject_reason`, `local_slot`, `members`, `rev`, `players`, `humans`, `max_players`, `map`, `map_digest`, `room_code`, `where`, `lan_port`, `credits`, `unit_count`, `game_speed`, `check(<id>)`, `can_start`, `choosing`, `combo_open`, per slot N `slot_kind(N)` (`Open/Closed/Human/AI`), `slot_name(N)`, `slot_ready(N)`, `slot_has_map(N)`, `country(N)`, `color(N)`, `team(N)`, `start(N)`, `ai(N)`; `chat_count`, `chat_last` (`"Name: text"`), `ready` (client) |
-| `game` (a network match) | the usual game targets | NET-PLAY keys (only in a match): `net` (1), `sim_frame`, `net_frame`, `net_stalled`, `net_stalls`, `net_players`, `net_max_ahead`, `net_fsr`, `net_left` (our EXIT executed), `net_exiting`, `net_end` (the match ended: out of sync / mismatch / timeout), `net_end_title`, `net_oos_frame`, `net_chat_open`, `net_away`, `net_hash`, `net_hash_avg_us`, `net_house_out(h)` |
+| `mp-lobby` (header `Host Screen` / `Join Screen`) | `button:Start Game` / `button:Customize Battle` (host), `button:Accept` (client; toggles), `button:Back`, `edit:chat`, `combo:kind<N>` (host, rows 1-7), `combo:country<N>` / `combo:color<N>` / `combo:team<N>` / `combo:start<N>` (rows you may edit), `accept:<N>` / `flag:<N>` (row pictures), with a list open `pick:<label>` / `item:<i>` / `list:up` / `list:down`, `check:short|mcv|crates|superweapons|buildoffally|aitakeover|crossplatform`, `slider:speed|credits|units=<v>` (host), `guestcheck:<id>` (client: the host-only check-boxes), while choosing (dialog 0x6B) `mode:<index>` / `mode:<name>` (Game Type), `map:<file>` (Game Map), `button:Use Map` / `button:Cancel` (`button:Random Map` is greyed) | `mp_role` (`host/client`), `mp_net` (`lan/online`), `mp_state` (`joining/joined/rejected/lost/started`), `reject_reason`, `local_slot`, `members`, `rev`, `players`, `humans`, `max_players`, `map`, `map_digest`, `room_code`, `where`, `lan_port`, `credits`, `unit_count`, `game_speed`, `check(<id>)`, `can_start`, `choosing`, `combo_open`, per slot N `slot_kind(N)` (`Open/Closed/Human/AI`), `slot_name(N)`, `slot_ready(N)`, `slot_has_map(N)`, `country(N)`, `color(N)`, `team(N)`, `start(N)`, `ai(N)`; `chat_count`, `chat_last` (`"Name: text"`), `ready` (client); wave 9: `game_mode` (MPModeIndex: 1 Battle, 2 Free For All, 5 Megawealth, 6 Land Rush, 7 Meat Grinder, 8 Naval War, 9 Team Game, ...), `game_mode_name`, `mode_ai_allowed`, `mode_allies_allowed`, `mode_count`, `mode_sel` / `mode_map_count` (chooser), `maps_of_mode(i)`, `layout_overlaps` (0 = no option controls overlap), `header_count`, `slider_text(speed|credits|units)` (the readouts, on host and guest), `preview_w` (drawn preview width, 0 = none), `humans_stable_s` (wall seconds the human count has not changed) |
+| `result` (a network match's score page 0x108) | `continue` (back to `mp-lan` / `mp-online`) | `score_net` (1), `score_header` (`Multiplayer Score`), `score_game` (game number), `score_name(h)` (player handles) |
+| `game` (a network match) | the usual game targets; with the menu open the 0xBBA set `menu:GAME CONTROLS` / `menu:ABORT MISSION` / `menu:RESUME MISSION`, on the abort page `menu:QUIT` | `menu_net`, `menu_buttons` (`"A|B|C"`), `diplomacy_name(k)` / `diplomacy_self(k)` (Diplomacy open), `mode_rules` (the game type's rules override, e.g. `MPMWMD.ini`), `rule(GAREFN.TechLevel)`; NET-PLAY keys (only in a match): `net` (1), `sim_frame`, `net_frame`, `net_stalled`, `net_stalls`, `net_players`, `net_max_ahead`, `net_fsr`, `net_left` (our EXIT executed), `net_exiting`, `net_end` (the match ended: out of sync / mismatch / timeout), `net_end_title`, `net_oos_frame`, `net_chat_open`, `net_away`, `net_hash`, `net_hash_avg_us`, `net_house_out(h)` |
 
 Network is real time (wall clock), not the harness's virtual clock: wait
 with large `until` budgets (`until 2000000 humans == 2`). Two-process tests:
@@ -353,6 +359,11 @@ with large `until` budgets (`until 2000000 humans == 2`). Two-process tests:
 --allow-loopback`; the join goes through the room list and the CnCNet V3
 tunnel). Both check that the two games agree on the seed and options string
 and that the match starts. `scripts/play/net-match.ps1` [`-Online`] [`-DesyncAt N`]
-plays a whole 3000-frame match between two processes (net-*-host/join.play)
+plays a whole 3000-frame match between two processes (net-*-host/join.play).
+`scripts/play/mp-menus-pair.ps1` (wave 9) runs mp-menus-host/join.play: the
+Network Lobby page (Players + chat), the Join Screen, the host's edit burst
+after a join (W9-01-08), a Megawealth match, Diplomacy names, the MP options
+menu, Quit and the MP score page; `mp-menus-solo.play` is its one-process
+part (layout, game types, too-small map, second-lobby preview, MP menus)
 and compares the two machines' sync-hash trails (`[net] trail f=N crc=X`
 on stderr); in a match Enter opens the chat line (`type`, `key enter`).

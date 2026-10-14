@@ -475,7 +475,7 @@
             SDL_Rect box{16, y, std::max(200, playfield_w_ - 48 - sw), h};
             net_box(ren, box);
             const bool caret = (SDL_GetTicks() / 500) % 2 == 0;
-            hud_text(ren, tc, "Say: " + net_chat_text_ + (caret ? "_" : ""), box.x + 6, y + static_cast<int>(8 * sc),
+            hud_text(ren, tc, gf_csf("TXT_TO_ALL", "To All:") + " " + net_chat_text_ + (caret ? "_" : ""), box.x + 6, y + static_cast<int>(8 * sc),
                      col, kHudLeft, false, true, sc);
             net_btn_send_ = SDL_Rect{box.x + box.w + 8, y, sw, h};
             net_box(ren, net_btn_send_);
@@ -537,6 +537,8 @@
         p.set("net_left", net_local_left_ ? 1 : 0);
         p.set("net_exiting", net_exit_requested_ ? 1 : 0);
         p.set("net_end", net_end_dialog_ ? 1 : 0);
+        p.set_s("mode_rules", cfg_.mode_rules);   // W9-03-04 the game type's rules override
+        p.set_s("rule(GAREFN.TechLevel)", rules_ini_.get("GAREFN", "TechLevel", ""));
         p.set_s("net_end_title", net_end_title_);
         p.set("net_oos_frame", static_cast<double>(net_->game->session().out_of_sync().frame));
         p.set("net_chat_open", net_chat_open_ ? 1 : 0);

@@ -118,6 +118,151 @@ inline void log_line(const std::string& s) {
     pres_log(0, "mp " + s);
 }
 
+// W9-03-04: the multiplayer game types of MPModesMD.ini (read by
+// FUN_005D6FB0 for the sections Battle / ManBattle / Siege / Unholy /
+// FreeForAll / Cooperative, FUN_005D7700; the list is kept sorted by the
+// mode index, the MPModeIndex of the options string):
+//   <index>=<GUI name>, <STT tooltip>, <rules override INI>, <map filter>, <random maps allowed>
+// AI players: [RE-FALLBACK: the INI's own comment -- the Battle class "is the
+// only one that allows AI players"; the class virtuals were not traced].
+// AlliesAllowed / MustAlly come from the mode's override INI
+// [MultiplayerDialogSettings].
+struct GameMode {
+    int index = 1;
+    std::string klass = "Battle";
+    std::string name_key = "GUI:Battle", stt_key = "STT:ModeBattle";
+    std::string rules = "MPBattleMD.ini", filter = "standard";
+    bool random_maps = true;
+    bool allies_allowed = true, must_ally = false;
+    bool ai_allowed() const { return klass == "Battle"; }
+};
+
+inline std::string trim(std::string s) {
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r')) s.pop_back();
+    std::size_t a = 0;
+    while (a < s.size() && (s[a] == ' ' || s[a] == '\t')) ++a;
+    return s.substr(a);
+}
+
+inline bool ini_yes(const std::string& v, bool def) {
+    if (v.empty()) return def;
+    const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(v[0])));
+    return c == 'y' || c == 't' || c == '1';
+}
+
+inline const std::vector<GameMode>& game_modes() {
+    static std::vector<GameMode> modes;
+    static bool done = false;
+    if (done) return modes;
+    done = true;
+    try {
+        const std::vector<uint8_t> raw = read_ra2md_file(env_install_dir(), "mpmodesmd.ini");
+        const Ini ini = Ini::parse(std::string(raw.begin(), raw.end()));
+        for (const char* klass : {"Battle", "ManBattle", "Siege", "Unholy", "FreeForAll", "Cooperative"}) {
+            if (!ini.has(klass)) continue;
+            for (const auto& kv : ini.section(klass)) {
+                const int idx = std::atoi(kv.first.c_str());
+                std::vector<std::string> f;
+                std::string cur;
+                std::string v = kv.second;
+                const std::size_t sc = v.find(';');
+                if (sc != std::string::npos) v.resize(sc);
+                for (char c : v) {
+                    if (c == ',') { f.push_back(trim(cur)); cur.clear(); }
+                    else cur += c;
+                }
+                f.push_back(trim(cur));
+                if (idx <= 0 || f.size() < 4) continue;
+                GameMode m;
+                m.index = idx;
+                m.klass = klass;
+                m.name_key = f[0];
+                m.stt_key = f[1];
+                m.rules = f[2];
+                m.filter = f[3];
+                for (char& c : m.filter) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                m.random_maps = f.size() > 4 && ini_yes(f[4], false);
+                try {   // the override's [MultiplayerDialogSettings]
+                    const std::vector<uint8_t> r = read_ra2md_file(env_install_dir(), m.rules);
+                    const Ini o = Ini::parse(std::string(r.begin(), r.end()));
+                    m.allies_allowed = ini_yes(o.get("MultiplayerDialogSettings", "AlliesAllowed", "yes"), true);
+                    m.must_ally = ini_yes(o.get("MultiplayerDialogSettings", "MustAlly", "no"), false);
+                } catch (const std::exception&) {}
+                modes.push_back(m);
+            }
+        }
+    } catch (const std::exception&) {}
+    if (modes.empty()) modes.push_back(GameMode{});   // a partial install: Battle only
+    std::stable_sort(modes.begin(), modes.end(), [](const GameMode& a, const GameMode& b) { return a.index < b.index; });
+    return modes;
+}
+
+// The YR string table (ra2md.csf in langmd.mix, like the map names of
+// maplist.cpp): the game-type labels added by YR (GUI:TeamGame "Team
+// Alliance", STT:ModeTeamGame) are not in the RA2 ra2.csf that gf_csf reads.
+inline std::string yr_text(const std::string& label, const std::string& fallback) {
+    static std::unique_ptr<ra2assets::CsfStrings> csf;
+    static bool tried = false;
+    if (!tried) {
+        tried = true;
+        try {
+            ra2assets::MixFile lang = ra2assets::MixFile::open_path(env_install_dir() + "langmd.mix");
+            if (const ra2assets::MixEntry* e = lang.find(std::string("ra2md.csf"))) {
+                const auto raw = lang.read(*e);
+                csf = std::make_unique<ra2assets::CsfStrings>(ra2assets::CsfStrings::load(raw.data(), raw.size()));
+            }
+        } catch (const std::exception&) {}
+    }
+    if (csf)
+        if (const std::u16string* t = csf->find(label)) {
+            std::string out;
+            for (char16_t ch : *t) out += (ch >= 32 && ch < 127) ? static_cast<char>(ch) : ' ';
+            if (!out.empty()) return out;
+        }
+    const std::string g = gf_csf(label, fallback.c_str());
+    return g;
+}
+
+inline const GameMode& game_mode(int index) {
+    for (const GameMode& m : game_modes())
+        if (m.index == index) return m;
+    return game_modes().front();
+}
+
+inline bool map_has_mode(const ra2engine::MapEntry& e, const std::string& tag) {
+    for (const std::string& t : e.game_modes)
+        if (t == tag) return true;
+    return false;
+}
+
+// W9-03-01/05/06/07/08: the Host / Join Screen (0xBC / 0xBD) laid out on the
+// clone's 640x480 canvas, in the template's column order (accept picture,
+// player, flag, side, colour, start, team; headers above; check-boxes left,
+// labelled sliders right, Build Off Ally beside Superweapons; chat below).
+// One table so the phone layer can scale it.
+struct LobbyLayout {
+    int head_y = 17;                          // GUI:Players / Side / Color / Start / Team
+    int row0 = 35, pitch = 23, row_h = 19;
+    int accept_x = 12, accept_w = 16;         // 0x6D2.. acceptance pictures
+    int name_x = 32, name_w = 128;
+    int flag_x = 164, flag_w = 48;            // 0x6DA.. flags
+    int side_x = 216, side_w = 106;
+    int color_x = 326, color_w = 52;
+    int start_x = 382, start_w = 42;
+    int team_x = 428, team_w = 42;
+    int opt_y = 222, opt_pitch = 23;
+    int check_x = 12, check_w = 165;
+    int slabel_x = 186, slabel_w = 92;
+    int slider_x = 282, slider_w = 127, slider_h = 21;
+    int boa_x = 186, boa_w = 270;
+    int chat_x = 12, chat_y = 334, chat_w = 458, chat_h = 94;
+    int edit_y = 432;
+};
+inline LobbyLayout& lobby_layout() {
+    static LobbyLayout l;
+    return l;
+}
+
 }  // namespace mpui
 
 // ---------------------------------------------------------------------------
@@ -176,10 +321,23 @@ public:
             const ra2engine::SbRect d = xform().hit(kv.second);
             p.targets[kv.first] = ra2play::Rect{d.x, d.y, std::max(1, d.w), std::max(1, d.h)};
         }
-        for (const ShellButton& b : buttons()) p.set("button_enabled(" + b.label + ")", b.enabled ? 1 : 0);
+        for (const ShellButton& b : buttons()) {
+            p.set("button_enabled(" + b.label + ")", b.enabled ? 1 : 0);
+            if (b.label.find(' ') != std::string::npos) {   // scripts: "Main Menu" -> button_enabled(Main_Menu)
+                std::string k = b.label;
+                for (char& c : k) if (c == ' ') c = '_';
+                p.set("button_enabled(" + k + ")", b.enabled ? 1 : 0);
+            }
+        }
         for (const mpui::Edit& e : edits_) p.set_s("edit(" + e.id + ")", e.text);
         p.set_s("focus", focus_ >= 0 ? edits_[static_cast<std::size_t>(focus_)].id : "");
         p.set_s("status", status_);
+        p.set_s("status_line", status_line());
+        {
+            int lx = -1000, ly = -1000;
+            if (mx_ >= 0) to_logical(mx_, my_, lx, ly);
+            p.set_s("tooltip", hover_tip(lx, ly));
+        }
         body_probe(p);
         confirm_.play_probe(p);
     }
@@ -207,7 +365,7 @@ public:
             p.edit(e.r, e.text, static_cast<int>(i) == focus_, std::fmod(clock_, 1.0) < 0.5);
         }
         draw_overlay(p);
-        p.label(p.fit(status_, 454), 15, 458, 454, 19, 0);
+        p.label(p.fit(status_line(lmx, lmy), 454), 15, 458, 454, 19, 0);
         confirm_.render(ren, tc);
     }
 
@@ -304,6 +462,22 @@ protected:
     virtual void edit_changed(int edit) { (void)edit; }
     virtual void tick(std::uint64_t now) { (void)now; }
     virtual void confirm_done(int action, int button) { (void)action; (void)button; }
+    // W9-03-12: the status line 0x695 carries the hovered control's STT:*
+    // tooltip (GUI options Tooltips on), else a short-lived notice (flash),
+    // else the page's status text.
+    virtual std::string hover_tip(int lx, int ly) const { (void)lx; (void)ly; return {}; }
+    void flash(const std::string& s, double seconds = 4.0) {
+        flash_ = s;
+        flash_until_ = clock_ + seconds;
+    }
+    std::string status_line(int lx = -1000, int ly = -1000) const {
+        if (!g_user_settings || g_user_settings->tooltips) {
+            const std::string t = hover_tip(lx, ly);
+            if (!t.empty()) return t;
+        }
+        if (!flash_.empty() && clock_ < flash_until_) return flash_;
+        return status_;
+    }
 
     std::map<std::string, ra2engine::SbRect> targets() const {
         std::map<std::string, ra2engine::SbRect> t;
@@ -359,12 +533,16 @@ protected:
     int mx_ = -1, my_ = -1;
     bool down_ = false;
     double clock_ = 0.0;
+    std::string flash_;
+    double flash_until_ = 0.0;
 };
 
 // ===========================================================================
-// The multiplayer lobby (built from the Skirmish page: 8 player rows with
-// country / colour combos, the same options + sliders, map choice with the
-// preview well) + Team / Start columns, slot kinds, ready, lobby chat.
+// The multiplayer lobby = the Host Screen 0xBC / Join Screen 0xBD (built
+// from the Skirmish page: 8 player rows with country / colour combos, the
+// same options + sliders, map choice with the preview well) + Team / Start
+// columns, slot kinds, Accept, lobby chat; Customize Battle = dialog 0x6B
+// (Game Type + Game Map lists).
 // ===========================================================================
 class MpLobbyScene : public MpPage {
 public:
@@ -404,10 +582,11 @@ public:
     const char* name() const override { return "mp-lobby"; }
 
 private:
-    enum Act { A_NONE, A_START, A_MAP, A_BACK, A_READY, A_USEMAP, A_CANCEL };
+    enum Act { A_NONE, A_START, A_MAP, A_BACK, A_READY, A_USEMAP, A_CANCEL, A_RANDMAP };
     enum Combo { CB_NONE, CB_KIND, CB_COUNTRY, CB_COLOR, CB_TEAM, CB_START };
-    // NET-PLAY: CK_AIT (a leaver's house -> AI) and CK_XP (cross-platform, experimental).
-    enum Check { CK_SHORT, CK_MCV, CK_CRATES, CK_SW, CK_AIT, CK_XP, CK_COUNT };
+    // CK_BOA = 0x69D GUI:BuildOffAlly (W9-03-05). NET-PLAY clone extras:
+    // CK_AIT (a leaver's house -> AI) and CK_XP (cross-platform, experimental).
+    enum Check { CK_SHORT, CK_MCV, CK_CRATES, CK_SW, CK_BOA, CK_AIT, CK_XP, CK_COUNT };
     enum Slider { SL_SPEED, SL_CREDITS, SL_UNITS, SL_COUNT };
     enum Confirm { C_LEAVE = 1, C_INFO };
 
@@ -425,18 +604,48 @@ private:
         defaults_.unit_count = std::max(min_units_, std::min(max_units_, ri("UnitCount", 10)));
         defaults_.game_speed = std::max(0, std::min(6, ri("GameSpeed", 1)));
         defaults_.tech_level = ri("TechLevel", 10);
+        // W9-03-26: the [MultiplayerDialogSettings] booleans (the Skirmish
+        // page's keys) seed the host's options.
+        auto rb = [&](const char* k, bool d) {
+            return mpui::ini_yes(r.section_string("MultiplayerDialogSettings", k, d ? "yes" : "no"), d);
+        };
+        defaults_.short_game = rb("ShortGame", true);
+        defaults_.superweapons = rb("SuperWeaponsAllowed", true);
+        defaults_.build_off_ally = rb("BuildOffAlly", true);
+        defaults_.mcv_repacks = rb("MCVRedeploys", true);
+        defaults_.crates = rb("Crates", true);
+        mt_.players = mpui::yr_text("GUI:Players", "Players");
+        mt_.side = mpui::yr_text("GUI:Side", "Side");
+        mt_.color = mpui::yr_text("GUI:Color", "Color");
+        mt_.start = mpui::yr_text("GUI:StartPosition", "Start");
+        mt_.team = mpui::yr_text("GUI:Team", "Team");
+        mt_.accept = mpui::yr_text("GUI:Accept", "Accept");
+        mt_.host_screen = mpui::yr_text("GUI:HostScreen", "Host Screen");
+        mt_.join_screen = mpui::yr_text("GUI:JoinScreen", "Join Screen");
+        mt_.only_host = mpui::yr_text("TXT_ONLY_HOST_CAN_MODIFY", "Only the host can modify this option.");
+        mt_.open = mpui::yr_text("GUI:Open", "Open");
+        mt_.closed = mpui::yr_text("GUI:Closed", "Closed");
         try {
-            catalog_ = std::make_unique<ra2engine::MapCatalog>(ra2engine::load_yr_map_catalog(env_install_dir(), "standard"));
+            // W9-03-04: every game type's maps (filtered per mode below).
+            catalog_ = std::make_unique<ra2engine::MapCatalog>(ra2engine::load_yr_map_catalog(env_install_dir(), ""));
             ra2engine::filter_lobby_theaters(*catalog_);
         } catch (const std::exception&) { catalog_.reset(); }
-        edits_.push_back(mpui::Edit{"chat", {30, 432, 440, 19}, "", 100, true});
+        const mpui::LobbyLayout& L = mpui::lobby_layout();
+        edits_.push_back(mpui::Edit{"chat", {L.chat_x, L.edit_y, L.chat_w, 19}, "", 100, true});
     }
+    struct MpText {
+        std::string players, side, color, start, team, accept, host_screen, join_screen, only_host, open, closed;
+    };
 
     // --- setup ---------------------------------------------------------------
     void start_host() {
         ra2mp::MpLobbyModel m;
         m.opt = defaults_;
-        const int mi = maps().empty() ? -1 : 0;
+        m.mode = mpui::game_modes().front().index;
+        int mi = -1;   // the first map of the first game type (Battle: "standard")
+        for (int i = 0; i < static_cast<int>(maps().size()) && mi < 0; ++i)
+            if (mpui::map_has_mode(maps()[static_cast<std::size_t>(i)], mpui::game_mode(m.mode).filter)) mi = i;
+        if (mi < 0 && !maps().empty()) mi = 0;
         m.map = map_info(mi);
         for (int i = std::max(1, m.map.max_players); i < ra2mp::kSlots; ++i) m.slots[i].kind = ra2mp::SlotKind::Closed;
         if (net_ == LAN) {
@@ -580,23 +789,61 @@ private:
     static std::string team_label(int t) { return t < 0 ? "-" : std::string(1, static_cast<char>('A' + t)); }
     static std::string start_label(int s) { return s < 0 ? "?" : std::to_string(s + 1); }
 
-    // --- layout (logical 640x480) -----------------------------------------------
-    static int rowY(int k) { return 17 + 26 * k; }
-    static ra2engine::SbRect kind_rect(int k) { return {30, rowY(k), 140, 19}; }
-    static ra2engine::SbRect country_rect(int k) { return {176, rowY(k), 110, 19}; }
-    static ra2engine::SbRect color_rect(int k) { return {292, rowY(k), 52, 19}; }
-    static ra2engine::SbRect team_rect(int k) { return {350, rowY(k), 42, 19}; }
-    static ra2engine::SbRect start_rect(int k) { return {398, rowY(k), 42, 19}; }
-    static ra2engine::SbRect ready_rect(int k) { return {446, rowY(k) + 1, 18, 18}; }
+    // --- layout (logical 640x480; mpui::LobbyLayout) ----------------------------
+    static const mpui::LobbyLayout& lay() { return mpui::lobby_layout(); }
+    static int rowY(int k) { return lay().row0 + lay().pitch * k; }
+    static ra2engine::SbRect accept_rect(int k) { return {lay().accept_x, rowY(k) + 1, lay().accept_w, lay().row_h - 2}; }
+    static ra2engine::SbRect kind_rect(int k) { return {lay().name_x, rowY(k), lay().name_w, lay().row_h}; }
+    static ra2engine::SbRect flag_rect(int k) { return {lay().flag_x, rowY(k), lay().flag_w, lay().row_h}; }
+    static ra2engine::SbRect country_rect(int k) { return {lay().side_x, rowY(k), lay().side_w, lay().row_h}; }
+    static ra2engine::SbRect color_rect(int k) { return {lay().color_x, rowY(k), lay().color_w, lay().row_h}; }
+    static ra2engine::SbRect start_rect(int k) { return {lay().start_x, rowY(k), lay().start_w, lay().row_h}; }
+    static ra2engine::SbRect team_rect(int k) { return {lay().team_x, rowY(k), lay().team_w, lay().row_h}; }
+    // Check-boxes: Short / MCV / Crates / Superweapons down the left column
+    // (0x54E / 0x3E8 / 0x54D / 0x69A), Build Off Ally beside Superweapons in
+    // the slider column (0x69D), the clone extras on their own row below.
     static ra2engine::SbRect check_rect(int c) {
-        return c < CK_AIT ? ra2engine::SbRect{30, 232 + 20 * c, 150, 16}
-                          : ra2engine::SbRect{170, 232 + 20 * (c - CK_AIT), 125, 16};
+        const mpui::LobbyLayout& L = lay();
+        if (c <= CK_SW) return {L.check_x, L.opt_y + L.opt_pitch * c, L.check_w, 16};
+        if (c == CK_BOA) return {L.boa_x, L.opt_y + L.opt_pitch * 3, L.boa_w, 16};
+        return {c == CK_AIT ? L.check_x : L.slabel_x, L.opt_y + L.opt_pitch * 4,
+                c == CK_AIT ? L.check_w : L.boa_w, 16};
     }
-    static ra2engine::SbRect slider_rect(int s) { return {300, 230 + 26 * s, 127, 21}; }
-    static ra2engine::SbRect slider_label(int s) { return {190, slider_rect(s).y, 105, 16}; }
-    static ra2engine::SbRect chat_rect() { return {30, 316, 440, 112}; }
+    static ra2engine::SbRect slider_rect(int s) {
+        return {lay().slider_x, lay().opt_y + lay().opt_pitch * s, lay().slider_w, lay().slider_h};
+    }
+    static ra2engine::SbRect slider_label(int s) { return {lay().slabel_x, slider_rect(s).y, lay().slabel_w, 16}; }
+    static ra2engine::SbRect chat_rect() { return {lay().chat_x, lay().chat_y, lay().chat_w, lay().chat_h}; }
     static ra2engine::SbRect preview_rect() { return {486, 37, 144, 112}; }
-    static ra2engine::SbRect map_list_rect() { return {30, 60, 440, 340}; }
+    // Dialog 0x6B: Game Type (0x6EB) + Game Map (0x553) lists (the Skirmish
+    // page's Customize Battle geometry).
+    static ra2engine::SbRect type_list_rect() { return {30, 126, 195, 260}; }
+    static ra2engine::SbRect map_list_rect() { return {252, 126, 195, 260}; }
+    // Every control rect of the options block (W9-03-01 overlap check).
+    std::vector<ra2engine::SbRect> option_rects() const {
+        std::vector<ra2engine::SbRect> v;
+        for (int c = 0; c < CK_COUNT; ++c) {
+            const ra2engine::SbRect r = check_rect(c);
+            const int w = 26 + static_cast<int>(check_label(c).size()) * 6;   // lamp + label text (6 px glyphs)
+            v.push_back({r.x, r.y, std::min(r.w, w), r.h});
+        }
+        for (int s = 0; s < SL_COUNT; ++s) {
+            v.push_back(slider_label(s));
+            v.push_back(slider_rect(s));
+        }
+        return v;
+    }
+    int layout_overlaps() const {
+        const std::vector<ra2engine::SbRect> v = option_rects();
+        int n = 0;
+        for (std::size_t i = 0; i < v.size(); ++i)
+            for (std::size_t j = i + 1; j < v.size(); ++j)
+                if (v[i].x < v[j].x + v[j].w && v[j].x < v[i].x + v[i].w && v[i].y < v[j].y + v[j].h &&
+                    v[j].y < v[i].y + v[i].h)
+                    ++n;
+        return n;
+    }
+    const mpui::GameMode& mode() const { return mpui::game_mode(model().mode); }
     int visible_rows() const { return std::max(1, std::min(ra2mp::kSlots, model().map.max_players)); }
 
     int slider_range(int s) const {
@@ -628,15 +875,18 @@ private:
     bool check_val(int c) const {
         const ra2mp::MpOptions& o = model().opt;
         return c == CK_SHORT ? o.short_game : c == CK_MCV ? o.mcv_repacks : c == CK_CRATES ? o.crates
-             : c == CK_AIT ? o.ai_takeover : c == CK_XP ? o.cross_platform : o.superweapons;
+             : c == CK_AIT ? o.ai_takeover : c == CK_XP ? o.cross_platform : c == CK_BOA ? o.build_off_ally
+             : o.superweapons;
     }
     std::string check_label(int c) const {
         if (c == CK_AIT) return "AI takes over";
         if (c == CK_XP) return "Cross-platform (exp.)";
-        return c == CK_SHORT ? text_.short_game : c == CK_MCV ? text_.mcv : c == CK_CRATES ? text_.crates : text_.sw;
+        return c == CK_SHORT ? text_.short_game : c == CK_MCV ? text_.mcv : c == CK_CRATES ? text_.crates
+             : c == CK_BOA ? text_.boa : text_.sw;
     }
     static const char* check_id(int c) {
-        static const char* k[CK_COUNT] = {"short", "mcv", "crates", "superweapons", "aitakeover", "crossplatform"};
+        static const char* k[CK_COUNT] = {"short", "mcv", "crates", "superweapons", "buildoffally", "aitakeover",
+                                          "crossplatform"};
         return k[c];
     }
     static const char* slider_id(int s) {
@@ -646,16 +896,24 @@ private:
 
     // --- buttons ----------------------------------------------------------------
     std::vector<ShellButton> buttons() const override {
-        if (choosing_) return {btn(0, text_.use_map, true, A_USEMAP), btn(5, text_.cancel, true, A_CANCEL)};
+        // 0x6B: Use Map (0x6C5) / Random Map (0x583) / Cancel (0x5C0). The
+        // random map generator (RMG, "RandMap.img" FUN_00641850 after dialog
+        // FUN_005E60B0) is not reproduced: the button stays greyed like the
+        // Skirmish page's (W9-03-04).
+        if (choosing_)
+            return {btn(0, text_.use_map, true, A_USEMAP), btn(1, text_.random_map, false, A_RANDMAP),
+                    btn(5, text_.cancel, true, A_CANCEL)};
         if (is_host())
             return {btn(1, text_.start, joined(), A_START), btn(2, text_.choose, joined(), A_MAP),
                     btn(5, text_.back, true, A_BACK)};
-        const bool ready = client_ && client_->ready();
-        return {btn(1, ready ? "Not Ready" : "Ready", joined(), A_READY), btn(5, text_.back, true, A_BACK)};
+        // 0xBD 0x59F GUI:Accept (W9-03-09): a toggle; the acceptance picture
+        // left of the row shows the state.
+        return {btn(1, mt_.accept, joined(), A_READY), btn(5, text_.back, true, A_BACK)};
     }
     std::string header_text() const override {
         if (choosing_) return text_.choose;
-        return net_ == LAN ? "Network Game" : "Internet Game";
+        // W9-03-19: 0x694 GUI:HostScreen / GUI:JoinScreen.
+        return is_host() ? mt_.host_screen : mt_.join_screen;
     }
     int back_action() const override { return choosing_ ? A_CANCEL : A_BACK; }
 
@@ -668,26 +926,46 @@ private:
                 else mpui::log_line("start requested seed=" + std::to_string(host_->model().seed));
                 return;
             }
-            case A_MAP:
+            case A_MAP: {
                 choosing_ = true;
-                map_list_ = ShellList{};
-                map_list_.r = map_list_rect();
-                for (int i = 0; i < static_cast<int>(maps().size()); ++i) {
-                    map_list_.items.push_back(maps()[static_cast<std::size_t>(i)].display_name);
-                    map_list_.data.push_back(i);
+                type_list_ = ShellList{};
+                type_list_.r = type_list_rect();
+                type_list_.visible = 16;
+                for (const mpui::GameMode& m : mpui::game_modes()) {
+                    if (mode_map_count(m) == 0) continue;   // a game type without maps is not offered
+                    type_list_.items.push_back(mpui::yr_text(m.name_key, m.name_key));
+                    type_list_.data.push_back(m.index);
+                    if (m.index == model().mode) type_list_.sel = static_cast<int>(type_list_.items.size()) - 1;
                 }
-                map_list_.visible = 21;
-                map_list_.sel = std::max(0, map_index_of(model().map.file));
-                map_list_.reveal(map_list_.sel);
+                if (type_list_.sel < 0 && !type_list_.items.empty()) type_list_.sel = 0;
+                fill_map_list(model().map.file);
                 return;
-            case A_USEMAP:
-                if (host_ && map_list_.sel >= 0) {
-                    map_ix_ = map_list_.sel;
-                    host_->set_map(map_info(map_ix_));
+            }
+            case A_USEMAP: {
+                const int mi = map_list_.sel >= 0 && map_list_.sel < static_cast<int>(map_list_.data.size())
+                                   ? map_list_.data[static_cast<std::size_t>(map_list_.sel)] : -1;
+                if (host_ && mi >= 0) {
+                    const mpui::GameMode& gm = mpui::game_mode(chosen_mode());
+                    const ra2mp::MpMap mm = map_info(mi);
+                    // W9-03-13: TXT_SCENARIO_TOO_SMALL (FUN_005DBD30 @0x5DC934) --
+                    // the host stays in the chooser and nobody is removed.
+                    const int seated = gm.ai_allowed() ? ra2mp::player_count(model()) : ra2mp::human_count(model());
+                    if (seated > mm.max_players) {
+                        ask(C_INFO, skp::fmt_d(text_.too_small, mm.max_players), {text_.ok});
+                        return;
+                    }
+                    if (gm.index != model().mode) host_->set_mode(gm.index, gm.ai_allowed(), gm.allies_allowed);
+                    if (!host_->set_map(mm)) {
+                        ask(C_INFO, skp::fmt_d(text_.too_small, mm.max_players), {text_.ok});
+                        return;
+                    }
+                    map_ix_ = mi;
                     if (link_) link_->update_room(ra2mp::player_count(model()), model().map.max_players, map_display(), false);
                 }
                 choosing_ = false;
                 return;
+            }
+            case A_RANDMAP: return;   // greyed (no random map generator)
             case A_CANCEL: choosing_ = false; return;
             case A_READY:
                 if (client_) client_->set_ready(!client_->ready());
@@ -702,6 +980,33 @@ private:
         return static_cast<std::uint32_t>(ra2mp::now_ms() * 2654435761ull) ^ static_cast<std::uint32_t>(prefs_.pid) ^
                gf_seed_of(model().map.file);
     }
+    // --- Customize Battle (0x6B) ---------------------------------------------------
+    int chosen_mode() const {
+        return type_list_.sel >= 0 && type_list_.sel < static_cast<int>(type_list_.data.size())
+                   ? type_list_.data[static_cast<std::size_t>(type_list_.sel)] : model().mode;
+    }
+    int mode_map_count(const mpui::GameMode& m) const {
+        int n = 0;
+        for (const ra2engine::MapEntry& e : maps()) n += mpui::map_has_mode(e, m.filter) ? 1 : 0;
+        return n;
+    }
+    // The Game Map list = the maps whose GameMode= carries the type's filter.
+    void fill_map_list(const std::string& keep_file) {
+        map_list_ = ShellList{};
+        map_list_.r = map_list_rect();
+        map_list_.visible = 16;
+        const std::string tag = mpui::game_mode(chosen_mode()).filter;
+        for (int i = 0; i < static_cast<int>(maps().size()); ++i) {
+            const ra2engine::MapEntry& e = maps()[static_cast<std::size_t>(i)];
+            if (!mpui::map_has_mode(e, tag)) continue;
+            map_list_.items.push_back(e.display_name);
+            map_list_.data.push_back(i);
+            if (e.file_name == keep_file) map_list_.sel = static_cast<int>(map_list_.items.size()) - 1;
+        }
+        if (map_list_.sel < 0 && !map_list_.items.empty()) map_list_.sel = 0;
+        if (map_list_.sel >= 0) map_list_.reveal(map_list_.sel);
+    }
+
     void leave() {
         announcer_.close();
         if (host_) host_->close();
@@ -729,10 +1034,12 @@ private:
             case CB_KIND:   // data: -1 open, -2 closed, 0..2 AI level
                 add("Open", -1, s.kind == ra2mp::SlotKind::Open);
                 add("Closed", -2, s.kind == ra2mp::SlotKind::Closed);
-                add(text_.ai[1], ra2engine::kLobbyAiEasy, s.kind == ra2mp::SlotKind::AI && s.ai == ra2engine::kLobbyAiEasy);
-                add(text_.ai[2], ra2engine::kLobbyAiMedium, s.kind == ra2mp::SlotKind::AI && s.ai == ra2engine::kLobbyAiMedium);
-                add(text_.ai[3], ra2engine::kLobbyAiBrutal, s.kind == ra2mp::SlotKind::AI && s.ai == ra2engine::kLobbyAiBrutal);
-                list_.visible = 5;
+                if (mode().ai_allowed()) {   // W9-03-04: humans-only game types offer no AI
+                    add(text_.ai[1], ra2engine::kLobbyAiEasy, s.kind == ra2mp::SlotKind::AI && s.ai == ra2engine::kLobbyAiEasy);
+                    add(text_.ai[2], ra2engine::kLobbyAiMedium, s.kind == ra2mp::SlotKind::AI && s.ai == ra2engine::kLobbyAiMedium);
+                    add(text_.ai[3], ra2engine::kLobbyAiBrutal, s.kind == ra2mp::SlotKind::AI && s.ai == ra2engine::kLobbyAiBrutal);
+                }
+                list_.visible = static_cast<int>(list_.items.size());
                 face.w = 150;
                 break;
             case CB_COUNTRY:
@@ -799,6 +1106,18 @@ private:
     // --- input ---------------------------------------------------------------------
     bool body_modal(int lx, int ly) override {
         if (choosing_) {
+            const int t = type_list_.hit(lx, ly);
+            if (t >= 0) {
+                if (t != type_list_.sel) {
+                    const std::string keep = map_list_.sel >= 0 && map_list_.sel < static_cast<int>(map_list_.data.size())
+                                                 ? maps()[static_cast<std::size_t>(map_list_.data[static_cast<std::size_t>(map_list_.sel)])].file_name
+                                                 : model().map.file;
+                    type_list_.sel = t;
+                    fill_map_list(keep);
+                }
+                play_ui("menu:click");
+                return true;
+            }
             if (map_list_.scrolls() && map_list_.strip_up().contains(lx, ly)) { map_list_.scroll(-map_list_.visible); return true; }
             if (map_list_.scrolls() && map_list_.strip_down().contains(lx, ly)) { map_list_.scroll(map_list_.visible); return true; }
             const int i = map_list_.hit(lx, ly);
@@ -823,8 +1142,24 @@ private:
             if (!can_edit(k)) continue;
             if (country_rect(k).contains(lx, ly)) { open_combo(CB_COUNTRY, k); return; }
             if (color_rect(k).contains(lx, ly)) { open_combo(CB_COLOR, k); return; }
-            if (team_rect(k).contains(lx, ly)) { open_combo(CB_TEAM, k); return; }
+            if (team_rect(k).contains(lx, ly) && mode().allies_allowed) { open_combo(CB_TEAM, k); return; }
             if (start_rect(k).contains(lx, ly)) { open_combo(CB_START, k); return; }
+        }
+        if (!host_) {
+            // W9-03-12: a guest clicking a host-only option (TXT_ONLY_HOST_CAN_MODIFY).
+            bool host_only = false;
+            for (int c = 0; c < CK_COUNT; ++c) host_only = host_only || check_rect(c).contains(lx, ly);
+            for (int s2 = 0; s2 < SL_COUNT; ++s2) host_only = host_only || slider_rect(s2).contains(lx, ly);
+            for (int k = 0; k < visible_rows(); ++k)
+                if (!can_edit(k) && (country_rect(k).contains(lx, ly) || color_rect(k).contains(lx, ly) ||
+                                     team_rect(k).contains(lx, ly) || start_rect(k).contains(lx, ly) ||
+                                     (k > 0 && kind_rect(k).contains(lx, ly) && k != me())))
+                    host_only = true;
+            if (host_only) {
+                flash(mt_.only_host);
+                play_ui("menu:click");
+            }
+            return;
         }
         // Host: a click on a guest's name offers to remove them.
         if (is_host())
@@ -839,7 +1174,8 @@ private:
             if (check_rect(c).contains(lx, ly)) {
                 ra2mp::MpOptions o = model().opt;
                 bool* f = c == CK_SHORT ? &o.short_game : c == CK_MCV ? &o.mcv_repacks : c == CK_CRATES ? &o.crates
-                        : c == CK_AIT ? &o.ai_takeover : c == CK_XP ? &o.cross_platform : &o.superweapons;
+                        : c == CK_AIT ? &o.ai_takeover : c == CK_XP ? &o.cross_platform
+                        : c == CK_BOA ? &o.build_off_ally : &o.superweapons;
                 *f = !*f;
                 host_->set_options(o);
                 play_ui("menu:click");
@@ -893,6 +1229,10 @@ private:
     void tick(std::uint64_t now) override {
         if (host_) host_->update(now);
         if (client_) client_->update(now);
+        if (ra2mp::human_count(model()) != last_humans_) {
+            last_humans_ = ra2mp::human_count(model());
+            humans_since_ms_ = now;
+        }
         announcer_.update(now);
         if (announcer_.is_open() && host_) {
             ra2mp::LanBeacon b = announcer_.beacon();
@@ -941,7 +1281,9 @@ private:
                 ask(C_INFO, *why ? why : "You left the game.", {text_.ok});
             }
             if (st == ra2mp::LobbyClient::State::Joining) status_ = "Contacting the host...";
-            else if (st == ra2mp::LobbyClient::State::Joined && status_ == "Contacting the host...") status_.clear();
+            else if (st == ra2mp::LobbyClient::State::Joined)
+                status_ = client_->ready() ? "Waiting for the host to start the game."
+                                           : "Press Accept when you are ready to play.";
         }
         if (host_ && !confirm_.open()) {
             const ra2mp::StartCheck c = ra2mp::can_start(model());
@@ -963,43 +1305,68 @@ private:
     }
 
     // --- drawing ---------------------------------------------------------------------
-    SDL_Texture* preview_tex(ra2engine::TextureCache& tc, int map_i) {
+    // W9-03-23: the decoded preview lives in the shared TextureCache (it
+    // outlives this scene); its size is read back from the texture itself, so
+    // a second lobby in the session draws it too.
+    SDL_Texture* preview_tex(ra2engine::TextureCache& tc, int map_i, int& w, int& h) {
+        w = h = 0;
         if (map_i < 0 || map_i >= static_cast<int>(maps().size())) return nullptr;
         const std::string& f = maps()[static_cast<std::size_t>(map_i)].file_name;
         const std::string key = "skp:prev:" + f;
-        if (void* t = tc.peek(key)) return static_cast<SDL_Texture*>(t);
-        if (preview_size_.count(f)) return nullptr;
-        int w = 0, h = 0;
-        std::vector<uint8_t> rgba;
-        skp::decode_preview(map_text(map_i), w, h, rgba);
-        preview_size_[f] = {w, h};
-        if (w <= 0 || h <= 0) return nullptr;
-        return static_cast<SDL_Texture*>(tc.get_rgba(key, rgba.data(), w, h));
+        SDL_Texture* t = static_cast<SDL_Texture*>(tc.peek(key));
+        if (!t) {
+            if (no_preview_.count(f)) return nullptr;
+            std::vector<uint8_t> rgba;
+            int dw = 0, dh = 0;
+            skp::decode_preview(map_text(map_i), dw, dh, rgba);
+            if (dw <= 0 || dh <= 0) {
+                no_preview_.insert(f);
+                return nullptr;
+            }
+            t = static_cast<SDL_Texture*>(tc.get_rgba(key, rgba.data(), dw, dh));
+        }
+        if (!t || SDL_QueryTexture(t, nullptr, nullptr, &w, &h) != 0 || w <= 0 || h <= 0) return nullptr;
+        return t;
     }
 
     void draw_body(const ShellPainter& p, ra2engine::TextureCache& tc) override {
         edits_[0].enabled = joined() && !choosing_;
-        // Preview well + map name + where (LAN address / room code).
+        // Preview well 0x468 + game type 0x6EC + map name 0x5A8 + where (LAN address / room code).
         const ra2engine::SbRect pr = preview_rect();
         p.fill(p.dev(pr), 0, 0, 0);
-        const int mi = choosing_ ? map_list_.sel : map_index_of(model().map.file);
-        if (SDL_Texture* t = preview_tex(tc, mi)) {
-            const auto sz = preview_size_[maps()[static_cast<std::size_t>(mi)].file_name];
-            const double sc = std::min(double(pr.w - 2) / sz.first, double(pr.h - 2) / sz.second);
-            const int w = std::max(1, int(sz.first * sc)), h = std::max(1, int(sz.second * sc));
+        const int mi = choosing_ ? (map_list_.sel >= 0 && map_list_.sel < static_cast<int>(map_list_.data.size())
+                                        ? map_list_.data[static_cast<std::size_t>(map_list_.sel)] : -1)
+                                 : map_index_of(model().map.file);
+        int pw = 0, ph = 0;
+        preview_w_ = 0;
+        if (SDL_Texture* t = preview_tex(tc, mi, pw, ph)) {
+            const double sc = std::min(double(pr.w - 2) / pw, double(pr.h - 2) / ph);
+            const int w = std::max(1, int(pw * sc)), h = std::max(1, int(ph * sc));
             const SDL_Rect d = p.dev(pr.x + (pr.w - w) / 2, pr.y + (pr.h - h) / 2, w, h);
             SDL_RenderCopy(p.ren, t, nullptr, &d);
+            preview_w_ = w;
         }
         if (choosing_) {
             p.header(text_.sel_engagement, 34, 32, 385, 19);
+            p.label(text_.game_type, 30, 97, 195, 16, 0);
+            p.label(text_.game_map, 252, 97, 195, 16, 0);
+            type_list_.draw(p, false);
             map_list_.draw(p, false);
             return;
         }
-        p.label(p.fit(where_, 150), 486, 152, 150, 16, 1);
-        p.label(p.fit(map_display(), 150), 486, 170, 150, 16, 1);
+        p.label(p.fit(where_, 150), 486, 151, 150, 16, 1);
+        p.label(p.fit(mpui::yr_text(mode().name_key, mode().name_key), 135), 490, 167, 135, 16, 1);
+        p.label(p.fit(map_display(), 150), 486, 188, 150, 16, 1);
         if (client_ && client_->state() == ra2mp::LobbyClient::State::Joined && !model().slots[me()].has_map)
-            p.label("MAP MISSING", 486, 186, 150, 12, 1);
+            p.label("MAP MISSING", 486, 206, 150, 12, 1);
 
+        // W9-03-06: the column headers (0x796 / 0x791 / 0x792 / 0x793 / 0x794).
+        const mpui::LobbyLayout& L = lay();
+        p.header(mt_.players, L.name_x, L.head_y, L.name_w, 16, 0);
+        p.header(mt_.side, L.side_x, L.head_y, L.side_w, 16, 0);
+        p.header(mt_.color, L.color_x, L.head_y, L.color_w, 16, 0);
+        p.header(mt_.start, L.start_x, L.head_y, L.start_w, 16, 0);
+        p.header(mt_.team, L.team_x, L.head_y, L.team_w, 16, 0);
         for (int k = 0; k < visible_rows(); ++k) {
             const ra2mp::MpSlot& s = model().slots[k];
             const bool occ = s.occupied();
@@ -1009,10 +1376,27 @@ private:
             if (kind_en) p.combo(kind_rect(k), nm, joined(), combo_ == CB_KIND && combo_row_ == k);
             else {
                 p.frame(p.dev(kind_rect(k)), occ);
-                p.label(p.fit(nm, 132), kind_rect(k).x + 4, kind_rect(k).y, 132, 19, 0, occ);
+                p.label(p.fit(nm, kind_rect(k).w - 8), kind_rect(k).x + 4, kind_rect(k).y, kind_rect(k).w - 8, 19, 0, occ);
+            }
+            // W9-03-08: the acceptance picture (0x6D2..) left of the player:
+            // lit once the player is checked in (the host always is).
+            if (s.kind == ra2mp::SlotKind::Human) {
+                const bool lit = s.host || s.ready;
+                const ra2engine::SbRect ar = accept_rect(k);
+                p.fill(p.dev(ar), lit ? 40 : 60, lit ? 200 : 0, 0);
+                p.frame(p.dev(ar), true);
             }
             const bool ed = can_edit(k);
             if (!occ) continue;
+            // W9-03-07: the flag picture (0x6DA..; FUN_004D1120: the country's
+            // PCX, rani.pcx for Random) -- the Skirmish page's painter.
+            const int fi = (s.country >= 0 && s.country < 9) ? s.country : 9;
+            if (art_.flags[fi]) {
+                const ra2engine::SbRect fr = flag_rect(k);
+                const std::string key = "skp:flag" + std::to_string(fi);
+                p.pcx(key.c_str(), art_.flags[fi], p.dev(fr.x, fr.y - 2, art_.flags[fi]->w, art_.flags[fi]->h),
+                      /*key_magenta=*/true);
+            }
             p.combo(country_rect(k), country_label(s.country), ed, combo_ == CB_COUNTRY && combo_row_ == k);
             SDL_Color sw{0, 0, 0, 0};
             if (s.color >= 0) {
@@ -1021,22 +1405,22 @@ private:
                 sw = SDL_Color{r, g, b, 255};
             }
             p.combo(color_rect(k), color_label(s.color), ed, combo_ == CB_COLOR && combo_row_ == k, sw.a ? &sw : nullptr);
-            p.combo(team_rect(k), team_label(s.team), ed, combo_ == CB_TEAM && combo_row_ == k);
             p.combo(start_rect(k), start_label(s.start), ed, combo_ == CB_START && combo_row_ == k);
-            if (s.kind == ra2mp::SlotKind::Human) {
-                const bool lit = s.host || s.ready;
-                p.fill(p.dev(ready_rect(k)), lit ? 40 : 60, lit ? 200 : 0, 0);
-                p.frame(p.dev(ready_rect(k)), true);
-            }
+            p.combo(team_rect(k), team_label(s.team), ed && mode().allies_allowed, combo_ == CB_TEAM && combo_row_ == k);
         }
         for (int c = 0; c < CK_COUNT; ++c) p.checkbox(check_rect(c), check_val(c), check_label(c), host_ != nullptr && joined());
         const std::string sl[SL_COUNT] = {text_.speed, text_.credits, text_.units};
         for (int s = 0; s < SL_COUNT; ++s) {
             const ra2engine::SbRect lr = slider_label(s);
             p.label(sl[s], lr.x, lr.y, lr.w, lr.h, 0);
-            p.trackbar(slider_rect(s), slider_pos(s), slider_range(s), true, slider_text(s), host_ != nullptr && joined());
+            const ra2engine::SbRect r = slider_rect(s);
+            const bool en = host_ != nullptr && joined();
+            p.trackbar(r, slider_pos(s), slider_range(s), true, slider_text(s), en);
+            // W9-03-02: 0xBD keeps showing the values on a guest (only the
+            // thumb is disabled): the readout is redrawn at full brightness.
+            if (!en) p.label(slider_text(s), r.x + r.w - 49, r.y, 49, r.h, 1, true);
         }
-        // Chat log (last lines that fit).
+        // Chat log 0x53F (last lines that fit).
         const ra2engine::SbRect cr = chat_rect();
         p.fill(p.dev(cr), 0, 0, 0, 160);
         p.frame(p.dev(cr), true);
@@ -1055,11 +1439,63 @@ private:
         if (combo_ != CB_NONE) list_.draw(p);
     }
 
+    // --- tooltips (status line 0x695; STT:Host* on 0xBC, STT:Guest* on 0xBD) ----------
+    std::string hover_tip(int lx, int ly) const override {
+        if (confirm_.open() || combo_ != CB_NONE) return {};
+        const char* who = is_host() ? "STT:Host" : "STT:Guest";
+        auto tip = [&](const std::string& k) { return mpui::yr_text(who + k, ""); };
+        if (choosing_) {
+            const int t = type_list_.hit(lx, ly);
+            if (t >= 0 && t < static_cast<int>(type_list_.data.size()))
+                return mpui::yr_text(mpui::game_mode(type_list_.data[static_cast<std::size_t>(t)]).stt_key, "");
+            return {};
+        }
+        for (const ShellButton& b : buttons())
+            if (b.rect.contains(lx, ly)) {
+                if (b.action == A_START) return tip("ButtonGo");
+                if (b.action == A_MAP) return tip("ButtonChooseMap");
+                if (b.action == A_READY) return tip("ButtonAccept");
+                if (b.action == A_BACK) return tip("ButtonBack");
+            }
+        if (preview_rect().contains(lx, ly)) return tip("MapThumbnail");
+        if (ra2engine::SbRect{486, 186, 150, 32}.contains(lx, ly)) return tip("LabelScenario");
+        for (int k = 0; k < visible_rows(); ++k) {
+            if (accept_rect(k).contains(lx, ly)) return tip("PictureAcceptance");
+            if (kind_rect(k).contains(lx, ly)) return tip("ComboPlayer");
+            if (flag_rect(k).contains(lx, ly)) return tip("PictureFlag");
+            if (country_rect(k).contains(lx, ly)) return tip("ComboCountry");
+            if (color_rect(k).contains(lx, ly)) return tip("ComboColor");
+        }
+        static const char* kChk[CK_COUNT] = {"CBoxShortGame", "CBoxRedeploys", "CBoxCrates", "CBoxSWAllowed",
+                                             "CBoxBuildOffAlly", "", ""};
+        for (int c = 0; c < CK_COUNT; ++c)
+            if (check_rect(c).contains(lx, ly)) {
+                if (c == CK_AIT) return "A player who leaves is replaced by a computer player.";
+                if (c == CK_XP) return "Admit Windows and Android players into one game (experimental).";
+                return tip(kChk[c]);
+            }
+        static const char* kSl[SL_COUNT] = {"SliderSpeed", "SliderCredits", "SliderUnit"};
+        for (int s = 0; s < SL_COUNT; ++s)
+            if (slider_rect(s).contains(lx, ly)) return tip(kSl[s]);
+        if (chat_rect().contains(lx, ly)) return tip("EditOutput");
+        if (edits_[0].r.contains(lx, ly)) return tip("EditInput");
+        return {};
+    }
     // --- --play ------------------------------------------------------------------------
     void body_targets(std::map<std::string, ra2engine::SbRect>& t) const override {
+        // Old button names (scripts of other branches): Ready -> Accept.
+        if (!choosing_ && !is_host() && joined())
+            for (const ShellButton& b : buttons())
+                if (b.action == A_READY) t["button:Ready"] = b.rect;
         if (choosing_) {
+            for (int i = type_list_.top; i < type_list_.top + type_list_.rows(); ++i) {
+                const mpui::GameMode& gm = mpui::game_mode(type_list_.data[static_cast<std::size_t>(i)]);
+                t["mode:" + std::to_string(gm.index)] = type_list_.item_rect(i);
+                t["mode:" + type_list_.items[static_cast<std::size_t>(i)]] = type_list_.item_rect(i);
+            }
             for (int i = map_list_.top; i < map_list_.top + map_list_.rows(); ++i)
-                t["map:" + maps()[static_cast<std::size_t>(i)].file_name] = map_list_.item_rect(i);
+                t["map:" + maps()[static_cast<std::size_t>(map_list_.data[static_cast<std::size_t>(i)])].file_name] =
+                    map_list_.item_rect(i);
             if (map_list_.scrolls()) {
                 t["list:up"] = map_list_.strip_up();
                 t["list:down"] = map_list_.strip_down();
@@ -1087,6 +1523,12 @@ private:
             t["combo:team" + n] = team_rect(k);
             t["combo:start" + n] = start_rect(k);
         }
+        for (int k = 0; k < visible_rows(); ++k) {   // hover / tap targets of the row pictures
+            t["accept:" + std::to_string(k)] = accept_rect(k);
+            t["flag:" + std::to_string(k)] = flag_rect(k);
+        }
+        if (!host_)   // a guest may still tap a host-only option (TXT_ONLY_HOST_CAN_MODIFY)
+            for (int c = 0; c < CK_COUNT; ++c) t[std::string("guestcheck:") + check_id(c)] = {check_rect(c).x, check_rect(c).y, 18, 16};
         if (host_) {
             for (int c = 0; c < CK_COUNT; ++c) t[std::string("check:") + check_id(c)] = {check_rect(c).x, check_rect(c).y, 18, 16};
             for (int s = 0; s < SL_COUNT; ++s) {
@@ -1131,6 +1573,24 @@ private:
         p.set("can_start", ra2mp::can_start(model()) == ra2mp::StartCheck::Ok ? 1 : 0);
         p.set("choosing", choosing_ ? 1 : 0);
         p.set("map_count", static_cast<double>(maps().size()));
+        // W9-03-04 game types.
+        p.set("game_mode", model().mode);
+        p.set_s("game_mode_name", mpui::yr_text(mode().name_key, mode().name_key));
+        p.set("mode_ai_allowed", mode().ai_allowed() ? 1 : 0);
+        p.set("mode_allies_allowed", mode().allies_allowed ? 1 : 0);
+        p.set("mode_count", static_cast<double>(choosing_ ? type_list_.items.size() : mpui::game_modes().size()));
+        p.set("mode_sel", chosen_mode());
+        p.set("mode_map_count", static_cast<double>(choosing_ ? map_list_.items.size()
+                                                              : static_cast<std::size_t>(mode_map_count(mode()))));
+        for (const mpui::GameMode& gm : mpui::game_modes())
+            p.set("maps_of_mode(" + std::to_string(gm.index) + ")", mode_map_count(gm));
+        // W9-03-01 / 02 / 06 / 23.
+        p.set("layout_overlaps", layout_overlaps());
+        p.set("header_count", 5);
+        for (int sl = 0; sl < SL_COUNT; ++sl) p.set_s(std::string("slider_text(") + slider_id(sl) + ")", slider_text(sl));
+        p.set("preview_w", preview_w_);
+        // Scripts: wall-clock seconds the seated human count has been unchanged.
+        p.set("humans_stable_s", static_cast<double>((ra2mp::now_ms() - humans_since_ms_) / 1000));
         p.set_s("combo_open", combo_ == CB_NONE ? "" : combo_ == CB_KIND ? "kind" : combo_ == CB_COUNTRY ? "country"
                               : combo_ == CB_COLOR ? "color" : combo_ == CB_TEAM ? "team" : "start");
         for (int k = 0; k < ra2mp::kSlots; ++k) {
@@ -1161,7 +1621,12 @@ private:
     int min_money_ = 5000, max_money_ = 10000, money_step_ = 100, min_units_ = 0, max_units_ = 10;
     std::unique_ptr<ra2engine::MapCatalog> catalog_;
     std::map<std::string, std::string> digest_cache_;
-    std::map<std::string, std::pair<int, int>> preview_size_;
+    std::set<std::string> no_preview_;   // maps without a [PreviewPack]
+    int preview_w_ = 0;                  // the drawn preview width (probe)
+    int last_humans_ = -1;
+    std::uint64_t humans_since_ms_ = 0;
+    MpText mt_;
+    ShellList type_list_;
     std::shared_ptr<ra2mp::MpNet> transport_;
     std::unique_ptr<ra2mp::LobbyHost> host_;
     std::unique_ptr<ra2mp::LobbyClient> client_;
@@ -1181,36 +1646,54 @@ private:
 };
 
 // ===========================================================================
-// Network (LAN): game list from beacons, Host Game, Join, Join by IP.
+// Network = the Lobby page 0xBB (W9-03-11 / W9-03-22): Your Name, the
+// Players on the page, the Games list (LAN beacons), lobby chat, New / Join
+// / Main Menu (+ the clone's Join by IP).
 // ===========================================================================
 class MpLanScene : public MpPage {
 public:
     MpLanScene(const Rules& r, bool na, const MenuArt& a) : MpPage(r, na, a) {
         prefs_ = mpui::Prefs::load();
-        edits_.push_back(mpui::Edit{"nick", {150, 40, 160, 19}, prefs_.nick, 16, true});
-        edits_.push_back(mpui::Edit{"ip", {150, 400, 200, 19}, "", 40, true});
+        edits_.push_back(mpui::Edit{"nick", {120, 16, 150, 19}, prefs_.nick, 16, true});
+        edits_.push_back(mpui::Edit{"ip", {120, 404, 200, 19}, "", 40, true});
+        edits_.push_back(mpui::Edit{"lobbychat", {12, 376, 458, 19}, "", 100, true});
         browser_.rules_crc = mpui::rules_crc();
         if (!browser_.open()) status_ = "Could not open the LAN discovery port.";
-        list_.r = {30, 92, 440, 290};
-        list_.visible = 18;
+        browser_.set_presence(prefs_.nick, mpui::random_u32());
+        list_.r = {172, 58, 298, 196};
+        list_.visible = 12;
         list_.item_h = 16;
+        players_.r = {12, 58, 150, 196};
+        players_.visible = 12;
+        players_.item_h = 16;
+        t_.header = mpui::yr_text("GUI:Lobby", "Lobby");
+        t_.name = mpui::yr_text("GUI:YourName", "Your Name");
+        t_.players = mpui::yr_text("GUI:Players", "Players");
+        t_.games = mpui::yr_text("GUI:Games", "Games");
+        t_.new_ = mpui::yr_text("GUI:New", "New");
+        t_.join = mpui::yr_text("GUI:Join", "Join");
+        t_.main = mpui::yr_text("GUI:MainMenu", "Main Menu");
     }
     ~MpLanScene() override { browser_.close(); }
     const char* name() const override { return "mp-lan"; }
 
 private:
     enum Act { A_NONE, A_HOST, A_JOIN, A_JOINIP, A_BACK };
+    struct Text { std::string header, name, players, games, new_, join, main; };
     std::vector<ShellButton> buttons() const override {
-        return {btn(0, "Host Game", true, A_HOST), btn(1, "Join Game", list_.sel >= 0, A_JOIN),
-                btn(2, "Join by IP", !edits_[1].text.empty(), A_JOINIP), btn(5, "Back", true, A_BACK)};
+        // 0xBB: New 0x6CC (row 0), Join 0x6CD (row 1), Main Menu 0x5C0 (row 5);
+        // the clone's Join by IP rides the hidden Observe row (2).
+        return {btn(0, t_.new_, true, A_HOST), btn(1, t_.join, list_.sel >= 0, A_JOIN),
+                btn(2, "Join by IP", !edits_[1].text.empty(), A_JOINIP), btn(5, t_.main, true, A_BACK)};
     }
-    std::string header_text() const override { return "Network"; }
+    std::string header_text() const override { return t_.header; }
     int back_action() const override { return A_BACK; }
     void commit_nick() {
         const std::string n = ra2mp::sanitize_name(edits_[0].text);
         if (!n.empty() && n != prefs_.nick) {
             prefs_.nick = n;
             prefs_.save();
+            browser_.set_presence(prefs_.nick, mpui::random_u32());
         }
     }
     void press(int act) override {
@@ -1245,8 +1728,19 @@ private:
         }
     }
     void on_enter(int edit) override {
+        const std::string& id = edits_[static_cast<std::size_t>(edit)].id;
+        if (id == "lobbychat") {   // STT:LobbyEditInput "Type your message here and hit enter."
+            std::string t = edits_[static_cast<std::size_t>(edit)].text;
+            edits_[static_cast<std::size_t>(edit)].text.clear();
+            while (!t.empty() && t.back() == ' ') t.pop_back();
+            if (!t.empty()) {
+                commit_nick();
+                browser_.say(t);
+            }
+            return;   // keep typing
+        }
         set_focus(-1);
-        if (edits_[static_cast<std::size_t>(edit)].id == "ip") press(A_JOINIP);
+        if (id == "ip") press(A_JOINIP);
         else commit_nick();
     }
     void tick(std::uint64_t now) override {
@@ -1263,6 +1757,14 @@ private:
             list_.data.push_back(static_cast<int>(i));
         }
         if (list_.sel >= static_cast<int>(g.size())) list_.sel = -1;
+        players_.items.clear();
+        players_.data.clear();
+        players_.items.push_back(prefs_.nick);   // this player first
+        players_.data.push_back(-1);
+        for (std::size_t i = 0; i < browser_.players().size(); ++i) {
+            players_.items.push_back(browser_.players()[i].nick);
+            players_.data.push_back(static_cast<int>(i));
+        }
         if (status_.empty() || status_.rfind("Games found", 0) == 0 || status_.rfind("Looking", 0) == 0)
             status_ = g.empty() ? "Looking for games on your network..." : "Games found: " + std::to_string(g.size());
     }
@@ -1273,17 +1775,58 @@ private:
         if (i >= 0) { list_.sel = i; play_ui("menu:click"); return true; }
         return false;
     }
+    static ra2engine::SbRect chat_rect() { return {12, 260, 458, 112}; }
     void draw_body(const ShellPainter& p, ra2engine::TextureCache&) override {
-        p.label("Your name", 30, 40, 115, 19, 0);
-        p.header("Games on your network", 30, 70, 440, 19);
+        p.label(t_.name, 12, 16, 100, 19, 2);
+        p.label(t_.players, 15, 40, 145, 16, 0);
+        p.label(t_.games, 175, 40, 220, 16, 0);
+        players_.draw(p);
         list_.draw(p);
-        p.label("Join by IP", 30, 400, 115, 19, 0);
-        p.label("Not listed? Ask the host for the address shown in their lobby.", 30, 424, 440, 16, 0);
+        // 0x53F lobby chat (last lines that fit).
+        const ra2engine::SbRect cr = chat_rect();
+        p.fill(p.dev(cr), 0, 0, 0, 160);
+        p.frame(p.dev(cr), true);
+        const auto& log = browser_.chat();
+        const int lines = cr.h / 16;
+        int y = cr.y + 2;
+        for (int i = std::max(0, static_cast<int>(log.size()) - lines); i < static_cast<int>(log.size()); ++i) {
+            const ra2mp::LanChatLine& l = log[static_cast<std::size_t>(i)];
+            p.label(p.fit(l.from + ": " + l.text, cr.w - 8), cr.x + 4, y, cr.w - 8, 16, 0);
+            y += 16;
+        }
+        p.label("Join by IP", 12, 404, 100, 19, 2);
+        p.label("Not listed? Ask the host for the address shown in their lobby.", 12, 428, 458, 16, 0);
         text_block(p, "Players on the same Wi-Fi or wired network see each other here. "
                       "Allow the game through the firewall for private networks.", 486, 40, 144, 8);
     }
+    std::string hover_tip(int lx, int ly) const override {
+        if (confirm_.open()) return {};
+        auto tip = [](const char* k) { return mpui::yr_text(k, ""); };
+        for (const ShellButton& b : buttons())
+            if (b.rect.contains(lx, ly)) {
+                if (b.action == A_HOST) return tip("STT:LobbyButtonNew");
+                if (b.action == A_JOIN) return tip("STT:LobbyButtonJoin");
+                if (b.action == A_BACK) return tip("STT:LobbyButtonBack");
+                return {};
+            }
+        if (edits_[0].r.contains(lx, ly)) return tip("STT:LobbyEditYourName");
+        if (players_.r.contains(lx, ly)) return tip("STT:LobbyListUsers");
+        if (list_.r.contains(lx, ly)) return tip("STT:LobbyListGames");
+        if (chat_rect().contains(lx, ly)) return tip("STT:LobbyEditOutput");
+        if (edits_[2].r.contains(lx, ly)) return tip("STT:LobbyEditInput");
+        return {};
+    }
     void body_targets(std::map<std::string, ra2engine::SbRect>& t) const override {
         for (int i = list_.top; i < list_.top + list_.rows(); ++i) t["game:" + std::to_string(i)] = list_.item_rect(i);
+        for (int i = players_.top; i < players_.top + players_.rows(); ++i)
+            t["player:" + std::to_string(i)] = players_.item_rect(i);
+        // Old button names (scripts of other branches).
+        for (const ShellButton& b : buttons()) {
+            if (!b.enabled) continue;
+            if (b.action == A_HOST) t["button:Host Game"] = b.rect;
+            if (b.action == A_JOIN) t["button:Join Game"] = b.rect;
+            if (b.action == A_BACK) t["button:Back"] = b.rect;
+        }
     }
     void body_probe(ra2play::Probe& p) override {
         p.set("lan_games", static_cast<double>(browser_.games().size()));
@@ -1294,12 +1837,19 @@ private:
             p.set_s("lan_game_host(" + std::to_string(i) + ")", g.host.str());
             p.set_s("lan_game_room(" + std::to_string(i) + ")", g.beacon.room);
         }
+        p.set("lan_players", static_cast<double>(browser_.players().size()));
+        for (std::size_t i = 0; i < browser_.players().size(); ++i)
+            p.set_s("lan_player(" + std::to_string(i) + ")", browser_.players()[i].nick);
+        const auto& log = browser_.chat();
+        p.set("lobby_chat_count", static_cast<double>(log.size()));
+        p.set_s("lobby_chat_last", log.empty() ? "" : log.back().from + ": " + log.back().text);
         p.set_s("nick", prefs_.nick);
     }
 
     mpui::Prefs prefs_;
     ra2mp::LanBrowser browser_;
-    ShellList list_;
+    ShellList list_, players_;
+    Text t_;
 };
 
 // ===========================================================================
@@ -1317,7 +1867,7 @@ public:
         list_.visible = 16;
         link_ = std::make_unique<ra2mp::ServerLink>();
         if (!prefs_.server.empty()) connect();
-        else status_ = "Type the address of your server (see docs/SERVER.md) and press Connect.";
+        else status_ = "Type the address of your game server and press Connect.";   // W9-03-17
     }
     const char* name() const override { return "mp-online"; }
 
@@ -1345,7 +1895,8 @@ private:
         h.pid = prefs_.pid;
         h.nick = prefs_.nick;
         status_ = "Connecting to " + prefs_.server + "...";
-        if (!link_->connect(prefs_.server, h)) status_ = link_->error();
+        failure_told_ = false;
+        if (!link_->connect(prefs_.server, h)) server_failed(link_->error());
         mpui::log_line("connecting to server " + prefs_.server);
     }
     void join(const std::string& code) {
@@ -1393,7 +1944,11 @@ private:
                     link_->list();
                     last_list_ = now;
                     break;
-                case ra2mp::ServerEvent::Rejected: status_ = link_->error(); break;
+                case ra2mp::ServerEvent::Rejected:
+                    status_ = link_->error();
+                    failure_told_ = true;
+                    ask(0, "The game server refused the connection: " + link_->error(), {gf_csf("TXT_OK", "OK")});
+                    break;
                 case ra2mp::ServerEvent::Joined:
                     mpui::log_line("joined room " + ev.code + " host tunnel id " + std::to_string(ev.host_v3));
                     next_ = MpLobbyScene::join_online(rules_, no_audio_, art_, std::move(link_), pending_v3_, ev.host_v3, ev.code);
@@ -1406,13 +1961,14 @@ private:
                         {"rate", "Too many attempts: wait a minute."}, {"busy", "The server is busy."}};
                     const auto it = kWhy.find(ev.reason);
                     status_ = it != kWhy.end() ? it->second : "The server said: " + ev.reason;
+                    ask(0, status_, {gf_csf("TXT_OK", "OK")});   // W9-03-18: a message box, like WOL's
                     break;
                 }
-                case ra2mp::ServerEvent::Disconnected: status_ = link_->error(); break;
+                case ra2mp::ServerEvent::Disconnected: server_failed(link_->error()); break;
                 default: break;
             }
         }
-        if (link_->state() == ra2mp::ServerLink::State::Failed && !link_->error().empty()) status_ = link_->error();
+        if (link_->state() == ra2mp::ServerLink::State::Failed && !link_->error().empty()) server_failed(link_->error());
         if (ready() && now - last_list_ >= 5000) {
             link_->list();
             last_list_ = now;
@@ -1461,9 +2017,23 @@ private:
         }
     }
 
+    // W9-03-18: a server failure is a message box with a full sentence (the
+    // original's WOL errors are message boxes, e.g. TXT_WOL_CONNLOST); the
+    // status line keeps the short reason.
+    void server_failed(const std::string& why) {
+        status_ = why;
+        if (failure_told_ || confirm_.open()) return;
+        failure_told_ = true;
+        std::string msg = "Could not reach the game server at " + prefs_.server +
+                          ". Check the address and that the server is running.";
+        if (!why.empty()) msg += " (" + why + ")";
+        ask(0, msg, {gf_csf("TXT_OK", "OK")});
+    }
+
     mpui::Prefs prefs_;
     std::unique_ptr<ra2mp::ServerLink> link_;
     ShellList list_;
+    bool failure_told_ = false;
     std::uint64_t last_list_ = 0;
     std::uint32_t pending_v3_ = 0;
     std::string pending_code_;
@@ -1492,6 +2062,15 @@ Scene* defer_net_game_scene(bool no_audio, ra2engine::SkirmishConfig cfg, std::s
     g_net_local_house = local_house;   // the loading art follows the local player's country
     art->load(*c);
     g_net_local_house = -1;
+    // W9-03-20: the loading list names the players by their handles (the
+    // country stays after the dash); computer players stay "Computer".
+    for (std::size_t k = 0; k < np->session.players.size() && k < art->players.size(); ++k) {
+        const ra2mp::MpPlayer& pl = np->session.players[k];
+        const std::string row = art->players[k];
+        const std::size_t dash = row.find("  -  ");
+        art->players[k] = (pl.is_ai || pl.name.empty() ? std::string("Computer") : pl.name) +
+                          (dash == std::string::npos ? std::string() : row.substr(dash));
+    }
     backdrop = [art](SDL_Renderer* ren, ra2engine::TextureCache& tc, double frac) { art->draw(ren, tc, frac); };
     return defer_scene("LOADING", [no_audio, c, np, seed, starts, local_house]() -> Scene* {
         { int gw = 1280, gh = 720; game_logical_size(gw, gh); GameScene::set_canvas_size(gw, gh); }
@@ -1526,11 +2105,21 @@ Scene* mp_start_session(const Rules& rules, bool no_audio, const MenuArt& art, c
         mpui::log_line(text.substr(a, b - a));
         a = b + 1;
     }
+    ++g_mp_games_played;   // W9-03-16 game number
     ra2mp::MpConvertCtx ctx;
     ctx.countries = gf_lobby_countries();
     const Rules* r = &rules;
     ctx.side_of = [r](const std::string& k) { return gf_side_of_country(*r, k); };
     ra2engine::SkirmishConfig cfg = ra2mp::session_to_skirmish(s, ctx);
+    // W9-03-04: the game type's rules override (MPModesMD.ini third field;
+    // Battle's MPBattleMD.ini only says AlliesAllowed=yes, so it is skipped
+    // and a Battle match keeps the plain rulesmd.ini).
+    {
+        const mpui::GameMode& gm = mpui::game_mode(s.lobby.mode);
+        if (gm.index != 1 && !gm.rules.empty()) cfg.mode_rules = gm.rules;
+        mpui::log_line("game type " + std::to_string(gm.index) + " " + gm.name_key +
+                       (cfg.mode_rules.empty() ? "" : " rules override " + cfg.mode_rules));
+    }
 
     auto np = std::make_shared<NetPlay>();
     np->mpnet = transport;

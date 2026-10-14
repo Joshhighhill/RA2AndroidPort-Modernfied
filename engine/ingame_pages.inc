@@ -414,6 +414,11 @@ public:
         campaign_ = campaign;
         soviet_ = soviet;
     }
+    // W9-03-10: a network match uses the multiplayer options dialog 0xBBA
+    // (Game Controls / Abort Mission / Resume Mission -- no Load / Save /
+    // Delete) and the 0xB6 answers of a network game (GUI:Leave).
+    void set_network(bool on) { net_ = on; }
+    bool network() const { return net_; }
     void set_tracks(std::vector<std::string> t) { tracks_.items = std::move(t); }
     void open(Page pg = P_OPTIONS) {
         open_ = true;
@@ -575,8 +580,19 @@ public:
             const ra2engine::SbRect r = ui_dev(lr);
             p.targets[k] = ra2play::Rect{r.x, r.y, r.w, r.h};
         };
-        for (const ShellButton& b : buttons())
+        std::string names;   // W9-03-10: the page's button set, in order
+        for (const ShellButton& b : buttons()) {
             if (b.enabled) put("menu:" + upper(b.label), b.rect);
+            names += (names.empty() ? "" : "|") + upper(b.label);
+        }
+        if (net_) {   // W9-03-10 / W9-03-03 (network matches only: single-player play_hash unchanged)
+            p.set_s("menu_buttons", names);
+            p.set("menu_net", 1);
+            for (std::size_t k = 0; k < dip_.size(); ++k) {
+                p.set_s("diplomacy_name(" + std::to_string(k) + ")", dip_[k].name);
+                p.set("diplomacy_self(" + std::to_string(k) + ")", dip_[k].self ? 1 : 0);
+            }
+        }
         p.set("menu_game_speed", set_.game_speed);
         p.set("menu_scroll_rate", set_.scroll_rate);
         p.set("menu_tooltips", set_.tooltips ? 1 : 0);
@@ -652,12 +668,23 @@ private:
             case P_DIPLOMACY:   // 0x423 GUI:Return
                 return {b(5, gf_csf("GUI:Return", "Return"), true, A_RESUME)};
             case P_ABORT: {
+                // 0xB6 (proc FUN_004F17C0): button 0x6C9 is GUI:Leave ("Quit");
+                // in a LAN / Internet game 0x712 is GUI:Observe while the
+                // player lives and more than one human does (w9fix-match), and
+                // 0x6C9 answers 3 (DESTRUCT + EXIT) / 2 (EXIT).
+                if (net_)
+                    return {b(0, gf_csf("GUI:Leave", "Quit"), true, A_ABORT),
+                            b(5, gf_csf("GUI:ResumeMission", "Resume Mission"), true, A_RESUME)};
                 std::vector<ShellButton> v{b(0, gf_csf("GUI:Abort", "Abort"), true, A_ABORT)};
                 if (campaign_) v.push_back(b(1, gf_csf("GUI:Restart", "Restart"), true, A_RESTART));
                 v.push_back(b(5, gf_csf("GUI:ResumeMission", "Resume Mission"), true, A_RESUME));
                 return v;
             }
             default:
+                if (net_)   // 0xBBA: 0x521 Game Controls (row 0), 0x522 Abort Mission (row 1), 0x686 Resume
+                    return {b(0, gf_csf("GUI:GameControls", "Game Controls"), true, A_CONTROLS),
+                            b(1, gf_csf("GUI:AbortMission", "Abort Mission"), true, A_ABORTPAGE),
+                            b(5, gf_csf("GUI:ResumeMission", "Resume Mission"), true, A_RESUME)};
                 return {b(0, gf_csf("GUI:GameControls", "Game Controls"), true, A_CONTROLS),
                         b(1, gf_csf("GUI:LoadGame", "Load Game"), true, A_LOAD),
                         b(2, gf_csf("GUI:SaveGame", "Save Game"), true, A_SAVE),
@@ -667,6 +694,11 @@ private:
         }
     }
     std::string stt_for(int act) const {
+        if (net_ && page_ == P_OPTIONS) {   // 0xBBA tooltips
+            if (act == A_CONTROLS) return gf_csf("STT:IGMultiOptButtonControls", "");
+            if (act == A_ABORTPAGE) return gf_csf("STT:IGMultiOptButtonAbort", "");
+            if (act == A_RESUME) return gf_csf("STT:IGMultiOptButtonResume", "");
+        }
         switch (act) {
             case A_CONTROLS: return gf_csf("STT:IGSingleOptButtonControls", "");
             case A_LOAD: return gf_csf("STT:IGSingleOptButtonLoad", "");
@@ -783,7 +815,7 @@ private:
     }
 
     Page page_ = P_OPTIONS;
-    bool campaign_ = false, soviet_ = false;
+    bool campaign_ = false, soviet_ = false, net_ = false;
     ra2engine::Settings set_{};
     std::vector<DipRow> dip_;   // W2-UI-29
     ShellList tracks_{{157, 157, 262, 160}, {}, {}, {}, 0, -1, 9, 17};

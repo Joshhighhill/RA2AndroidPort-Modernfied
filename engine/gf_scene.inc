@@ -53,6 +53,14 @@ private:
         const int resume = campaign_ ? 2 : 1;
         if (c == 0) {   // Abort -> the shell (P10), or exit a bare --interactive run
             menu_.open_ = false;
+            if (net_) {
+                // W9-03-16: the player who leaves a network match gets the
+                // multiplayer score page too (outcome: lost); the EXIT is
+                // scheduled first (net_filter_next holds the page).
+                if (gf_outcome_ == 0) gf_outcome_ = -1;
+                next_scene_ = gf_make_skirmish_result_scene(no_audio_, cfg_, gf_outcome_, gf_frames_, gf_stats());
+                return;
+            }
             if (Scene* m = make_main_menu_scene(no_audio_)) next_scene_ = m;
             else abort_ = true;
         } else if (campaign_ && c == 1) {   // Restart the campaign mission
@@ -142,7 +150,8 @@ private:
                     // country [RE-FALLBACK: no MP player names].
                     std::string t = camp::csf_text(dir_, "TXT_PLAYER_DEFEATED");
                     std::string who = "Computer";
-                    if (h < (int)cfg_.slots.size())
+                    if (net_) who = net_->name_of(h);   // W9-03-03: the player's handle
+                    else if (h < (int)cfg_.slots.size())
                         who = cfg_.slots[(std::size_t)h].country.empty()
                                   ? gf_default_country(cfg_.slots[(std::size_t)h].side)
                                   : cfg_.slots[(std::size_t)h].country;
@@ -176,6 +185,11 @@ private:
     GfSkirmishStats gf_stats() const {
         GfSkirmishStats s;
         s.local_house = local_house_;   // L2
+        if (net_) {   // W9-03-16
+            s.net = true;
+            s.lan = net_->session.transport == ra2mp::MpTransportKind::Lan;
+            s.game_number = g_mp_games_played;
+        }
         for (const ra2engine::Unit& u : world_.units()) {
             if (u.deployed_away) continue;
             if (u.vet.dont_score) continue;   // W4: DontScore=yes (spent V3/DMisl rockets)
@@ -201,6 +215,7 @@ private:
                                   : std::string("Computer");
             const std::string lbl = camp::csf_text(dir_, "Name:" + who);
             s.rows[(std::size_t)h].name = lbl.rfind("Name:", 0) == 0 ? who : lbl;
+            if (net_) s.rows[(std::size_t)h].name = net_->name_of(h);   // W9-03-03/16: player handles
             if (campaign_) {
                 // W6-06-08: the map's houses are INI ids ("Player House",
                 // "BadGuy1 House") the original never shows; name the row by

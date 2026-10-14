@@ -536,3 +536,140 @@ TEST_CASE("mp: mini JSON for the ra2lobbyd control plane") {
     CHECK(j.u32("v3") == 4000000000u);
     CHECK_FALSE(j.flag("private"));
 }
+
+// --- wave 9 menus (w9fix-menus) ------------------------------------------------
+
+TEST_CASE("mp: W9-03-13 a map too small for the seated players is refused; nobody is kicked") {
+    std::uint64_t t = 0;
+    MemNet hub(t);
+    MpNet& eh = hub.add(1);
+    LobbyHost host(eh, ident("Host", 1), host_model());   // 4-player map
+    MpNet& e2 = hub.add(2);
+    LobbyClient c(e2, mem_peer(1), ident("Guest", 0x2222));
+    c.have_map = [](const MpMap&) { return true; };
+    REQUIRE(pump(host, {&c}, t, [&] { return c.state() == LobbyClient::State::Joined; }));
+    host.set_slot_kind(2, SlotKind::AI, 1);
+    REQUIRE(player_count(host.model()) == 3);
+    MpMap small;
+    small.file = "two.map";
+    small.max_players = 2;
+    const std::uint32_t rev = host.rev();
+    CHECK_FALSE(host.set_map(small));               // TXT_SCENARIO_TOO_SMALL
+    CHECK(host.rev() == rev);                       // nothing changed
+    CHECK(host.model().map.file == "xmp01t4.map");
+    CHECK(host.model().slots[1].kind == SlotKind::Human);
+    REQUIRE(pump(host, {&c}, t, [&] { return c.rev() == host.rev(); }));
+    CHECK(c.state() == LobbyClient::State::Joined);
+    CHECK(host.members() == 1);
+
+    // A host-Closed row stays closed when a bigger map opens the rest.
+    host.set_slot_kind(3, SlotKind::Closed);
+    MpMap big;
+    big.file = "eight.map";
+    big.max_players = 8;
+    REQUIRE(host.set_map(big));
+    CHECK(host.model().slots[3].kind == SlotKind::Closed);
+    for (int i = 4; i < 8; ++i) CHECK(host.model().slots[i].kind == SlotKind::Open);
+}
+
+TEST_CASE("mp: W9-03-13 a smaller map moves a seated human down; the client follows its row") {
+    std::uint64_t t = 0;
+    MemNet hub(t);
+    MpNet& eh = hub.add(1);
+    MpLobbyModel m = host_model();
+    m.map.max_players = 8;
+    for (int i = 4; i < 8; ++i) m.slots[i].kind = SlotKind::Open;
+    LobbyHost host(eh, ident("Host", 1), m);
+    for (int i = 1; i <= 4; ++i) host.set_slot_kind(i, SlotKind::AI, 1);
+    MpNet& e2 = hub.add(2);
+    LobbyClient c(e2, mem_peer(1), ident("Guest", 0x2222));
+    c.have_map = [](const MpMap&) { return true; };
+    REQUIRE(pump(host, {&c}, t, [&] { return c.state() == LobbyClient::State::Joined; }));
+    REQUIRE(c.local_slot() == 5);
+    for (int i = 1; i <= 4; ++i) host.set_slot_kind(i, SlotKind::Open);
+    MpMap four;
+    four.file = "four.map";
+    four.max_players = 4;
+    REQUIRE(host.set_map(four));
+    CHECK(host.model().slots[1].kind == SlotKind::Human);
+    CHECK(host.model().slots[1].name == "Guest");
+    CHECK(host.model().slots[5].kind == SlotKind::Closed);
+    REQUIRE(pump(host, {&c}, t, [&] { return c.rev() == host.rev() && c.local_slot() == 1; }));
+    // The moved guest still talks to the host from its new row.
+    c.request_slot(3, 5, -1, -1);
+    REQUIRE(pump(host, {&c}, t, [&] { return host.model().slots[1].color == 5; }));
+    CHECK(c.state() == LobbyClient::State::Joined);
+}
+
+TEST_CASE("mp: W9-03-04 humans-only game types open the AI rows; FreeForAll clears teams") {
+    std::uint64_t t = 0;
+    MemNet hub(t);
+    MpNet& eh = hub.add(1);
+    LobbyHost host(eh, ident("Host", 1), host_model());
+    host.set_slot_kind(1, SlotKind::AI, 1);
+    host.set_slot(0, -2, 1, 2, -1);
+    host.set_mode(5, /*ai_allowed=*/false, /*teams_allowed=*/true);   // Megawealth (ManBattle)
+    CHECK(host.model().mode == 5);
+    CHECK(host.model().slots[1].kind == SlotKind::Open);
+    CHECK(host.model().slots[0].team == 2);
+    host.set_mode(2, true, false);                                     // FreeForAll
+    CHECK(host.model().slots[0].team == kNoTeam);
+    MpLobbyModel back;
+    REQUIRE(decode_options(encode_options(host.model()), back));
+    CHECK(back.mode == 2);
+}
+
+TEST_CASE("mp: W9-01-08 a burst of host edits right after a join keeps the joiner") {
+    std::uint64_t t = 0;
+    MemNet hub(t);
+    MpNet& eh = hub.add(1);
+    LobbyHost host(eh, ident("Host", 1), host_model());
+    MpNet& e2 = hub.add(2);
+    LobbyClient c(e2, mem_peer(1), ident("Joiner", 0x2222));
+    c.have_map = [](const MpMap&) { return true; };
+    REQUIRE(pump(host, {&c}, t, [&] { return c.state() == LobbyClient::State::Joined; }));
+    c.set_ready(true);
+    MpMap big;
+    big.file = "eight.map";
+    big.digest = "d8";
+    big.max_players = 8;
+    REQUIRE(host.set_map(big));
+    for (int i = 2; i < 8; ++i) {   // one edit per frame, like the --play run
+        t += 1;
+        host.set_slot_kind(i, SlotKind::AI, 0);
+        host.update(t);
+        c.update(t);
+    }
+    // 30 s later the joiner is still seated and in step.
+    pump(host, {&c}, t, [] { return false; }, 600);
+    CHECK(c.state() == LobbyClient::State::Joined);
+    CHECK(host.members() == 1);
+    CHECK(c.rev() == host.rev());
+    CHECK(player_count(c.model()) == 8);
+}
+
+TEST_CASE("mp: W9-03-11 LAN lobby presence / chat codec") {
+    LanLobbyMsg m;
+    m.type = 4;
+    m.nonce = 0xDEADBEEF;
+    m.id = 7;
+    m.nick = "Tanya";
+    m.text = "anyone up for a game?";
+    const auto d = encode_lobby_msg(m);
+    LanLobbyMsg back;
+    REQUIRE(decode_lobby_msg(d.data(), d.size(), back));
+    CHECK(back.type == 4);
+    CHECK(back.nonce == 0xDEADBEEFu);
+    CHECK(back.id == 7);
+    CHECK(back.nick == "Tanya");
+    CHECK(back.text == "anyone up for a game?");
+    LanBeacon b;   // a lobby message is never a beacon and vice versa
+    CHECK_FALSE(decode_beacon(d.data(), d.size(), b));
+    m.type = 3;
+    m.text.clear();
+    const auto p = encode_lobby_msg(m);
+    REQUIRE(decode_lobby_msg(p.data(), p.size(), back));
+    CHECK(back.type == 3);
+    const auto bd = encode_beacon(LanBeacon{});
+    CHECK_FALSE(decode_lobby_msg(bd.data(), bd.size(), back));
+}

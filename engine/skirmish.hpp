@@ -60,6 +60,10 @@ struct SkirmishConfig {
     // a deterministic one from the map. Never the wall clock inside the sim.
     std::uint32_t             session_seed  = 0;
     int                       mcv_redeploys = -1;      // MCV Repacks: 1 / 0
+    // W9-03-04: a multiplayer game type's rules override INI (MPModesMD.ini,
+    // e.g. "MPMWMD.ini" for Megawealth), overlaid on rulesmd.ini by the
+    // GameScene. Empty (every skirmish, campaign and gate) = plain rulesmd.ini.
+    std::string               mode_rules;
 
     // P10 Campaign [RE: campaign.md §3]: a NON-EMPTY campaign_map turns the
     // GameScene into that campaign mission (map from Maps01/MAPS02, houses +
