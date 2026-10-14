@@ -367,3 +367,23 @@ menu, Quit and the MP score page; `mp-menus-solo.play` is its one-process
 part (layout, game types, too-small map, second-lobby preview, MP menus)
 and compares the two machines' sync-hash trails (`[net] trail f=N crc=X`
 on stderr); in a match Enter opens the chat line (`type`, `key enter`).
+
+W9-05 (w9fix-match): `scripts/play/net-match.ps1 -Pair ally` (net-ally-host/join.play:
+one-way ALLY from the Diplomacy page, the reply makes it mutual, allies-only chat on
+Backspace, 3 beacons per player seen by the mutual ally, the 4th refused, `Keypad .`
+deletes) and `-Pair observe` (net-observe-host/join.play: the joiner Observes =
+DESTRUCT, stays as an observer with the map revealed and the radar on to frame 1500,
+then Quits with the OK / Cancel confirm). Both run 1500 frames on the LAN and need
+identical trails. Extra probe keys in a match: `observer`, `game_over`,
+`allies_allowed`, `ally_change_allowed`, `dip_events`, `dip_last`, `can_observe`,
+`chat_mode` (1 listeners / 2 allies / 3 all), `chat_sent`, `chat_blocked`,
+`chat_last_to`, `beacon_placing`, `beacon_sel`, `beacon_events`, `radar_on`,
+`explored_pct`, per player `player_name(h)`, `ally_view(h)` (our view of h),
+`ally_of_me(h)` (h's view of us), `defeated(h)`, `listener(h)`, `beacons(h)`,
+`beacon_visible(h)`, `beacon_text(h,slot)`; on the Diplomacy page `dip_self`,
+`dip_ally(h)`, `dip_ally_enabled(h)`, `dip_listen(h)`, `dip_name(h)` and the targets
+`dip:ally:<h>` / `dip:chat:<h>`.
+`scripts/play/ui-replay.ps1` (single process) plays `ui-replay-touch.play` with
+`--record` and `RA2_REC_CHECK=15`, then `--replay`s the log with no UI: any UI path
+that changes the World without a command (the touch cameo-menu Cancel did,
+W9-05-01) makes the replay report `match=no`.

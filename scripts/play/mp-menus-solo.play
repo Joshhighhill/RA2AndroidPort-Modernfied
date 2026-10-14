@@ -119,6 +119,8 @@ until 10 menu_page == abort
 assert menu_buttons == "QUIT|RESUME MISSION" @W9-05-06
 shot w9_mp_quit
 click "menu:QUIT"
+until 10 confirm_open == 1 @W9-05-06
+click confirm:yes
 # W9-03-16: the leaver gets the multiplayer score page.
 until 3000 scene == result @W9-03-16
 assert score_net == 1 @W9-03-16

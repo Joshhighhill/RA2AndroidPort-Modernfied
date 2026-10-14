@@ -250,13 +250,24 @@ struct BuildMask {
     bool wall = false;               // Wall=yes type: ore cells are allowed
 };
 
+// W9-05-09 [RE: FUN_004A8DC0 @0x4A8F0A]: with the session's BuildOffAlly on,
+// an ALLIED building (its owner IsAlliedWith the placer, FUN_004F9870) whose
+// type has EligibileForAllyBuilding=yes (BuildingType +0x1550; rulesmd: the
+// ConYards GACNST / NACNST / YACNST / YACOMD) also extends the base.
+// `allied_owner[h]` = 1 when house h is such an ally of the placer.
+struct AllyBuild {
+    const std::vector<char>* allied_owner = nullptr;   // per house
+    const std::vector<char>* eligible_type = nullptr;  // per building roster index
+};
+
 PlacementCheck placement_check(int cx, int cy, int fw, int fh, int house, int adjacent,
                                const std::vector<std::uint8_t>& passable, int grid_w, int grid_h,
                                const Occupancy& occ,
                                const std::vector<Building>& buildings,
                                bool bypass_adjacency,
                                const std::vector<char>* base_normal_by_type = nullptr,
-                               const BuildMask* mask = nullptr);
+                               const BuildMask* mask = nullptr,
+                               const AllyBuild* ally = nullptr);
 
 // W8-03-01: the static buildable grid (see BuildMask). `land` is the final
 // per-cell LandType (tile, then the overlay override of FUN_0047D1C0),

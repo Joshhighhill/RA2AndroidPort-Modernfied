@@ -403,13 +403,12 @@ void cameo_menu_do(int id) {
         case CM_RESUME: cameo_click(type, /*right=*/false, false); return;  // PRODUCE = resume
         case CM_ALL: cameo_click(type, /*right=*/true, /*shift=*/true); return;
         case CM_CANCEL:
-            if (active_tab_ >= 2) {   // a queued copy first, else the current one (ABANDON)
-                world_.econ_abandon(local_house_, rp_cat_of_unit(type), type, /*all=*/false);
-            } else {
-                const ra2engine::QueueCat bcat =
-                    (active_tab_ == 1) ? ra2engine::QueueCat::Defense : ra2engine::QueueCat::Structure;
-                world_.econ_abandon(local_house_, bcat, type, /*all=*/false);
-            }
+            // W9-05-01 [RE: every production change is an EVENT -- ABANDON 0x10
+            // through the DoList, EventClass::Execute FUN_004C6BD0]: a queued
+            // copy first, else the current one, applied by cmd_abandon on the
+            // command's tick on every peer (was a direct World call on this
+            // peer only -> the match desynced within 15 frames).
+            issue_type_event(ra2engine::EventType::Abandon, /*building=*/active_tab_ < 2, type);
             pres_.note_eva("EVA_Canceled");   // W7-12-01 [RE: FUN_006AA390 @6AA4C4]
             return;
         default: return;

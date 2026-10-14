@@ -5216,8 +5216,12 @@ static bool is_radar_id(const std::string& id) {
     return id == "GAAIRC" || id == "AMRADR" || id == "NARADR" || id == "NAPSIS";
 }
 
+// W9-05-05 [RE: MPlayer_Defeated FUN_004FBED0 -> FUN_00656830(1)]: the
+// local observer of a network match has the radar forced on.
+bool g_observer_radar = false;
 bool house_owns_operational_radar(const ra2engine::World& world, const BuildingAssets& ba,
                                   int house) {
+    if (g_observer_radar && house == g_local_house) return true;
     // G-29 (gap owner A) [RE: construction.md §8; RE-E4 consumer set PROBABLE]:
     // the radar goes offline while the house is on low power.
     if (world.house_low_power(house)) return false;
@@ -6696,6 +6700,7 @@ public:
         else enable_p5_features(world_, rules_, ba_, cfg, {&ur_.defs, &ur_ai_.defs});
         rp_setup();   // gap owner A: side-correct factories + sidebar (skirmish)
         install_econ_rules();   // L2: every human house's production rules -> the World
+        if (cfg.campaign_map.empty()) mp_setup_diplomacy();   // W9-05-03: the mode's AlliesAllowed / AllyChangeAllowed
         init_presentation();   // G-80..G-91 (pres_game.inc)
         campaign_audio_init();   // W2-CA-12 (campaign only)
         // NET L1: every player action goes through the command queue.
@@ -6736,6 +6741,7 @@ public:
         }
         ra2engine::TouchGestures::set_box_mode(false);   // W6-01-11: BOX never outlives the game
         g_local_house = 0;   // L2
+        g_observer_radar = false;   // W9-05-05
         lifecycle_teardown();   // W2-AR-09: a normal end removes the autosave
         prewarm_stop_ = true;
         if (prewarm_.joinable()) prewarm_.join();
@@ -6836,6 +6842,7 @@ public:
     // One step of the former loop body: camera pan, edge-detects, world.step,
     // production, exit handoff, free units, audio events, placement/SW confirm.
     void update(double dt) override {
+        menu_.set_mp(net_ != nullptr, mp_can_observe());   // W9-05-06: the MP options / exit pages
         tooltip_tick(dt);   // W2-UI-07 hover timer (game time)
         touch_bar_tick(dt);   // W4-AM-05: the open touch column closes itself
         touch_hint_tick(dt);  // W4-AM-01: the gesture hint
@@ -7325,6 +7332,7 @@ public:
             SDL_ShowCursor(drew ? SDL_DISABLE : SDL_ENABLE);
             os_cursor_hidden_ = drew;
         }
+        draw_beacons(ren, tc);    // W9-05-08: own + mutual allies' beacons
         draw_messages(ren, tc);   // W2-UI-21 (game saved, defeated, low power)
         draw_timer_stack(ren, tc);   // W6-05-04/05 mission timer + SW countdowns
         draw_touch_bar(ren);      // W2-AR-08 (touch only)
@@ -7364,6 +7372,7 @@ public:
 #include "game_scene_controls.inc"
 #include "game_scene_commands.inc"   // NET L1: command queue / host / record
 #include "game_scene_net.inc"        // NET-PLAY: lockstep mode (tick gate, sync hash, chat, leave)
+#include "game_scene_mp.inc"         // W9-05: diplomacy, observer, Leave/Observe, chat channels, beacons
 
 #include "hud_tooltip.inc"   // W2-UI-07 cameo / sidebar tooltips
 #include "hud_messages.inc"  // W2-UI-12/21 message list / timer / banners
@@ -7596,7 +7605,6 @@ private:
         return x >= lay_.opt_btn.x && x < lay_.opt_btn.x + w && y >= lay_.opt_btn.y && y < lay_.opt_btn.y + h;
     }
     bool ui_handle(const ra2engine::InputEvent& ev) {
-        menu_.set_network(net_ != nullptr);   // W9-03-10: 0xBBA in a network match
         if (gf_abort_.open()) { gf_abort_answer(gf_abort_.handle(ev)); return true; }   // gF G-14
         if (sld_.is_open()) {
             switch (sld_.handle(ev)) {
@@ -7627,6 +7635,7 @@ private:
             return true;
         }
         if (menu_.open_) {
+            menu_.set_mp(net_ != nullptr, mp_can_observe());   // W9-05-06: the MP page set
             const auto menu_act = menu_.handle(ev);
             if (net_ && (menu_act == InGameMenu::Load || menu_act == InGameMenu::Save ||
                          menu_act == InGameMenu::Delete)) {   // NET-PLAY: a shared match is not saved / loaded
@@ -7643,6 +7652,15 @@ private:
                 // W2-UI-15: page 0xB6 answers -- Abort (code 2) / Restart (5).
                 case InGameMenu::Abort: gf_abort_answer(0); break;
                 case InGameMenu::Restart: gf_abort_answer(1); break;
+                case InGameMenu::Leave: mp_ask_leave(); break;        // W9-05-06
+                case InGameMenu::Observe: mp_observe(); break;        // W9-05-06
+                case InGameMenu::DipAlly:                             // W9-05-03
+                    if (mp_request_alliance(menu_.dip_pick())) menu_.open_ = false;
+                    break;
+                case InGameMenu::DipListen:                           // W9-05-07
+                    mp_toggle_listener(menu_.dip_pick());
+                    open_diplomacy();
+                    break;
                 case InGameMenu::Settings: menu_apply_settings(); break;
                 case InGameMenu::Committed:
                     menu_apply_settings();
@@ -7716,8 +7734,18 @@ private:
             InGameMenu::DipRow r;
             r.name = st.rows[i].name;
             r.kills = st.rows[i].kills;
-            r.self = h == local_house_;   // W9-03-03: the joiner's own row (was house 0)
-            r.ally = world_.house_team(h) == world_.house_team(local_house_);
+            // W9-05-11: the LOCAL house is "self" (was house 0 on every machine);
+            // W9-05-03: Allies = this house's own (one-way) view, the box is
+            // live in a network game when the mode allows alliance changes
+            // and the row is another human (ToggleAlliance's gates); Chat =
+            // the listener flag (W9-05-07).
+            r.house = h;
+            r.self = h == local_house_;
+            r.ally = world_.allied_with(local_house_, h);
+            r.ally_enabled = net_ && !observer_ && world_.alliance_toggle_allowed(local_house_, h);
+            r.listen = h >= 0 && h < static_cast<int>(chat_listen_.size()) && chat_listen_[static_cast<std::size_t>(h)] != 0;
+            r.listen_enabled = net_ != nullptr && mp_human(h);
+            if (net_) r.name = mp_name(h);   // W9-05-10: the player's nickname
             const ra2assets::Rgba c = world_.house_palette(ba_.unit_pal, h)[24];
             r.color = SDL_Color{c.r, c.g, c.b, 255};
             rows.push_back(r);

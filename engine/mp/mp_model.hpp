@@ -34,7 +34,7 @@ constexpr int kRandom = -2;        // country / colour "Random"
 constexpr int kNoTeam = -1;
 constexpr int kRandomStart = -1;
 constexpr std::uint16_t kNetProto = 2;   // bump on any lobby/session wire change (2: NET-PLAY platform tag, GO peer table)
-constexpr std::uint32_t kSimVersion = 1; // bump on any sim change affecting determinism
+constexpr std::uint32_t kSimVersion = 2; // bump on any sim change affecting determinism (2: w9fix-match -- one-way ALLY, alliance victory, DESTRUCT, BuildOffAlly)
 
 enum class SlotKind : std::uint8_t { Open = 0, Closed = 1, Human = 2, AI = 3 };
 

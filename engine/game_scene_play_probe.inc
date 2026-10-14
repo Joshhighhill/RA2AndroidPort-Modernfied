@@ -342,7 +342,7 @@
         std::string wo = "RUNNING";
         if (world_.victory_enabled()) {
             if (world_.house_defeated(local_house_)) wo = "LOST";
-            else if (world_.winning_team() >= 0 && world_.winning_team() == world_.house_team(local_house_)) wo = "WON";
+            else if (world_.house_outcome(local_house_) > 0) wo = "WON";   // W9-05-04
         }
         p.set_s("world_outcome", wo);
         p.set("victory_enabled", world_.victory_enabled() ? 1 : 0);

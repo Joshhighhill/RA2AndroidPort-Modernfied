@@ -50,6 +50,7 @@ private:
     }
     void gf_abort_answer(int c) {
         if (c < 0) return;
+        if (mp_leave_confirm_) { mp_leave_answer(c); return; }   // W9-05-06: the Leave OK / Cancel
         const int resume = campaign_ ? 2 : 1;
         if (c == 0) {   // Abort -> the shell (P10), or exit a bare --interactive run
             menu_.open_ = false;
@@ -140,24 +141,27 @@ private:
         if (!world_.victory_enabled()) return;
         const int n = world_.house_count();
         if ((int)gf_defeated_seen_.size() != n) gf_defeated_seen_.assign((std::size_t)n, 0);
-        for (int h = 0; h < n; ++h)   // another player eliminated (FUN_004FBED0)
-            if (h != local_house_ && world_.house_defeated(h) && !gf_defeated_seen_[(std::size_t)h]) {
+        for (int h = 0; h < n; ++h)   // a player eliminated (FUN_004FBED0)
+            if ((h != local_house_ || net_) && world_.house_defeated(h) && !gf_defeated_seen_[(std::size_t)h]) {
                 gf_defeated_seen_[(std::size_t)h] = 1;
-                if (gf_outcome_ == 0 && !world_.house_defeated(local_house_)) {
-                    gf_eva("EVA_PlayerDefeated");
-                    // TXT_PLAYER_DEFEATED is "%s has been defeated"; the original
-                    // fills the player's name -- the clone names the slot's
-                    // country [RE-FALLBACK: no MP player names].
+                // W9-05-05/10 [RE: FUN_004FBED0 @0x4FC0A0 / @0x4FC138]: in a
+                // network game the line names the player (UIName = the
+                // nickname) in the house colour, for the local player's own
+                // defeat too, and an observer keeps hearing the others'.
+                if (gf_outcome_ == 0 && (net_ || !world_.house_defeated(local_house_))) {
+                    if (h != local_house_) gf_eva("EVA_PlayerDefeated");   // own defeat: EVA_YouHaveLost (pres_game)
                     std::string t = camp::csf_text(dir_, "TXT_PLAYER_DEFEATED");
                     std::string who = "Computer";
-                    if (net_) who = net_->name_of(h);   // W9-03-03: the player's handle
+                    if (net_) who = mp_name(h);
                     else if (h < (int)cfg_.slots.size())
                         who = cfg_.slots[(std::size_t)h].country.empty()
                                   ? gf_default_country(cfg_.slots[(std::size_t)h].side)
                                   : cfg_.slots[(std::size_t)h].country;
                     const std::size_t ps = t.find("%s");
                     if (ps != std::string::npos) t.replace(ps, 2, who);
-                    show_banner(t);   // W2-UI-21 mixed-case CSF line
+                    if (net_) post_message(t, -1.0, house_text_color(h));
+                    else show_banner(t);   // W2-UI-21 mixed-case CSF line
+                    if (net_) std::cerr << "[net] defeated: " << t << " (frame " << sim_frame_ << ")\n";
                 }
             }
         if (gf_outcome_ == 0) {
@@ -165,6 +169,13 @@ private:
             // latched by step_house_outcomes); the result screen reads the
             // local house's.
             const int outcome = world_.house_outcome(local_house_);
+            // W9-05-05 [RE: FUN_004FBED0]: a defeated player of a network match
+            // whose game goes on stays in it as an observer; the score comes
+            // at the whole game's end (World::game_over).
+            if (outcome < 0 && net_ && !world_.game_over()) {
+                mp_enter_observer();
+                return;
+            }
             if (outcome != 0) {
                 gf_outcome_ = outcome;
                 gf_borrowed_ = ra2engine::borrowed_time_frames(
@@ -185,8 +196,8 @@ private:
     GfSkirmishStats gf_stats() const {
         GfSkirmishStats s;
         s.local_house = local_house_;   // L2
-        if (net_) {   // W9-03-16
-            s.net = true;
+        s.multiplayer = net_ != nullptr;   // W9-05-10 (the score title: w9fix-menus)
+        if (net_) {   // W9-03-16: Continue -> the MP page; the game number
             s.lan = net_->session.transport == ra2mp::MpTransportKind::Lan;
             s.game_number = g_mp_games_played;
         }
@@ -215,7 +226,7 @@ private:
                                   : std::string("Computer");
             const std::string lbl = camp::csf_text(dir_, "Name:" + who);
             s.rows[(std::size_t)h].name = lbl.rfind("Name:", 0) == 0 ? who : lbl;
-            if (net_) s.rows[(std::size_t)h].name = net_->name_of(h);   // W9-03-03/16: player handles
+            if (net_) s.rows[(std::size_t)h].name = mp_name(h);   // W9-05-10: the player's nickname
             if (campaign_) {
                 // W6-06-08: the map's houses are INI ids ("Player House",
                 // "BadGuy1 House") the original never shows; name the row by

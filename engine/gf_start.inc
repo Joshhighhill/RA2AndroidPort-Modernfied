@@ -268,10 +268,12 @@ inline std::vector<std::string> g_gf_spawned;
 struct GfSkirmishStats {
     int units_killed = 0, units_lost = 0, buildings_killed = 0, buildings_lost = 0;
     int local_house = 0;   // L2: the house the local player played
-    // W9-03-16: a network match's score page is 0x108 GUI:MultiplayerScore
-    // (player handles, the game number) and Continue goes back to the
-    // multiplayer page the match came from (LAN Lobby / Internet).
-    bool net = false, lan = true;
+    // W9-05-10 [RE: 0x5C95FF: GUI:MultiplayerScore unless a skirmish]: a
+    // network match (the score page's title; the rows carry the nicknames).
+    bool multiplayer = false;
+    // W9-03-16: Continue goes back to the multiplayer page the match came
+    // from (LAN Lobby / Internet); 0x6D2 the game number.
+    bool lan = true;
     int game_number = 0;
     // W2-UI-20 (score page 0xBC6): per house -- name, kills (dead objects whose
     // killed_by stamp is this house's unit), losses, built (every object it

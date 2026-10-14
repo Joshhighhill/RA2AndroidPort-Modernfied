@@ -29,7 +29,7 @@ public:
         head_ = gf_csf(outcome_ > 0 ? "TXT_VICTORIOUS" : "TXT_LOST", outcome_ > 0 ? "You Are Victorious!" : "Game Over");
     }
     std::string header() const {
-        return st_.net ? gf_csf("GUI:MultiplayerScore", "Multiplayer Score")
+        return st_.multiplayer ? gf_csf("GUI:MultiplayerScore", "Multiplayer Score")
                        : gf_csf("GUI:SkirmishScore", "Skirmish Score");
     }
     void handle(const ra2engine::InputEvent& ev) override {
@@ -57,7 +57,7 @@ public:
         char t[64];
         std::snprintf(t, sizeof t, "%s %02ld:%02ld:%02ld", gf_csf("GUI:Time", "Time").c_str(), frames_ / 15 / 3600,
                       (frames_ / 15 / 60) % 60, (frames_ / 15) % 60);
-        if (st_.net) {   // 0x108: game number 0x6D2 (left) + time 0x3EA (right) on one line
+        if (st_.multiplayer) {   // 0x108: game number 0x6D2 (left) + time 0x3EA (right) on one line
             p.label(gf_csf("GUI:GameNumber", "Game Number") + ": " + std::to_string(st_.game_number), 16, 110, 200, 20, 0);
             p.label(t, 256, 110, 200, 20, 2);
         } else {
@@ -86,7 +86,7 @@ public:
         choice_ = 0;
         if (c == 1) return defer_game_scene(no_audio_, cfg_);   // W2-AR-10
         if (c == 2) {
-            if (st_.net)
+            if (st_.multiplayer)
                 if (Scene* m = gf_make_mp_return_scene(no_audio_, st_.lan)) return m;
             if (Scene* m = make_main_menu_scene(no_audio_)) return m;
             quit_ = true;
@@ -98,7 +98,7 @@ public:
     void play_probe(ra2play::Probe& p) override {
         p.scene = "result";
         p.set_s("outcome", outcome_ > 0 ? "WON" : "LOST");
-        if (st_.net) {   // W9-03-16 (network matches only: skirmish play_hash unchanged)
+        if (st_.multiplayer) {   // W9-03-16 (network matches only: skirmish play_hash unchanged)
             p.set_s("score_header", header());
             p.set("score_net", 1);
             p.set("score_game", st_.game_number);

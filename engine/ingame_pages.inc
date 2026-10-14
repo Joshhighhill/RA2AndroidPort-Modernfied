@@ -401,11 +401,20 @@ struct RestatePage {
 
 class InGameMenu {
 public:
-    enum Choice { None, Resume, Load, Save, Delete, Abort, Restart, Settings, Committed, MusicPlay, MusicStop };
+    enum Choice { None, Resume, Load, Save, Delete, Abort, Restart, Settings, Committed, MusicPlay, MusicStop,
+                  Leave, Observe, DipAlly, DipListen };   // W9-05-06/03/07 (network game)
     enum Page { P_OPTIONS = 0, P_CONTROLS, P_SOUND, P_ABORT, P_DIPLOMACY };
     // W2-UI-29: one row of the Diplomacy page 0x73 (read-only in skirmish).
-    struct DipRow { std::string name; SDL_Color color{0, 0, 0, 255}; bool ally = false; bool self = false; int kills = 0; };
+    // W9-05-03/07/11: `house`, the live Allies box (ally_enabled) and the
+    // Chat listener box (listen / listen_enabled) of a network game.
+    struct DipRow { std::string name; SDL_Color color{0, 0, 0, 255}; bool ally = false; bool self = false; int kills = 0;
+                    int house = -1; bool ally_enabled = false; bool listen = true; bool listen_enabled = false; };
     void set_diplomacy(std::vector<DipRow> rows) { dip_ = std::move(rows); }
+    // W9-05-06 [RE: dialog 0xB6 proc 0x4F17C0 in LAN/WOL: GUI:Leave +
+    // GUI:Observe (alive, >= 2 humans alive) + Resume; the MP options page has
+    // no Load / Save / Delete]. The scene refreshes it every frame.
+    void set_mp(bool net, bool can_observe) { mp_net_ = net; mp_can_observe_ = can_observe; }
+    int dip_pick() const { return dip_pick_; }
     // `open_` stays a public flag (gf_scene / controls set it); open() also
     // resets the page and reseeds the controls from the user's settings.
     bool open_ = false;
@@ -414,11 +423,6 @@ public:
         campaign_ = campaign;
         soviet_ = soviet;
     }
-    // W9-03-10: a network match uses the multiplayer options dialog 0xBBA
-    // (Game Controls / Abort Mission / Resume Mission -- no Load / Save /
-    // Delete) and the 0xB6 answers of a network game (GUI:Leave).
-    void set_network(bool on) { net_ = on; }
-    bool network() const { return net_; }
     void set_tracks(std::vector<std::string> t) { tracks_.items = std::move(t); }
     void open(Page pg = P_OPTIONS) {
         open_ = true;
@@ -464,6 +468,21 @@ public:
         for (const ShellButton& b : buttons()) {
             if (!b.enabled || !b.rect.contains(lx, ly)) continue;
             return press(b.action);
+        }
+        if (page_ == P_DIPLOMACY) {   // W9-05-03 Allies / W9-05-07 Chat boxes
+            for (std::size_t k = 0; k < dip_.size() && k < 8; ++k) {
+                const DipRow& r = dip_[k];
+                const int y = 73 + static_cast<int>(k * 65 / 2);
+                if (r.self) continue;
+                if (r.ally_enabled && ra2engine::SbRect{262, y, 40, 16}.contains(lx, ly)) {
+                    dip_pick_ = r.house;
+                    return DipAlly;
+                }
+                if (r.listen_enabled && ra2engine::SbRect{330, y, 40, 16}.contains(lx, ly)) {
+                    dip_pick_ = r.house;
+                    return DipListen;
+                }
+            }
         }
         // Page controls.
         for (int i = 0; i < kSliders; ++i) {
@@ -545,8 +564,8 @@ public:
                 p.frame(p.dev(19, y - 4, 48, 19), true);
                 p.label(p.fit(r.name, 165), 82, y, 165, 16, 0);
                 if (!r.self) {
-                    p.checkbox({262, y, 40, 16}, r.ally, "", false);
-                    p.checkbox({330, y, 40, 16}, true, "", false);
+                    p.checkbox({262, y, 40, 16}, r.ally, "", r.ally_enabled);
+                    p.checkbox({330, y, 40, 16}, r.listen, "", r.listen_enabled);
                 }
                 p.label(std::to_string(r.kills), 397, y, 61, 16, 0);
             }
@@ -575,6 +594,20 @@ public:
         if (!open_ || kb_.open_) return;
         static const char* kPages[5] = {"options", "controls", "sound", "abort", "diplomacy"};
         p.set("diplomacy_rows", static_cast<int>(dip_.size()));
+        if (page_ == P_DIPLOMACY)   // W9-05: the self row, the live boxes
+            for (std::size_t k = 0; k < dip_.size() && k < 8; ++k) {
+                const DipRow& r = dip_[k];
+                const std::string hs = std::to_string(r.house);
+                if (r.self) p.set("dip_self", r.house);
+                p.set("dip_ally(" + hs + ")", r.ally ? 1 : 0);
+                p.set("dip_ally_enabled(" + hs + ")", r.ally_enabled ? 1 : 0);
+                p.set("dip_listen(" + hs + ")", r.listen ? 1 : 0);
+                p.set_s("dip_name(" + hs + ")", r.name);
+                const int y = 73 + static_cast<int>(k * 65 / 2);
+                const ra2engine::SbRect ra = ui_dev({262, y, 18, 16}), rc = ui_dev({330, y, 18, 16});
+                if (r.ally_enabled) p.targets["dip:ally:" + hs] = ra2play::Rect{ra.x, ra.y, ra.w, ra.h};
+                if (r.listen_enabled) p.targets["dip:chat:" + hs] = ra2play::Rect{rc.x, rc.y, rc.w, rc.h};
+            }
         p.set_s("menu_page", kPages[page_]);
         auto put = [&](const std::string& k, const ra2engine::SbRect& lr) {
             const ra2engine::SbRect r = ui_dev(lr);
@@ -585,7 +618,7 @@ public:
             if (b.enabled) put("menu:" + upper(b.label), b.rect);
             names += (names.empty() ? "" : "|") + upper(b.label);
         }
-        if (net_) {   // W9-03-10 / W9-03-03 (network matches only: single-player play_hash unchanged)
+        if (mp_net_) {   // W9-03-10 / W9-03-03 (network matches only: single-player play_hash unchanged)
             p.set_s("menu_buttons", names);
             p.set("menu_net", 1);
             for (std::size_t k = 0; k < dip_.size(); ++k) {
@@ -635,7 +668,9 @@ public:
 
 private:
     enum Act { A_NONE = 0, A_CONTROLS, A_LOAD, A_SAVE, A_DELETE, A_ABORTPAGE, A_RESUME, A_SOUND, A_KEYBOARD,
-               A_BACK, A_ABORT, A_RESTART };
+               A_BACK, A_ABORT, A_RESTART, A_LEAVE, A_OBSERVE };
+    bool mp_net_ = false, mp_can_observe_ = false;   // W9-05-06
+    int dip_pick_ = -1;                              // W9-05-03/07: the row's house
     enum { S_SPEED = 0, S_SCROLL, S_MUSIC, S_SOUND, S_VOICE, kSliders };
     enum { C_TARGET = 0, C_TOOLTIPS, C_HIDDEN, C_SHUFFLE, kChecks };
     struct SliderDef { ra2engine::SbRect r; int range; bool readout; };
@@ -668,20 +703,19 @@ private:
             case P_DIPLOMACY:   // 0x423 GUI:Return
                 return {b(5, gf_csf("GUI:Return", "Return"), true, A_RESUME)};
             case P_ABORT: {
-                // 0xB6 (proc FUN_004F17C0): button 0x6C9 is GUI:Leave ("Quit");
-                // in a LAN / Internet game 0x712 is GUI:Observe while the
-                // player lives and more than one human does (w9fix-match), and
-                // 0x6C9 answers 3 (DESTRUCT + EXIT) / 2 (EXIT).
-                if (net_)
-                    return {b(0, gf_csf("GUI:Leave", "Quit"), true, A_ABORT),
-                            b(5, gf_csf("GUI:ResumeMission", "Resume Mission"), true, A_RESUME)};
+                if (mp_net_) {   // W9-05-06: Leave / Observe / Resume
+                    std::vector<ShellButton> v{b(0, gf_csf("GUI:Leave", "Quit"), true, A_LEAVE)};
+                    if (mp_can_observe_) v.push_back(b(1, gf_csf("GUI:Observe", "Observe"), true, A_OBSERVE));
+                    v.push_back(b(5, gf_csf("GUI:ResumeMission", "Resume Mission"), true, A_RESUME));
+                    return v;
+                }
                 std::vector<ShellButton> v{b(0, gf_csf("GUI:Abort", "Abort"), true, A_ABORT)};
                 if (campaign_) v.push_back(b(1, gf_csf("GUI:Restart", "Restart"), true, A_RESTART));
                 v.push_back(b(5, gf_csf("GUI:ResumeMission", "Resume Mission"), true, A_RESUME));
                 return v;
             }
             default:
-                if (net_)   // 0xBBA: 0x521 Game Controls (row 0), 0x522 Abort Mission (row 1), 0x686 Resume
+                if (mp_net_)   // 0xBBA: Game Controls 0x521 (row 0), Abort Mission 0x522 (row 1), Resume 0x686
                     return {b(0, gf_csf("GUI:GameControls", "Game Controls"), true, A_CONTROLS),
                             b(1, gf_csf("GUI:AbortMission", "Abort Mission"), true, A_ABORTPAGE),
                             b(5, gf_csf("GUI:ResumeMission", "Resume Mission"), true, A_RESUME)};
@@ -694,7 +728,7 @@ private:
         }
     }
     std::string stt_for(int act) const {
-        if (net_ && page_ == P_OPTIONS) {   // 0xBBA tooltips
+        if (mp_net_ && page_ == P_OPTIONS) {   // 0xBBA tooltips
             if (act == A_CONTROLS) return gf_csf("STT:IGMultiOptButtonControls", "");
             if (act == A_ABORTPAGE) return gf_csf("STT:IGMultiOptButtonAbort", "");
             if (act == A_RESUME) return gf_csf("STT:IGMultiOptButtonResume", "");
@@ -712,6 +746,8 @@ private:
             case A_BACK: return gf_csf(page_ == P_SOUND ? "STT:SoundOptButtonBack" : "STT:GameOptButtonBack", "");
             case A_ABORT: return gf_csf("STT:ConfirmExitButtonAbort", "");
             case A_RESTART: return gf_csf("STT:ConfirmExitButtonRestart", "");
+            case A_LEAVE: return gf_csf("STT:ConfirmExitButtonLeave", "");
+            case A_OBSERVE: return gf_csf("STT:ConfirmExitButtonObserve", "");
             default: return "";
         }
     }
@@ -728,6 +764,8 @@ private:
             case A_BACK: page_ = (page_ == P_SOUND) ? P_CONTROLS : P_OPTIONS; return Committed;
             case A_ABORT: close(); return Abort;
             case A_RESTART: close(); return Restart;
+            case A_LEAVE: close(); return Leave;
+            case A_OBSERVE: close(); return Observe;
             default: return None;
         }
     }
@@ -815,7 +853,7 @@ private:
     }
 
     Page page_ = P_OPTIONS;
-    bool campaign_ = false, soviet_ = false, net_ = false;
+    bool campaign_ = false, soviet_ = false;
     ra2engine::Settings set_{};
     std::vector<DipRow> dip_;   // W2-UI-29
     ShellList tracks_{{157, 157, 262, 160}, {}, {}, {}, 0, -1, 9, 17};

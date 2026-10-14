@@ -64,6 +64,14 @@ struct SkirmishConfig {
     // e.g. "MPMWMD.ini" for Megawealth), overlaid on rulesmd.ini by the
     // GameScene. Empty (every skirmish, campaign and gate) = plain rulesmd.ini.
     std::string               mode_rules;
+    // W9-05-09: the lobby's BuildOffAlly (FUN_004A8DC0 reads it as a session
+    // global); false outside a multiplayer lobby (gates, quick start).
+    bool                      build_off_ally = false;
+    // W9-05-03: the multiplayer game mode (mpmodesmd.ini mode id: 1 Battle,
+    // 2 Free For All, 3 Cooperative, 4 Unholy Alliance, 5-8 Megawealth / Duel
+    // / Meat Grinder / Naval War, 9 Team Game); its rules override decides
+    // AlliesAllowed / AllyChangeAllowed. 0 = not a multiplayer lobby.
+    int                       mp_mode = 0;
 
     // P10 Campaign [RE: campaign.md §3]: a NON-EMPTY campaign_map turns the
     // GameScene into that campaign mission (map from Maps01/MAPS02, houses +

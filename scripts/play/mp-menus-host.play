@@ -78,8 +78,10 @@ until 10 menu_open == 1
 assert menu_buttons == "GAME CONTROLS|ABORT MISSION|RESUME MISSION" @W9-03-10
 click "menu:ABORT MISSION"
 until 10 menu_page == abort
-assert menu_buttons == "QUIT|RESUME MISSION" @W9-05-06
+assert menu_buttons == "QUIT|OBSERVE|RESUME MISSION" @W9-05-06
 click "menu:QUIT"
+until 10 confirm_open == 1 @W9-05-06
+click confirm:yes
 until 3000000 scene == result @W9-03-16
 assert score_header == "Multiplayer Score" @W9-03-16
 assert score_name(0) == Hosty @W9-03-16
