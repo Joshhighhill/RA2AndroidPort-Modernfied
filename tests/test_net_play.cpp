@@ -7,6 +7,7 @@
 // one side is caught as out-of-sync; an EXIT removes the player on the other
 // side at a common frame.
 #include "doctest.h"
+#include "net_frame_crc.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -93,6 +94,11 @@ struct EconHost : ra2engine::CommandHost {
     void place(int h, int, int, int cx, int cy) override { w->econ_place(h, QueueCat::Structure, cx, cy); }
 };
 
+bool g_frame_crc = false;   // W9-01-04: feed net_frame_crc instead of the full save hash
+std::uint32_t world_hash32(const ra2engine::World& w);
+std::uint32_t sync_hash32(const ra2engine::World& w) {
+    return g_frame_crc ? ra2engine::net_frame_crc(w) : world_hash32(w);
+}
 std::uint32_t world_hash32(const ra2engine::World& w) {
     std::uint64_t h = 1469598103934665603ull;
     for (std::uint8_t c : ra2engine::save::save_world(w)) { h ^= c; h *= 1099511628211ull; }
@@ -199,7 +205,7 @@ struct Peer {
         }
         script();
         std::vector<Command> cmds;
-        last = game->step([this]() { return world_hash32(*w); }, cmds);
+        last = game->step([this]() { return sync_hash32(*w); }, cmds);
         if (last == NetGame::Step::Stall) { ++stalls; return; }
         if (last != NetGame::Step::Run) return;
         const uint32_t f = game->frame() - 1;   // the frame step() just released
@@ -416,4 +422,29 @@ TEST_CASE("net play: resign_house defeats a leaver and blows up what it owns") {
     CHECK(w.house_outcome(1) == -1);
     CHECK(w.house_outcome(0) == 1);   // the last team standing
     w.resign_house(99);                // out of range: no-op
+}
+
+// W9-01-04: the per-frame CRC (net_frame_crc) keeps two real Worlds in sync
+// and still catches a one-credit divergence within a frame of the bug.
+TEST_CASE("W9-01-04: net play with the per-frame CRC -- in sync, and a divergence is detected") {
+    if (!ra2fixture::mapsmd03_available()) { MESSAGE("skipped: real map assets not found"); return; }
+    g_frame_crc = true;
+    {
+        Match m;
+        m.run(1500, /*diverge_side=*/1, /*diverge_at=*/400);
+        const bool oos0 = m.p[0].last == NetGame::Step::OutOfSync;
+        const bool oos1 = m.p[1].last == NetGame::Step::OutOfSync;
+        CHECK((oos0 || oos1));
+        const ra2::net::OutOfSyncInfo& o = (oos0 ? m.p[0] : m.p[1]).game->session().out_of_sync();
+        CHECK(o.frame >= 401u);
+        CHECK(o.frame < 420u);
+    }
+    {
+        Match m;
+        m.run(800);
+        CHECK(m.p[0].last == NetGame::Step::Run);
+        CHECK(m.p[1].last == NetGame::Step::Run);
+        CHECK(world_hash32(*m.p[0].w) == world_hash32(*m.p[1].w));
+    }
+    g_frame_crc = false;
 }

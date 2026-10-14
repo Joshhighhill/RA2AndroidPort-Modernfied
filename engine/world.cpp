@@ -1354,6 +1354,23 @@ int World::unit_at_cell(int x, int y) const {
     return -1;
 }
 
+namespace {
+// W9-02-02 / W9-02-03: did the move order just given reach `g` (a path that
+// ends there)? find_path_nearest settles for the nearest reachable cell, so a
+// path ending elsewhere is the original's path failure (Basic_Path
+// FUN_004D3840). Movers that never path (aircraft, teleporters, a frozen
+// unit) are not judged.
+bool next_to_foundation(const Building& b, Cellxy g) {
+    const int dx = g.x < b.cx ? b.cx - g.x : g.x >= b.cx + b.fw ? g.x - (b.cx + b.fw - 1) : 0;
+    const int dy = g.y < b.cy ? b.cy - g.y : g.y >= b.cy + b.fh ? g.y - (b.cy + b.fh - 1) : 0;
+    return dx <= 1 && dy <= 1;
+}
+bool reaches(const Unit& u, Cellxy g) {
+    if (u.is_aircraft || u.abil.teleporter || u.frozen) return true;
+    return u.moving() && u.path.back().x == g.x && u.path.back().y == g.y;
+}
+}  // namespace
+
 void World::order_unit_move(int idx, int gx, int gy) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     Unit& u = units_[idx];
@@ -2119,7 +2136,7 @@ void World::step_cargo(double /*dt*/) {
             if (!g.empty()) order_unit_move(static_cast<int>(i), g[0].x, g[0].y);
             // W9-02-03 [RE: Basic_Path FUN_004D3840 path failure -> abandon]:
             // no route -> the enter order ends (it was retried every frame).
-            if (!units_[i].moving()) {
+            if (g.empty() || !reaches(units_[i], g[0])) {
                 units_[i].enter_target = -1;
                 continue;
             }
@@ -3239,10 +3256,12 @@ void World::step_capture(double dt) {
                 // the capture (abandon_unreachable_entry) -- it used to retry every
                 // frame forever (a full A* + order per frame, and the unit never moved).
                 Cellxy g;
-                if (engineer_approach_goal(b, u.cell_x, u.cell_y, passable_, grid_w_, grid_h_, occ_,
-                                           g))
-                    order_unit_move(static_cast<int>(i), g.x, g.y);
-                if (!units_[i].moving()) abandon_unreachable_entry(static_cast<int>(i));
+                const bool have = engineer_approach_goal(b, u.cell_x, u.cell_y, passable_, grid_w_, grid_h_, occ_, g) &&
+                                  next_to_foundation(b, g);   // a farther cell never completes the entry
+                if (have) order_unit_move(static_cast<int>(i), g.x, g.y);
+                // The re-path only reaches somewhere NEAR the goal (find_path_nearest):
+                // no route to the approach cell itself is the original's path failure.
+                if (!have || !reaches(units_[i], g)) abandon_unreachable_entry(static_cast<int>(i));
             }
             continue;   // a unit never holds both a capture and an infiltrate intent
         }
@@ -3285,10 +3304,12 @@ void World::step_capture(double dt) {
                 // arrived, did nothing, NOT consumed (graceful fall-through).
             } else if (!u.moving()) {
                 Cellxy g;
-                if (engineer_approach_goal(b, u.cell_x, u.cell_y, passable_, grid_w_, grid_h_, occ_,
-                                           g))
-                    order_unit_move(static_cast<int>(i), g.x, g.y);
-                if (!units_[i].moving()) abandon_unreachable_entry(static_cast<int>(i));   // W9-02-02
+                const bool have = engineer_approach_goal(b, u.cell_x, u.cell_y, passable_, grid_w_, grid_h_, occ_, g) &&
+                                  next_to_foundation(b, g);   // a farther cell never completes the entry
+                if (have) order_unit_move(static_cast<int>(i), g.x, g.y);
+                // The re-path only reaches somewhere NEAR the goal (find_path_nearest):
+                // no route to the approach cell itself is the original's path failure.
+                if (!have || !reaches(units_[i], g)) abandon_unreachable_entry(static_cast<int>(i));
             }
         }
     }

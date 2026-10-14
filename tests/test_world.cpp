@@ -5122,8 +5122,8 @@ TEST_CASE("W9-02-02: an engineer that cannot reach its target abandons the captu
     world.set_move_speed(4.0);
     const ra2assets::MapCell* c = ra2engine::pick_start_cell(map);
     REQUIRE(c != nullptr);
-    // A 5x5 walkable block: target building in the middle, ringed by 8 walls of
-    // 1x1 buildings, the engineer 4 cells away.
+    // A walkable block: target building ringed by 8 blocked cells, the
+    // engineer 5 cells away.
     int ox = -1, oy = -1;
     for (int dy = 0; dy < 20 && ox < 0; ++dy)
         for (int dx = 0; dx < 20 && ox < 0; ++dx) {
@@ -5137,13 +5137,13 @@ TEST_CASE("W9-02-02: an engineer that cannot reach its target abandons the captu
     const int bi = world.add_building(0, bx, by, 1, 1, /*house=*/1, 100, 0, 0.0, /*instant=*/true);
     for (int y = -1; y <= 1; ++y)
         for (int x = -1; x <= 1; ++x)
-            if (x || y) world.add_building(0, bx + x, by + y, 1, 1, /*house=*/1, 100, 0, 0.0, true);
+            if (x || y) world.block_cell(bx + x, by + y);
     ra2engine::UnitCombat eng = gi_stats();
     eng.image = "ENGINEER";
     world.add_combat_unit(ox + 7, oy + 2, /*house=*/0, eng);
     world.order_engineer_capture(0, bi);
     const double dt = 1.0 / 15.0;
-    for (int f = 0; f < 60; ++f) world.step(dt);
+    for (int f = 0; f < 150; ++f) world.step(dt);
     CHECK(world.units()[0].capture_target == -1);   // abandoned
     CHECK_FALSE(world.units()[0].moving());
     CHECK(world.buildings()[bi].house == 1);
