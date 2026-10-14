@@ -37,6 +37,7 @@ struct AiSoakProbe {
         std::uint32_t session_seed = 0;   // Net L0: --seed <n> (0 = none)
         double hash_full_us = 0, hash_crc_us = 0, hash_full_max = 0, hash_crc_max = 0;   // W9-01-04
         long long hash_n = 0;
+        int players = 2;      // w9int: --players N (an 8-player sync-hash cost run)
         int hash_every = 0;   // --hash-every N prints the full sync hash (world_sync_hash) + net_frame_crc
         auto side_of = [](const std::string& c) {
             if (c == "YuriCountry") return ra2engine::World::Side::Yuri;
@@ -63,6 +64,7 @@ struct AiSoakProbe {
             else if (a == "--ruin-ai-at") ruin_at = std::atoi(next().c_str());   // W6-03-08 probe
             else if (a == "--diff-dump") diff_dump = next();
             else if (a == "--frames") diff_frames = std::atoll(next().c_str());
+            else if (a == "--players") players = std::max(2, std::min(8, std::atoi(next().c_str())));   // w9int: N combatants (2..N-1 = AI)
             else if (a == "--hash-every") hash_every = std::max(0, std::atoi(next().c_str()));   // Net L0
             else if (a == "--seed") session_seed = static_cast<std::uint32_t>(std::strtoul(next().c_str(), nullptr, 0));   // Net L0
             else if (a == "--no-human-deploy") no_human_deploy = true;
@@ -92,6 +94,16 @@ struct AiSoakProbe {
             cfg.slots[1].side = ra2engine::World::Side::Allied;  cfg.slots[1].country = "Americans";
         }
         if (ai_vs_ai) cfg.slots[0].is_ai = true;
+        for (int k = 2; k < players; ++k) {   // extra AI combatants, before the civilian slot
+            ra2engine::SkirmishSlot s = cfg.slots[static_cast<std::size_t>(k % 2)];
+            s.is_ai = true;
+            s.diff = diff;
+            s.color_ix = k;
+            s.alliance_team = k;
+            cfg.slots.insert(cfg.slots.begin() + k, s);
+        }
+        for (std::size_t k = static_cast<std::size_t>(players); k < cfg.slots.size(); ++k)
+            if (players > 2) { cfg.slots[k].color_ix = static_cast<int>(k) % 8; cfg.slots[k].alliance_team = static_cast<int>(k); }
         if (long_game) cfg.short_game = false;
         if (session_seed) cfg.session_seed = session_seed;   // Net L0: the original's Seed
         if (ai_passive) cfg.slots[1].is_ai = false;
