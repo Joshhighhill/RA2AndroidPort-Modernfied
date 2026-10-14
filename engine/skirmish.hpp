@@ -60,6 +60,10 @@ struct SkirmishConfig {
     // a deterministic one from the map. Never the wall clock inside the sim.
     std::uint32_t             session_seed  = 0;
     int                       mcv_redeploys = -1;      // MCV Repacks: 1 / 0
+    // W9-03-04: a multiplayer game type's rules override INI (MPModesMD.ini,
+    // e.g. "MPMWMD.ini" for Megawealth), overlaid on rulesmd.ini by the
+    // GameScene. Empty (every skirmish, campaign and gate) = plain rulesmd.ini.
+    std::string               mode_rules;
     // W9-05-09: the lobby's BuildOffAlly (FUN_004A8DC0 reads it as a session
     // global); false outside a multiplayer lobby (gates, quick start).
     bool                      build_off_ally = false;

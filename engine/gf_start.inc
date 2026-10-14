@@ -271,6 +271,10 @@ struct GfSkirmishStats {
     // W9-05-10 [RE: 0x5C95FF: GUI:MultiplayerScore unless a skirmish]: a
     // network match (the score page's title; the rows carry the nicknames).
     bool multiplayer = false;
+    // W9-03-16: Continue goes back to the multiplayer page the match came
+    // from (LAN Lobby / Internet); 0x6D2 the game number.
+    bool lan = true;
+    int game_number = 0;
     // W2-UI-20 (score page 0xBC6): per house -- name, kills (dead objects whose
     // killed_by stamp is this house's unit), losses, built (every object it
     // ever owned [RE-FALLBACK: starting units included]).
@@ -289,6 +293,9 @@ struct GfSkirmishStats {
 };
 Scene* gf_make_skirmish_result_scene(bool no_audio, const ra2engine::SkirmishConfig& cfg, int outcome,
                                      long frames, const GfSkirmishStats& stats);
+// W9-03-16: the network games started in this session (0x6D2 STT:MPScoreLabelGame
+// "The number of the game you have just completed."); mp_start_session counts.
+int g_mp_games_played = 0;
 // W5-E: the finished mission's tallies for the Campaign Results page 0xBC7
 // (GameScene fills it right before make_campaign_result_scene).
 GfSkirmishStats g_campaign_last_stats;
@@ -329,6 +336,12 @@ public:
             (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEscape)) {
             open_ = false;
             return (int)buttons_.size() - 1;
+        }
+        // W9-03-25: Return answers a message box's only (default) button,
+        // like the Win32 DEFPUSHBUTTON of the original's OK boxes.
+        if (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEnter && buttons_.size() == 1) {
+            open_ = false;
+            return 0;
         }
         if (ev.button == ra2engine::InputEvent::Left && ev.kind == ra2engine::InputEvent::PointerUp) down_ = false;
         if (ev.kind != ra2engine::InputEvent::PointerDown || ev.button != ra2engine::InputEvent::Left)

@@ -1,0 +1,68 @@
+# mp-menus-join -- JOIN half of the wave-9 menus pair (scripts/play/mp-menus-pair.ps1;
+# never run alone). Meets the host on the Network Lobby page, joins by IP,
+# checks the Join Screen (Accept, readable option values, host-only notice),
+# survives the host's edit burst (W9-01-08), accepts the Megawealth game and
+# wins when the host quits: score page with names, Continue -> Network.
+set render_every 2000
+set max_frames 4000000
+click button Network
+require scene == mp-lan
+click edit:nick
+key delete
+type "Joiner"
+key enter
+until 2000000 lan_players >= 1 @W9-03-11
+until 2000000 lan_player(0) == Hosty @W9-03-11
+until 2000000 lobby_chat_last == "Hosty: hi lobby" @W9-03-11
+click edit:lobbychat
+type "hi host"
+key enter
+shot w9p_join_lan_lobby
+click edit:ip
+type "127.0.0.1:50020"
+key enter
+require scene == mp-lobby
+until 2000000 mp_state == joined
+assert page == "Join Screen" @W9-03-19
+assert button_enabled(Accept) == 1 @W9-03-09
+# W9-03-02: the option values are readable on the guest.
+assert slider_text(speed) != "" @W9-03-02
+assert slider_text(credits) != "" @W9-03-02
+assert slider_text(units) != "" @W9-03-02
+# W9-03-12: a guest tapping a host-only option is told why.
+click guestcheck:crates
+until 10 status_line == "Only the host can modify this option." @W9-03-12
+# W9-01-08: the host's edit burst (8-player map, six AIs) -- stay seated.
+until 2000000 players == 8
+until 4000000 humans_stable_s >= 20
+assert mp_state == joined @W9-01-08
+# The Megawealth game: accept once the host settled it.
+until 4000000 game_mode == 5 @W9-03-04
+until 2000000 slot_has_map(1) == 1
+until 2000000 players == 2
+click button Accept
+until 2000000 slot_ready(1) == 1 @W9-03-09
+shot w9p_join_screen
+until 3000000 scene == game
+require scene == game
+require net == 1
+assert local_house == 1
+assert mode_rules == MPMWMD.ini @W9-03-04
+until 3000000 sim_frame >= 60
+# W9-03-03: the joiner's Diplomacy marks ITS row (house 1) as self.
+click button diplomacy
+until 10 menu_page == diplomacy
+assert diplomacy_name(0) == Hosty @W9-03-03
+assert diplomacy_name(1) == Joiner @W9-03-03
+assert diplomacy_self(0) == 0 @W9-03-03
+assert diplomacy_self(1) == 1 @W9-03-03
+key esc
+# The host quits: we win and see the multiplayer score page.
+until 3000000 scene == result @W9-03-16
+assert score_header == "Multiplayer Score" @W9-03-16
+assert score_name(0) == Hosty @W9-03-16
+assert score_name(1) == Joiner @W9-03-16
+shot w9p_join_score
+click continue
+until 3000 scene == mp-lan @W9-03-16
+end

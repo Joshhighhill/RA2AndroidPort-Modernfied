@@ -54,6 +54,14 @@ private:
         const int resume = campaign_ ? 2 : 1;
         if (c == 0) {   // Abort -> the shell (P10), or exit a bare --interactive run
             menu_.open_ = false;
+            if (net_) {
+                // W9-03-16: the player who leaves a network match gets the
+                // multiplayer score page too (outcome: lost); the EXIT is
+                // scheduled first (net_filter_next holds the page).
+                if (gf_outcome_ == 0) gf_outcome_ = -1;
+                next_scene_ = gf_make_skirmish_result_scene(no_audio_, cfg_, gf_outcome_, gf_frames_, gf_stats());
+                return;
+            }
             if (Scene* m = make_main_menu_scene(no_audio_)) next_scene_ = m;
             else abort_ = true;
         } else if (campaign_ && c == 1) {   // Restart the campaign mission
@@ -189,6 +197,10 @@ private:
         GfSkirmishStats s;
         s.local_house = local_house_;   // L2
         s.multiplayer = net_ != nullptr;   // W9-05-10 (the score title: w9fix-menus)
+        if (net_) {   // W9-03-16: Continue -> the MP page; the game number
+            s.lan = net_->session.transport == ra2mp::MpTransportKind::Lan;
+            s.game_number = g_mp_games_played;
+        }
         for (const ra2engine::Unit& u : world_.units()) {
             if (u.deployed_away) continue;
             if (u.vet.dont_score) continue;   // W4: DontScore=yes (spent V3/DMisl rockets)

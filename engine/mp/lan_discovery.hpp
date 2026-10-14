@@ -45,6 +45,25 @@ struct LanBeacon {
 std::vector<std::uint8_t> encode_beacon(const LanBeacon& b);
 bool decode_beacon(const std::uint8_t* p, std::size_t n, LanBeacon& out);
 
+// W9-03-11: the Network page's pre-game Lobby (dialog 0xBB: Players list +
+// lobby chat). Players on the page announce themselves (type 3, every
+// second, answered by unicast so two instances on one PC see each other) and
+// chat goes to everyone on the page (type 4, broadcast + unicast to every
+// known player, de-duplicated by sender nonce + message id). [RE-FALLBACK:
+// the original's 0xBB presence / chat packets (FUN_005DF940) were not traced;
+// they ride the clone's RA2L discovery wire.]
+//   "RA2L" u16 net_proto u8 type(3|4) u8 0 u32 nonce u16 msg_id,
+//   u8-length-prefixed nick (<=16), then (type 4) u8-length text (<=120).
+struct LanLobbyMsg {
+    std::uint8_t type = 3;          // 3 presence, 4 chat
+    std::uint16_t net_proto = 1;
+    std::uint32_t nonce = 0;        // per page instance
+    std::uint16_t id = 0;           // chat message id
+    std::string nick, text;
+};
+std::vector<std::uint8_t> encode_lobby_msg(const LanLobbyMsg& m);
+bool decode_lobby_msg(const std::uint8_t* p, std::size_t n, LanLobbyMsg& out);
+
 // Android MulticastLock (reference counted here; the hook does the JNI call).
 void lan_set_multicast_hook(std::function<void(bool)> hook);
 void lan_multicast_acquire();
@@ -74,6 +93,17 @@ struct LanGame {
     std::uint64_t seen = 0;
 };
 
+struct LanPlayer {
+    std::string nick;
+    std::uint32_t nonce = 0;
+    Addr from;                      // the sender's page socket (unicast answers / chat)
+    std::uint64_t seen = 0, answered = 0;
+};
+
+struct LanChatLine {
+    std::string from, text;
+};
+
 class LanBrowser {
 public:
     ~LanBrowser() { close(); }
@@ -88,8 +118,23 @@ public:
     std::uint32_t sim_ver = 1, rules_crc = 0;
     static bool compatible(const LanGame& g, std::uint16_t proto, std::uint32_t sim, std::uint32_t rules);
 
+    // W9-03-11 lobby presence + chat (off until set_presence).
+    void set_presence(const std::string& nick, std::uint32_t nonce);
+    void say(const std::string& text);
+    const std::vector<LanPlayer>& players() const { return players_; }
+    const std::vector<LanChatLine>& chat() const { return chat_; }
+
 private:
     void take(const Addr& from, const std::uint8_t* p, int n, std::uint64_t now);
+    void take_lobby(const Addr& from, const LanLobbyMsg& m, std::uint64_t now);
+    void send_presence(const Addr& to);
+    std::string nick_;
+    std::uint32_t nonce_ = 0;
+    std::uint16_t next_id_ = 1;
+    std::uint64_t last_presence_ = 0;
+    std::vector<LanPlayer> players_;
+    std::vector<LanChatLine> chat_;
+    std::vector<std::pair<std::uint32_t, std::uint16_t>> seen_chat_;
     UdpSocket listen_, query_;
     std::vector<LanGame> games_;
     std::vector<std::uint32_t> targets_;

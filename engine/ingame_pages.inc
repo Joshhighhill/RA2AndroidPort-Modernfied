@@ -613,8 +613,19 @@ public:
             const ra2engine::SbRect r = ui_dev(lr);
             p.targets[k] = ra2play::Rect{r.x, r.y, r.w, r.h};
         };
-        for (const ShellButton& b : buttons())
+        std::string names;   // W9-03-10: the page's button set, in order
+        for (const ShellButton& b : buttons()) {
             if (b.enabled) put("menu:" + upper(b.label), b.rect);
+            names += (names.empty() ? "" : "|") + upper(b.label);
+        }
+        if (mp_net_) {   // W9-03-10 / W9-03-03 (network matches only: single-player play_hash unchanged)
+            p.set_s("menu_buttons", names);
+            p.set("menu_net", 1);
+            for (std::size_t k = 0; k < dip_.size(); ++k) {
+                p.set_s("diplomacy_name(" + std::to_string(k) + ")", dip_[k].name);
+                p.set("diplomacy_self(" + std::to_string(k) + ")", dip_[k].self ? 1 : 0);
+            }
+        }
         p.set("menu_game_speed", set_.game_speed);
         p.set("menu_scroll_rate", set_.scroll_rate);
         p.set("menu_tooltips", set_.tooltips ? 1 : 0);
@@ -704,9 +715,9 @@ private:
                 return v;
             }
             default:
-                if (mp_net_)   // W9-05-06: a shared match is not saved / loaded
+                if (mp_net_)   // 0xBBA: Game Controls 0x521 (row 0), Abort Mission 0x522 (row 1), Resume 0x686
                     return {b(0, gf_csf("GUI:GameControls", "Game Controls"), true, A_CONTROLS),
-                            b(4, gf_csf("GUI:AbortMission", "Abort Mission"), true, A_ABORTPAGE),
+                            b(1, gf_csf("GUI:AbortMission", "Abort Mission"), true, A_ABORTPAGE),
                             b(5, gf_csf("GUI:ResumeMission", "Resume Mission"), true, A_RESUME)};
                 return {b(0, gf_csf("GUI:GameControls", "Game Controls"), true, A_CONTROLS),
                         b(1, gf_csf("GUI:LoadGame", "Load Game"), true, A_LOAD),
@@ -717,6 +728,11 @@ private:
         }
     }
     std::string stt_for(int act) const {
+        if (mp_net_ && page_ == P_OPTIONS) {   // 0xBBA tooltips
+            if (act == A_CONTROLS) return gf_csf("STT:IGMultiOptButtonControls", "");
+            if (act == A_ABORTPAGE) return gf_csf("STT:IGMultiOptButtonAbort", "");
+            if (act == A_RESUME) return gf_csf("STT:IGMultiOptButtonResume", "");
+        }
         switch (act) {
             case A_CONTROLS: return gf_csf("STT:IGSingleOptButtonControls", "");
             case A_LOAD: return gf_csf("STT:IGSingleOptButtonLoad", "");

@@ -1499,6 +1499,7 @@ template <class Ar> void fields(Ar& ar, SkirmishConfig& v) {
     io(ar, v.game_speed);            // skirmish page: lobby Game Speed (-1 = unset)
     io(ar, v.mcv_redeploys);         // skirmish page: MCV Repacks (-1 = unset)
     io(ar, v.session_seed);          // Net L0 (v34): the launcher's session seed
+    io(ar, v.mode_rules);            // W9-03-04 game type rules overlay (v47)
     io(ar, v.build_off_ally);        // W9-05-09 (v46)
     io(ar, v.mp_mode);               // W9-05-03 (v46)
 }

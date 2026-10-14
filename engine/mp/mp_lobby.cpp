@@ -150,21 +150,59 @@ void LobbyHost::set_options(const MpOptions& o) {
     changed(true);
 }
 
-void LobbyHost::set_map(const MpMap& m) {
-    if (going_) return;
+bool LobbyHost::set_map(const MpMap& m) {
+    if (going_) return false;
+    const int maxp = std::max(1, std::min(kSlots, m.max_players));
+    // W9-03-13: the original refuses a map smaller than the players already
+    // seated (TXT_SCENARIO_TOO_SMALL "This map has a %d player max. The max
+    // includes human and computer players.") -- nobody is ever removed.
+    if (player_count(model_) > maxp) return false;
+    const int old_max = std::max(1, std::min(kSlots, model_.map.max_players));
     model_.map = m;
-    // Slots past the new map's max close; humans there are removed.
-    for (int i = std::max(1, m.max_players); i < kSlots; ++i) {
-        if (model_.slots[i].kind == SlotKind::Human) kick(i);
+    // Seated players past the new max move down into a free row (Open first,
+    // then a host-Closed one); a moved human finds its row again by its
+    // player id (LobbyClient re-binds local_slot from pid_lo).
+    for (int i = maxp; i < kSlots; ++i) {
+        if (!model_.slots[i].occupied()) continue;
+        int to = -1;
+        for (int j = 1; j < maxp && to < 0; ++j)
+            if (model_.slots[j].kind == SlotKind::Open) to = j;
+        for (int j = 1; j < maxp && to < 0; ++j)
+            if (model_.slots[j].kind == SlotKind::Closed) to = j;
+        if (to < 0) break;   // unreachable: player_count <= maxp
+        model_.slots[to] = model_.slots[i];
+        for (auto& kv : peers_)
+            if (kv.second.slot == i) kv.second.slot = to;
+        model_.slots[i] = MpSlot{};
+    }
+    for (int i = maxp; i < kSlots; ++i) {
         model_.slots[i] = MpSlot{};
         model_.slots[i].kind = SlotKind::Closed;
     }
-    for (int i = 1; i < std::min(kSlots, m.max_players); ++i)
+    // Rows the previous (smaller) map had closed open up; rows the host closed
+    // himself stay closed.
+    for (int i = std::max(1, old_max); i < maxp; ++i)
         if (model_.slots[i].kind == SlotKind::Closed) model_.slots[i].kind = SlotKind::Open;
     for (MpSlot& s : model_.slots) {
-        if (s.start >= m.max_players) s.start = kRandomStart;
+        if (s.start >= maxp) s.start = kRandomStart;
         if (s.kind == SlotKind::Human && !s.host) s.has_map = false;   // until the client re-checks
     }
+    changed(true);
+    return true;
+}
+
+void LobbyHost::set_mode(int mode, bool ai_allowed, bool teams_allowed) {
+    if (going_) return;
+    model_.mode = mode;
+    for (int i = 1; i < kSlots; ++i) {
+        MpSlot& s = model_.slots[i];
+        if (!ai_allowed && s.kind == SlotKind::AI) {   // ManBattle / Unholy / Cooperative: humans only
+            s = MpSlot{};
+            s.kind = SlotKind::Open;
+        }
+    }
+    if (!teams_allowed)   // FreeForAll: AlliesAllowed=no
+        for (MpSlot& s : model_.slots) s.team = kNoTeam;
     changed(true);
 }
 
@@ -324,6 +362,15 @@ void LobbyHost::handle(PeerId from, const std::vector<std::uint8_t>& body, std::
             MpSlot& s = model_.slots[slot];
             if (color >= 0 && color_owner(model_, color, slot) < 0) s.color = std::min(color, 7);
             else if (color < 0) s.color = kRandom;
+            else if (color != s.color) {
+                // W9-03-24: a lost colour race is answered like the original
+                // (TXT_COLOR_IN_USE, FUN_005E35A0) -- a system line to the asker.
+                ChatPacket c;
+                c.text = "The requested color is already taken.";
+                c.color = -1;
+                c.game_hash = game_name_hash(room_);
+                ch_.send(from, encode_chat(c), true, now);
+            }
             if (start >= 0 && start < model_.map.max_players && start_owner(model_, start, slot) < 0) s.start = start;
             else if (start < 0) s.start = kRandomStart;
             s.country = country < 0 ? kRandom : country;
@@ -451,6 +498,20 @@ void LobbyHost::update(std::uint64_t now) {
 
 LobbyClient::LobbyClient(MpNet& t, PeerId host, const MpIdentity& me) : ch_(t), host_(host), me_(me) {}
 
+// W9-03-13: the host may move a seated human to another row (a smaller map
+// compacts the rows); the row that carries our player id is ours.
+void LobbyClient::rebind_slot() {
+    if (local_slot_ < 0) return;
+    const std::uint32_t lo = static_cast<std::uint32_t>(me_.player_id);
+    const MpSlot& cur = model_.slots[local_slot_];
+    if (cur.kind == SlotKind::Human && cur.pid_lo == lo) return;
+    for (int i = 0; i < kSlots; ++i)
+        if (model_.slots[i].kind == SlotKind::Human && !model_.slots[i].host && model_.slots[i].pid_lo == lo) {
+            local_slot_ = i;
+            return;
+        }
+}
+
 void LobbyClient::request_slot(int country, int color, int team, int start) {
     if (state_ != State::Joined) return;
     BodyWriter w;
@@ -568,6 +629,7 @@ void LobbyClient::handle(const std::vector<std::uint8_t>& body, std::uint64_t no
             if (!decode_options(all, m)) return;
             model_ = m;
             rev_ = rev;
+            rebind_slot();
             if (state_ == State::Joining && local_slot_ >= 0) {
                 state_ = State::Joined;
                 system_line("Joined the game.");

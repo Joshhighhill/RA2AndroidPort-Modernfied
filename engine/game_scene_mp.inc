@@ -184,7 +184,11 @@
         // "AI takes over" (clone option) keeps the house for the computer.
         if (net_ && mp_alive() && !net_->ai_takeover) mp_destruct();
         menu_.open_ = false;
-        if (!next_scene_) next_scene_ = make_main_menu_scene(no_audio_);   // net_filter_next sends EXIT
+        if (!next_scene_) {   // net_filter_next sends EXIT
+            // W9-03-16 (w9fix-menus): the leaver sees the multiplayer score page too.
+            if (gf_outcome_ == 0) gf_outcome_ = -1;
+            next_scene_ = gf_make_skirmish_result_scene(no_audio_, cfg_, gf_outcome_, gf_frames_, gf_stats());
+        }
     }
     void mp_observe() {
         menu_.open_ = false;

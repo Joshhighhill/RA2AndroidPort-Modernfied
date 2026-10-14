@@ -736,6 +736,8 @@
         p.set("net_left", net_local_left_ ? 1 : 0);
         p.set("net_exiting", net_exit_requested_ ? 1 : 0);
         p.set("net_end", net_end_dialog_ ? 1 : 0);
+        p.set_s("mode_rules", cfg_.mode_rules);   // W9-03-04 the game type's rules override
+        p.set_s("rule(GAREFN.TechLevel)", rules_ini_.get("GAREFN", "TechLevel", ""));
         p.set_s("net_end_title", net_end_title_);
         p.set("net_oos_frame", static_cast<double>(net_->game->session().out_of_sync().frame));
         p.set("net_chat_open", net_chat_open_ ? 1 : 0);

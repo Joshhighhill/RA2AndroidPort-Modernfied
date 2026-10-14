@@ -6491,8 +6491,9 @@ public:
           // rules_ini_/art_ini_ are members constructed before rules_/art_ (mirrors
           // the old run_interactive's named-local Inis kept alive for the whole run).
           // W2-CA-04: a campaign mission's map overlays its rules sections.
-          rules_ini_(cfg.campaign_map.empty() ? load_ini_from_ra2md(dir_, "rulesmd.ini")
-                                              : camp::load_campaign_rules_ini(dir_, cfg.campaign_map)),
+          rules_ini_(!cfg.campaign_map.empty() ? camp::load_campaign_rules_ini(dir_, cfg.campaign_map)
+                     : !cfg.mode_rules.empty()  ? camp::load_mode_rules_ini(dir_, cfg.mode_rules)   // W9-03-04
+                                                : load_ini_from_ra2md(dir_, "rulesmd.ini")),
           rules_(Rules::load(rules_ini_)),
           art_ini_(load_ini_from_ra2md(dir_, "artmd.ini")),
           art_(Art::load(art_ini_)),

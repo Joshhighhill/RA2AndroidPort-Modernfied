@@ -12,12 +12,25 @@
 // and the game time sit above the table.] W5-E: the Score column is the
 // original's (MPScore.cpp FUN_005C92C0 -- see GfSkirmishStats::Row) and the
 // rows are sorted by it, highest first.
+// W9-03-16: Continue from a network match's score page goes back to the
+// multiplayer page the match came from (Network Lobby / Internet) [SUSPECTED:
+// the original returns to its lobby page].
+Scene* gf_make_mp_return_scene(bool no_audio, bool lan) {
+    if (!g_menu_rules || !g_menu_art) return nullptr;
+    if (lan) return new MpLanScene(*g_menu_rules, no_audio, *g_menu_art);
+    return new MpOnlineScene(*g_menu_rules, no_audio, *g_menu_art);
+}
+
 class GfSkirmishResultScene : public Scene {
 public:
     GfSkirmishResultScene(bool no_audio, ra2engine::SkirmishConfig cfg, int outcome, long frames,
                           GfSkirmishStats st)
         : no_audio_(no_audio), cfg_(std::move(cfg)), outcome_(outcome), frames_(frames), st_(std::move(st)) {
         head_ = gf_csf(outcome_ > 0 ? "TXT_VICTORIOUS" : "TXT_LOST", outcome_ > 0 ? "You Are Victorious!" : "Game Over");
+    }
+    std::string header() const {
+        return st_.multiplayer ? gf_csf("GUI:MultiplayerScore", "Multiplayer Score")
+                       : gf_csf("GUI:SkirmishScore", "Skirmish Score");
     }
     void handle(const ra2engine::InputEvent& ev) override {
         if (ev.kind == ra2engine::InputEvent::PointerMove || ev.kind == ra2engine::InputEvent::PointerDown ||
@@ -39,13 +52,17 @@ public:
         const ShellPainter p{ren, tc, art, xf};
         const std::vector<ShellButton> b{ShellButton{shell_row(0), gf_csf("GUI:Continue", "Continue"), true, ACT_NONE, PAGE_MAIN}};
         const bool hov = ui_dev(shell_row(0)).contains(mx_, my_);
-        draw_shell(ren, tc, art, xf, b, hov ? 0 : -1, (hov && down_) ? 0 : -1,
-                   gf_csf("GUI:SkirmishScore", "Skirmish Score"), "", 0);
+        draw_shell(ren, tc, art, xf, b, hov ? 0 : -1, (hov && down_) ? 0 : -1, header(), "", 0);
         p.header(head_, 16, 60, 440, 30, 1);
         char t[64];
         std::snprintf(t, sizeof t, "%s %02ld:%02ld:%02ld", gf_csf("GUI:Time", "Time").c_str(), frames_ / 15 / 3600,
                       (frames_ / 15 / 60) % 60, (frames_ / 15) % 60);
-        p.label(t, 16, 110, 440, 20, 1);
+        if (st_.multiplayer) {   // 0x108: game number 0x6D2 (left) + time 0x3EA (right) on one line
+            p.label(gf_csf("GUI:GameNumber", "Game Number") + ": " + std::to_string(st_.game_number), 16, 110, 200, 20, 0);
+            p.label(t, 256, 110, 200, 20, 2);
+        } else {
+            p.label(t, 16, 110, 440, 20, 1);
+        }
         static const int cx[5] = {16, 118, 181, 256, 331};
         static const char* ck[5] = {"GUI:Player", "GUI:Kills", "GUI:Losses", "GUI:Built", "GUI:Score"};
         static const char* cf[5] = {"Player", "Kills", "Losses", "Built", "Score"};
@@ -69,6 +86,8 @@ public:
         choice_ = 0;
         if (c == 1) return defer_game_scene(no_audio_, cfg_);   // W2-AR-10
         if (c == 2) {
+            if (st_.multiplayer)
+                if (Scene* m = gf_make_mp_return_scene(no_audio_, st_.lan)) return m;
             if (Scene* m = make_main_menu_scene(no_audio_)) return m;
             quit_ = true;
         }
@@ -79,6 +98,13 @@ public:
     void play_probe(ra2play::Probe& p) override {
         p.scene = "result";
         p.set_s("outcome", outcome_ > 0 ? "WON" : "LOST");
+        if (st_.multiplayer) {   // W9-03-16 (network matches only: skirmish play_hash unchanged)
+            p.set_s("score_header", header());
+            p.set("score_net", 1);
+            p.set("score_game", st_.game_number);
+            for (const GfSkirmishStats::Row& r : st_.rows)
+                if (r.house >= 0 && r.listed) p.set_s("score_name(" + std::to_string(r.house) + ")", r.name);
+        }
         p.set("result_frames", static_cast<double>(frames_));
         p.set("score_rows", static_cast<int>(st_.rows.size()));
         for (const GfSkirmishStats::Row& r : st_.rows)
