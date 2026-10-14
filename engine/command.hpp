@@ -34,12 +34,12 @@ enum class EventType : std::uint8_t {
     Empty = 0x00,
     PowerOn = 0x01,         // Target                       -> building powered up
     PowerOff = 0x02,        // Target                       -> building powered down
-    Ally = 0x03,            // i32 HouseID                  -> toggles the alliance
+    Ally = 0x03,            // i32 HouseID                  -> MakeAlly / MakeEnemy (one-way, W9-05-03)
     MegaMission = 0x04,     // Whom, Mission, Target, Destination, Follow, IsPlanning
     MegaMissionF = 0x05,    // + Speed / MaxSpeed (formation move; not issued by the clone)
     Idle = 0x06,            // Whom                         -> Stop (StopObject FUN_0072FF70)
     Scatter = 0x07,         // Whom                         -> Scatter (FUN_007300B0)
-    Destruct = 0x08,        //                              -> house self-destruct
+    Destruct = 0x08,        //                              -> house self-destruct (resign, W9-05-06)
     Deploy = 0x09,          // Whom                         -> DeployObject (unload / deploy)
     Detonate = 0x0A,        // Whom
     Place = 0x0B,           // i32 RTTI, i32 HeapID, i32 IsNaval, CellStruct
@@ -226,6 +226,11 @@ public:
     virtual void abandon_all(int, int, int, bool) {}
     virtual void place(int /*house*/, int /*rtti*/, int /*type*/, int /*cx*/, int /*cy*/) {}
     virtual void selection_notify(int /*house*/, const std::vector<int>& /*ids*/) {}
+    // W9-05-03: an ALLY event changed `house`'s view of `other` (the World's
+    // AllyChange) -- the scene's TXT_HAS_ALLIED / TXT_AT_WAR line + EVA.
+    virtual void diplomacy(int /*house*/, int /*other*/, World::AllyChange /*change*/) {}
+    // W9-05-06: a DESTRUCT resigned `house` (Leave / Observe surrender).
+    virtual void destructed(int /*house*/) {}
 };
 
 // Applies one command to the World (+ host). Every reference is re-checked

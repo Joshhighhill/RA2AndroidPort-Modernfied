@@ -823,6 +823,10 @@ struct PlayerEconRules {
     std::vector<int>  wall_fill_range;  // GuardRange cells for the free wall line
     std::vector<double> buildup_total;  // Buildup seconds for add_building (art buildup_total; MR2: was int, truncated)
     std::vector<char> base_normal;      // BaseNormal (default yes)
+    // W9-05-09: the session's BuildOffAlly and EligibileForAllyBuilding per
+    // building roster index (an allied ConYard extends the base).
+    bool build_off_ally = false;
+    std::vector<char> ally_eligible;
     // The house's buildable mask per roster building (country Owner= /
     // RequiredHouses / ForbiddenHouses, lobby TechLevel and Superweapons;
     // empty = every building) and BuildLimit= per unit def (0 = none).
@@ -1769,6 +1773,49 @@ public:
     // the house's own Allies= bits, so the relation can be one-sided); only
     // [a][b] changes. Same lazily-built matrix as set_pair_alliance.
     void set_ally_view(int a, int b, bool allied);
+
+    // --- W9-05-03 in-game diplomacy [RE: EVENT_ALLY, EventClass::Execute
+    // FUN_004C6BD0 case 3; MakeAlly FUN_004F9990; MakeEnemy FUN_004F9DB0;
+    // Is_Allowed_To_Ally FUN_00501360; ToggleAlliance FUN_007309C0] ---------
+    // [MultiplayerDialogSettings] AlliesAllowed / AllyChangeAllowed after the
+    // game mode's rules override (mpmodesmd.ini: Battle MPBattleMD.ini
+    // AlliesAllowed=yes; Team Game MPTeamMD.ini AllyChangeAllowed=no, YR's
+    // "locked alliances"; Free For All / Cooperative AlliesAllowed=no). The
+    // ToggleAlliance command and the Diplomacy page refuse to send an ALLY
+    // unless both are on (Rules+0x14B5 / +0x14BB).
+    void set_diplomacy_rules(bool allies_allowed, bool ally_change_allowed) {
+        allies_allowed_ = allies_allowed;
+        ally_change_allowed_ = ally_change_allowed;
+    }
+    bool allies_allowed() const { return allies_allowed_; }
+    bool ally_change_allowed() const { return ally_change_allowed_; }
+    // Is_Allowed_To_Ally FUN_00501360: a not-yet-allied, combatant house,
+    // `a` not defeated, and the alliance must leave `a` at least one living
+    // enemy (living houses != a + its allies + 1).
+    bool can_ally(int a, int b) const;
+    // The ALLY event's result, for the scene's messages and EVA lines.
+    enum class AllyChange { None, Requested, Formed, Broken, BrokenMutual };
+    // MakeAlly FUN_004F9990: ONE-WAY a.Allies |= b (Requested while b has not
+    // allied a, Formed once mutual); refused (None) per can_ally. a's anger
+    // toward b is cleared and a's objects drop the targets they hold on b.
+    AllyChange make_ally(int a, int b);
+    // MakeEnemy FUN_004F9DB0: only when a allies b -- clears a's bit, and b's
+    // bit for a too when b allied a (BrokenMutual); anger +1 both ways.
+    AllyChange make_enemy(int a, int b);
+    // EVENT_ALLY: a.IsAlliedWith(b) ? MakeEnemy : MakeAlly.
+    AllyChange toggle_alliance(int a, int b);
+    // ToggleAlliance FUN_007309C0's gates for a human sending ALLY to b:
+    // the mode allows alliance changes, a is not defeated, b is another human
+    // combatant house.
+    bool alliance_toggle_allowed(int a, int b) const;
+    // W9-05-05 [RE: FUN_004FBED0 -> FUN_005779D0(player) reveal]: a defeated
+    // human house of a network game sees the whole map (the observer); armed
+    // by the network match only (the same frame on every peer).
+    void enable_observer_reveal(bool on) { observer_reveal_ = on; }
+    bool observer_reveal() const { return observer_reveal_; }
+    // W9-05-04 [RE: tail of FUN_004FBED0]: the whole game is over (latched).
+    bool game_over() const { return game_over_; }
+
     // W4-SQ / W4-MC-06: the player just ordered the current selection (Input
     // calls this beside every selected-unit order). The campaign runtime
     // drains it and releases those units from their script teams. Transient
@@ -2684,6 +2731,7 @@ private:
     double econ_factory_speedup(int house, const std::vector<int>& ftypes, double mf) const;
     bool econ_conyard_alive(int house) const;
     void step_house_outcomes();
+    void victory_end_check();   // W9-05-04 (world.cpp)
     bool ai_any_ = false;                // the step() firewall bool
     void step_ai_houses(double dt);
     void ai_pick_enemy_house(int house, HouseAiRec& rec);   // W2-SK-08 / W6-03-04
@@ -2930,8 +2978,14 @@ private:
     // false in every existing gate -> step_victory early-returns. NONE hashed.
     bool victory_enabled_ = false;
     bool short_game_      = true;
+    // W9-05 (save v46): diplomacy rules, the game-over latch, observer reveal.
+    bool allies_allowed_      = true;
+    bool ally_change_allowed_ = true;
+    bool game_over_           = false;
+    bool observer_reveal_     = false;
     std::vector<std::uint8_t> house_defeated_;
     int  winning_team_    = -1;
+    int  victory_defeats_seen_ = 0;   // W9-05-04: defeats the end check has seen
     // Populate houses_ with the 3 defaults if empty (idempotent). Called from the
     // constructor; harmless if invoked again.
     void ensure_houses_default();

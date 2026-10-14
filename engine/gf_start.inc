@@ -268,6 +268,9 @@ inline std::vector<std::string> g_gf_spawned;
 struct GfSkirmishStats {
     int units_killed = 0, units_lost = 0, buildings_killed = 0, buildings_lost = 0;
     int local_house = 0;   // L2: the house the local player played
+    // W9-05-10 [RE: 0x5C95FF: GUI:MultiplayerScore unless a skirmish]: a
+    // network match (the score page's title; the rows carry the nicknames).
+    bool multiplayer = false;
     // W2-UI-20 (score page 0xBC6): per house -- name, kills (dead objects whose
     // killed_by stamp is this house's unit), losses, built (every object it
     // ever owned [RE-FALLBACK: starting units included]).

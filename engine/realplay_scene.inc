@@ -65,6 +65,13 @@ public:
         r.buildup_total.resize(ba_.art.size());
         for (std::size_t i = 0; i < ba_.art.size(); ++i) r.buildup_total[i] = ba_.art[i].buildup_total;
         r.base_normal = rp_on_ ? rp_base_normal_ : std::vector<char>{};
+        // W9-05-09: BuildOffAlly (the lobby option) + EligibileForAllyBuilding.
+        r.build_off_ally = cfg_.build_off_ally;
+        if (r.build_off_ally) {
+            r.ally_eligible.assign(ba_.roster.size(), 0);
+            for (std::size_t i = 0; i < ba_.roster.size(); ++i)
+                r.ally_eligible[i] = rp_flag(rules_, ba_.roster[i].id, "EligibileForAllyBuilding") ? 1 : 0;
+        }
         r.build_speed = build_speed_;
         r.low_power_mod = low_mod_;
         r.multiple_factory = mf_;

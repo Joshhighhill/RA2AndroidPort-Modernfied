@@ -354,6 +354,8 @@ ra2engine::SkirmishConfig base_config(const MpSessionConfig& s) {
     cfg.short_game = o.short_game;
     cfg.game_speed = o.game_speed;
     cfg.mcv_redeploys = o.mcv_repacks ? 1 : 0;
+    cfg.build_off_ally = o.build_off_ally;   // W9-05-09 (was never passed on)
+    cfg.mp_mode = s.lobby.mode > 0 ? s.lobby.mode : 1;   // W9-05-03 (1 = Battle)
     return cfg;
 }
 

@@ -161,15 +161,32 @@ int NetGame::house_of(const PeerAddr& a) const {
     return -1;
 }
 
-void NetGame::send_chat(const std::string& sender, const std::string& utf8, int color) {
+void NetGame::send_chat(const std::string& sender, const std::string& utf8, int color, const std::vector<int>* to) {
     ChatMessage m;
     m.sender = sender;
     m.text = utf8_to_u16(utf8);
     m.color = color;
     const std::vector<uint8_t> b = encode_chat(m);
+    for (const auto& r : cfg_.remotes) {
+        if (!session_.peers().count(r.first)) continue;
+        if (to && std::find(to->begin(), to->end(), r.first) == to->end()) continue;   // W9-05-07
+        net_.send_global(b.data(), b.size(), true, &r.second);
+    }
+    net_.service();
+}
+
+void NetGame::send_beacon(const BeaconMsg& m0) {
+    BeaconMsg m = m0;
+    m.house = cfg_.local_house;
+    const std::vector<uint8_t> b = encode_beacon_msg(m);
     for (const auto& r : cfg_.remotes)
         if (session_.peers().count(r.first)) net_.send_global(b.data(), b.size(), true, &r.second);
     net_.service();
+}
+
+void NetGame::poll_global(std::vector<NetChat>& chat, std::vector<AwayNotice>& away) {
+    std::vector<BeaconMsg> ignored;
+    poll_global(chat, away, ignored);
 }
 
 void NetGame::send_away(bool back, uint32_t seconds) {
@@ -187,7 +204,7 @@ void NetGame::send_away(bool back, uint32_t seconds) {
     net_.service();
 }
 
-void NetGame::poll_global(std::vector<NetChat>& chat, std::vector<AwayNotice>& away) {
+void NetGame::poll_global(std::vector<NetChat>& chat, std::vector<AwayNotice>& away, std::vector<BeaconMsg>& beacons) {
     net_.service();
     ReceivedPacket p;
     while (net_.get_global(p)) {
@@ -202,6 +219,11 @@ void NetGame::poll_global(std::vector<NetChat>& chat, std::vector<AwayNotice>& a
             if (!decode_away(p.payload, a)) continue;
             if (h >= 0) a.house = h;   // trust the address, not the body
             away.push_back(a);
+        } else if (cmd == kGlobalBeaconPlace || cmd == kGlobalBeaconDelete || cmd == kGlobalBeaconMessage) {
+            BeaconMsg m;
+            if (!decode_beacon_msg(p.payload, m) || h < 0) continue;
+            m.house = h;   // trust the address, not the body (W9-05-12)
+            beacons.push_back(std::move(m));
         } else if (cmd == kGlobalSignOff) {
             // A global NET_SIGN_OFF in game -> Destroy_Connection (case 0x0A in
             // FUN_0048D0F0): REMOVEPLAYER for everyone.

@@ -429,10 +429,22 @@ PlacementCheck World::econ_placement(int house, int type, int cx, int cy) const 
     // cell (no overlay / slope / bridge, Buildable land); a wall may stand on
     // ore. WaterBound keeps its water-grid test.
     const bool wall = r && at_or<char>(r->wall, type, 0);
+    // W9-05-09 [RE: FUN_004A8DC0 @0x4A8F0A]: BuildOffAlly -- an allied
+    // building (owner.IsAlliedWith(placer)) of an EligibileForAllyBuilding type.
+    std::vector<char> allied_owner;
+    AllyBuild ally;
+    if (r && r->build_off_ally && !r->ally_eligible.empty()) {
+        allied_owner.assign(static_cast<std::size_t>(house_count()), 0);
+        for (int h = 0; h < house_count(); ++h)
+            allied_owner[static_cast<std::size_t>(h)] = h != house && allied_with(h, house) ? 1 : 0;
+        ally.allied_owner = &allied_owner;
+        ally.eligible_type = &r->ally_eligible;
+    }
     PlacementCheck res = placement_check(cx, cy, d.fw, d.fh, house, d.adjacent, grid, grid_w(), grid_h(),
                                          occupancy(), buildings_, /*bypass_adjacency=*/false,
                                          base_normal.empty() ? nullptr : &base_normal,
-                                         water ? nullptr : build_mask(wall));
+                                         water ? nullptr : build_mask(wall),
+                                         ally.allied_owner ? &ally : nullptr);
     // W4-MC-04 [RE: FUN_00577e90]: never build outside [Map] LocalSize.
     if (playfield_.valid)
         for (int y = cy; y < cy + d.fh; ++y)
@@ -531,15 +543,17 @@ void World::step_house_outcomes() {
     const int n = house_count();
     if (static_cast<int>(house_outcome_.size()) < n) house_outcome_.resize(static_cast<std::size_t>(n), 0);
     if (static_cast<int>(victory_cheered_.size()) < n) victory_cheered_.resize(static_cast<std::size_t>(n), 0);
-    const int win = winning_team();
+    // W9-05-04 [RE: FUN_004FBED0 tail]: once the game is over every living
+    // combatant house wins -- allies of different lobby teams together.
     for (int h = 0; h < n; ++h) {
         int& o = house_outcome_[static_cast<std::size_t>(h)];
+        const bool winner = game_over() && house_combatant(h) && !house_defeated(h) && !passive_house(h);
         if (o == 0) {
             if (house_defeated(h)) o = -1;
-            else if (win >= 0 && win == house_team(h)) o = 1;
+            else if (winner) o = 1;
         }
         char& ch = victory_cheered_[static_cast<std::size_t>(h)];
-        if (!ch && is_human(h) && win >= 0 && win == house_team(h)) {
+        if (!ch && is_human(h) && winner) {
             make_house_cheer(h);
             ch = 1;
         }
