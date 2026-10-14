@@ -257,6 +257,7 @@ struct Match {
             cfg.human_houses = {0, 1};
             cfg.remotes = {{1 - k, addr[1 - k]}};
             cfg.master = k == 0;
+            cfg.master_house = 0;   // W9-05-12
             cfg.hash_every = hash_every;
             cfg.crc_check_from_frame = crc_from;
             q.game = std::make_unique<NetGame>(*q.nm, cfg);
@@ -416,4 +417,25 @@ TEST_CASE("net play: resign_house defeats a leaver and blows up what it owns") {
     CHECK(w.house_outcome(1) == -1);
     CHECK(w.house_outcome(0) == 1);   // the last team standing
     w.resign_house(99);                // out of range: no-op
+}
+
+// W9-05-12: REMOVEPLAYER is honoured from the master, from the removed house
+// itself, or (the master vanished) against the master -- never a peer
+// removing another non-master peer, nor a house that is not a human player.
+TEST_CASE("net play: REMOVEPLAYER sender rules (W9-05-12)") {
+    std::uint32_t now = 1000;
+    ra2::net::LoopbackHub hub{[&now]() { return now; }, 7};
+    ra2::net::NetManager nm(*hub.create(ra2::net::PeerAddr{ra2::net::NetAddr{0x0A000001u, 1234}, 0}),
+                            [&now]() { return now; });
+    ra2::net::NetGameConfig cfg;
+    cfg.local_house = 1;
+    cfg.human_houses = {0, 1, 2};
+    cfg.master_house = 0;
+    NetGame g(nm, cfg);
+    CHECK(g.removeplayer_allowed(0, 2));    // the host drops a timed-out player
+    CHECK(g.removeplayer_allowed(2, 2));    // a player removes itself
+    CHECK(g.removeplayer_allowed(1, 0));    // the host vanished: anyone removes it
+    CHECK_FALSE(g.removeplayer_allowed(1, 2));   // a peer griefing another peer
+    CHECK_FALSE(g.removeplayer_allowed(0, 5));   // not a human house of this match
+    CHECK_FALSE(g.removeplayer_allowed(7, 7));   // not a player at all
 }

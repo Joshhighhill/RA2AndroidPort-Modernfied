@@ -940,7 +940,7 @@ public:
     // the explicit tg.mission, else derived from the clone's state.
     int unit_mission(const Unit& u) const;
     // [RE: MissionControl, rulesmd [Sleep]..[Open]; FUN_005B3430]
-    struct MissionCtl { bool no_threat, paralyzed, retaliate, scatter, zombie; };
+    struct MissionCtl { bool no_threat = false, paralyzed = false, retaliate = false, scatter = false, zombie = false; };
     static MissionCtl mission_control(int mission);
     // W7-07-05 [RE: UnitClass::Enter_Idle_Mode 0x737990 @0x737B90..0x737BD0 /
     // InfantryClass 0x51CB0E]: an armed idle unit outside a team enters Area
@@ -1787,7 +1787,11 @@ public:
         ai_demand_ids_[(std::size_t)house] = std::move(ids);
         ai_demand_counts_[(std::size_t)house] = std::move(counts);
     }
+    // W9-05: only the campaign consumes these (step_teams drains them every
+    // frame); a skirmish / network match never would, so the list grew for
+    // the whole match and went into every save and sync hash.
     void mark_player_orders(const std::vector<int>& ids) {
+        if (skirmish_session_) return;
         for (int i : ids)
             if (i >= 0 && i < static_cast<int>(units_.size()) && units_[i].alive) player_orders_.push_back(i);
     }
@@ -2502,7 +2506,7 @@ public:
     bool psionic_target_ok(int unit_idx) const;
     bool garrison_firing(int b_idx) const;                   // CanOccupyFire && occupants
     double garrison_range(int b_idx) const;                  // cells
-    struct GarrisonEvent { enum Kind { Entered, Garrisoned, Abandoned, Unloaded } kind; int building; int house; };
+    struct GarrisonEvent { enum Kind { Entered, Garrisoned, Abandoned, Unloaded } kind = Entered; int building = -1; int house = -1; };
     std::vector<GarrisonEvent> take_garrison_events();
     // W2-CA-01 [RE: FUN_00519449 raises event 1 EnteredBy on the TARGET
     // building's tag at every "infantry arrived into a building" site
@@ -2657,7 +2661,8 @@ private:
     // --- L2 per-house economy (save v32) ---
     std::vector<HouseEcon> econ_;               // index = house id (grown on demand)
     std::vector<PlayerEconRules> econ_rules_;   // NOT saved: re-installed by the host
-    std::vector<char> econ_rules_set_;          // NOT saved
+    std::vector<char> econ_rules_set_;          // NOT saved (hashed, W9-05)
+    std::vector<std::uint64_t> econ_rules_digest_;   // NOT saved: hashed in place of econ_rules_ (W9-05)
     std::uint64_t human_mask_ = 1u;             // bit h: a human player's house (house 0 by default)
     std::vector<char> victory_cheered_;         // per house: the win-time cheer played
     std::vector<int> house_outcome_;            // per house: 0 playing, 1 won, -1 lost (latched)
@@ -2971,7 +2976,7 @@ private:
     // via static_cast to/from HarvestEvent::Kind) -- see the forward-
     // declaration comment near the top of this header for why World cannot
     // store a real HarvestEvent (or a container of one) as a member.
-    struct PendingHarvestEvent { int kind; int unit; };
+    struct PendingHarvestEvent { int kind = 0; int unit = -1; };
 
     const ra2assets::MapFile* map_;
     std::vector<Unit> units_;
@@ -3021,8 +3026,8 @@ private:
     int inf_human_ = 0;
     double inf_idle_freq_ = 0.15;
     std::map<std::string, InfTable> inf_tables_;
-    int rad_inf_death_ = -1, nuke_inf_death_ = -1, storm_inf_death_ = -1;   // W7-12-08 (not saved)
-    mutable std::vector<FragEvent> frag_events_;   // W7-12-07 (presentation feed; not saved)
+    int rad_inf_death_ = -1, nuke_inf_death_ = -1, storm_inf_death_ = -1;   // W7-12-08 (saved, v35)
+    mutable std::vector<FragEvent> frag_events_;   // W7-12-07 (presentation feed; saved v35, drained per tick)
 
     // --- Economy phase [RE: economy.md] ---
     OreField ore_;

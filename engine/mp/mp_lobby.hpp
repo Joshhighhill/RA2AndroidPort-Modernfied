@@ -24,6 +24,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -37,7 +38,7 @@ struct MpIdentity {
     std::string nick = "Player";
     std::uint64_t player_id = 0;
     std::uint16_t net_proto = kNetProto;
-    std::uint32_t sim_ver = kSimVersion;
+    std::uint32_t sim_ver = sim_version();   // W9-05-02: from the build
     std::uint32_t rules_crc = 0;
     std::string version;            // engine version string (informational)
     // NET-PLAY: 1 Windows, 2 Android arm64, 3 Android x86_64 (mp_model.hpp
@@ -51,6 +52,9 @@ enum class RejectReason : std::uint8_t {
     None = 0, Version = 1, Rules = 2, Full = 3, Started = 4, Kicked = 5, HostLeft = 6, Lost = 7, Platform = 8
 };
 const char* reject_text(RejectReason r);
+// W9-05-02: the joiner's message; names both builds on a version mismatch
+// when the host's REJECT carried its version string.
+std::string reject_message(RejectReason r, const std::string& mine, const std::string& host);
 
 struct ChatLine {
     std::string from;
@@ -119,6 +123,7 @@ private:
     LobbyChannel ch_;
     MpIdentity me_;
     std::map<PeerId, Peer> peers_;
+    std::set<std::pair<std::uint64_t, int>> told_rejects_;   // W9-05-02: (player id, reason) already announced
     bool dirty_ = false, going_ = false;
     std::uint64_t now_ = 0, go_at_ = 0;
 };
@@ -138,6 +143,8 @@ public:
 
     State state() const { return state_; }
     RejectReason reject_reason() const { return reason_; }
+    // W9-05-02: what to tell the player (reject_text, plus both versions).
+    std::string reject_message() const { return reject_message_.empty() ? std::string(reject_text(reason_)) : reject_message_; }
     bool ready() const { return ready_; }
     PeerId host() const { return host_; }
 
@@ -149,6 +156,7 @@ private:
     MpIdentity me_;
     State state_ = State::Joining;
     RejectReason reason_ = RejectReason::None;
+    std::string reject_message_;
     bool ready_ = false, has_map_ = true;
     std::uint64_t now_ = 0, last_query_ = 0, heard_ = 0, pinged_ = 0;
     int queries_ = 0;

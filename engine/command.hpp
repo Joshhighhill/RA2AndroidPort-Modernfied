@@ -231,6 +231,11 @@ public:
 // Applies one command to the World (+ host). Every reference is re-checked
 // (range, liveness, the issuer may command the object).
 void apply_command(World& w, const Command& c, CommandHost* host = nullptr);
+// W9-05-12 (clone hardening for commands that arrived from the network): the
+// issuing house exists, every unit / building reference indexes the World's
+// arrays, every cell is on the map. False = a forged or corrupt event: drop it
+// (every peer decides the same from the same World and event).
+bool valid_net_command(const World& w, const Command& c);
 
 // --- text form (replay logs) -------------------------------------------------
 // One line, no newline: "C <frame> <house> <seq> <type> <mission> <target>

@@ -41,6 +41,7 @@ struct NetGameConfig {
     std::vector<int> human_houses;                     // every human house, incl. the local one
     std::vector<std::pair<int, PeerAddr>> remotes;     // remote human house -> address
     bool master = false;                               // the host (sends TIMING)
+    int master_house = -1;                             // W9-05-12: the host's house (-1 unknown)
     GameMode mode = GameMode::LAN;                     // LAN (direct) / Internet (tunnel)
     // Start values (docs/re/net-protocol.md §8): LAN FSR 5, MaxAhead 10;
     // the master's TIMING events adapt both to the measured round trip.
@@ -106,6 +107,9 @@ public:
     // Drains the global channel: chat lines and away notices.
     void poll_global(std::vector<NetChat>& chat, std::vector<AwayNotice>& away);
     int house_of(const PeerAddr& a) const;
+    // W9-05-12: REMOVEPLAYER events dropped by removeplayer_allowed.
+    uint32_t rejected_removes() const { return rejected_removes_; }
+    bool removeplayer_allowed(int sender, int target) const;
 
 private:
     NetManager& net_;
@@ -119,6 +123,7 @@ private:
     bool init_wait_started_ = false;
     uint32_t init_wait_since_ = 0;
     std::vector<std::pair<int, int>> removed_;
+    uint32_t rejected_removes_ = 0;
 };
 
 }  // namespace ra2::net

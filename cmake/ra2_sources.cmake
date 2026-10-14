@@ -27,6 +27,31 @@ if(NOT DEFINED RA2_VERSION)
     endif()
 endif()
 
+# W9-05-02: the build identity behind ra2mp::sim_version() (engine/mp/mp_model.cpp):
+# the full commit hash WITHOUT "-dirty" (a phone APK and a PC build of one
+# commit must match), else the version text. Re-configures when HEAD moves
+# (every commit / checkout), so the id never goes stale in a reused build dir.
+if(NOT DEFINED RA2_SIM_BUILD)
+    set(RA2_SIM_BUILD "${RA2_VERSION}")
+    find_package(Git QUIET)
+    if(GIT_FOUND)
+        execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${RA2_ROOT}" rev-parse HEAD
+                        OUTPUT_VARIABLE _ra2_head OUTPUT_STRIP_TRAILING_WHITESPACE
+                        RESULT_VARIABLE _ra2_head_rc ERROR_QUIET)
+        if(_ra2_head_rc EQUAL 0 AND _ra2_head)
+            set(RA2_SIM_BUILD "${_ra2_head}")
+        endif()
+        execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${RA2_ROOT}" rev-parse --path-format=absolute --git-path logs/HEAD
+                        OUTPUT_VARIABLE _ra2_loghead OUTPUT_STRIP_TRAILING_WHITESPACE
+                        RESULT_VARIABLE _ra2_loghead_rc ERROR_QUIET)
+        if(_ra2_loghead_rc EQUAL 0 AND EXISTS "${_ra2_loghead}")
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_ra2_loghead}")
+        endif()
+    endif()
+endif()
+set_source_files_properties(${RA2_ROOT}/engine/mp/mp_model.cpp PROPERTIES
+                            COMPILE_DEFINITIONS "RA2_SIM_BUILD=\"${RA2_SIM_BUILD}\"")
+
 # ra2assets library (pure C++17, no SDL/OS deps).
 set(RA2_LIB_SOURCES
     ${RA2_ROOT}/src/_placeholder.cpp

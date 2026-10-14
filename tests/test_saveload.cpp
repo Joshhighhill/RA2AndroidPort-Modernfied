@@ -207,6 +207,23 @@ TEST_CASE("saveload: every serialized aggregate's visitor covers all its members
     CHECK_ARITY(SaveAccess::PendingHarvestEvent);
     CHECK_ARITY(SaveAccess::Trig);
     CHECK_ARITY(SaveAccess::Tag);
+    // W9-05: the visitor structs that had no tripwire.
+    CHECK_ARITY(HitRec);
+    CHECK_ARITY(LocoRules);
+    CHECK_ARITY(LocoType);
+    CHECK_ARITY(SonicWave);
+    CHECK_ARITY(UnitAi);
+    CHECK_ARITY(UnitLoco);
+    CHECK_ARITY(WeaponSlot);
+    CHECK_ARITY(World::CombatW7Rules);
+    CHECK_ARITY(World::CrushRules);
+    CHECK_ARITY(World::DepthRules);
+    CHECK_ARITY(World::ElevationRules);
+    CHECK_ARITY(World::LandSpeedRules);
+    CHECK_ARITY(World::FireEvent);
+    CHECK_ARITY(World::FragEvent);
+    CHECK_ARITY(World::GarrisonEvent);
+    CHECK_ARITY(PlayerEconRules);   // hashed only (econ_rules_digest)
 }
 
 // Non-aggregate classes cannot be counted; their sizeof is pinned on the
@@ -217,7 +234,7 @@ TEST_CASE("saveload: private-state classes' sizeof is pinned (World et al.)") {
 #if defined(__MINGW64__) && defined(__GLIBCXX__) && defined(__x86_64__)
     INFO("a class with private save-state changed size: add the member to "
          "SaveAccess in engine/save_fields.hpp, bump kFormatVersion, re-pin");
-    CHECK(sizeof(World) == 7840);   // w8fix-place build_static_ (+24, save v45) + build_mask_ scratch (+48, not saved); w8fix-layer: Occupancy deck plane owner_d_/spots_d_/lay_ (+72), save v42; fv7c (+120): ai_protect_reqs_ removed (-24), campaign_team_flags_ + team_flags_ (+48), beach_ (+24), house_repair_delay_/clock_ (+48), CombatW7Rules base_defense_delay/iq_repair_sell/ai_credit_reserve (+24), save v40; w7fix-move loco_rules_ (+48), save v39; w7fix-combat w7_rules_/house_iq_/w7_hits_ (+152), save v39; W7 pres rad/nuke/storm_inf_death_ + frag_events_ (+40);  W7 AI transient ai_protect_reqs_ (+24);  W7 air/naval: AnWorld sonic waves + SwParams C4Warhead (+64), save v36; wave-7 fix (units) side_disguise_ + infantry_blink_disguise_ (+40), save v35; L2 per-house economy econ_/econ_rules_/econ_rules_set_/human_mask_/victory_cheered_/house_outcome_/order_issuer_/econ_launches_ (+160) minus wallet_hint_ (-24), save v32; R-210 deck_land_/deck_amph_/deck_ver_ derived deck grids (+56), save v30; W6 fix #2 usable area playfield_ + per-house handicap vectors (+96), save v29; wave-6 #4: map wall overlay types/stages/kill list (+96) and SwParams storm/nuke wall keys (+8), WeaponSpec Burst/OmniFire/AffectsAllies/ProneDamage/InfDeath/wall keys in the ability rules (+24), save v25; P4 crushable walls crush_wall_ + derived crush grids (+72) and WeaponSpec delay-kill fields in the ability rules (+16), save v23; W5-A wall leak mask + AI SW quarry (+48), save v22; W5-B sub-cells/land speed/crush/elevation rules (+600), save v20; wave-5 abilities: w5_ (stolen tech, rules, unit profiles, witnesses) + gap scratch (+344), save v17; W4-SQ player-order queue + passive houses + high-bridge state + scripted-team AI demand (+128), save v16; W4 per-type RocketParams in SwParams (+824) + ProjectileRules homing keys + proj_seq_ (+24), save v15; W3-B infantry anim switches + tables (+64), save v14; gap C + gF MCV deploy (3744) + G16 garrison/bridge state (+128), save v7; W2-AN air/naval/SW (+648) + W2-GA-03 fog flag (in padding), save v10; w2fix-campaign entered events + pair alliances (+56), save v12; W2-SK harvest scan/income, wallet hints, depot/AI state (+96), save v13
+    CHECK(sizeof(World) == 7864);   // W9-05 econ_rules_digest_ (+24, hashed, not saved); w8fix-place build_static_ (+24, save v45) + build_mask_ scratch (+48, not saved); w8fix-layer: Occupancy deck plane owner_d_/spots_d_/lay_ (+72), save v42; fv7c (+120): ai_protect_reqs_ removed (-24), campaign_team_flags_ + team_flags_ (+48), beach_ (+24), house_repair_delay_/clock_ (+48), CombatW7Rules base_defense_delay/iq_repair_sell/ai_credit_reserve (+24), save v40; w7fix-move loco_rules_ (+48), save v39; w7fix-combat w7_rules_/house_iq_/w7_hits_ (+152), save v39; W7 pres rad/nuke/storm_inf_death_ + frag_events_ (+40);  W7 AI transient ai_protect_reqs_ (+24);  W7 air/naval: AnWorld sonic waves + SwParams C4Warhead (+64), save v36; wave-7 fix (units) side_disguise_ + infantry_blink_disguise_ (+40), save v35; L2 per-house economy econ_/econ_rules_/econ_rules_set_/human_mask_/victory_cheered_/house_outcome_/order_issuer_/econ_launches_ (+160) minus wallet_hint_ (-24), save v32; R-210 deck_land_/deck_amph_/deck_ver_ derived deck grids (+56), save v30; W6 fix #2 usable area playfield_ + per-house handicap vectors (+96), save v29; wave-6 #4: map wall overlay types/stages/kill list (+96) and SwParams storm/nuke wall keys (+8), WeaponSpec Burst/OmniFire/AffectsAllies/ProneDamage/InfDeath/wall keys in the ability rules (+24), save v25; P4 crushable walls crush_wall_ + derived crush grids (+72) and WeaponSpec delay-kill fields in the ability rules (+16), save v23; W5-A wall leak mask + AI SW quarry (+48), save v22; W5-B sub-cells/land speed/crush/elevation rules (+600), save v20; wave-5 abilities: w5_ (stolen tech, rules, unit profiles, witnesses) + gap scratch (+344), save v17; W4-SQ player-order queue + passive houses + high-bridge state + scripted-team AI demand (+128), save v16; W4 per-type RocketParams in SwParams (+824) + ProjectileRules homing keys + proj_seq_ (+24), save v15; W3-B infantry anim switches + tables (+64), save v14; gap C + gF MCV deploy (3744) + G16 garrison/bridge state (+128), save v7; W2-AN air/naval/SW (+648) + W2-GA-03 fog flag (in padding), save v10; w2fix-campaign entered events + pair alliances (+56), save v12; W2-SK harvest scan/income, wallet hints, depot/AI state (+96), save v13
     CHECK(sizeof(MapTriggerSystem) == 408);   // W6-05-04 +timer_text_ (save v25); P10: +campaign_mode_/semi_detached_
     CHECK(sizeof(OreField) == 128);   // W2-SK-01 +mines_ (v10)
     CHECK(sizeof(Occupancy) == 152);   // w8fix-layer +owner_d_ +spots_d_ +lay_ (v42); W5-B +spots_ +inf_ (v20)
@@ -267,14 +284,26 @@ TEST_CASE("saveload: every World / MapTriggerSystem data member is visited (sour
         // L2: the per-house production rules are asset-derived (re-installed
         // by the host after a load), the order issuer and the launch events
         // are transient -- deliberately NOT saved.
+        // W9-05: econ_rules_ is hashed through econ_rules_digest_ (visited).
         {"/engine/world.hpp", "class World {", "w.",
-         {"map_", "econ_rules_", "econ_rules_set_", "order_issuer_", "econ_launches_",
+         {"map_", "econ_rules_", "order_issuer_", "econ_launches_",
           "team_flags_"}},   // fv7c: scratch, rebuilt at the head of every step_missions_w7
         {"/engine/map_trigger.hpp", "class MapTriggerSystem {", "s.", {"d_"}},
+        // W9-05: the other SaveAccess classes -- every member is saved AND
+        // (visited with save::io) in the sync hash.
+        {"/engine/occupancy.hpp", "class Occupancy {", "o.", {}},
+        {"/engine/ore.hpp", "class OreField {", "f.", {}},
+        {"/engine/production.hpp", "class ProductionQueues {", "q.", {}},
+        {"/engine/crate.hpp", "class GameRandom {", "g.", {}},
+        {"/engine/abilities.hpp", "class RadField {", "f.", {}},
     };
     for (const Case& c : cases) {
         const std::set<std::string> m = class_members(slurp_text(root + c.header), c.head);
-        CHECK(m.size() > 5);
+        // (A brace-initialised lone member, e.g. ProductionQueues::q_{}, is
+        // not matched by the scan; the sizeof pins above cover those.)
+        if (std::string(c.head).find("World") != std::string::npos ||
+            std::string(c.head).find("MapTrigger") != std::string::npos)
+            CHECK(m.size() > 5);
         for (const std::string& name : m) {
             if (c.skip.count(name)) continue;
             INFO(c.head << " member " << name << " is not serialized: add `save::io(ar, "
@@ -633,4 +662,115 @@ TEST_CASE("saveload: the build-queue backlog + hold section round-trips (R-180)"
     REQUIRE(from_bytes(*b, r));
     CHECK(r.backlog == q.backlog);
     CHECK(r.held == q.held);
+}
+
+// ===========================================================================
+// W9-05: the sync-hash policy (what two lockstep peers compare)
+// ===========================================================================
+
+// The ONLY World members the sync hash leaves out: derived caches a const
+// accessor rebuilds lazily. Adding a member to this list needs a reason in
+// save_fields.hpp; a member visited with io_unhashed but missing here (or
+// the reverse) FAILS -- a new member cannot be silently unhashed.
+TEST_CASE("sync hash: the unhashed World members are exactly the derived caches (source scan)") {
+#ifdef RA2_SOURCE_DIR
+    const std::string fields = slurp_text(std::string(RA2_SOURCE_DIR) + "/engine/save_fields.hpp");
+    REQUIRE(!fields.empty());
+    const std::set<std::string> kUnhashedWorldMembers = {
+        "amphib_passable_", "crush_grid_", "crush_leak_", "deck_land_", "deck_amph_", "deck_ver_",
+        "w5_hide_", "w5_own_"};
+    std::set<std::string> found;
+    const std::regex re(R"(io_unhashed\(ar,\s*\w+\.([a-z_0-9]+_)\))");
+    for (std::sregex_iterator it(fields.begin(), fields.end(), re), end; it != end; ++it) found.insert((*it)[1].str());
+    CHECK(found == kUnhashedWorldMembers);
+    // Every class SaveAccess serialises is visited by the shared visitors,
+    // so the hash archives see each member the save sees (no second list).
+    CHECK(fields.find("template <class Ar> static void world(Ar& ar, World& w)") != std::string::npos);
+#else
+    MESSAGE("RA2_SOURCE_DIR not defined; source scan skipped");
+#endif
+}
+
+TEST_CASE("sync hash: NaN bit patterns are canonical in the save and the hash (W9-05-13)") {
+    Toy a, b, c;
+    const std::uint64_t pos = 0x7FF8000000000000ull, neg = 0xFFF8000000000000ull, pay = 0x7FF0000000000123ull;
+    std::memcpy(&a.b, &pos, 8);
+    std::memcpy(&b.b, &neg, 8);   // the SSE "default NaN"
+    std::memcpy(&c.b, &pay, 8);   // a signalling NaN with a payload
+    CHECK(a.b != a.b);
+    CHECK(to_bytes(a) == to_bytes(b));
+    CHECK(to_bytes(a) == to_bytes(c));
+    SyncHasher ha, hb;
+    io(ha, a);
+    io(hb, b);
+    CHECK(ha.h == hb.h);
+    Toy r;
+    REQUIRE(from_bytes(to_bytes(b), r));
+    CHECK(r.b != r.b);   // still a NaN after the round trip
+}
+
+TEST_CASE("sync hash: equals the policy writer's bytes; a hash-only field moves only the hash") {
+    ra2assets::MapFile map;
+    World a(map), b(map);
+    a.add_combat_unit(0, 0, 0, gun("GI", 10, 3.0));
+    b.add_combat_unit(0, 0, 0, gun("GI", 10, 3.0));
+    CHECK(world_sync_hash(a) == world_sync_hash(b));
+    SyncWriter sw;
+    SaveAccess::world(sw, a);
+    CHECK(fnv1a(sw.buf) == world_sync_hash(a));
+    // W9-05: the per-house production rules are not saved but are hashed.
+    PlayerEconRules ra, rb;
+    rb.build_speed = 0.5;   // a different rulesmd on one peer
+    a.set_player_econ_rules(0, ra);
+    b.set_player_econ_rules(0, rb);
+    CHECK(save_world(a) == save_world(b));
+    CHECK(world_sync_hash(a) != world_sync_hash(b));
+    b.set_player_econ_rules(0, ra);
+    CHECK(world_sync_hash(a) == world_sync_hash(b));
+    // The campaign trigger runtime joins the hash when given (co-op).
+    const MapTriggerData d = parse_map_triggers(ra2assets::Ini::parse(kTrigMap), {"Player"}, {});
+    MapTriggerSystem ts(d, 1, 0x1234u), ts2(d, 1, 0x9999u);
+    CHECK(world_sync_hash(a, &ts) != world_sync_hash(a));
+    CHECK(world_sync_hash(a, &ts) != world_sync_hash(a, &ts2));   // trigger RNG state is hashed
+}
+
+TEST_CASE("sync hash: a presentation-side cache rebuild is not a desync (W9-05)") {
+    if (!ra2fixture::mapsmd03_available()) {
+        MESSAGE("skipped: real map assets not found under RA2_INSTALL_DIR");
+        return;
+    }
+    const ra2assets::MapFile& map = ra2fixture::mapsmd03_map();
+    World a(map);
+    populate(a);
+    for (int f = 0; f < 15; ++f) a.step(1.0 / 15.0);
+    const std::vector<std::uint8_t> s0 = save_world(a);
+    World b(map);
+    REQUIRE(load_world(b, s0));
+    const std::uint64_t h0 = world_sync_hash(a);
+    const auto m0 = world_field_hashes(a);
+    // Peer B's renderer / placement preview asks for the derived grids
+    // between ticks; peer A never does.
+    (void)b.amphib_grid();
+    (void)b.crush_grid();
+    (void)b.crush_leak();
+    (void)b.deck_grid(MovementDomain::Land);
+    CHECK(world_sync_hash(b) == h0);
+    CHECK(world_field_hashes(b) == m0);
+    // ...and they keep agreeing as the sim moves on.
+    for (int f = 0; f < 30; ++f) {
+        a.step(1.0 / 15.0);
+        b.step(1.0 / 15.0);
+    }
+    CHECK(world_sync_hash(a) == world_sync_hash(b));
+}
+
+TEST_CASE("sync hash: player orders are recorded only outside a skirmish session (W9-05)") {
+    ra2assets::MapFile map;
+    World w(map);
+    w.add_combat_unit(0, 0, 0, gun("GI", 10, 3.0));
+    w.mark_player_orders({0});
+    CHECK(w.take_player_orders().size() == 1);   // campaign: step_teams drains them
+    w.set_skirmish_session(true);
+    for (int k = 0; k < 100; ++k) w.mark_player_orders({0});
+    CHECK(w.take_player_orders().empty());       // skirmish / network: nothing grows
 }

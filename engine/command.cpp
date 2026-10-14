@@ -316,6 +316,30 @@ int own_building(const World& w, const Command& c) {
 
 }  // namespace
 
+bool valid_net_command(const World& w, const Command& c) {
+    if (c.house < 0 || c.house >= w.house_count()) return false;
+    auto on_map = [&w](int x, int y) { return x >= 0 && y >= 0 && x < w.grid_w() && y < w.grid_h(); };
+    auto ok = [&](const Target& t) {
+        if (t.none()) return true;
+        if (t.is_unit()) return unit_ok(w, t.id);
+        if (t.is_building()) return bld_ok(w, t.id);
+        if (t.is_cell()) return on_map(t.cell_x(), t.cell_y());
+        return true;   // type / house references: resolved (and checked) by the apply
+    };
+    for (const Target& t : c.whom)
+        if (!ok(t)) return false;
+    if (!ok(c.target) || !ok(c.dest)) return false;
+    switch (c.type) {
+        case EventType::Place:
+        case EventType::SellCell:
+            return on_map(c.cx, c.cy);
+        case EventType::SpecialPlace:
+            return on_map(c.cx, c.cy) && (c.cx2 < 0 || on_map(c.cx2, c.cy2));
+        default:
+            return true;
+    }
+}
+
 void apply_command(World& w, const Command& c, CommandHost* host) {
     const int H = c.house;
     switch (c.type) {

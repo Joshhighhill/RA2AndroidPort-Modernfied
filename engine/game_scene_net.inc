@@ -82,11 +82,9 @@
     // CRC the FRAMEINFO packet carries.
     std::uint32_t net_state_hash() {
         const auto t0 = std::chrono::steady_clock::now();
-        std::uint64_t h = 1469598103934665603ull;
-        auto mix = [&h](const std::vector<uint8_t>& b) {
-            for (uint8_t c : b) { h ^= c; h *= 1099511628211ull; }
-        };
-        mix(ra2engine::save::save_world(world_));
+        // W9-05: streamed under the sync-hash policy (derived caches out, the
+        // production-rules digest in), plus the campaign trigger runtime.
+        std::uint64_t h = ra2engine::save::world_sync_hash(world_, campaign_ ? &campaign_->triggers() : nullptr);
         for (int v : bstates_) {
             h ^= static_cast<std::uint32_t>(v);
             h *= 1099511628211ull;
@@ -117,7 +115,8 @@
         }
         net_stalled_ = false;
         net_stall_since_ = 0;
-        for (ra2engine::Command& c : cmds) cmdq_.push(std::move(c));
+        for (ra2engine::Command& c : cmds)   // W9-05-12: forged / corrupt events are dropped
+            if (ra2engine::valid_net_command(world_, c)) cmdq_.push(std::move(c));
         // Test hook (scripts/play/net-lan-desync.ps1): RA2_NET_DESYNC_AT=<frame>
         // makes THIS machine diverge deliberately at that frame (one credit).
         static const long desync_at = [] {
@@ -129,6 +128,14 @@
             std::cerr << "[net] TEST: injected a divergence at frame " << sim_frame_ << "\n";
             pres_log(0, "net test divergence");
         }
+        // W9-05-12 test hook (net-match.ps1 -Fuzz): RA2_NET_FUZZ=1 makes THIS
+        // machine send forged / malformed game packets the others must drop.
+        static const bool fuzz = [] {
+            const char* e = std::getenv("RA2_NET_FUZZ");
+            return e && *e == '1';
+        }();
+        if (fuzz && sim_frame_ >= 300 && sim_frame_ < 2400 && sim_frame_ % 37 == 0)
+            net_->game->session().send_test_garbage(static_cast<int>(sim_frame_ / 37));
         // The hash trail (stderr / play log): one line per hash period, the
         // two-process tests compare these between the machines.
         const std::uint32_t f = sim_frame_;
@@ -157,7 +164,14 @@
         const std::string who = net_->name_of(h);
         if (h == local_house_) {
             net_local_left_ = true;
-            std::cerr << "[net] our EXIT executed at frame " << sim_frame_ << "\n";
+            std::cerr << "[net] our " << (left ? "EXIT" : "REMOVEPLAYER") << " executed at frame " << sim_frame_ << "\n";
+            if (!left && !net_exit_requested_ && !net_end_dialog_) {
+                // W9-05-12: the others dropped THIS machine (too slow or
+                // unreachable for them): end with a message, never freeze.
+                net_end_dialog_ = true;
+                net_end_title_ = "Connection lost";
+                net_end_text_ = "The other players removed you from the game.";
+            }
         } else {
             post_message(who + (left ? " has left the game." : " lost connection and was removed."), 10.0,
                          net_color(h));
@@ -319,6 +333,11 @@
             net_held_next_ = nullptr;
         }
         if (!net_end_dialog_ && !net_->game->exiting()) net_->game->request_exit();
+        {
+            const ra2::net::LockstepStats& st = net_->game->session().stats();
+            std::cerr << "[net] rejected: " << st.rejected_packets << " packets, " << st.rejected_events
+                      << " events, " << net_->game->rejected_removes() << " removeplayer" << std::endl;   // W9-05-12
+        }
         if (net_hash_n_)
             std::cerr << "[net] sync hash: " << net_hash_n_ << " computed, avg "
                       << (net_hash_ms_sum_ / net_hash_n_) << " ms, max " << net_hash_ms_max_ << " ms; stalls "

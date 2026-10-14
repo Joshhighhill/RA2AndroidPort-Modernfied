@@ -30,8 +30,12 @@ std::vector<std::uint8_t> simple(std::uint32_t cmd) {
 
 const char* reject_text(RejectReason r) {
     switch (r) {
-        case RejectReason::Version: return "Your game version differs from the host's.";
-        case RejectReason::Rules: return "Your game data (rules) differs from the host's.";
+        case RejectReason::Version:
+            return "Different game version: you and the host run different builds of the game. "
+                   "Both players need the same version.";
+        case RejectReason::Rules:
+            return "Different game data: your rulesmd.ini / artmd.ini / aimd.ini differ from the host's "
+                   "(a mod or other game files). Both players need the same game data.";
         case RejectReason::Full: return "The game is full.";
         case RejectReason::Started: return "The game has already started.";
         case RejectReason::Kicked: return "You were removed from the game by the host.";
@@ -42,6 +46,14 @@ const char* reject_text(RejectReason r) {
                    "host's \"Cross-platform (experimental)\" option.";
         default: return "";
     }
+}
+
+std::string reject_message(RejectReason r, const std::string& mine, const std::string& host) {
+    // W9-05-02: name both builds when the host sent its version string.
+    if (r == RejectReason::Version && !host.empty())
+        return "Different game version: yours is " + (mine.empty() ? std::string("?") : mine) + ", the host's is " +
+               host + ". Both players need the same version.";
+    return reject_text(r);
 }
 
 std::vector<std::vector<std::uint8_t>> options_bodies(std::uint32_t rev, const std::string& opts) {
@@ -263,7 +275,7 @@ void LobbyHost::handle(PeerId from, const std::vector<std::uint8_t>& body, std::
             const std::uint32_t rules = r.u32();
             const std::uint64_t pid = r.u64();
             const std::string nick = sanitize_name(r.fixed(20));
-            (void)r.fixed(24);                       // engine version (informational)
+            const std::string their_version = sanitize_name(r.fixed(24), 24);   // engine version (shown on a mismatch)
             const std::uint8_t platform = r.u8();
             if (pit != peers_.end()) {   // a repeat (our CONFIRM was lost / slow)
                 BodyWriter w;
@@ -284,7 +296,21 @@ void LobbyHost::handle(PeerId from, const std::vector<std::uint8_t>& body, std::
                 BodyWriter w;
                 w.u32(kCmdRejectJoin);
                 w.u8(static_cast<std::uint8_t>(why));
+                w.fixed(me_.version, 24);   // W9-05-02: the joiner names both builds (older clients ignore it)
                 ch_.send(from, w.b, true, now);
+                // W9-05-02: the host sees it too (once per joiner and reason;
+                // the joiner repeats QUERY_JOIN until the REJECT arrives).
+                if ((why == RejectReason::Version || why == RejectReason::Rules) &&
+                    told_rejects_.insert(std::make_pair(pid, static_cast<int>(why))).second) {
+                    const std::string line =
+                        (nick.empty() ? std::string("A player") : nick) + " could not join: " +
+                        (why == RejectReason::Version
+                             ? "different game version (theirs: " +
+                                   (their_version.empty() ? std::string("?") : their_version) + ")."
+                             : std::string("different game data (rulesmd / artmd / aimd.ini)."));
+                    system_line(line);
+                    if (on_event) on_event(line);
+                }
                 return;
             }
             MpSlot& s = model_.slots[slot];
@@ -457,11 +483,14 @@ void LobbyClient::handle(const std::vector<std::uint8_t>& body, std::uint64_t no
                 }
             }
             return;
-        case kCmdRejectJoin:
+        case kCmdRejectJoin: {
             reason_ = static_cast<RejectReason>(r.u8());
+            const std::string host_version = sanitize_name(r.fixed(24), 24);   // W9-05-02 (absent: "")
+            reject_message_ = ra2mp::reject_message(reason_, me_.version, r.bad ? std::string() : host_version);
             state_ = State::Rejected;
-            system_line(reject_text(reason_));
+            system_line(reject_message_);
             return;
+        }
         case kCmdGameOptions: {
             const std::uint32_t rev = r.u32();
             const std::uint8_t part = r.u8(), nparts = r.u8();

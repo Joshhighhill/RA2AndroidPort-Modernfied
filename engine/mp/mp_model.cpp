@@ -9,7 +9,30 @@
 
 #include "skirmish_lobby.hpp"
 
+#include "savegame.hpp"   // save::kFormatVersion (W9-05-02)
+
+#ifndef RA2_SIM_BUILD
+#define RA2_SIM_BUILD "unknown-build"
+#endif
+
 namespace ra2mp {
+
+const char* sim_build_id() { return RA2_SIM_BUILD; }
+
+std::uint32_t sim_version() {
+    static const std::uint32_t v = [] {
+        std::uint32_t h = 2166136261u;
+        auto mix = [&h](const std::string& t) {
+            for (unsigned char c : t) h = (h ^ c) * 16777619u;
+            h = (h ^ 0xFFu) * 16777619u;   // separator
+        };
+        mix(RA2_SIM_BUILD);
+        mix(std::to_string(ra2engine::save::kFormatVersion));
+        if (const char* salt = std::getenv("RA2_NET_SIM_SALT"); salt && *salt) mix(salt);
+        return h == 0 ? 1u : h;
+    }();
+    return v;
+}
 
 std::string sanitize_name(const std::string& s, std::size_t max_len) {
     std::string o;

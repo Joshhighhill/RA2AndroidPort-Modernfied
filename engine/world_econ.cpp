@@ -25,6 +25,7 @@
 #include "roster2.hpp"
 #include "capture.hpp"   // apply_blackout
 #include "world.hpp"
+#include "savegame.hpp"   // W9-05 econ_rules_digest
 
 namespace ra2engine {
 
@@ -75,6 +76,10 @@ void World::set_player_econ_rules(int house, PlayerEconRules rules) {
     // A just-loaded house sees its stolen tech at once (not only from the
     // next step), so a command applied before that step judges the same.
     apply_stolen_tech_gate(econ_rules_[static_cast<std::size_t>(house)].units, house);
+    // W9-05: the sync hash covers what each peer installed (a digest; the
+    // later stolen-tech gating is a function of hashed state).
+    if (econ_rules_digest_.size() < n) econ_rules_digest_.resize(n, 0);
+    econ_rules_digest_[static_cast<std::size_t>(house)] = save::econ_rules_digest(econ_rules_[static_cast<std::size_t>(house)]);
 }
 
 const PlayerEconRules* World::player_econ_rules(int house) const {

@@ -60,7 +60,7 @@ int facing_from_delta(double dx, double dy) {
     if (dx == 0.0 && dy == 0.0) return -1;
     const double ang = om::atan2(dx + dy, dx - dy) * 180.0 / 3.14159265358979323846;
     const double ccw = std::fmod(-90.0 - ang + 720.0, 360.0);
-    return static_cast<int>(std::lround(ccw / 45.0)) % 8;
+    return static_cast<int>(om::lround(ccw / 45.0)) % 8;
 }
 
 // Continuous 16-bit facing from a cell-space direction, in the ORIGINAL's
@@ -1783,7 +1783,7 @@ int World::launch_unit(int factory_idx, const BuildingTypeDef& factory_def, cons
         const double py = (f.cy * 256.0 + f.fh * 128.0 + (pad >= 0 ? an_.dock_offsets[pad].second : 0)) / 256.0 - 0.5;
         UnitCombat cv = c;   // W7-01-15: no spied-factory veterancy for aircraft
         const int house = f.house;
-        add_combat_unit(static_cast<int>(std::lround(px)), static_cast<int>(std::lround(py)), house, cv);
+        add_combat_unit(static_cast<int>(om::lround(px)), static_cast<int>(om::lround(py)), house, cv);
         const int ui = static_cast<int>(units_.size()) - 1;
         occ_.release_all_of(ui, -1, -1);   // parked on the pad: no ground cell
         Unit& a = units_[ui];
@@ -2265,7 +2265,7 @@ void World::step_flight(double dt) {
         const double max_lpf = u.flight_speed * 256.0 / 15.0;  // JumpjetSpeed (raw)
         const int speed_i = static_cast<int>(max_lpf);
         const double turn_lpf = u.flight_turn / 15.0;          // u16/frame
-        const int turn_rate = std::max(1, static_cast<int>(std::lround(turn_lpf / 256.0)));
+        const int turn_rate = std::max(1, static_cast<int>(om::lround(turn_lpf / 256.0)));
         double target_speed = 0.0;
         if ((u.flight_state == FlightState::Cruising ||
              u.flight_state == FlightState::TakingOff) && u.has_flight_goal) {
@@ -2308,7 +2308,7 @@ void World::step_flight(double dt) {
         // (the original keeps an absolute Z; the clone's altitude is over the
         // current cell's ground, so a cliff edge re-bases it instead of
         // snapping the flier 4 levels).
-        const int ncx = static_cast<int>(std::lround(u.fx)), ncy = static_cast<int>(std::lround(u.fy));
+        const int ncx = static_cast<int>(om::lround(u.fx)), ncy = static_cast<int>(om::lround(u.fy));
         if (map_ && (ncx != u.cell_x || ncy != u.cell_y)) {
             const int l0 = cell_level(u.cell_x, u.cell_y), l1 = cell_level(ncx, ncy);
             if (l0 != l1) u.altitude = std::max(0.0, u.altitude + static_cast<double>((l0 - l1) * 104));
@@ -2336,7 +2336,7 @@ double World::jumpjet_floor(const Unit& u) const {
     if (u.an.jj_speed <= 0.0) return a;
     static const int kDx[8] = {0, 1, 1, 1, 0, -1, -1, -1};
     static const int kDy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
-    const int raw = static_cast<int>(std::lround(u.body_facing)) & 0xFFFF;
+    const int raw = static_cast<int>(om::lround(u.body_facing)) & 0xFFFF;
     const int d = (((raw >> 12) + 1) >> 1) & 7;
     const int ax = static_cast<int>(std::floor(u.fx + 0.5)) + kDx[d];
     const int ay = static_cast<int>(std::floor(u.fy + 0.5)) + kDy[d];

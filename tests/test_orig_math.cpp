@@ -10,6 +10,7 @@
 #include "doctest.h"
 
 #include <cmath>
+#include <limits>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -96,8 +97,8 @@ TEST_CASE("orig_math: ipow is plain repeated multiplication") {
 // must use om:: (or IEEE-exact floor/ceil/round/fmod/trunc) -- never libm
 // transcendentals, std::sqrt/hypot/pow, whose last bit differs between the
 // MinGW UCRT and Android bionic (measured, docs/gap/net/04-engine-lockstep.md).
-TEST_CASE("orig_math: no libm transcendental / sqrt / hypot / pow in simulation sources") {
-    static const char* const kSim[] = {
+namespace {
+const char* const kSim[] = {
         "world.cpp", "world_veterancy.cpp", "world_an.cpp", "world_depth.cpp", "world_abilities.cpp",
         "world_mcv.cpp", "world_sw.cpp", "world_w5.cpp", "world_w6.cpp", "world_econ.cpp", "world.hpp",
         "combat.cpp", "combat.hpp", "building_combat.cpp", "projectile.cpp", "projectile.hpp",
@@ -109,6 +110,9 @@ TEST_CASE("orig_math: no libm transcendental / sqrt / hypot / pow in simulation 
         "inf_anim.cpp", "bridges.cpp", "occupancy.cpp", "visibility.cpp", "group_move.cpp",
         "pathfind.cpp", "roster2.cpp", "skirmish.cpp", "campaign_runtime.inc", "realplay_scene.inc",
     };
+}  // namespace
+
+TEST_CASE("orig_math: no libm transcendental / sqrt / hypot / pow in simulation sources") {
     const std::regex banned(
         R"((^|[^A-Za-z0-9_.:>])(std::)?(sqrt|sqrtf|hypot|hypotf|sin|sinf|cos|cosf|tan|tanf|asin|acos|atan|atan2|atan2f|atanf|pow|powf|exp|expf|exp2|log|log2|log10|cbrt)\s*\()");
     int hits = 0;
@@ -145,4 +149,63 @@ TEST_CASE("orig_math: no libm transcendental / sqrt / hypot / pow in simulation 
     }
     CHECK(hits == 0);
 }
+
+// W9-05-13: std::lround / lrint return `long` (32-bit Windows, 64-bit
+// Android): the sim rounds through om::lround.
+TEST_CASE("orig_math: no long-returning lround / lrint in simulation sources") {
+    const std::regex banned(R"((^|[^A-Za-z0-9_.:>])(std::)?(lround|lroundf|lrint|lrintf)\s*\()");
+    int hits = 0;
+    for (const char* f : kSim) {
+        std::ifstream in(std::string(RA2_SOURCE_DIR) + "/engine/" + f);
+        REQUIRE_MESSAGE(in.good(), std::string(f));
+        std::string line;
+        int ln = 0;
+        while (std::getline(in, line)) {
+            ++ln;
+            const std::size_t c = line.find("//");
+            const std::string code = c == std::string::npos ? line : line.substr(0, c);
+            if (std::regex_search(code, banned)) {
+                MESSAGE("long-returning rounding call in sim source " << std::string(f) << ":" << ln << ": " << line);
+                ++hits;
+            }
+        }
+    }
+    CHECK(hits == 0);
+}
 #endif
+
+TEST_CASE("orig_math: lround / itrunc are defined everywhere and match the Windows build (W9-05-13)") {
+    // In range: std::lround's half-away-from-zero.
+    CHECK(om::lround(2.5) == 3);
+    CHECK(om::lround(-2.5) == -3);
+    CHECK(om::lround(2.4999999999999996) == 2);
+    CHECK(om::lround(0.49999999999999994) == 0);
+    CHECK(om::lround(-0.5) == -1);
+    CHECK(om::lround(2147483647.4) == 2147483647);
+    CHECK(om::lround(-2147483648.4) == -2147483647 - 1);
+    // Out of int32 / NaN: the MinGW UCRT (32-bit long) result, 0.
+    CHECK(om::lround(1e30) == 0);
+    CHECK(om::lround(-1e30) == 0);
+    CHECK(om::lround(3e9) == 0);
+    CHECK(om::lround(2147483647.5) == 0);
+    CHECK(om::lround(-2147483648.5) == 0);
+    CHECK(om::lround(std::numeric_limits<double>::quiet_NaN()) == 0);
+    CHECK(om::lround(std::numeric_limits<double>::infinity()) == 0);
+    // itrunc: the x86 CVTTSD2SI result.
+    CHECK(om::itrunc(2.9) == 2);
+    CHECK(om::itrunc(-2.9) == -2);
+    CHECK(om::itrunc(2147483647.9) == 2147483647);
+    CHECK(om::itrunc(2147483648.0) == -2147483647 - 1);
+    CHECK(om::itrunc(-2147483649.0) == -2147483647 - 1);
+    CHECK(om::itrunc(1e30) == -2147483647 - 1);
+    CHECK(om::itrunc(std::numeric_limits<double>::quiet_NaN()) == -2147483647 - 1);
+#if defined(_WIN32) && defined(__x86_64__)
+    // On the Windows build the helpers ARE the platform's results.
+    volatile double big = 3e9, nan = std::numeric_limits<double>::quiet_NaN(), half = 2.5;
+    CHECK(om::lround(big) == static_cast<int>(std::lround(big)));
+    CHECK(om::lround(nan) == static_cast<int>(std::lround(nan)));
+    CHECK(om::lround(half) == static_cast<int>(std::lround(half)));
+    CHECK(om::itrunc(big) == static_cast<int>(big));
+    CHECK(om::itrunc(nan) == static_cast<int>(nan));
+#endif
+}

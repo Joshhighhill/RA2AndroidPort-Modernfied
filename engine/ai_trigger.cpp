@@ -168,7 +168,7 @@ TriggerDecision select_trigger(const AimdData& aimd,
     bool tier5000 = false;
     for (int i = 0; i < (int)aimd.triggers.size() && i < (int)weights.size(); ++i) {
         const AITriggerType& t = aimd.triggers[i];
-        const long w = std::lround(weights[i]);
+        const long w = om::lround(weights[i]);
         if (w <= 0) continue;                        // no probability mass
         if (!trigger_eligible(t, view)) continue;
         // Per-TeamType Max cap for BOTH Team1 and Team2, INSIDE eligibility,

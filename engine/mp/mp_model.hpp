@@ -34,7 +34,15 @@ constexpr int kRandom = -2;        // country / colour "Random"
 constexpr int kNoTeam = -1;
 constexpr int kRandomStart = -1;
 constexpr std::uint16_t kNetProto = 2;   // bump on any lobby/session wire change (2: NET-PLAY platform tag, GO peer table)
-constexpr std::uint32_t kSimVersion = 1; // bump on any sim change affecting determinism
+// W9-05-02: the sim version two machines must share to play together. It was
+// a hand-bumped constant (1 since it was introduced, never bumped across 36
+// world.cpp commits and save formats 34-45); now it is derived from the BUILD:
+// FNV-1a of the commit the binary was built from (RA2_SIM_BUILD, set by
+// cmake/ra2_sources.cmake; "-dirty" is ignored so a phone APK and a PC build
+// of one commit still match) and save::kFormatVersion. Test hook:
+// RA2_NET_SIM_SALT=<text> mixes <text> in (simulates another build).
+std::uint32_t sim_version();
+const char* sim_build_id();   // the commit / version text behind sim_version()
 
 enum class SlotKind : std::uint8_t { Open = 0, Closed = 1, Human = 2, AI = 3 };
 

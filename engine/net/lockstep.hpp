@@ -52,6 +52,10 @@ struct LockstepConfig {
     int local_house = 0;                 // PlayerPtr->ArrayIndex
     std::vector<int> houses;             // every human house index (incl. local)
     bool master = false;                 // Am_I_Master FUN_00697880
+    // W9-05-12 (clone hardening): the master's house. TIMING / RESPONSE_TIME /
+    // LATENCYFUDGE from any other house are dropped. -1 = unknown (accept all,
+    // the original's trust).
+    int master_house = -1;
     uint32_t max_ahead = 10;             // LAN start: max(10, roundup(RT/8, FSR))
     uint32_t frame_send_rate = 5;        // LAN start: 5
     int game_speed = 0;                  // global GameSpeed 0xA8DAC8 (TIMING fps cap)
@@ -105,7 +109,21 @@ struct LockstepStats {
     uint32_t packets_sent = 0;    // 0xB037E4
     uint32_t late_events = 0;     // "Packet received too late!"
     uint32_t moved_events = 0;    // "DoList: Moving event from frame"
+    // W9-05-12 (clone hardening; the original trusted its peers): packets /
+    // events dropped because their house was not the sending connection's,
+    // their frame was outside the window, or a timing event came from a
+    // house other than the master.
+    uint32_t rejected_packets = 0;
+    uint32_t rejected_events = 0;
 };
+
+// W9-05-12: no honest peer is ever further ahead of us than MaxAhead (<= 255,
+// the u8 header Delay) plus one FSR; a frame beyond this window is forged.
+constexpr int32_t kFrameWindow = 1024;
+// The TIMING clamps: MaxAhead travels in the u8 header Delay, the original's
+// master never sends FSR > 10 (spawner levels <= 9), fps <= 60.
+constexpr uint32_t kMaxMaxAhead = 255;
+constexpr uint32_t kMaxFrameSendRate = 30;
 
 class LockstepSession {
 public:
@@ -154,6 +172,10 @@ public:
     // 05-transport-infra.md §7.2). Restarts the stall timers so neither the
     // reconnect dialog nor the timeout kick fires while its countdown runs.
     void hold_wait();
+
+    // W9-05-12 test hook (RA2_NET_FUZZ two-process run): sends one forged /
+    // malformed game packet of kind 0..3 to every peer, which must drop it.
+    void send_test_garbage(int kind);
 
 private:
     bool fsr_boundary() const;

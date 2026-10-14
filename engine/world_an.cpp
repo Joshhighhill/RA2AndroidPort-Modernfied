@@ -290,7 +290,7 @@ void World::rocket_explode(int i, int end) {
         // FUN_00489190, V3WH / DMISLWH Wall=yes]: the detonation rolls the
         // bridge in its cell; Z is the nose height (the deck height when it
         // bursts on a target standing on a deck).
-        const int bx = static_cast<int>(std::lround(nx / kLept)), by = static_cast<int>(std::lround(ny / kLept));
+        const int bx = static_cast<int>(om::lround(nx / kLept)), by = static_cast<int>(om::lround(ny / kLept));
         int bz = cell_level(bx, by) * 104 + static_cast<int>(std::max(0.0, nz));
         const int tg = units_[i].target;
         if (tg >= 0 && tg < static_cast<int>(units_.size()) && units_[static_cast<std::size_t>(tg)].on_deck &&
@@ -390,8 +390,8 @@ void World::an_spawn_launch(int i, int k) {
         // when the rocket left (a building's centre coord cell: cx + fw/2),
         // on the ground -- a moving tank dodges.
         if (tu >= 0 && tu < static_cast<int>(units_.size())) {
-            gx = std::lround(units_[static_cast<std::size_t>(tu)].fx);
-            gy = std::lround(units_[static_cast<std::size_t>(tu)].fy);
+            gx = om::lround(units_[static_cast<std::size_t>(tu)].fx);
+            gy = om::lround(units_[static_cast<std::size_t>(tu)].fy);
         } else if (tb >= 0 && tb < static_cast<int>(buildings_.size())) {
             const Building& tbd = buildings_[static_cast<std::size_t>(tb)];
             gx = tbd.cx + tbd.fw / 2;
@@ -776,8 +776,8 @@ void World::an_step_fixed_wing(double dt) {
             u.fx = f.x / kLept;
             u.fy = f.y / kLept;
             u.altitude = std::max(0.0, f.z);
-            u.cell_x = std::max(0, std::min(grid_w_ - 1, static_cast<int>(std::lround(u.fx))));
-            u.cell_y = std::max(0, std::min(grid_h_ - 1, static_cast<int>(std::lround(u.fy))));
+            u.cell_x = std::max(0, std::min(grid_w_ - 1, static_cast<int>(om::lround(u.fx))));
+            u.cell_y = std::max(0, std::min(grid_h_ - 1, static_cast<int>(om::lround(u.fy))));
             u.body_facing = facing_u16_from_delta(om::cos(f.yaw), om::sin(f.yaw));
             u.flight_state = f.phase >= kRocketClimb ? FlightState::Cruising : FlightState::TakingOff;
             const bool off_map = grid_w_ > 0 && grid_h_ > 0 &&
@@ -1080,8 +1080,8 @@ void World::an_step_fixed_wing(double dt) {
                 }
             }
         }
-        u.cell_x = std::max(0, std::min(grid_w_ - 1, static_cast<int>(std::lround(u.fx))));
-        u.cell_y = std::max(0, std::min(grid_h_ - 1, static_cast<int>(std::lround(u.fy))));
+        u.cell_x = std::max(0, std::min(grid_w_ - 1, static_cast<int>(om::lround(u.fx))));
+        u.cell_y = std::max(0, std::min(grid_h_ - 1, static_cast<int>(om::lround(u.fy))));
         if (fly) {
             const double a = u.body_facing / 65536.0 * 6.283185307179586;
             const int f = facing_from_delta(om::sin(a), -om::cos(a));
@@ -1128,8 +1128,8 @@ void World::an_step_deaths(double dt) {
                 const double a = u.body_facing / 65536.0 * 2.0 * 3.14159265358979;
                 u.fx += om::sin(a) * u.an.t.fly_speed_cps * 0.5 * dt;
                 u.fy -= om::cos(a) * u.an.t.fly_speed_cps * 0.5 * dt;
-                u.cell_x = std::max(0, std::min(grid_w_ - 1, static_cast<int>(std::lround(u.fx))));
-                u.cell_y = std::max(0, std::min(grid_h_ - 1, static_cast<int>(std::lround(u.fy))));
+                u.cell_x = std::max(0, std::min(grid_w_ - 1, static_cast<int>(om::lround(u.fx))));
+                u.cell_y = std::max(0, std::min(grid_h_ - 1, static_cast<int>(om::lround(u.fy))));
             } else {
                 // W7-05-15 [RE: Jumpjet Crashing FUN_0054C7C0 -- desired facing
                 // = current + 0x2D00 every frame, so it spins at its
@@ -1139,8 +1139,8 @@ void World::an_step_deaths(double dt) {
                 u.body_facing = std::fmod(u.body_facing + std::min(u.flight_turn / 15.0, 11520.0) * fr,
                                           65536.0);
                 step_along_facing(u.fx, u.fy, u.body_facing, std::trunc(u.an.jj_speed) * fr);
-                u.cell_x = std::max(0, std::min(grid_w_ - 1, static_cast<int>(std::lround(u.fx))));
-                u.cell_y = std::max(0, std::min(grid_h_ - 1, static_cast<int>(std::lround(u.fy))));
+                u.cell_x = std::max(0, std::min(grid_w_ - 1, static_cast<int>(om::lround(u.fx))));
+                u.cell_y = std::max(0, std::min(grid_h_ - 1, static_cast<int>(om::lround(u.fy))));
             }
             // W8-05-04 [RE: Jumpjet Crashing FUN_0054C7C0]: a falling jumpjet
             // that was above an intact high-bridge deck stops ON it (bridge
@@ -1373,7 +1373,7 @@ bool World::an_para_jump(int i) {
     if (left < 0) return false;
     double jx = pl.fx, jy = pl.fy;
     step_along_facing(jx, jy, pl.body_facing + ((left & 1) ? -16383.0 : 16383.0), 128.0);
-    const int cx = static_cast<int>(std::lround(jx)), cy = static_cast<int>(std::lround(jy));
+    const int cx = static_cast<int>(om::lround(jx)), cy = static_cast<int>(om::lround(jy));
     if (cx < 0 || cy < 0 || cx >= grid_w_ || cy >= grid_h_) return false;
     if (!walkable(cx, cy) || building_at_cell(cx, cy) >= 0 || !cell_in_playfield(cx, cy)) return false;
     const int who = team ? pl.cargo.front() : static_cast<int>(units_.size());
@@ -1385,8 +1385,8 @@ bool World::an_para_jump(int i) {
     const bool inf = team ? occ_.is_infantry(who) : occ_.subcells();
     int spot = -1;
     if (inf) {
-        const int ox = static_cast<int>(std::lround((jx - cx) * kLept));
-        const int oy = static_cast<int>(std::lround((jy - cy) * kLept));
+        const int ox = static_cast<int>(om::lround((jx - cx) * kLept));
+        const int oy = static_cast<int>(om::lround((jy - cy) * kLept));
         spot = occ_.free_spot(cx, cy, spot_quadrant(ox, oy), who & 3);
         if (spot < 0) return false;
     } else if (!occ_.is_free(cx, cy)) {
@@ -1582,8 +1582,8 @@ void World::an_step_waves() {
         // FUN_0075FF10: the cells under the line, back -> front + 0.025.
         std::vector<std::pair<int, int>> cells;
         for (double t = w.tail; t <= w.head + 0.025 + 1e-9; t += 0.05) {
-            const int cx = static_cast<int>(std::lround(w.sx + (w.tx - w.sx) * t));
-            const int cy = static_cast<int>(std::lround(w.sy + (w.ty - w.sy) * t));
+            const int cx = static_cast<int>(om::lround(w.sx + (w.tx - w.sx) * t));
+            const int cy = static_cast<int>(om::lround(w.sy + (w.ty - w.sy) * t));
             if (cx < 0 || cy < 0 || cx >= grid_w_ || cy >= grid_h_) continue;
             if (std::find(cells.begin(), cells.end(), std::make_pair(cx, cy)) == cells.end())
                 cells.emplace_back(cx, cy);

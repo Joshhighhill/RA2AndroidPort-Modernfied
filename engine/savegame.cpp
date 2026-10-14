@@ -30,7 +30,9 @@ std::vector<std::uint8_t> save_world(const World& w) {
 std::vector<std::pair<std::string, std::uint32_t>> world_field_hashes(const World& w) {
     FieldMarks marks;
     field_marks() = &marks;
-    const std::vector<std::uint8_t> b = save_world(w);
+    SyncWriter sw;   // W9-05: the sync-hash policy (derived caches hash as empty)
+    SaveAccess::world(sw, const_cast<World&>(w));
+    const std::vector<std::uint8_t> b = std::move(sw.buf);
     field_marks() = nullptr;
     std::vector<std::pair<std::string, std::uint32_t>> out;
     std::size_t from = 0;
@@ -41,6 +43,19 @@ std::vector<std::pair<std::string, std::uint32_t>> world_field_hashes(const Worl
         from = m.second;
     }
     return out;
+}
+
+std::uint64_t world_sync_hash(const World& w, const MapTriggerSystem* triggers) {
+    SyncHasher h;
+    SaveAccess::world(h, const_cast<World&>(w));
+    if (triggers) SaveAccess::triggers(h, const_cast<MapTriggerSystem&>(*triggers));
+    return h.h;
+}
+
+std::uint64_t econ_rules_digest(const PlayerEconRules& r) {
+    SyncHasher h;
+    io(h, const_cast<PlayerEconRules&>(r));
+    return h.h;
 }
 
 bool load_world(World& w, const std::vector<std::uint8_t>& bytes) {

@@ -42,8 +42,8 @@ Unit World::defense_shooter(int b_idx, int slot) const {
     s.house = b.house;
     s.fx = bcenter_x(b);
     s.fy = bcenter_y(b);
-    s.cell_x = static_cast<int>(std::lround(s.fx));
-    s.cell_y = static_cast<int>(std::lround(s.fy));
+    s.cell_x = static_cast<int>(om::lround(s.fx));
+    s.cell_y = static_cast<int>(om::lround(s.fy));
     s.w_damage = w.damage;
     s.w_rof = w.rof;
     s.w_range = w.range;
