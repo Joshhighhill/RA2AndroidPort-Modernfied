@@ -280,7 +280,7 @@ TEST_CASE("ai_team: timed-guard holds for arg x 15 frames then advances") {
     CHECK(t.script_pc == 3);
 }
 
-TEST_CASE("ai_team: load opcode emits Load and advances the pc (W2-SK-09)") {
+TEST_CASE("ai_team: load opcode emits Load until every member is ordered, then advances (W2-SK-09, fv9a)") {
     AimdData d = make_aimd();
     TeamInstance t = make_team();
     std::uint32_t rng = 1u;
@@ -288,8 +288,18 @@ TEST_CASE("ai_team: load opcode emits Load and advances the pc (W2-SK-09)") {
     t.state = TeamState::Executing;
     t.script_pc = 3;                             // action 14 (load onto transport)
     TeamView v = full_view(true);
+    // fv9a [RE: FUN_006EC760]: the line HOLDS while a member is still to be
+    // ordered aboard (the handler orders one member per pass and returns) ...
+    v.load_pending = true;
+    for (int pass = 0; pass < 3; ++pass) {
+        const TeamCommand c = step_team(t, v, d, rng, kDt);
+        CHECK(c.kind == TeamCommand::Kind::Load);    // W2-SK-09: no longer inert
+        CHECK(t.script_pc == 3);
+    }
+    // ... and completes (team+0x80) on a pass with nobody left to order.
+    v.load_pending = false;
     const TeamCommand c = step_team(t, v, d, rng, kDt);
-    CHECK(c.kind == TeamCommand::Kind::Load);    // W2-SK-09: no longer inert
+    CHECK(c.kind != TeamCommand::Kind::Load);
     CHECK(t.script_pc == 4);
 }
 
