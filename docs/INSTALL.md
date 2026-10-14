@@ -3,7 +3,7 @@
 This project is an **engine only**. It plays Command & Conquer: Red Alert 2
 using the game files from **your own copy** of the game. No game data is
 included or downloadable here. It is not affiliated with or endorsed by
-Electronic Arts. See the README's "Legal" section.
+Electronic Arts. See the "Legal" section of the main README.
 
 ## 1. The game files you need
 
