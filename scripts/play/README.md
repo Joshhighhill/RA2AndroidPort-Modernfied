@@ -335,6 +335,15 @@ the pier (x=119..120 is a level-4 cliff face and its level-0 foot is Rock by Cli
 legal unload points on the lake are the rough shore (89..95,98..100) and the 3-cell ramp through the x=85 Beach
 strip at (86,130), and both routes pass the Russian Grand Cannons at (117,104)/(117,117), which sink the craft.
 
+fv9a (bisected over the merges since f188125, then inside w9fix-speed by toggling its W9-02-02/03 pieces; the
+Load piece alone moves it): `m-all03-real` (Normal, WON f20807, `af3a5e2b1352b414`). w9fix-speed made the house-AI
+team Load order one member per pass (FUN_006EC760), but the clone's Load line was one-shot, so one member boarded and
+43 WaitLoaded sat out its cap; the engine now holds the Load line until no member is left to order (`TeamView::
+load_pending`; an unreachable enterer leaves its team, Basic_Path FUN_004D3840). House 1's Flak Track team now rides
+in loaded, the raids thin the first Grizzly batch and the factory idled while the script waited (27k credits unspent);
+the generator queues 15 Grizzlies up front (`MK_ALL03_TRAIN0`; 14..15 and `MK_ALL03_RAID_R` 7..9 win). `m-all06-real`
+(Easy, WON f57236): the last hunt click found no target for the one remaining house-1 unit; the hunt clicks are `soft`.
+
 ## Multiplayer (agent S, engine/mp_pages.inc)
 
 Pages: `shell:Main Menu` -> `button:Network` (scene `mp-lan`) /
