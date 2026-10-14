@@ -78,6 +78,9 @@ public:
     void poll(std::uint64_t now, std::vector<In>& in, std::vector<PeerId>& lost);
     void forget(PeerId p);
     bool idle_to(PeerId p) const;   // nothing un-ACKed to p
+    // W9-04-07: put queued datagrams on the wire NOW (the app is about to
+    // be frozen: no later poll would send them).
+    void flush() { n_.net().service(); }
     MpNet& net() { return n_; }
     const MpNet& net() const { return n_; }
 

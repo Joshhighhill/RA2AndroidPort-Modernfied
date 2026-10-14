@@ -12,6 +12,9 @@ constexpr std::uint64_t kQueryMs = 1000;
 constexpr int kMaxQueries = 15;
 constexpr std::uint64_t kGoWaitMs = 3000;
 constexpr std::size_t kChatLines = 50;
+// W9-04-07: the longest AWAY a peer may announce (the lobby uses 90 s, the
+// match's 05 §7.2 value; the match caps its own at 300 s too).
+constexpr std::uint16_t kMaxAwaySeconds = 300;
 
 std::uint32_t body_cmd(const std::vector<std::uint8_t>& b) {
     return b.size() >= 4 ? (std::uint32_t(b[0]) | (std::uint32_t(b[1]) << 8) | (std::uint32_t(b[2]) << 16) |
@@ -280,6 +283,17 @@ void LobbyHost::handle(PeerId from, const std::vector<std::uint8_t>& body, std::
             else if (platform != me_.platform && !model_.opt.cross_platform) why = RejectReason::Platform;
             else if (going_ || started_) why = RejectReason::Started;
             else if ((slot = first_open_slot(model_)) < 0) why = RejectReason::Full;
+            if (why == RejectReason::Platform &&
+                std::find(told_platform_.begin(), told_platform_.end(), pid) == told_platform_.end()) {
+                // W9-04-13: the host sees the refusal too (the joiner gets the
+                // RejectJoin dialog); once per player.
+                told_platform_.push_back(pid);
+                const char* pn = platform_name(platform);
+                const std::string who = (nick.empty() ? std::string("Player") : nick) +
+                                        (*pn ? " (" + std::string(pn) + ")" : std::string());
+                system_line(who + " tried to join: turn on \"Cross-platform (exp.)\" to admit other platforms.");
+                if (on_event) on_event(who + " refused: other platform");
+            }
             if (why != RejectReason::None) {
                 BodyWriter w;
                 w.u32(kCmdRejectJoin);
@@ -347,10 +361,52 @@ void LobbyHost::handle(PeerId from, const std::vector<std::uint8_t>& body, std::
         case kCmdSignOff:
             drop_peer(from, " left the game.");
             return;
+        case kCmdAway: {
+            // W9-04-07: a client's app went to the background / came back.
+            if (pit == peers_.end()) return;
+            const bool back = r.u8() != 0;
+            const std::uint16_t secs = std::min<std::uint16_t>(r.u16(), kMaxAwaySeconds);
+            const std::string& who = model_.slots[pit->second.slot].name;
+            if (back) {
+                if (pit->second.away_until == 0) return;   // the repeat
+                pit->second.away_until = 0;
+                system_line(who + " is back.");
+                send_options(from, now);   // anything it missed while frozen
+            } else {
+                if (pit->second.away_until != 0) return;
+                pit->second.away_until = now + 1000ull * secs;
+                system_line(who + " is away (" + std::to_string(secs) + " s).");
+            }
+            if (on_event) on_event(who + (back ? " back" : " away"));
+            return;
+        }
         case kCmdPing:
         default:
             return;
     }
+}
+
+void LobbyHost::away(bool back, std::uint16_t seconds) {
+    BodyWriter w;
+    w.u32(kCmdAway);
+    w.u8(back ? 1 : 0);
+    w.u16(seconds);
+    // Unreliable, twice (like SIGN_OFF): a frozen process cannot resend.
+    for (const auto& kv : peers_) {
+        ch_.send(kv.first, w.b, false, now_);
+        ch_.send(kv.first, w.b, false, now_);
+    }
+    ch_.flush();
+}
+
+void LobbyHost::resume(std::uint64_t now) {
+    now_ = now;
+    for (auto& kv : peers_) {
+        kv.second.heard = std::max(kv.second.heard, now);
+        kv.second.pinged = 0;
+        ch_.forget(kv.first);
+    }
+    dirty_ = true;   // the options again (anything un-ACKed was dropped)
 }
 
 void LobbyHost::update(std::uint64_t now) {
@@ -359,10 +415,17 @@ void LobbyHost::update(std::uint64_t now) {
     std::vector<PeerId> lost;
     ch_.poll(now, in, lost);
     for (const auto& m : in) handle(m.from, m.body, now);
-    for (PeerId p : lost) drop_peer(p, " lost connection.");
+    for (PeerId p : lost) {
+        // W9-04-07: an away peer's un-ACKed packets are dropped, not the peer.
+        const auto it = peers_.find(p);
+        if (it != peers_.end() && now < it->second.away_until) ch_.forget(p);
+        else drop_peer(p, " lost connection.");
+    }
     std::vector<PeerId> silent;
     for (auto& kv : peers_) {
-        if (now - kv.second.heard > kSilenceMs) silent.push_back(kv.first);
+        if (now - std::max(kv.second.heard, kv.second.away_until) > kSilenceMs && now >= kv.second.away_until)
+            silent.push_back(kv.first);
+        else if (now < kv.second.away_until) continue;   // frozen: no pings to queue up
         else if (now - kv.second.pinged >= kPingMs) {
             ch_.send(kv.first, simple(kCmdPing), false, now);
             kv.second.pinged = now;
@@ -432,6 +495,25 @@ void LobbyClient::leave() {
     }
     state_ = State::Rejected;
     reason_ = RejectReason::None;
+}
+
+void LobbyClient::away(bool back, std::uint16_t seconds) {
+    if (state_ != State::Joined) return;
+    BodyWriter w;
+    w.u32(kCmdAway);
+    w.u8(back ? 1 : 0);
+    w.u16(seconds);
+    ch_.send(host_, w.b, false, now_);
+    ch_.send(host_, w.b, false, now_);
+    ch_.flush();
+}
+
+void LobbyClient::resume(std::uint64_t now) {
+    now_ = now;
+    heard_ = std::max(heard_, now);
+    pinged_ = 0;
+    ch_.forget(host_);
+    if (state_ == State::Joined) send_ready(now);   // the host may have missed a change
 }
 
 void LobbyClient::handle(const std::vector<std::uint8_t>& body, std::uint64_t now) {
@@ -534,6 +616,20 @@ void LobbyClient::handle(const std::vector<std::uint8_t>& body, std::uint64_t no
             reason_ = RejectReason::HostLeft;
             system_line(reject_text(reason_));
             return;
+        case kCmdAway: {   // W9-04-07: the host's app went to the background / came back
+            const bool back = r.u8() != 0;
+            const std::uint16_t secs = std::min<std::uint16_t>(r.u16(), kMaxAwaySeconds);
+            if (back) {
+                if (host_away_until_ == 0) return;
+                host_away_until_ = 0;
+                system_line("The host is back.");
+            } else {
+                if (host_away_until_ != 0) return;
+                host_away_until_ = now + 1000ull * secs;
+                system_line("The host is away (" + std::to_string(secs) + " s).");
+            }
+            return;
+        }
         default:
             return;
     }
@@ -578,7 +674,13 @@ void LobbyClient::update(std::uint64_t now) {
         ++queries_;
     }
     if (state_ == State::Joined) {
-        if (!lost.empty() || now - heard_ > kSilenceMs) {
+        // W9-04-07: while the host is away its silence and our un-ACKed
+        // packets are excused (they were dropped: it resends the options).
+        if (!lost.empty() && now < host_away_until_) {
+            ch_.forget(host_);
+            lost.clear();
+        }
+        if (!lost.empty() || (now - std::max(heard_, host_away_until_) > kSilenceMs && now >= host_away_until_)) {
             state_ = State::Lost;
             reason_ = RejectReason::Lost;
             system_line(reject_text(reason_));

@@ -96,6 +96,13 @@ android {
                 // targeting Android 15+ and to load at all on 16 KB devices.
                 arguments "-DANDROID_STL=c++_shared", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
                           "-DRA2_VERSION=" + ra2VersionName
+                // -Pra2.jobs=N caps the native build's parallel compiles (a
+                // machine running several builds at once runs out of memory
+                // at ninja's default of one job per core).
+                if (project.findProperty('ra2.jobs')) {
+                    arguments "-DCMAKE_JOB_POOLS=ra2=" + project.findProperty('ra2.jobs'),
+                              "-DCMAKE_JOB_POOL_COMPILE=ra2", "-DCMAKE_JOB_POOL_LINK=ra2"
+                }
                 abiFilters 'arm64-v8a', 'x86_64'
             }
         }

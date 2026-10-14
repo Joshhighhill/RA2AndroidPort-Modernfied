@@ -181,15 +181,16 @@ struct ShellList {
     std::vector<SDL_Color> swatch;    // optional per-item swatch (colour combo)
     int top = 0, sel = -1, visible = 7, item_h = 16;
     static constexpr int kStripW = 12;
+    int strip_w = kStripW;            // W9-04-06: the MP pages widen it on touch
 
     bool scrolls() const { return static_cast<int>(items.size()) > visible; }
     int rows() const { return std::min(visible, static_cast<int>(items.size())); }
     ra2engine::SbRect item_rect(int i) const {   // i = item index (must be visible)
-        return {r.x + 1, r.y + 1 + (i - top) * item_h, r.w - 2 - (scrolls() ? kStripW : 0), item_h};
+        return {r.x + 1, r.y + 1 + (i - top) * item_h, r.w - 2 - (scrolls() ? strip_w : 0), item_h};
     }
-    ra2engine::SbRect strip_up() const { return {r.x + r.w - kStripW - 1, r.y + 1, kStripW, r.h / 2 - 1}; }
+    ra2engine::SbRect strip_up() const { return {r.x + r.w - strip_w - 1, r.y + 1, strip_w, r.h / 2 - 1}; }
     ra2engine::SbRect strip_down() const {
-        return {r.x + r.w - kStripW - 1, r.y + r.h / 2, kStripW, r.h - r.h / 2 - 1};
+        return {r.x + r.w - strip_w - 1, r.y + r.h / 2, strip_w, r.h - r.h / 2 - 1};
     }
     void clamp_top() {
         const int n = static_cast<int>(items.size());

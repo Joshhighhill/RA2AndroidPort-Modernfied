@@ -1,0 +1,75 @@
+# mp-touch-phone -- W9-04 (docs/gap/wave9/04-phone-touch-mp.md): the
+# multiplayer pages driven through the real TouchGestures layer as a phone
+# (soft-keyboard platform). One process, no network peer.
+#   W9-04-02 a tapped field brings the keyboard back after the IME's Back
+#   W9-04-03 Enter / a button hides the keyboard
+#   W9-04-14 the IME is seeded with the field's text and kind
+#   W9-04-06 a near-miss tap lands on the nearest target
+#   W9-04-05 a finger drag moves a slider / scrolls the map list
+#   W9-04-09 Esc / Android Back in the host lobby asks first
+set render_every 300
+ime screenkb
+require scene == "shell:Main Menu"
+touch tap button Network
+require scene == mp-lan
+# W9-04-14: the IME session starts from the name (its delete key can erase it).
+touch tap edit:nick
+assert focus == "nick"                                     @focus-nick
+assert touch_page == 1
+assert text_input_active == 1                              @kb-shown
+assert ime_kind == 0                                       @ime-kind-text
+assert ime_seed == edit(nick)                              @ime-seeded
+# W9-04-02: the IME's Back hides the keyboard; a tap on the same field brings it back.
+ime hide
+wait 1
+assert text_input_active == 0
+touch tap edit:nick
+assert text_input_active == 1                              @kb-back-same-field
+# ... and on another field (the IP: the URI keyboard).
+ime hide
+wait 1
+touch tap edit:ip
+assert focus == "ip"
+assert text_input_active == 1                              @kb-back-other-field
+assert ime_kind == 1                                       @ime-kind-uri
+# W9-04-03: Enter on the name field hides the keyboard.
+touch tap edit:nick
+key enter
+assert focus == ""
+assert text_input_active == 0                              @kb-hidden-on-enter
+# W9-04-06: a tap ~4 logical px below the name field (no target there) lands on it.
+touch tap xy 500 95
+assert focus == "nick"                                     @near-miss-snaps
+# W9-04-03: a button hides the keyboard.
+touch tap button "Host Game"
+require scene == mp-lobby
+assert text_input_active == 0                              @kb-hidden-on-button
+assert credits == 10000
+# W9-04-05: drag the credits thumb from the right end to the left end.
+touch drag xy 790 399 622 399
+wait 2
+assert credits < 10000                                     @drag-slider
+# W9-04-05: a one-finger drag up the map list scrolls it.
+touch tap button "Customize Battle"
+require choosing == 1
+assert map_list_top == 0
+touch drag xy 500 560 500 140
+wait 2
+assert map_list_top > 0                                    @drag-list
+touch tap button Cancel
+require choosing == 0
+# W9-04-09: Esc / Android Back asks before closing the host's game.
+key escape
+wait 2
+assert scene == mp-lobby                                   @back-confirm
+assert confirm_open == 1
+touch tap confirm:no
+wait 2
+assert confirm_open == 0
+assert scene == mp-lobby
+key escape
+wait 2
+touch tap confirm:yes
+until 10 scene == mp-lan
+assert scene == mp-lan                                     @back-confirm-ok
+end

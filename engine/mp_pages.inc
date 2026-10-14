@@ -96,6 +96,17 @@ inline ra2mp::MpIdentity identity(const Prefs& p) {
 
 inline int platform_code() { return ra2mp::platform_code(); }
 
+// W9-04-13: a game-list row's platform note: nothing for a host on this
+// platform; "(PC)" / "(Android)" for another one, plus whether its host must
+// turn on "Cross-platform (exp.)" first (xp = the host already did).
+inline std::string platform_tag(std::uint8_t plat, bool xp) {
+    if (plat == 0 || plat == ra2mp::platform_code()) return {};
+    const char* n = ra2mp::platform_name(plat);
+    std::string t = std::string("  (") + (*n ? n : "other platform") + ")";
+    if (!xp) t += " needs Cross-platform";
+    return t;
+}
+
 inline void init_once() {
     static bool done = false;
     if (done) return;
@@ -138,6 +149,7 @@ struct Edit {
     std::string text;
     std::size_t max = 32;
     bool enabled = true;
+    int ime = ra2engine::kOsImeText;  // W9-04-14: soft-keyboard layout (kOsIme*)
 };
 
 }  // namespace mpui
@@ -180,11 +192,17 @@ public:
         for (const mpui::Edit& e : edits_) p.set_s("edit(" + e.id + ")", e.text);
         p.set_s("focus", focus_ >= 0 ? edits_[static_cast<std::size_t>(focus_)].id : "");
         p.set_s("status", status_);
+        // W9-04-01..03/-14: the soft keyboard (text input state, the IME seed).
+        p.set("text_input_active", SDL_IsTextInputActive() ? 1 : 0);
+        p.set_s("ime_seed", g_ime_seed);
+        p.set("ime_kind", g_ime_kind);
+        p.set("touch_page", touch_seen_ ? 1 : 0);
         body_probe(p);
         confirm_.play_probe(p);
     }
 
     void render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override {
+        apply_touch_metrics();   // W9-04-06 (a list rebuilt since the last event)
         SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
         const ShellXform xf = xform();
         const std::vector<ShellButton> btns = buttons();
@@ -206,13 +224,48 @@ public:
             }
             p.edit(e.r, e.text, static_cast<int>(i) == focus_, std::fmod(clock_, 1.0) < 0.5);
         }
+        // W9-04-14: a PASTE chip inside the focused edit's right end (touch:
+        // there is no long-press menu on the engine's own edit).
+        if (paste_chip_shown()) {
+            const ra2engine::SbRect c = paste_chip();
+            p.fill(p.dev(c), 60, 0, 0, 255);
+            p.frame(p.dev(c), true);
+            p.label("PASTE", c.x, c.y, c.w, c.h, 1, true);
+        }
         draw_overlay(p);
         p.label(p.fit(status_, 454), 15, 458, 454, 19, 0);
         confirm_.render(ren, tc);
     }
 
-    void handle(const ra2engine::InputEvent& ev) override {
+    void handle(const ra2engine::InputEvent& ev_in) override {
         using ra2engine::InputEvent;
+        // W9-04-07: the Android lifecycle (the lobby's AWAY / BACK).
+        if (ev_in.kind == InputEvent::AppBackground) { on_background(); return; }
+        if (ev_in.kind == InputEvent::AppForeground) { on_foreground(); return; }
+        InputEvent ev = ev_in;
+        if (ev.kind == InputEvent::PointerMove || ev.kind == InputEvent::PointerDown || ev.kind == InputEvent::PointerUp ||
+            ev.kind == InputEvent::Pan) {
+            touch_seen_ = ev.touch;   // W9-04-06: touch metrics while the last pointer is a finger
+            apply_touch_metrics();
+        }
+        // W9-04-15(g): a finger hold (the gesture layer's right click) is a
+        // slow tap here -- on an edit it pastes (W9-04-14), elsewhere it
+        // clicks like a tap instead of being silently ignored.
+        if (ev.touch && ev.hold && ev.button == InputEvent::Right &&
+            (ev.kind == InputEvent::PointerDown || ev.kind == InputEvent::PointerUp)) {
+            if (ev.kind == InputEvent::PointerDown && !confirm_.open()) {
+                int hx = 0, hy = 0;
+                to_logical(ev.x, ev.y, hx, hy);
+                for (std::size_t i = 0; i < edits_.size(); ++i)
+                    if (edits_[i].enabled && edits_[i].r.contains(hx, hy)) {
+                        set_focus(static_cast<int>(i));
+                        paste();
+                        return;
+                    }
+            }
+            ev.button = InputEvent::Left;
+            ev.hold = false;
+        }
         if (ev.kind == InputEvent::PointerMove || ev.kind == InputEvent::PointerDown || ev.kind == InputEvent::PointerUp) {
             mx_ = ev.x;
             my_ = ev.y;
@@ -237,8 +290,14 @@ public:
                     edit_changed(focus_);
                     return;
                 }
-                if (ev.key == ra2engine::kKeyDelete) { e.text.clear(); edit_changed(focus_); return; }
+                if (ev.key == ra2engine::kKeyDelete) {
+                    e.text.clear();
+                    ime_sync(e.text, e.ime, static_cast<int>(e.max));
+                    edit_changed(focus_);
+                    return;
+                }
                 if (ev.key == ra2engine::kKeyEnter) { const int f = focus_; on_enter(f); return; }
+                if (ev.ctrl && ev.vk == 'V') { paste(); return; }   // W9-04-14: Ctrl+V
             }
             if (body_key(ev)) return;
             if (ev.key == ra2engine::kKeyEscape) {
@@ -262,7 +321,25 @@ public:
             body_drag(ev, lx, ly);
             return;
         }
+        // W9-04-05: a finger drag (the gesture layer's Pan) scrolls a list /
+        // moves a slider thumb where it started.
+        if (ev.kind == InputEvent::Pan) {
+            if (ev.x0 != pan_x0_ || ev.y0 != pan_y0_) {   // a new gesture
+                pan_x0_ = ev.x0;
+                pan_y0_ = ev.y0;
+                pan_acc_ = 0.0;
+            }
+            int sx = 0, sy = 0;
+            to_logical(ev.x0, ev.y0, sx, sy);
+            body_pan(ev, sx, sy, lx, ly);
+            return;
+        }
         if (ev.kind != InputEvent::PointerDown || ev.button != InputEvent::Left) return;
+        if (ev.touch) touch_snap(lx, ly);   // W9-04-06: a near miss lands on the nearest target
+        if (paste_chip_shown() && paste_chip().contains(lx, ly)) {
+            paste();
+            return;
+        }
         if (body_modal(lx, ly)) return;
         for (const ShellButton& b : buttons())
             if (b.enabled && b.rect.contains(lx, ly)) {
@@ -298,6 +375,17 @@ protected:
     virtual void body_click(int lx, int ly) { (void)lx; (void)ly; }
     virtual void body_drag(const ra2engine::InputEvent& ev, int lx, int ly) { (void)ev; (void)lx; (void)ly; }
     virtual bool body_key(const ra2engine::InputEvent& ev) { (void)ev; return false; }
+    // W9-04-05: a finger drag that started at logical (sx, sy), now at (lx, ly).
+    virtual void body_pan(const ra2engine::InputEvent& ev, int sx, int sy, int lx, int ly) {
+        (void)ev; (void)sx; (void)sy; (void)lx; (void)ly;
+    }
+    // W9-04-07: Android background / foreground (the lobby's AWAY / BACK).
+    virtual void on_background() {}
+    virtual void on_foreground() {}
+    // W9-04-06: extra touch hit areas (the full rects behind small probe targets).
+    virtual void touch_extra(std::vector<ra2engine::SbRect>& out) const { (void)out; }
+    // W9-04-06: the page's lists (their scroll strip widens on touch).
+    virtual void page_lists(std::vector<ShellList*>& out) { (void)out; }
     virtual void body_probe(ra2play::Probe& p) { (void)p; }
     virtual void body_targets(std::map<std::string, ra2engine::SbRect>& t) const { (void)t; }
     virtual void on_enter(int edit) { (void)edit; set_focus(-1); }
@@ -315,18 +403,101 @@ protected:
         body_targets(t);
         return t;
     }
+    // W9-04-02/-03: focusing an edit (also the focused one again, or another
+    // one) (re)opens the soft keyboard on it, seeded with its text; leaving
+    // the edits hides it on a soft-keyboard platform (the desktop keeps its
+    // old "restore what was there" behaviour).
     void set_focus(int i) {
-        if (i == focus_) return;
-        if (i >= 0 && focus_ < 0) {
-            text_was_active_ = SDL_IsTextInputActive();
-            const ra2engine::SbRect& r = edits_[static_cast<std::size_t>(i)].r;
-            const SDL_Rect d = xform().dev(r.x, r.y, r.w, r.h);
-            set_text_input_rect_logical(d.x, d.y, d.w, d.h);   // keep the edit above the soft keyboard
-            SDL_StartTextInput();
-        } else if (i < 0 && focus_ >= 0 && !text_was_active_) {
-            SDL_StopTextInput();
+        if (i >= 0) {
+            if (focus_ < 0) text_was_active_ = SDL_IsTextInputActive();
+            const bool restart = i != focus_ || !SDL_IsTextInputActive();
+            focus_ = i;
+            if (restart) {
+                const mpui::Edit& e = edits_[static_cast<std::size_t>(i)];
+                const SDL_Rect d = xform().dev(e.r.x, e.r.y, e.r.w, e.r.h);
+                ime_open(d.x, d.y, d.w, d.h, e.text, e.ime, static_cast<int>(e.max));   // keep the edit above the keyboard
+            }
+            return;
         }
-        focus_ = i;
+        if (focus_ >= 0 && (ime_screen_keyboard() || !text_was_active_)) SDL_StopTextInput();
+        focus_ = -1;
+    }
+    // W9-04-14: the clipboard into the focused edit (Ctrl+V, the PASTE chip,
+    // a finger hold on the edit). One line, control characters dropped.
+    void paste() {
+        if (focus_ < 0 || !SDL_HasClipboardText()) return;
+        char* clip = SDL_GetClipboardText();
+        if (!clip) return;
+        mpui::Edit& e = edits_[static_cast<std::size_t>(focus_)];
+        for (const char* c = clip; *c && e.text.size() < e.max; ++c) {
+            const unsigned char ch = static_cast<unsigned char>(*c);
+            if (ch == '\n' || ch == '\r') break;
+            if (ch < 32 || ch == 127) continue;
+            e.text += static_cast<char>(ch);
+        }
+        SDL_free(clip);
+        ime_sync(e.text, e.ime, static_cast<int>(e.max));
+        edit_changed(focus_);
+        play_ui("menu:click");
+    }
+    ra2engine::SbRect paste_chip() const {
+        if (focus_ < 0) return {};
+        const ra2engine::SbRect& r = edits_[static_cast<std::size_t>(focus_)].r;
+        return {r.x + r.w - 44, r.y + 1, 43, r.h - 2};
+    }
+    bool paste_chip_shown() const {
+        if (!touch_seen_ || focus_ < 0 || !edits_[static_cast<std::size_t>(focus_)].enabled ||
+            edits_[static_cast<std::size_t>(focus_)].ime == ra2engine::kOsImeChat)
+            return false;
+        // SDL_HasClipboardText is a JNI round trip on Android: ask twice a second.
+        if (clock_ - clip_checked_ >= 0.5 || clip_checked_ < 0.0) {
+            clip_checked_ = clock_;
+            clip_has_ = SDL_HasClipboardText() == SDL_TRUE;
+        }
+        return clip_has_;
+    }
+    // W9-04-06: touch targets. The faithful 640x480 layout stays (the art is
+    // not resized); a finger tap that hits no target lands on the nearest
+    // one within 16 dp, so every target gets a >= 48 dp tall catch zone on a
+    // phone, and the lists' scroll strips widen to 32 logical px.
+    void touch_snap(int& lx, int& ly) const {
+        std::vector<ra2engine::SbRect> c;
+        for (const auto& kv : targets())
+            if (kv.first.rfind("slider:", 0) != 0) c.push_back(kv.second);
+        if (paste_chip_shown()) c.push_back(paste_chip());
+        touch_extra(c);
+        for (const ra2engine::SbRect& r : c)
+            if (r.w > 0 && r.contains(lx, ly)) return;
+        const double radius = std::max(6.0, std::min(24.0, 16.0 * window_px_per_dp() / xform().s));
+        const ra2engine::SbRect* best = nullptr;
+        double bd = radius;
+        for (const ra2engine::SbRect& r : c) {
+            if (r.w <= 0 || r.h <= 0) continue;
+            const int dx = lx < r.x ? r.x - lx : lx >= r.x + r.w ? lx - (r.x + r.w - 1) : 0;
+            const int dy = ly < r.y ? r.y - ly : ly >= r.y + r.h ? ly - (r.y + r.h - 1) : 0;
+            const double d = std::sqrt(double(dx) * dx + double(dy) * dy);
+            if (d <= bd) {
+                bd = d;
+                best = &r;
+            }
+        }
+        if (!best) return;
+        lx = std::max(best->x, std::min(best->x + best->w - 1, lx));
+        ly = std::max(best->y, std::min(best->y + best->h - 1, ly));
+    }
+    void apply_touch_metrics() {
+        std::vector<ShellList*> ls;
+        page_lists(ls);
+        for (ShellList* l : ls) l->strip_w = touch_seen_ ? 32 : ShellList::kStripW;
+    }
+    // W9-04-05: a drag on a list scrolls it by whole rows (the content follows the finger).
+    void list_pan(ShellList& l, const ra2engine::InputEvent& ev) {
+        pan_acc_ += ev.dy / xform().s;
+        const int rows = static_cast<int>(pan_acc_ / std::max(1, l.item_h));
+        if (rows) {
+            l.scroll(-rows);
+            pan_acc_ -= rows * l.item_h;
+        }
     }
     void play_ui(const char* key) const {
         if (art_.audio && art_.audio->sys.enabled && art_.audio->sys.mixer) art_.audio->sys.mixer->play(key);
@@ -359,6 +530,15 @@ protected:
     int mx_ = -1, my_ = -1;
     bool down_ = false;
     double clock_ = 0.0;
+#ifdef __ANDROID__
+    bool touch_seen_ = true;                 // W9-04-06: a phone starts in touch metrics
+#else
+    bool touch_seen_ = false;
+#endif
+    int pan_x0_ = -1, pan_y0_ = -1;          // W9-04-05: the current drag gesture
+    double pan_acc_ = 0.0;
+    mutable double clip_checked_ = -1.0;     // W9-04-14: clipboard poll
+    mutable bool clip_has_ = false;
 };
 
 // ===========================================================================
@@ -409,7 +589,11 @@ private:
     // NET-PLAY: CK_AIT (a leaver's house -> AI) and CK_XP (cross-platform, experimental).
     enum Check { CK_SHORT, CK_MCV, CK_CRATES, CK_SW, CK_AIT, CK_XP, CK_COUNT };
     enum Slider { SL_SPEED, SL_CREDITS, SL_UNITS, SL_COUNT };
-    enum Confirm { C_LEAVE = 1, C_INFO };
+    enum Confirm { C_LEAVE = 1, C_INFO, C_QUIT };
+    // W9-04-07: how long a lobby member's background is excused (the match's
+    // AWAY value, 05 §7.2 -- the original never backgrounds; the clone keeps
+    // one number for both).
+    static constexpr std::uint16_t kLobbyAwaySeconds = 90;
 
     MpLobbyScene(const Rules& r, bool na, const MenuArt& a, Role role, Net net) : MpPage(r, na, a), role_(role), net_(net) {
         prefs_ = mpui::Prefs::load();
@@ -430,6 +614,7 @@ private:
             ra2engine::filter_lobby_theaters(*catalog_);
         } catch (const std::exception&) { catalog_.reset(); }
         edits_.push_back(mpui::Edit{"chat", {30, 432, 440, 19}, "", 100, true});
+        edits_.back().ime = ra2engine::kOsImeChat;
     }
 
     // --- setup ---------------------------------------------------------------
@@ -461,6 +646,7 @@ private:
             b.room = host_->room_name();
             b.host = prefs_.nick;
             b.version = RA2_VERSION;
+            b.platform = static_cast<std::uint8_t>(mpui::platform_code());   // W9-04-13
             announcer_.open(b);
             // The address other players type into "Join by IP" (first LAN address).
             const std::vector<std::uint32_t> ips = ra2mp::local_ipv4s();
@@ -861,6 +1047,59 @@ private:
         set_slider(drag_, ra2engine::trackbar_pos_from_x(lx - r.x, slider_range(drag_), r.w, ra2engine::kTrackbarReadoutW));
         if (ev.kind == ra2engine::InputEvent::PointerUp) drag_ = -1;
     }
+    // W9-04-05: a finger drag -- on a list it scrolls it, on a slider (from
+    // its track, thumb or label row) it moves the thumb under the finger.
+    void body_pan(const ra2engine::InputEvent& ev, int sx, int sy, int lx, int /*ly*/) override {
+        if (choosing_) {
+            if (map_list_.r.contains(sx, sy)) list_pan(map_list_, ev);
+            return;
+        }
+        if (combo_ != CB_NONE) {
+            if (list_.r.contains(sx, sy)) list_pan(list_, ev);
+            return;
+        }
+        if (!host_ || !joined()) return;
+        for (int s = 0; s < SL_COUNT; ++s) {
+            const ra2engine::SbRect r = slider_rect(s);
+            if (sy < r.y - 3 || sy >= r.y + r.h + 3 || sx < r.x - 8 || sx >= r.x + r.w) continue;
+            set_slider(s, ra2engine::trackbar_pos_from_x(lx - r.x, slider_range(s), r.w, ra2engine::kTrackbarReadoutW));
+            return;
+        }
+    }
+    void touch_extra(std::vector<ra2engine::SbRect>& out) const override {
+        if (choosing_ || combo_ != CB_NONE || !host_ || !joined()) return;
+        for (int c = 0; c < CK_COUNT; ++c) out.push_back(check_rect(c));
+        for (int s = 0; s < SL_COUNT; ++s) {
+            const ra2engine::SbRect r = slider_rect(s);
+            out.push_back({r.x, r.y, r.w - ra2engine::kTrackbarReadoutW, r.h});
+        }
+    }
+    void page_lists(std::vector<ShellList*>& out) override {
+        out.push_back(&map_list_);
+        out.push_back(&list_);
+    }
+    // W9-04-07: the lobby's AWAY / BACK (the match has its own, game_scene_net.inc).
+    void on_background() override {
+        if (bg_away_) return;
+        bg_away_ = true;
+        if (host_) host_->away(false, kLobbyAwaySeconds);
+        else if (client_) client_->away(false, kLobbyAwaySeconds);
+        set_focus(-1);
+        mpui::log_line("app in the background: lobby AWAY sent (" + std::to_string(kLobbyAwaySeconds) + " s)");
+    }
+    void on_foreground() override {
+        if (!bg_away_) return;
+        bg_away_ = false;
+        const std::uint64_t now = ra2mp::now_ms();
+        if (host_) {
+            host_->resume(now);
+            host_->away(true, 0);
+        } else if (client_) {
+            client_->resume(now);
+            client_->away(true, 0);
+        }
+        mpui::log_line("app in the foreground: lobby BACK sent");
+    }
     bool body_key(const ra2engine::InputEvent& ev) override {
         if (combo_ != CB_NONE) {
             if (ev.key == ra2engine::kKeyEscape) close_combo(false);
@@ -870,12 +1109,30 @@ private:
             return true;
         }
         if (choosing_ && ev.key == ra2engine::kKeyEnter) { press(A_USEMAP); return true; }
+        // W9-04-09: Esc / Android Back (an edge swipe is easy to make by
+        // accident) asks first when leaving would drop other players -- the
+        // host closes the game for everyone. The Back button leaves at once
+        // (a deliberate click, as in the original).
+        if (ev.key == ra2engine::kKeyEscape && !choosing_ && combo_ == CB_NONE && leave_needs_confirm()) {
+            set_focus(-1);
+            ask(C_QUIT, !is_host() ? "Leave the game?"
+                        : host_ && host_->members() > 0 ? "Close the game for everyone?" : "Close this game?",
+                {text_.ok, text_.cancel});
+            return true;
+        }
         return false;
+    }
+    // The host always (leaving closes the room: its code / the LAN listing
+    // are gone), a joined client too.
+    bool leave_needs_confirm() const {
+        if (is_host()) return host_ != nullptr;
+        return client_ && client_->state() == ra2mp::LobbyClient::State::Joined;
     }
     void on_enter(int edit) override {
         if (edits_[static_cast<std::size_t>(edit)].id == "chat") {
             const std::string t = edits_[static_cast<std::size_t>(edit)].text;
             edits_[static_cast<std::size_t>(edit)].text.clear();
+            ime_sync("", ra2engine::kOsImeChat, 100);   // W9-04-01: the keyboard's copy starts over
             if (!t.empty()) {
                 if (host_) host_->chat(t);
                 else if (client_) client_->chat(t);
@@ -883,6 +1140,7 @@ private:
         }
     }
     void confirm_done(int action, int button) override {
+        if (action == C_QUIT && button == 0) leave();   // W9-04-09
         if (action == C_LEAVE && button == 0 && host_ && kick_row_ > 0) host_->kick(kick_row_);
         if (action == C_INFO && client_ && (client_->state() == ra2mp::LobbyClient::State::Rejected ||
                                              client_->state() == ra2mp::LobbyClient::State::Lost))
@@ -900,6 +1158,7 @@ private:
             b.max = static_cast<std::uint8_t>(model().map.max_players);
             b.map = map_display();
             b.started = host_->started();
+            b.cross_platform = model().opt.cross_platform;   // W9-04-13
             announcer_.set(b);
         }
         if (link_) {
@@ -938,10 +1197,14 @@ private:
                 !confirm_.open() && !told_) {
                 told_ = true;
                 const char* why = ra2mp::reject_text(client_->reject_reason());
-                ask(C_INFO, *why ? why : "You left the game.", {text_.ok});
+                std::string msg = *why ? why : "You left the game.";
+                // W9-04-15(a): a host that never answered was never "lost".
+                if (st == ra2mp::LobbyClient::State::Lost && client_->local_slot() < 0)
+                    msg = "No answer from the host. Check the address, and that both devices are on the same network.";
+                ask(C_INFO, msg, {text_.ok});
             }
             if (st == ra2mp::LobbyClient::State::Joining) status_ = "Contacting the host...";
-            else if (st == ra2mp::LobbyClient::State::Joined && status_ == "Contacting the host...") status_.clear();
+            else if (st != ra2mp::LobbyClient::State::Joining && status_ == "Contacting the host...") status_.clear();
         }
         if (host_ && !confirm_.open()) {
             const ra2mp::StartCheck c = ra2mp::can_start(model());
@@ -968,7 +1231,11 @@ private:
         const std::string& f = maps()[static_cast<std::size_t>(map_i)].file_name;
         const std::string key = "skp:prev:" + f;
         if (void* t = tc.peek(key)) return static_cast<SDL_Texture*>(t);
-        if (preview_size_.count(f)) return nullptr;
+        // W9-04-15(f): a decoded preview whose texture was trimmed (Android
+        // background / low memory) is decoded again; only a map WITHOUT a
+        // preview stays cached as "none".
+        const auto known = preview_size_.find(f);
+        if (known != preview_size_.end() && (known->second.first <= 0 || known->second.second <= 0)) return nullptr;
         int w = 0, h = 0;
         std::vector<uint8_t> rgba;
         skp::decode_preview(map_text(map_i), w, h, rgba);
@@ -1130,6 +1397,7 @@ private:
         for (int c = 0; c < CK_COUNT; ++c) p.set(std::string("check(") + check_id(c) + ")", check_val(c) ? 1 : 0);
         p.set("can_start", ra2mp::can_start(model()) == ra2mp::StartCheck::Ok ? 1 : 0);
         p.set("choosing", choosing_ ? 1 : 0);
+        p.set("map_list_top", map_list_.top);   // W9-04-05
         p.set("map_count", static_cast<double>(maps().size()));
         p.set_s("combo_open", combo_ == CB_NONE ? "" : combo_ == CB_KIND ? "kind" : combo_ == CB_COUNTRY ? "country"
                               : combo_ == CB_COLOR ? "color" : combo_ == CB_TEAM ? "team" : "start");
@@ -1178,6 +1446,7 @@ private:
     int combo_row_ = 0, drag_ = -1, kick_row_ = -1;
     int last_players_ = -1;
     bool last_started_ = false, told_ = false, handed_off_ = false;
+    bool bg_away_ = false;   // W9-04-07: we announced AWAY
 };
 
 // ===========================================================================
@@ -1186,9 +1455,15 @@ private:
 class MpLanScene : public MpPage {
 public:
     MpLanScene(const Rules& r, bool na, const MenuArt& a) : MpPage(r, na, a) {
+        // W9-04-10 (Android): LAN sockets (created from here on: browser,
+        // lobby, match) go over the Wi-Fi even when mobile data is the
+        // default network. Before any socket is opened.
+        if (ra2engine::os_android_bind_lan(true) == 2)
+            mpui::log_line("mobile data is the default network: LAN play is bound to the Wi-Fi");
         prefs_ = mpui::Prefs::load();
         edits_.push_back(mpui::Edit{"nick", {150, 40, 160, 19}, prefs_.nick, 16, true});
         edits_.push_back(mpui::Edit{"ip", {150, 400, 200, 19}, "", 40, true});
+        edits_.back().ime = ra2engine::kOsImeUri;   // W9-04-14
         browser_.rules_crc = mpui::rules_crc();
         if (!browser_.open()) status_ = "Could not open the LAN discovery port.";
         list_.r = {30, 92, 440, 290};
@@ -1259,6 +1534,7 @@ private:
             std::string row = b.room + "  -  " + b.map + "  " + std::to_string(b.players) + "/" + std::to_string(b.max);
             if (b.started) row += "  (started)";
             if (!ra2mp::LanBrowser::compatible(g[i], ra2mp::kNetProto, ra2mp::kSimVersion, mpui::rules_crc())) row += "  (different version)";
+            row += mpui::platform_tag(b.platform, b.cross_platform);   // W9-04-13
             list_.items.push_back(row);
             list_.data.push_back(static_cast<int>(i));
         }
@@ -1273,6 +1549,11 @@ private:
         if (i >= 0) { list_.sel = i; play_ui("menu:click"); return true; }
         return false;
     }
+    // W9-04-05/-06: drag-scroll the game list; its strip widens on touch.
+    void body_pan(const ra2engine::InputEvent& ev, int sx, int sy, int, int) override {
+        if (list_.r.contains(sx, sy)) list_pan(list_, ev);
+    }
+    void page_lists(std::vector<ShellList*>& out) override { out.push_back(&list_); }
     void draw_body(const ShellPainter& p, ra2engine::TextureCache&) override {
         p.label("Your name", 30, 40, 115, 19, 0);
         p.header("Games on your network", 30, 70, 440, 19);
@@ -1309,10 +1590,13 @@ private:
 class MpOnlineScene : public MpPage {
 public:
     MpOnlineScene(const Rules& r, bool na, const MenuArt& a) : MpPage(r, na, a) {
+        ra2engine::os_android_bind_lan(false);   // W9-04-10: the server is reached over the default network
         prefs_ = mpui::Prefs::load();
         edits_.push_back(mpui::Edit{"server", {130, 40, 220, 19}, prefs_.server, 64, true});
+        edits_.back().ime = ra2engine::kOsImeUri;    // W9-04-14
         edits_.push_back(mpui::Edit{"nick", {130, 64, 160, 19}, prefs_.nick, 16, true});
         edits_.push_back(mpui::Edit{"code", {130, 404, 90, 19}, "", 6, true});
+        edits_.back().ime = ra2engine::kOsImeCode;
         list_.r = {30, 120, 440, 268};
         list_.visible = 16;
         link_ = std::make_unique<ra2mp::ServerLink>();
@@ -1422,6 +1706,7 @@ private:
         for (const ra2mp::ServerRoom& r : link_->rooms()) {
             std::string row = r.name + "  -  " + r.map + "  " + std::to_string(r.players) + "/" + std::to_string(r.max);
             if (r.started) row += "  (started)";
+            row += mpui::platform_tag(static_cast<std::uint8_t>(r.plat), false);   // W9-04-13
             list_.items.push_back(row);
             list_.data.push_back(0);
         }
@@ -1434,6 +1719,11 @@ private:
         if (i >= 0) { list_.sel = i; play_ui("menu:click"); return true; }
         return false;
     }
+    // W9-04-05/-06: drag-scroll the game list; its strip widens on touch.
+    void body_pan(const ra2engine::InputEvent& ev, int sx, int sy, int, int) override {
+        if (list_.r.contains(sx, sy)) list_pan(list_, ev);
+    }
+    void page_lists(std::vector<ShellList*>& out) override { out.push_back(&list_); }
     void draw_body(const ShellPainter& p, ra2engine::TextureCache&) override {
         p.label("Server", 30, 40, 95, 19, 0);
         p.label("Your name", 30, 64, 95, 19, 0);

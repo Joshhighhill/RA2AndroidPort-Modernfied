@@ -22,6 +22,17 @@ bool os_android_open_importer();
 // Multiplayer LAN discovery: hold / release the Wi-Fi MulticastLock
 // (RA2Activity.netMulticastLock). No-op off Android.
 void os_android_multicast_lock(bool on);
+// W9-04-01/-14 (Android): seed the soft keyboard's session with an engine
+// edit's text (UTF-8), its kind (kOsIme*: the keyboard layout) and its length
+// limit (0 none) -- SDLActivity.ra2SetImeField. Call BEFORE SDL_StartTextInput
+// (and again when the engine changed the text itself). No-op off Android.
+enum : int { kOsImeText = 0, kOsImeUri = 1, kOsImeCode = 2, kOsImeChat = 3 };
+void os_android_ime_field(const std::string& text, int kind, int max);
+// W9-04-10 (Android): bind the process to the Wi-Fi / Ethernet network for
+// LAN play (on) or clear the binding (off) -- RA2Activity.netBindLan.
+// Returns 0 no Wi-Fi, 1 Wi-Fi is the default network (or off / not Android),
+// 2 bound to Wi-Fi while mobile data is the default.
+int os_android_bind_lan(bool on);
 // W6-01-10: Android destroyed the game activity WITHOUT the player quitting
 // (a configuration change it cannot hand to the running activity, e.g. an
 // overlay / navigation-mode / theme change; RA2Activity.onDestroy with

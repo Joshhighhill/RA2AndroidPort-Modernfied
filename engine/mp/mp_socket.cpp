@@ -131,9 +131,9 @@ bool resolve(const std::string& host_port, std::uint16_t default_port, Addr& out
 }
 
 namespace {
-// (address, netmask) of every up IPv4 interface.
-std::vector<std::pair<std::uint32_t, std::uint32_t>> interfaces() {
-    std::vector<std::pair<std::uint32_t, std::uint32_t>> out;
+// (address, netmask, name) of every up IPv4 interface.
+std::vector<LocalIf> interfaces() {
+    std::vector<LocalIf> out;
     if (!net_init()) return out;
 #ifdef _WIN32
     SOCKET s = ::socket(AF_INET, SOCK_DGRAM, 0);
@@ -147,7 +147,7 @@ std::vector<std::pair<std::uint32_t, std::uint32_t>> interfaces() {
             const auto* a = reinterpret_cast<const sockaddr_in*>(&info[i].iiAddress);
             const auto* m = reinterpret_cast<const sockaddr_in*>(&info[i].iiNetmask);
             if (a->sin_family != AF_INET) continue;
-            out.push_back({ntohl(a->sin_addr.s_addr), ntohl(m->sin_addr.s_addr)});
+            out.push_back(LocalIf{ntohl(a->sin_addr.s_addr), ntohl(m->sin_addr.s_addr), std::string()});
         }
     }
     ::closesocket(s);
@@ -171,7 +171,9 @@ std::vector<std::pair<std::uint32_t, std::uint32_t>> interfaces() {
             std::uint32_t mask = 0xFFFFFF00u;
             if (ioctl(s, SIOCGIFNETMASK, &q) == 0)
                 mask = ntohl(reinterpret_cast<sockaddr_in*>(&q.ifr_netmask)->sin_addr.s_addr);
-            out.push_back({ip, mask});
+            char nm[IFNAMSIZ + 1] = {0};
+            std::memcpy(nm, r->ifr_name, IFNAMSIZ);
+            out.push_back(LocalIf{ip, mask, std::string(nm)});
         }
     }
     ::close(s);
@@ -182,11 +184,11 @@ std::vector<std::pair<std::uint32_t, std::uint32_t>> interfaces() {
 
 std::vector<std::uint32_t> broadcast_targets() {
     std::vector<std::uint32_t> out;
-    for (const auto& im : interfaces()) {
-        if ((im.first >> 24) == 127 || im.first == 0) continue;
-        const std::uint32_t mask = im.second ? im.second : 0xFFFFFF00u;
+    for (const LocalIf& im : interfaces()) {
+        if ((im.ip >> 24) == 127 || im.ip == 0) continue;
+        const std::uint32_t mask = im.mask ? im.mask : 0xFFFFFF00u;
         if (mask == 0xFFFFFFFFu) continue;           // point-to-point (VPN /32): no broadcast
-        out.push_back(im.first | ~mask);
+        out.push_back(im.ip | ~mask);
     }
     out.push_back(kBroadcast);
     out.push_back(kLoopback);                        // same-machine hosts (two instances on one PC)
@@ -195,14 +197,39 @@ std::vector<std::uint32_t> broadcast_targets() {
     return out;
 }
 
-std::vector<std::uint32_t> local_ipv4s() {
+std::vector<std::uint32_t> rank_local_ipv4s(const std::vector<LocalIf>& ifs) {
+    auto starts = [](const std::string& n, const char* p) { return n.rfind(p, 0) == 0; };
+    auto rank = [&](const LocalIf& f) {
+        const std::string& n = f.name;
+        const bool cellular = starts(n, "rmnet") || starts(n, "ccmni") || starts(n, "v4-") || starts(n, "clat") ||
+                              starts(n, "pdp") || starts(n, "wwan") || starts(n, "seth_") || starts(n, "ccemni");
+        const bool vpn = starts(n, "tun") || starts(n, "ppp") || starts(n, "ipsec") || starts(n, "wg");
+        const std::uint32_t ip = f.ip;
+        int r;
+        if ((ip >> 16) == 0xC0A8) r = 0;                       // 192.168/16
+        else if ((ip >> 20) == 0xAC1) r = 1;                   // 172.16/12
+        else if ((ip >> 24) == 10) r = 2;                      // 10/8
+        else if ((ip >> 22) == (0x64400000u >> 22)) r = 5;     // 100.64/10 carrier-grade NAT
+        else if ((ip >> 16) == 0xA9FE) r = 6;                  // 169.254/16 link-local
+        else r = 3;                                            // public
+        if (vpn) r += 10;
+        if (cellular) r += 20;
+        return r;
+    };
+    std::vector<LocalIf> v;
+    for (const LocalIf& f : ifs)
+        if ((f.ip >> 24) != 127 && f.ip != 0) v.push_back(f);
+    std::stable_sort(v.begin(), v.end(), [&](const LocalIf& a, const LocalIf& b) {
+        const int ra = rank(a), rb = rank(b);
+        return ra != rb ? ra < rb : a.ip < b.ip;
+    });
     std::vector<std::uint32_t> out;
-    for (const auto& im : interfaces())
-        if ((im.first >> 24) != 127 && im.first != 0) out.push_back(im.first);
-    std::sort(out.begin(), out.end());
-    out.erase(std::unique(out.begin(), out.end()), out.end());
+    for (const LocalIf& f : v)
+        if (std::find(out.begin(), out.end(), f.ip) == out.end()) out.push_back(f.ip);
     return out;
 }
+
+std::vector<std::uint32_t> local_ipv4s() { return rank_local_ipv4s(interfaces()); }
 
 // ------------------------------------------------------------ UdpSocket --
 

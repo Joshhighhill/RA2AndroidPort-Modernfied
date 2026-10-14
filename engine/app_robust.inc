@@ -194,6 +194,46 @@ void set_text_input_rect_logical(int x, int y, int w, int h) {
     SDL_SetTextInputRect(&r);
 }
 
+// W9-04-01/-02/-03/-12/-14: one engine edit on the soft keyboard.
+// ime_open: seed the IME with the field's text / kind / limit (Android:
+// SDLActivity.ra2SetImeField, so its delete key can erase pre-filled text),
+// point the IME at the field (adjustPan) and (re)start text input -- also
+// when it is already focused, because the IME's Back hides the keyboard
+// behind the engine's back (SDL_StopTextInput) and a tap must bring it back.
+// ime_sync: the engine changed the text itself (sent / cleared / pasted).
+// ime_screen_keyboard: a soft-keyboard platform (Android; --play `ime
+// screenkb` for the desktop tests): leaving a field always hides the
+// keyboard (SDL_IsTextInputActive() is the TEXTINPUT event state, enabled by
+// default, so the "was it active before?" check never stopped it).
+bool g_ime_force_screen_kb = false;
+std::string g_ime_seed;                 // --play probes ime_seed / ime_kind
+int g_ime_kind = -1;
+bool ime_screen_keyboard() { return g_ime_force_screen_kb || SDL_HasScreenKeyboardSupport() == SDL_TRUE; }
+void ime_sync(const std::string& text, int kind, int max) {
+    g_ime_seed = text;
+    g_ime_kind = kind;
+    ra2engine::os_android_ime_field(text, kind, max);
+}
+void ime_open(int x, int y, int w, int h, const std::string& text, int kind, int max) {
+    ime_sync(text, kind, max);
+    set_text_input_rect_logical(x, y, w, h);
+    SDL_StartTextInput();
+}
+
+// W9-04-06: window (logical render) pixels per Android dp (160 dpi), from the
+// display DPI and the panel / canvas ratio. 1.0 when unknown (desktop).
+double window_px_per_dp() {
+    if (!g_platform) return 1.0;
+    float ddpi = 0.0f;
+    if (SDL_GetDisplayDPI(0, &ddpi, nullptr, nullptr) != 0 || ddpi <= 0.0f) return 1.0;
+    int ow = 0, oh = 0;
+    g_platform->output_size(ow, oh);
+    const int lw = g_platform->width();
+    if (ow <= 0 || lw <= 0) return 1.0;
+    const double phys_per_win = static_cast<double>(ow) / lw;
+    return (ddpi / 160.0) / phys_per_win;
+}
+
 // A first scene that immediately hands over to `n` (typically a
 // DeferredScene, so even the first game of a run gets the loading screen).
 struct BootScene : Scene {

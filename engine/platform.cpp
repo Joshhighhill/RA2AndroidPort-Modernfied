@@ -15,6 +15,35 @@ struct Platform::Impl {
     int w = 0;
     int h = 0;
     TouchGestures touch;   // G-70 gesture layer (fed by SDL_FINGER*)
+    // W9-04-04: a phone returning from the background can deliver a mouse
+    // event (no real mouse: the window corner) -- it switched the game to
+    // mouse mode and edge-scrolled the map into the black. Mouse events are
+    // dropped while the app is in the background, for 1 s after it returns
+    // when the last pointer was a finger, and a button-less motion exactly at
+    // the window corner right after a finger.
+    bool background = false;
+    uint32_t foreground_at = 0;
+    bool last_touch = false;
+    bool drop_mouse(int x, int y, bool motion_no_buttons) const {
+        if (background) return true;
+        if (!last_touch) return false;
+        if (foreground_at && SDL_GetTicks() - foreground_at < 1000) return true;
+        return motion_no_buttons && x == 0 && y == 0;
+    }
+    // W9-04-06: the tap / drag slop is Android's touch slop, 8 dp, in the
+    // window (logical) pixels the fingers are reported in -- 12 px was ~4.6
+    // dp on a 420-dpi phone, so a rolling fingertip turned taps into
+    // ignored drags. Never below the old 12 px; desktop unchanged.
+    void update_slop() {
+#ifdef __ANDROID__
+        float ddpi = 0.0f;
+        int ow = 0, oh = 0;
+        if (SDL_GetDisplayDPI(0, &ddpi, nullptr, nullptr) != 0 || ddpi <= 0.0f) return;
+        if (SDL_GetRendererOutputSize(renderer, &ow, &oh) != 0 || ow <= 0 || w <= 0) return;
+        const double slop = 8.0 * ddpi / 160.0 * (static_cast<double>(w) / ow);
+        touch.set_slop(std::max(12, static_cast<int>(slop + 0.5)));
+#endif
+    }
 };
 
 Platform Platform::create(const char* title, int w, int h, bool hidden) {
@@ -75,6 +104,7 @@ Platform Platform::create(const char* title, int w, int h, bool hidden) {
 
     Platform p;
     p.p_ = new Impl{window, renderer, w, h, TouchGestures{}};
+    p.p_->update_slop();
     return p;
 }
 
@@ -120,6 +150,7 @@ void Platform::set_logical_size(int w, int h) {
     p_->w = w;
     p_->h = h;
     SDL_RenderSetLogicalSize(p_->renderer, w, h);
+    p_->update_slop();
 }
 void Platform::output_size(int& w, int& h) const {
     w = h = 0;
@@ -249,9 +280,13 @@ bool Platform::poll(InputEvent& ev) {
         // (autosave, pause) still runs before the process can be frozen.
         case SDL_APP_WILLENTERBACKGROUND:
         case SDL_APP_TERMINATING:
+            p_->background = true;
             ev.kind = InputEvent::AppBackground;
             break;
         case SDL_APP_DIDENTERFOREGROUND:
+            p_->background = false;
+            p_->foreground_at = SDL_GetTicks();
+            if (!p_->foreground_at) p_->foreground_at = 1;
             ev.kind = InputEvent::AppForeground;
             break;
         case SDL_APP_LOWMEMORY:
@@ -264,6 +299,7 @@ bool Platform::poll(InputEvent& ev) {
         case SDL_WINDOWEVENT:
             // R-162: foldables, split screen, a resized desktop window.
             if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+                p_->update_slop();
                 ev.kind = InputEvent::Resize;
                 ev.x = e.window.data1;
                 ev.y = e.window.data2;
@@ -277,6 +313,8 @@ bool Platform::poll(InputEvent& ev) {
             break;
         case SDL_MOUSEBUTTONDOWN:
             if (e.button.which == SDL_TOUCH_MOUSEID) break;   // G-71: no synthetic duplicate
+            if (p_->drop_mouse(e.button.x, e.button.y, false)) break;   // W9-04-04
+            p_->last_touch = false;
             ev.kind = InputEvent::PointerDown;
             ev.x = e.button.x;
             ev.y = e.button.y;
@@ -289,6 +327,7 @@ bool Platform::poll(InputEvent& ev) {
             break;
         case SDL_MOUSEBUTTONUP:
             if (e.button.which == SDL_TOUCH_MOUSEID) break;
+            if (p_->drop_mouse(e.button.x, e.button.y, false)) break;   // W9-04-04
             ev.kind = InputEvent::PointerUp;
             ev.x = e.button.x;
             ev.y = e.button.y;
@@ -301,6 +340,8 @@ bool Platform::poll(InputEvent& ev) {
             break;
         case SDL_MOUSEMOTION:
             if (e.motion.which == SDL_TOUCH_MOUSEID) break;
+            if (p_->drop_mouse(e.motion.x, e.motion.y, e.motion.state == 0)) break;   // W9-04-04
+            p_->last_touch = false;
             ev.kind = InputEvent::PointerMove;
             ev.x = e.motion.x;
             ev.y = e.motion.y;
@@ -313,6 +354,7 @@ bool Platform::poll(InputEvent& ev) {
         // band box, long-press / two-finger tap = right click, two-finger drag =
         // pan); the produced events are drained at the top of poll().
         case SDL_FINGERDOWN:
+            p_->last_touch = true;
             p_->touch.finger_down(e.tfinger.fingerId, static_cast<int>(e.tfinger.x * p_->w),
                                   static_cast<int>(e.tfinger.y * p_->h), e.tfinger.timestamp);
             ev.kind = InputEvent::None;

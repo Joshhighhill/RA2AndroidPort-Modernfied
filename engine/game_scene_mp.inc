@@ -229,7 +229,7 @@
     void mp_open_chat(int mode) {
         chat_mode_ = mode;
         net_chat_open_ = true;
-        SDL_StartTextInput();
+        net_chat_ime();   // W9-04-12: the soft keyboard at the chat line (starts text input)
     }
     // Diplomacy page "Chat" column: toggle a listener.
     void mp_toggle_listener(int h) {
