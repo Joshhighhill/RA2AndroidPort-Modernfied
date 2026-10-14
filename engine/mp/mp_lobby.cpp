@@ -396,6 +396,7 @@ void LobbyHost::away(bool back, std::uint16_t seconds) {
         ch_.send(kv.first, w.b, false, now_);
         ch_.send(kv.first, w.b, false, now_);
     }
+    ch_.flush();
 }
 
 void LobbyHost::resume(std::uint64_t now) {
@@ -504,6 +505,7 @@ void LobbyClient::away(bool back, std::uint16_t seconds) {
     w.u16(seconds);
     ch_.send(host_, w.b, false, now_);
     ch_.send(host_, w.b, false, now_);
+    ch_.flush();
 }
 
 void LobbyClient::resume(std::uint64_t now) {
