@@ -255,8 +255,12 @@
             net_local_left_ = true;
             std::cerr << "[net] our EXIT executed at frame " << sim_frame_ << "\n";
         } else {
-            post_message(who + (left ? " has left the game." : " lost connection and was removed."), 10.0,
-                         net_color(h));
+            // W9-05-16: the CSF line TXT_LEFT_GAME "%s has left the game."
+            std::string t = left ? camp::csf_text(dir_, "TXT_LEFT_GAME") : std::string();
+            const std::size_t ps = t.find("%s");
+            if (ps != std::string::npos) t.replace(ps, 2, who);
+            else t = who + (left ? " has left the game." : " lost connection and was removed.");
+            post_message(t, 10.0, net_color(h));
             std::cerr << "[net] house " << h << (left ? " left" : " removed") << " at frame " << sim_frame_ << "\n";
         }
         if (net_->ai_takeover && h != local_house_ && world_.house_outcome(h) == 0 && !world_.house_defeated(h)) {
@@ -359,10 +363,14 @@
         if (net_->mpnet) net_->mpnet->tick(ra2mp::now_ms());   // tunnel keep-alive (no-op on LAN)
         std::vector<ra2::net::NetChat> chat;
         std::vector<ra2::net::AwayNotice> away;
-        net_->game->poll_global(chat, away);
+        std::vector<ra2::net::BeaconMsg> beacons;
+        net_->game->poll_global(chat, away, beacons);
+        for (const ra2::net::BeaconMsg& b : beacons) mp_beacon_received(b);   // W9-05-08
         for (const ra2::net::NetChat& c : chat) {
             const std::string who = c.house >= 0 ? net_->name_of(c.house) : c.sender;
-            post_message(who + ": " + c.text, 12.0, c.house >= 0 ? net_color(c.house) : hud_ui_color());
+            // W9-05-07 [RE: FUN_0048D0F0 case 0x0C -> MessageListClass::Add,
+            // MessageDelay x 900 ticks]: [General] MessageDelay minutes.
+            post_message(who + ": " + c.text, message_seconds(), c.house >= 0 ? net_color(c.house) : hud_ui_color());
             pres_log(0, "net chat " + who + ": " + c.text);
             std::cerr << "[net] chat " << who << ": " << c.text << "\n";
         }
@@ -458,11 +466,28 @@
         net_chat_text_.clear();
         net_chat_open_ = false;
         SDL_StopTextInput();
+        if (beacon_editing_) {   // W9-05-08: the selected beacon's text (global 0x22)
+            beacon_editing_ = false;
+            beacon_set_text(local_house_, beacon_sel_, t, true);
+            return;
+        }
         if (t.empty()) return;
         const std::string me = net_->name_of(local_house_);
-        net_->game->send_chat(me, t, net_->color_of(local_house_));
-        post_message(me + ": " + t, 12.0, net_color(local_house_));
+        // W9-05-07: the chosen channel's recipients; an observer may only talk
+        // to everyone (TXT_OBSERVER_CANT_SEND).
+        bool blocked = false;
+        const std::vector<int> to = mp_chat_recipients(chat_mode_, blocked);
+        if (blocked) {
+            ++chat_blocked_;
+            post_message(gf_csf("TXT_OBSERVER_CANT_SEND", "Observers can only send chat messages to all players"));
+            return;
+        }
+        mp_chat_last_to_ = to;
+        ++chat_sent_;
+        net_->game->send_chat(me, t, net_->color_of(local_house_), &to);
+        post_message(me + ": " + t, message_seconds(), net_color(local_house_));
         pres_log(0, "net chat " + me + ": " + t);
+        std::cerr << "[net] chat sent mode " << chat_mode_ << " to " << to.size() << " player(s)\n";
     }
     static bool net_hit(const SDL_Rect& r, int x, int y) {
         return r.w > 0 && x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
@@ -501,6 +526,7 @@
                 if (ev.key == ra2engine::kKeyEnter) net_chat_send();
                 else if (ev.key == ra2engine::kKeyEscape) {
                     net_chat_open_ = false;
+                    beacon_editing_ = false;
                     net_chat_text_.clear();
                     SDL_StopTextInput();
                 } else if (ev.key == ra2engine::kKeyBackspace && !net_chat_text_.empty()) {
@@ -517,15 +543,17 @@
             }
             return false;
         }
+        if (mp_beacon_handle(ev)) return true;   // W9-05-08: the beacon cursor / Enter on a beacon
         if (down && net_hit(net_btn_chat_, ev.x, ev.y)) {
-            net_chat_open_ = true;
-            SDL_StartTextInput();   // Android: the soft keyboard
+            mp_open_chat(1);   // Android: the soft keyboard; the listeners channel
             return true;
         }
-        if (ev.kind == ra2engine::InputEvent::Key && ev.key == ra2engine::kKeyEnter && !menu_.open_) {
-            net_chat_open_ = true;
-            SDL_StartTextInput();
-            return true;
+        // W9-05-07 [RE: FUN_0055E050]: Enter = listeners, Backspace = allies,
+        // backslash = everyone.
+        if (ev.kind == ra2engine::InputEvent::Key && !menu_.open_) {
+            if (ev.key == ra2engine::kKeyEnter) { mp_open_chat(1); return true; }
+            if (ev.key == ra2engine::kKeyBackspace) { mp_open_chat(2); return true; }
+            if (ev.vk == 0xDC) { mp_open_chat(3); return true; }   // VK_OEM_5 (backslash)
         }
         return false;
     }
@@ -576,7 +604,7 @@
             SDL_Rect box{16, y, std::max(200, playfield_w_ - 48 - sw), h};
             net_box(ren, box);
             const bool caret = (SDL_GetTicks() / 500) % 2 == 0;
-            hud_text(ren, tc, "Say: " + net_chat_text_ + (caret ? "_" : ""), box.x + 6, y + static_cast<int>(8 * sc),
+            hud_text(ren, tc, mp_chat_prompt() + " " + net_chat_text_ + (caret ? "_" : ""), box.x + 6, y + static_cast<int>(8 * sc),
                      col, kHudLeft, false, true, sc);
             net_btn_send_ = SDL_Rect{box.x + box.w + 8, y, sw, h};
             net_box(ren, net_btn_send_);
@@ -646,4 +674,5 @@
         p.set("net_hash_avg_us", net_hash_n_ ? 1000.0 * net_hash_ms_sum_ / net_hash_n_ : 0.0);
         for (const ra2mp::MpPlayer& pl : net_->session.players)
             p.set("net_house_out(" + std::to_string(pl.house) + ")", world_.house_outcome(pl.house));
+        mp_probe(p);   // W9-05 (game_scene_mp.inc)
     }

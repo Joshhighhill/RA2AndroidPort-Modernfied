@@ -448,3 +448,46 @@ TEST_CASE("W9-01-04: net play with the per-frame CRC -- in sync, and a divergenc
     }
     g_frame_crc = false;
 }
+
+// W9-05-03/06: ALLY (one-way, then mutual) and DESTRUCT travel as EventClass
+// records and apply on the same frame on both machines: the full-state hash
+// trails stay identical and both Worlds agree on the alliance matrix.
+TEST_CASE("net play: ALLY and DESTRUCT in lockstep -- one-way, mutual, resign; identical trails") {
+    if (!ra2fixture::mapsmd03_available()) { MESSAGE("skipped: real map assets not found"); return; }
+    Match m;
+    for (int k = 0; k < 2; ++k) {
+        ra2engine::World& w = *m.p[k].w;
+        for (int h = 0; h < 3; ++h) w.set_house(h, ra2engine::World::HouseRec{ra2engine::World::Side::Allied, h, "", -1, true});
+        w.add_building(0, m.p[0].base_x, m.p[0].base_y + 20, 1, 1, 2, 1000, 0, 0.0, /*instant=*/true);   // a third party
+    }
+    m.run(60);
+    REQUIRE(m.p[0].game->frame() == 60u);
+    Command al;
+    al.type = EventType::Ally;
+    al.value = 1;
+    m.p[0].game->issue(al);
+    m.run(140);
+    for (int k = 0; k < 2; ++k) {
+        CHECK(m.p[k].w->allied_with(0, 1));
+        CHECK_FALSE(m.p[k].w->allied_with(1, 0));   // one way
+    }
+    al.value = 0;
+    m.p[1].game->issue(al);
+    m.run(220);
+    for (int k = 0; k < 2; ++k) {
+        CHECK(m.p[k].w->allied_with(0, 1));
+        CHECK(m.p[k].w->allied_with(1, 0));
+        CHECK_FALSE(m.p[k].w->allied_with(0, 2));
+    }
+    Command d;
+    d.type = EventType::Destruct;
+    m.p[1].game->issue(d);
+    m.run(320);
+    REQUIRE(m.p[0].trail.size() == m.p[1].trail.size());
+    for (std::size_t i = 0; i < m.p[0].trail.size(); ++i) REQUIRE(m.p[0].trail[i] == m.p[1].trail[i]);
+    for (int k = 0; k < 2; ++k) {
+        CHECK(m.p[k].w->house_defeated(1));
+        CHECK_FALSE(m.p[k].w->house_defeated(0));
+        CHECK_FALSE(m.p[k].w->game_over());   // 0 and 2 fight on
+    }
+}

@@ -20,6 +20,8 @@
 //   * facing (8-way, body, turret), health, target / mission handles, cargo,
 //     harvester load;
 //   * buildings: type, owner, origin, health, state;
+//   * diplomacy: the one-way alliance matrix, alliance teams, the lobby
+//     diplomacy rules, game over / observer state (w9fix-match);
 //   * every house's economy: wallet, the legacy credit pool, every
 //     production slot (type / stage / progress / spent), defeat / outcome;
 //   * projectiles in flight (position, target), crates;

@@ -88,6 +88,16 @@ struct NetCrcAccess {
         for (double v : w.house_credits_) c.add_d(v);
         for (std::uint8_t v : w.house_defeated_) c.add(v);
         for (int v : w.house_outcome_) c.add_i(v);
+        // Diplomacy and the match end (w9fix-match W9-05-03..06): the one-way
+        // alliance matrix, the lobby diplomacy rules, game over / observer.
+        c.add_i(static_cast<int>(w.ally_pairs_.size()));
+        for (std::uint8_t v : w.ally_pairs_) c.add(v);
+        c.add_i(w.allies_allowed_ ? 1 : 0);
+        c.add_i(w.ally_change_allowed_ ? 1 : 0);
+        c.add_i(w.game_over_ ? 1 : 0);
+        c.add_i(w.observer_reveal_ ? 1 : 0);
+        c.add_i(w.victory_defeats_seen_);
+        for (const World::HouseRec& h : w.houses_) { c.add_i(h.alliance_team); c.add_i(h.combatant ? 1 : 0); }
         // --- every sim RNG stream (peeked, never drawn; see the header) and
         // the subsystem frame clocks.
         c.add_i(w.crate_rng_.idx1());

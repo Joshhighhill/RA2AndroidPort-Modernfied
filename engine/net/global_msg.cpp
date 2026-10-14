@@ -49,6 +49,56 @@ bool decode_kick_vote(const std::vector<uint8_t>& b, KickVote& out) {
     return true;
 }
 
+std::vector<uint8_t> encode_beacon_msg(const BeaconMsg& m) {
+    const bool text = m.cmd == kGlobalBeaconMessage;
+    std::vector<uint8_t> b(text ? kGlobalPacketSize : kBeaconPacketSize, 0);
+    put_u32le(b.data(), m.cmd);
+    for (size_t i = 0; i < m.sender.size() && i < 0x2A; ++i) b[0x04 + i] = static_cast<uint8_t>(m.sender[i]);
+    if (text) {
+        b[0x2F] = static_cast<uint8_t>(m.slot);
+        b[0x30] = static_cast<uint8_t>(m.house);
+        for (size_t i = 0; i < m.text.size() && i < kBeaconTextMax; ++i) put_u16le(b.data() + 0x31 + 2 * i, m.text[i]);
+        return b;
+    }
+    if (m.cmd == kGlobalBeaconPlace) {
+        put_i32le(b.data() + 0x2F, m.x);
+        put_i32le(b.data() + 0x33, m.y);
+        put_i32le(b.data() + 0x37, m.z);
+    }
+    b[0x3B] = static_cast<uint8_t>(m.slot);
+    b[0x3C] = static_cast<uint8_t>(m.house);
+    return b;
+}
+
+bool decode_beacon_msg(const std::vector<uint8_t>& b, BeaconMsg& out) {
+    const uint32_t c = global_cmd(b);
+    if (c != kGlobalBeaconPlace && c != kGlobalBeaconDelete && c != kGlobalBeaconMessage) return false;
+    const bool text = c == kGlobalBeaconMessage;
+    if (b.size() < (text ? size_t(0x31 + 2 * (kBeaconTextMax + 1)) : kBeaconPacketSize)) return false;
+    out = BeaconMsg{};
+    out.cmd = c;
+    for (size_t i = 0x04; i < 0x2F && b[i]; ++i) out.sender.push_back(static_cast<char>(b[i]));
+    if (text) {
+        out.slot = b[0x2F];
+        out.house = static_cast<int8_t>(b[0x30]);
+        for (size_t i = 0; i < kBeaconTextMax; ++i) {
+            const uint16_t ch = get_u16le(b.data() + 0x31 + 2 * i);
+            if (!ch) break;
+            out.text.push_back(static_cast<char16_t>(ch));
+        }
+    } else {
+        if (c == kGlobalBeaconPlace) {
+            out.x = get_i32le(b.data() + 0x2F);
+            out.y = get_i32le(b.data() + 0x33);
+            out.z = get_i32le(b.data() + 0x37);
+        }
+        out.slot = b[0x3B];
+        out.house = static_cast<int8_t>(b[0x3C]);
+    }
+    // W9-05-12 hardening: a slot outside 0..2 is refused.
+    return out.slot >= 0 && out.slot < kBeaconsPerHouse;
+}
+
 std::vector<uint8_t> encode_away(const AwayNotice& a) {
     std::vector<uint8_t> b(kGlobalPacketSize, 0);
     put_u32le(b.data(), a.back ? kGlobalBack : kGlobalAway);

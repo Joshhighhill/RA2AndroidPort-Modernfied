@@ -10,13 +10,25 @@
 # -DesyncAt expects the opposite: both machines stop with "out of sync", the
 # trails agree before the frame and differ after, and each machine wrote its
 # DESYNC_F<frame>_H<house>.SAV/.TXT pair to its saves folder.
+# -Pair <name> plays scripts/play/net-<name>-host.play + net-<name>-join.play
+# instead (LAN; 1500 frames) and adds that pair's checks:
+#   ally     W9-05-03/07/08/11: one-way ALLY, the reply (mutual), allies-only
+#            chat, beacons (3 max) seen by the mutual ally, the self row
+#   observe  W9-05-05/06/10: the joiner Observes (DESTRUCT), stays in the
+#            match as an observer (map revealed, radar on) to the end, the
+#            host sees "Joiner has been defeated!", then the joiner Leaves
 # Needs RA2_INSTALL_DIR. Takes several minutes (two full games).
 [CmdletBinding()]
 param([string]$Exe = "build/ra2engine.exe", [string]$Out = "build/play-out", [switch]$Online,
-      [string]$Server = "", [int]$DesyncAt = -1)
+      [string]$Server = "", [int]$DesyncAt = -1, [string]$Pair = "")
 $ErrorActionPreference = "Stop"
 $kind = if ($Online) { "online" } else { "lan" }
 $tag = if ($DesyncAt -ge 0) { "net-$kind-desync" } else { "net-$kind" }
+$hostPlay = "scripts/play/net-$kind-host.play"; $joinPlay = "scripts/play/net-$kind-join.play"; $minFrame = 2985
+if ($Pair) {
+    if ($Online) { throw "-Pair runs on the LAN only" }
+    $tag = "net-$Pair"; $hostPlay = "scripts/play/net-$Pair-host.play"; $joinPlay = "scripts/play/net-$Pair-join.play"; $minFrame = 1485
+}
 New-Item -ItemType Directory -Force $Out | Out-Null
 $hostOut = Join-Path $Out "$tag-host"; $joinOut = Join-Path $Out "$tag-join"
 foreach ($d in @($hostOut, $joinOut)) { if (Test-Path $d) { Remove-Item -Recurse -Force $d }; New-Item -ItemType Directory -Force $d | Out-Null }
@@ -31,13 +43,13 @@ if ($Online) {
     Start-Sleep -Seconds 1
 }
 $hostErr = Join-Path $hostOut "stderr.txt"; $joinErr = Join-Path $joinOut "stderr.txt"
-$h = Start-Process -FilePath $Exe -ArgumentList @("--play", "scripts/play/net-$kind-host.play", "--out", $hostOut) `
+$h = Start-Process -FilePath $Exe -ArgumentList @("--play", $hostPlay, "--out", $hostOut) `
      -RedirectStandardOutput (Join-Path $hostOut "stdout.txt") -RedirectStandardError $hostErr -PassThru -NoNewWindow
 $ready = if ($Online) { "room created code=" } else { "hosting LAN game" }
 $deadline = (Get-Date).AddSeconds(120)
 while ((Get-Date) -lt $deadline -and -not (Select-String -Path $hostErr -Pattern $ready -Quiet -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 500 }
 if ($DesyncAt -ge 0) { $env:RA2_NET_DESYNC_AT = "$DesyncAt" }
-$j = Start-Process -FilePath $Exe -ArgumentList @("--play", "scripts/play/net-$kind-join.play", "--out", $joinOut) `
+$j = Start-Process -FilePath $Exe -ArgumentList @("--play", $joinPlay, "--out", $joinOut) `
      -RedirectStandardOutput (Join-Path $joinOut "stdout.txt") -RedirectStandardError $joinErr -PassThru -NoNewWindow
 Remove-Item Env:RA2_NET_DESYNC_AT -ErrorAction SilentlyContinue
 if ($DesyncAt -ge 0) {
@@ -85,7 +97,8 @@ Write-Host "host: $hr (exit $($h.ExitCode))"
 Write-Host "join: $jr (exit $($j.ExitCode))"
 Write-Host ("hash trail: {0} common entries up to frame {1}, {2} differ" -f $common.Count, $maxf, $diff.Count)
 if ($Online) { Write-Host "V3 tunnel datagrams forwarded by ra2lobbyd: $fwd" }
-$chat = Select-String -Path $hostErr -Pattern "\[net\] chat Joiner: gl hf" -Quiet -ErrorAction SilentlyContinue
+$chatLine = if ($Pair -eq "ally") { "\[net\] chat Joiner: allies only" } else { "\[net\] chat Joiner: gl hf" }
+$chat = $Pair -eq "observe" -or (Select-String -Path $hostErr -Pattern $chatLine -Quiet -ErrorAction SilentlyContinue)
 Write-Host ("in-game chat joiner -> host: " + $(if ($chat) { "received" } else { "MISSING" }))
 foreach ($s in @(@("host", $hostErr), @("join", $joinErr))) {
     $hl = Select-String -Path $s[1] -Pattern "\[net\] sync hash: .*" -ErrorAction SilentlyContinue | Select-Object -Last 1
@@ -114,10 +127,31 @@ $outSame = $ho.Count -gt 0 -and $ho.Count -eq $jo.Count -and @($ho.Keys | Where-
 Write-Host ("outcomes host {0} / join {1}: {2}" -f (($ho.GetEnumerator() | Sort-Object Name | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ","),
             (($jo.GetEnumerator() | Sort-Object Name | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ","),
             $(if ($outSame) { "SAME" } else { "DIFFERENT / missing" }))
-$away = (Select-String -Path $hostErr -Pattern "\[net\] away house 1" -Quiet -ErrorAction SilentlyContinue) -and
-        (Select-String -Path $hostErr -Pattern "\[net\] back house 1" -Quiet -ErrorAction SilentlyContinue)
+$away = $Pair -or ((Select-String -Path $hostErr -Pattern "\[net\] away house 1" -Quiet -ErrorAction SilentlyContinue) -and
+        (Select-String -Path $hostErr -Pattern "\[net\] back house 1" -Quiet -ErrorAction SilentlyContinue))
 Write-Host ("Android away / back notices joiner -> host: " + $(if ($away) { "received" } else { "MISSING" }))
-$pass = $h.ExitCode -eq 0 -and $j.ExitCode -eq 0 -and $diff.Count -eq 0 -and $maxf -ge 2985 -and $outSame -and $chat -and $away
+$pairOk = $true
+function Need([string]$path, [string]$pat, [string]$what) {
+    $ok = Select-String -Path $path -Pattern $pat -Quiet -ErrorAction SilentlyContinue
+    Write-Host ("  {0}: {1}" -f $what, $(if ($ok) { "yes" } else { "MISSING" }))
+    if (-not $ok) { $script:pairOk = $false }
+}
+if ($Pair -eq "ally") {
+    Need $hostErr "\[net\] diplomacy: Hosty has allied with Joiner" "host sees its ALLY (one-way)"
+    Need $joinErr "\[net\] diplomacy: Hosty has allied with Joiner" "joiner sees the host's ALLY"
+    Need $hostErr "\[net\] diplomacy: Joiner has allied with Hosty" "host sees the reply (mutual)"
+    Need $joinErr "\[net\] chat sent mode 2 to 1 player" "joiner sent on the allies channel"
+    Need $hostErr "\[net\] beacon placed house 0 slot 2" "host placed 3 beacons"
+    Need $joinErr "\[net\] beacon received house 0 slot 0" "the ally received the host's beacon"
+    Need $joinErr "\[net\] beacon removed house 0" "the ally saw the beacon deleted"
+}
+if ($Pair -eq "observe") {
+    Need $joinErr "\[net\] DESTRUCT queued" "joiner chose Observe (DESTRUCT)"
+    Need $joinErr "\[net\] observer: house 1" "joiner stays as an observer"
+    Need $hostErr "\[net\] defeated: Joiner has been defeated!" "host: 'Joiner has been defeated!'"
+    Need $joinErr "\[net\] defeated: Joiner has been defeated!" "joiner: its own defeat line"
+}
+$pass = $h.ExitCode -eq 0 -and $j.ExitCode -eq 0 -and $diff.Count -eq 0 -and $maxf -ge $minFrame -and $outSame -and $chat -and $away -and $pairOk
 if ($Online -and $fwd -le 0) { $pass = $false }
 Write-Host ("network match: " + $(if ($pass) { "PASS" } else { "FAIL" }))
 if (-not $pass) { exit 1 }
