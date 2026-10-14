@@ -61,7 +61,7 @@ Branch `w6-shell-release` from master `e2b569e` (save format v23). The audit onl
 | ID | Decision | Current state | Why it matters now |
 |---|---|---|---|
 | U-2 (open) | App name, package and icon | "RA2 Engine", `org.ra2.engine`. The launcher icon is **byte-identical to SDL's default** (md5 `0cf95931…` = SDL `android-project` mipmap). The Windows exe has no icon. | The package id cannot change after a Play release. |
-| U-3 (open) | Licence owner and wording; disclaimer text | MIT, "Copyright (c) 2026 Omar El Arab"; the disclaimer is only in the README | Needed before W6-06-16 can ship the About page. |
+| U-3 (open) | Licence owner and wording; disclaimer text | 0BSD (Zero-Clause BSD), no notice line; the disclaimer is only in the README | Needed before W6-06-16 can ship the About page. |
 | U-4 (open) | Signing key, channel (Play or side-load), 1.0 timing | Debug-signed APK (W6-06-15) | Every future update must be signed with the key chosen now. |
 | U-5 (open) | Movies: speech-only, or user-supplied files | The engine plays them when present, but Android cannot receive them (W6-06-06) and Play Movies is greyed (W6-06-13) | Decides whether W6-06-06 should copy movies and whether W6-06-13 is worth doing. |
 | **D-1 (new)** | **Save compatibility policy for 1.0:** (a) freeze the format and migrate forward, or (b) accept "saves break on every update" and say so | v23; exact-version check (W6-06-01) | Decide before the first public build, or every tester loses their campaign at each update. |

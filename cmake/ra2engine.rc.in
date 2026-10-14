@@ -21,7 +21,6 @@ BEGIN
             VALUE "FileDescription",  "RA2 Engine (plays Red Alert 2 with your own game files)"
             VALUE "FileVersion",      "@RA2_VERSION@"
             VALUE "InternalName",     "ra2engine"
-            VALUE "LegalCopyright",   "See LICENSE and THIRD_PARTY_NOTICES.md. Not affiliated with Electronic Arts."
             VALUE "OriginalFilename", "ra2engine.exe"
             VALUE "ProductName",      "RA2 Engine"
             VALUE "ProductVersion",   "@RA2_VERSION@"

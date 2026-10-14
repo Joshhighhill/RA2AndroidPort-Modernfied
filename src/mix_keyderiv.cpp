@@ -2,7 +2,7 @@
 //
 // INDEPENDENT CLEAN-ROOM IMPLEMENTATION of Westwood's MIX Blowfish key
 // derivation. This file was written from scratch from (a) the public,
-// non-copyrightable RSA public-key algorithm (modular exponentiation of a
+// freely usable RSA public-key algorithm (modular exponentiation of a
 // big integer with exponent e = 65537), (b) the publicly documented Westwood
 // MIX key-source framing, and (c) black-box input->output test vectors
 // captured from our own game data. It is NOT derived from, and does not copy

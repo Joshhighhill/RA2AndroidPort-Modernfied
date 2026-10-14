@@ -332,7 +332,7 @@ TEST_CASE("format5 single + double chunk"){
   ```
   `decompress_format5(data,len)` remains as a thin wrapper = `decompress_mappack(data,len,MapPackCodec::LCW)` so Task-2 tests/callers are unchanged.
 
-**Clean-room note:** LZO is Markus Oberhumer's; `miniLZO`/`liblzo2` are GPL. Implement the LZO1X **decompressor** fresh from the PUBLIC bitstream format description (the token/copy/literal grammar is documented and not copyrightable) — do NOT copy miniLZO/kernel-lzo/OpenRA-MiniLzo source. XCC/liblzo may be built OUTSIDE the repo as a byte-oracle only.
+**Clean-room note:** LZO is Markus Oberhumer's; `miniLZO`/`liblzo2` are GPL. Implement the LZO1X **decompressor** fresh from the PUBLIC bitstream format description (the token/copy/literal grammar is documented and not protected) — do NOT copy miniLZO/kernel-lzo/OpenRA-MiniLzo source. XCC/liblzo may be built OUTSIDE the repo as a byte-oracle only.
 
 - [ ] **Step 1: Write failing tests** (`tests/test_lzo1x.cpp`). LZO1X has no trivial one-liner KAT, so gate on: (a) a small hand-built LZO1X stream (literal-run + a back-copy + end-of-stream `0x11 0x00 0x00`) with hand-computed expected output; (b) a **guarded real-data test**: pull a real map's `[IsoMapPack5]` (same extraction approach Task 2 used for OverlayPack; env `RA2_TEST_MAP`), `base64_decode`, `decompress_mappack(..., MapPackCodec::LZO)`, and assert it (i) does not throw on real LZO1X data, (ii) each chunk's output length equals its declared `uncmp` size, (iii) total length is a positive multiple of 11 (the cell-record size) — a wrong LZO decoder mismatches (ii). Skip cleanly if asset absent; assert non-vacuous (>0 bytes) when present.
 
@@ -642,7 +642,7 @@ Decodes `.tmp` isometric templates from `temperat.mix` into indexed tile images.
 
 - [ ] **Step 1: Scaffold the SDL2 Android project** from SDL2's `android-project` template (SDL 2.30.9). Point its native build at our `engine/` sources + the `ra2assets` library, compiled for `arm64-v8a` via NDK r27c (reuse the Phase-1 NDK toolchain knowledge). App is `SDLActivity`-based; no menus.
 
-- [ ] **Step 2: Asset access on device** — decide asset delivery: for the slice, push the needed game files to app-external storage (e.g. `/sdcard/Android/data/<pkg>/files/ra2/`) and set `RA2_INSTALL_DIR` (or an engine config path) to it; document the exact `adb push` of `ra2.mix`/`ra2md.mix` (+ whatever the loader needs). Do NOT bundle game assets into the APK (copyright).
+- [ ] **Step 2: Asset access on device** — decide asset delivery: for the slice, push the needed game files to app-external storage (e.g. `/sdcard/Android/data/<pkg>/files/ra2/`) and set `RA2_INSTALL_DIR` (or an engine config path) to it; document the exact `adb push` of `ra2.mix`/`ra2md.mix` (+ whatever the loader needs). Do NOT bundle game assets into the APK (they belong to EA).
 
 - [ ] **Step 3: Touch input** — confirm `SDL_FINGER*` events drive the same select/move code as mouse (Task 0 already maps them). Scale finger (normalized) coords to window pixels.
 

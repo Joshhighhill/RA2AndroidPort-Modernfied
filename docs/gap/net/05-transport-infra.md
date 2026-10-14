@@ -597,7 +597,7 @@ Main menu
 
 - Built-in maps (in the user's own MIX files): the host sends name + `map_crc`;
   clients look it up locally by name and verify the CRC. **Built-in maps are
-  never transferred** (the copyrighted data stays in each user's install).
+  never transferred** (the EA-owned data stays in each user's install).
 - Custom maps (`.map/.mpr/.yrm` the user put in the game folder): clients without
   a CRC match get "Downloading map 34 %" in their slot; host streams
   `MAP_CHUNK`s (deflate, ~50-300 KB, size cap 2 MB) on channel 2; the client
@@ -781,7 +781,7 @@ reconnect" playable milestone is T0-T3 ~ 5-6 weeks.
    game is ever distributed widely.
 10. **Legal/data**: only custom maps are transferred; built-in maps and all
     game data stay in each user's own install (consistent with the setup
-    flow). The server never carries copyrighted assets.
+    flow). The server never carries EA-owned assets.
 
 ---
 

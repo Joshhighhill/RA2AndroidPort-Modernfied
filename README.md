@@ -139,19 +139,14 @@ they contain no Electronic Arts source code, art, audio or map files.
 
 ## License
 
-RA2 Engine is free software, licensed under the **GNU General Public License
-version 3 or (at your option) any later version** (GPL-3.0-or-later). The
-full text is in [LICENSE](LICENSE).
+RA2 Engine is free for everyone, under the **Zero-Clause BSD licence**
+(0BSD). The full text is in [LICENSE](LICENSE).
 
-You may use, study, share and change it, and even sell it. If you distribute
-a changed version, you must release its source code under the same licence,
-so the engine stays free for everyone.
+Anyone may use, copy, change and share it, for any purpose, with or without
+payment, and with no conditions at all. The software comes as is, without any
+warranty.
 
-Copyright (C) 2026 Omar El Arab
-
-This program is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+Author: Omar El Arab
 
 Third-party components keep their own licences; they are listed in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

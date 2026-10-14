@@ -11,7 +11,7 @@
 // LZO1X bitstream grammar (token classes, literal/back-copy encodings,
 // little-endian distances, the 2-bit trailing-literal "state", the
 // zero-byte length extension, and the 0x11 0x00 0x00 end marker) -- a format
-// description that is not copyrightable. Correctness is pinned by decoding
+// description that is not protected. Correctness is pinned by decoding
 // real [IsoMapPack5] chunks to their exact declared sizes (see
 // tests/test_lzo1x.cpp), the same real-data arbiter used elsewhere in this
 // library.

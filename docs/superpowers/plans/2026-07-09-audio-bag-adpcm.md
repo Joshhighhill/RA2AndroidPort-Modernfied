@@ -1506,7 +1506,7 @@ New-Item -ItemType Directory -Force D:\ra2-android\oracle\audio | Out-Null
 
 Expected: the list's first line is `ichratta         offset=0          size=71148   rate=22050 flags=12 chunk=512`; the decode lines end `(141323 samples, 282646 bytes)` for ichratta and `(1017 samples, 2034 bytes)` for gradio3f (these counts follow from `(size - 4*n_chunks)*2 + n_chunks`).
 
-- [ ] **Step 7: Write the manifest** `D:\ra2-android\oracle\audio\manifest.txt` (git-ignored — the whole `oracle/` tree is derived from copyrighted assets and is never committed) with exactly:
+- [ ] **Step 7: Write the manifest** `D:\ra2-android\oracle\audio\manifest.txt` (git-ignored — the whole `oracle/` tree is derived from EA-owned assets and is never committed) with exactly:
 
 ```
 ichratta 22050 12 512
@@ -1530,7 +1530,7 @@ The oracle test (`tests/test_audio.cpp`, case "audio bag: real clips match
 XCC oracle byte-for-byte") compares `ra2assets`' PCM output against ground
 truth decoded by **XCC's own IMA-ADPCM code**. The oracle set lives in the
 git-ignored `oracle/audio/` directory and is **never committed** (derived
-from copyrighted game assets). Same Task-9 pattern as `make_oracle.md`.
+from EA's game assets). Same Task-9 pattern as `make_oracle.md`.
 
 > Extraction vs decode: the idx/bag bytes are extracted by **ra2assets**
 > (`ra2extract --raw`); the decode of clip bytes into PCM is done by **XCC's

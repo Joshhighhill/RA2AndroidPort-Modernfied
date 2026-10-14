@@ -1,6 +1,7 @@
 # Third-party notices
 
-RA2 Engine itself is licensed under GPL-3.0-or-later (see `LICENSE`). The engine
+RA2 Engine itself is licensed under the Zero-Clause BSD licence (0BSD, see
+`LICENSE`). The engine
 binaries (desktop `ra2engine` and the Android APK) also include or link
 the following third-party software.
 

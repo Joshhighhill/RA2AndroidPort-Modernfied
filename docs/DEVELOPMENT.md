@@ -2980,7 +2980,7 @@ owner B); this section only covers building and packaging.
 
 The native `.so` list and the source lists come from the same
 `cmake/ra2_sources.cmake` the desktop build uses, so the two cannot drift.
-Game assets are **never** bundled (copyright); they are read at run time from
+Game assets are **never** bundled (they belong to EA); they are read at run time from
 the app's external files dir (see "Assets on device" below).
 
 ### Patches to SDL's Java (W9-04)
@@ -3088,7 +3088,7 @@ Expected: both `machine=0xb7 AArch64`.
 The APK ships **both** `arm64-v8a` (real phones) and `x86_64` (emulator on an
 x86 host / x86 Chromebooks). It has been run on an Android 11 (API 30) x86_64
 emulator: it loads the real temperate map and GI unit and renders them
-full-screen. Game files are **never** bundled (copyright) — they are read at
+full-screen. Game files are **never** bundled (they belong to EA) — they are read at
 run time from the app's own external files dir.
 
 1. **Install** the APK (on a real phone connect it with USB debugging on):

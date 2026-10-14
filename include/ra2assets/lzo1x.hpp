@@ -15,7 +15,7 @@ namespace ra2assets {
 //
 // Clean-room: implemented fresh from the PUBLIC LZO1X bitstream-format
 // description (the token/copy/literal grammar, which is documented and not
-// copyrightable). No miniLZO / liblzo2 / kernel-lzo / OpenRA-MiniLzo source
+// protected). No miniLZO / liblzo2 / kernel-lzo / OpenRA-MiniLzo source
 // was opened, read, or transcribed.
 size_t lzo1x_decompress(const uint8_t* src, size_t src_len, uint8_t* out, size_t out_len);
 

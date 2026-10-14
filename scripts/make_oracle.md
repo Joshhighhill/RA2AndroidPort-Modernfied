@@ -3,7 +3,7 @@
 The oracle test (`tests/test_oracle.cpp`) compares `ra2assets`' indexed SHP
 output against ground truth decoded by **XCC's own decoder**. The oracle set
 lives in the git-ignored `oracle/` directory and is **never committed** (it is
-derived from copyrighted game assets).
+derived from EA's game assets).
 
 There are two ways to produce the ground-truth `frameNN.raw` files. The
 **scriptable path (A)** is what was actually used for Task 9 and is

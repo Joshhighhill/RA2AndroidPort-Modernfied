@@ -10,7 +10,7 @@
 /android/local.properties
 # Android SDK (installed outside the repo; guard against accidental copies)
 /android-sdk/
-# Oracle golden files derived from copyrighted assets — never commit
+# Oracle golden files derived from EA-owned assets — never commit
 /oracle/
 # Any accidental asset copies
 *.mix

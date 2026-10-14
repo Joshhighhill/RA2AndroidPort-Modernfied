@@ -117,7 +117,7 @@ cp "/d/Red Alert 2/docs/superpowers/plans/2026-07-08-ra2assets-asset-pipeline.md
 ```gitignore
 # Build output
 /build/
-# Oracle golden files derived from copyrighted assets — never commit
+# Oracle golden files derived from EA-owned assets — never commit
 /oracle/
 # Any accidental asset copies
 *.mix

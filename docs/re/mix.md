@@ -23,7 +23,7 @@ or code expression: the new code uses generic big-integer helpers
 (`multiply`/`modulo`/`mod_pow` over `uint32_t` limbs with bitwise long-division
 reduction, no 16-bit-word type-punning and no Montgomery form) and standard RSA
 modular exponentiation. Standard algorithms (RSA, base64, bignum modexp) are not
-copyrightable and were written fresh.
+protected and were written fresh.
 
 ### Public key constant
 
