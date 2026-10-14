@@ -4757,6 +4757,8 @@ pwsh scripts/play/net-match.ps1                      # two processes, LAN lobby,
                                                      # (+ chat and an Android-style AWAY / BACK from the joiner)
 pwsh scripts/play/net-match.ps1 -Online              # same through a local ra2lobbyd + the V3 tunnel
 pwsh scripts/play/net-match.ps1 -DesyncAt 600        # joiner diverges at 600: both stop out of sync + dumps
+pwsh scripts/play/net-match.ps1 -Fuzz                # W9-05-12: joiner also sends forged packets; host drops them, trails identical
+pwsh scripts/play/net-match.ps1 -VersionMismatch     # W9-05-02: joiner is "another build"; both lobbies say so, no match
 pwsh scripts/play/mp-lan-loopback.ps1                # lobby agreement (now ends in the running match)
 pwsh scripts/play/mp-online-loopback.ps1
 ```
@@ -4816,9 +4818,12 @@ proves it (`docs/gap/net/03-sim-bitexact.md`, `docs/gap/net/04-engine-lockstep.m
 Android executable (static SDL, no activity) that runs the desktop command line
 under SDL's dummy drivers. `tools/xplat_gate.ps1` runs every `--demo-*` gate on
 both and compares all hashes and witness counts, and with `-SoakMinutes N` a
-seeded `--ai-soak --ai-vs-ai --hash-every 15`: fnv1a(`save_world`) every 15
-frames -- the basis of the match sync hash (`GameScene::net_state_hash`) -- plus
-the final `state_hash`.
+seeded `--ai-soak --ai-vs-ai --hash-every 15`: every 15 frames the full sync
+hash (`save::world_sync_hash`, the `[Net] FullHash=1` debug mode) and the per-frame
+`net_frame_crc` (the match CRC, `GameScene::net_state_hash`), plus the final
+`state_hash`. `--players N` (w9int) adds AI combatants up to N: the 8-player cost
+run `--ai-soak --ai-vs-ai --players 8 --map xmp27t8.map --frames 13500 --diff brutal
+--hash-every 15` measured frame CRC avg 11 us / max 53 us, full sync hash avg 10 ms.
 
 ```
 cmake -S . -B build-android-cli -G Ninja -DCMAKE_BUILD_TYPE=Release ^

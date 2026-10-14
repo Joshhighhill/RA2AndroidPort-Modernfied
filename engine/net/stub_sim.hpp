@@ -31,6 +31,12 @@ struct StubSim {
         uint8_t raw[kEventClassSize];
         e.to_raw(raw);
         raw[1] = 0;  // IsExecuted is local
+        // W9-05-14: a MEGAMISSION's byte data[6] is the codec's cache slot,
+        // transport bookkeeping: the encoder writes it into the copy it sends
+        // but the sender's own echo keeps 0 (the engine's event->Command map
+        // ignores it). Hashing it made --selftest report a false OOS after
+        // ~2,550 frames.
+        if (e.type == static_cast<uint8_t>(EventType::MEGAMISSION)) raw[7 + 6] = 0;
         for (size_t k = 0; k < kEventClassSize; ++k) h = (h ^ raw[k]) * 16777619u;
         h ^= static_cast<uint32_t>(x.group_size) << 16;
         acc[static_cast<size_t>(e.house) & 7] = add_crc(acc[static_cast<size_t>(e.house) & 7], h);

@@ -272,9 +272,15 @@ int EventDecoder::extract(const uint8_t* pkt, size_t len, std::vector<Event>& ou
                 std::memcpy(ev.data.data(), pkt + i + 1, sz);
                 // iVar5 = (char)param_1[2]: the house byte of the packet header.
                 const int house8 = static_cast<int8_t>(pkt[2]) * 8;
+                // W9-05-12 (clone hardening): the encoder only ever uses cache
+                // slots 0-7 of houses 0-7; a larger slot byte would index
+                // ANOTHER house's cache (house*8 + slot) and corrupt it on
+                // this receiver only.
+                const bool slot_ok = ev.data[6] < kMegaMissionCacheSlots && house8 >= 0 && house8 < kMaxHouses * 8;
                 if (count < 2) {
                     if (count == 0) {
                         // Replay cached unit list [house*8 + slot].
+                        if (!slot_ok) break;   // W9-05-12
                         const int idx = ev.data[6] + house8;
                         i += 1 + sz;
                         remain -= 1 + sz;
@@ -303,7 +309,7 @@ int EventDecoder::extract(const uint8_t* pkt, size_t len, std::vector<Event>& ou
                     remain -= 1 + sz;
                     adv = 5;
                     const int idx = ev.data[6] + house8;
-                    if (idx < 0 || idx >= kMaxHouses * kMegaMissionCacheSlots) break;  // D3
+                    if (!slot_ok || idx < 0 || idx >= kMaxHouses * kMegaMissionCacheSlots) break;  // D3 / W9-05-12
                     uint8_t* lst = lists_[idx].data();
                     std::memcpy(lst, ev.data.data(), 5);
                     uint32_t stored = 1;

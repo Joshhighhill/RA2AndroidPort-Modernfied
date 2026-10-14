@@ -7,6 +7,12 @@
 #   pwsh scripts/play/net-match.ps1 [-Exe build/ra2engine.exe] [-Out build/play-out]
 #        [-Online] [-Server path\ra2lobbyd.exe]     # through ra2lobbyd + the V3 tunnel
 #        [-DesyncAt <frame>]                        # inject a divergence on the JOINER
+#        [-Fuzz]                                    # W9-05-12: the JOINER also sends forged packets
+#        [-VersionMismatch]                         # W9-05-02: the JOINER is "another build"
+# -Fuzz expects a normal PASS (identical trails) AND the host's "[net] rejected:"
+# line to count dropped packets/events. -VersionMismatch expects NO match: the
+# joiner is refused in the lobby with "Different game version" and the host
+# logs "could not join: different game version".
 # -DesyncAt expects the opposite: both machines stop with "out of sync", the
 # trails agree before the frame and differ after, and each machine wrote its
 # DESYNC_F<frame>_H<house>.SAV/.TXT pair to its saves folder.
@@ -20,10 +26,10 @@
 # Needs RA2_INSTALL_DIR. Takes several minutes (two full games).
 [CmdletBinding()]
 param([string]$Exe = "build/ra2engine.exe", [string]$Out = "build/play-out", [switch]$Online,
-      [string]$Server = "", [int]$DesyncAt = -1, [string]$Pair = "")
+      [string]$Server = "", [int]$DesyncAt = -1, [string]$Pair = "", [switch]$Fuzz, [switch]$VersionMismatch)
 $ErrorActionPreference = "Stop"
 $kind = if ($Online) { "online" } else { "lan" }
-$tag = if ($DesyncAt -ge 0) { "net-$kind-desync" } else { "net-$kind" }
+$tag = if ($DesyncAt -ge 0) { "net-$kind-desync" } elseif ($Fuzz) { "net-$kind-fuzz" } elseif ($VersionMismatch) { "net-$kind-version" } else { "net-$kind" }
 $hostPlay = "scripts/play/net-$kind-host.play"; $joinPlay = "scripts/play/net-$kind-join.play"; $minFrame = 2985
 if ($Pair) {
     if ($Online) { throw "-Pair runs on the LAN only" }
@@ -49,9 +55,35 @@ $ready = if ($Online) { "room created code=" } else { "hosting LAN game" }
 $deadline = (Get-Date).AddSeconds(120)
 while ((Get-Date) -lt $deadline -and -not (Select-String -Path $hostErr -Pattern $ready -Quiet -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 500 }
 if ($DesyncAt -ge 0) { $env:RA2_NET_DESYNC_AT = "$DesyncAt" }
+if ($Fuzz) { $env:RA2_NET_FUZZ = "1" }
+if ($VersionMismatch) { $env:RA2_NET_SIM_SALT = "another-build" }
 $j = Start-Process -FilePath $Exe -ArgumentList @("--play", $joinPlay, "--out", $joinOut) `
      -RedirectStandardOutput (Join-Path $joinOut "stdout.txt") -RedirectStandardError $joinErr -PassThru -NoNewWindow
 Remove-Item Env:RA2_NET_DESYNC_AT -ErrorAction SilentlyContinue
+Remove-Item Env:RA2_NET_FUZZ -ErrorAction SilentlyContinue
+Remove-Item Env:RA2_NET_SIM_SALT -ErrorAction SilentlyContinue
+if ($VersionMismatch) {
+    # W9-05-02: both sides must say so in the lobby; the match never starts.
+    $deadline = (Get-Date).AddSeconds(240)
+    $hm = $null; $jm = $null
+    while ((Get-Date) -lt $deadline -and -not ($hm -and $jm)) {
+        $hm = Select-String -Path $hostErr -Pattern "could not join: different game version.*" -ErrorAction SilentlyContinue | Select-Object -First 1
+        $jm = Select-String -Path $joinErr -Pattern "join refused: Different game version.*" -ErrorAction SilentlyContinue | Select-Object -First 1
+        Start-Sleep -Seconds 1
+    }
+    Start-Sleep -Seconds 2
+    $started = (Select-String -Path $hostErr -Pattern "\[net\] lockstep match" -Quiet -ErrorAction SilentlyContinue) -or
+               (Select-String -Path $joinErr -Pattern "\[net\] lockstep match" -Quiet -ErrorAction SilentlyContinue)
+    foreach ($p in @($h, $j)) { if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force } }   # only the PIDs started here
+    if ($srv) { Stop-Process -Id $srv.Id -Force }
+    Write-Host ("host: " + $(if ($hm) { $hm.Matches[0].Value } else { "NO version message" }))
+    Write-Host ("join: " + $(if ($jm) { $jm.Matches[0].Value } else { "NO version message" }))
+    Write-Host ("match started: " + $started)
+    $pass = $hm -and $jm -and -not $started
+    Write-Host ("version mismatch gate: " + $(if ($pass) { "PASS" } else { "FAIL" }))
+    if (-not $pass) { exit 1 }
+    exit 0
+}
 if ($DesyncAt -ge 0) {
     # The match stops at the out-of-sync; the scripts would then wait out their
     # budgets -- end both runs once both machines reported the end (+ dumps).
@@ -152,6 +184,14 @@ if ($Pair -eq "observe") {
     Need $joinErr "\[net\] defeated: Joiner has been defeated!" "joiner: its own defeat line"
 }
 $pass = $h.ExitCode -eq 0 -and $j.ExitCode -eq 0 -and $diff.Count -eq 0 -and $maxf -ge $minFrame -and $outSame -and $chat -and $away -and $pairOk
+if ($Fuzz) {
+    # W9-05-12: the host dropped the joiner's forged packets / events.
+    $rj = Select-String -Path $hostErr -Pattern "\[net\] rejected: (\d+) packets, (\d+) events.*" -ErrorAction SilentlyContinue | Select-Object -Last 1
+    $rp = if ($rj) { [int]$rj.Matches[0].Groups[1].Value } else { 0 }
+    $re = if ($rj) { [int]$rj.Matches[0].Groups[2].Value } else { 0 }
+    Write-Host ("host " + $(if ($rj) { $rj.Matches[0].Value } else { "rejected: (no line)" }))
+    if ($rp -lt 10 -or $re -lt 5) { $pass = $false }
+}
 if ($Online -and $fwd -le 0) { $pass = $false }
 Write-Host ("network match: " + $(if ($pass) { "PASS" } else { "FAIL" }))
 if (-not $pass) { exit 1 }

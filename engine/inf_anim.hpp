@@ -29,7 +29,7 @@ const char* inf_seq_name(int seq);
 
 // [RE: DoControls @0x7E9F7C, 4 bytes per sequence] Interrupt / IsMobile /
 // RandomStart / Rate (game frames per stage; 0 = the stage never advances).
-struct InfDoControl { bool interrupt, mobile, random_start; int rate; };
+struct InfDoControl { bool interrupt = false, mobile = false, random_start = false; int rate = 0; };   // W9-05: initialised
 const InfDoControl& inf_do_control(int seq);
 
 // One art Sequence= entry: StartFrame,FrameCount,FacingMultiplier[,Facing].

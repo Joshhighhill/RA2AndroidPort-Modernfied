@@ -87,9 +87,13 @@ public:
     }
     // House h's buildable building mask (the sidebar's rp_bld_allowed_ rule
     // for that house's country; the local house's is rp_bld_allowed_).
+    // W9-05: computed the SAME way for the local house as for the others --
+    // rp_bld_allowed_ is sized at rp_setup, before map tech buildings join
+    // the roster, so the local peer's mask for its own house was shorter
+    // (missing = allowed) than the one the other peers computed for it. The
+    // econ-rules digest in the sync hash caught it (a frame-0 desync).
     std::vector<char> bld_allowed_for(int h) const {
-        if (h == local_house_ || !cfg_.campaign_map.empty() || h < 0 ||
-            h >= static_cast<int>(cfg_.slots.size()))
+        if (!cfg_.campaign_map.empty() || h < 0 || h >= static_cast<int>(cfg_.slots.size()))
             return rp_bld_allowed_;
         const std::string country = rp_player_country(rules_, cfg_.slots[(std::size_t)h]);
         const camp::PlayerRules pr;

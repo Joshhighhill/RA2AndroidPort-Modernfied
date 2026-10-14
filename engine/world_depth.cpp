@@ -481,8 +481,8 @@ void World::step_garrison_combat(double dt) {
         shooter.house = b.house;
         shooter.fx = cx;
         shooter.fy = cy;
-        shooter.cell_x = static_cast<int>(std::lround(cx));
-        shooter.cell_y = static_cast<int>(std::lround(cy));
+        shooter.cell_x = static_cast<int>(om::lround(cx));
+        shooter.cell_y = static_cast<int>(om::lround(cy));
         shooter.w_damage = ftol(w.damage * depth_rules_.occupy_damage_mult);
         shooter.w_rof = rof;
         shooter.w_range = range;
@@ -698,7 +698,7 @@ int World::deck_z(int x, int y) const {
 // own cell, a Wall=yes warhead (+0x144).
 int World::bridge_area_roll(double cx, double cy, int damage, int wall_flags, int z_abs) {
     if (bridge_ovl_.empty() && hbridge_.empty()) return 0;
-    const int x = static_cast<int>(std::lround(cx)), y = static_cast<int>(std::lround(cy));
+    const int x = static_cast<int>(om::lround(cx)), y = static_cast<int>(om::lround(cy));
     if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return 0;
     return bridge_explosion(x, y, damage, (wall_flags & kW6Wall) != 0, z_abs);
 }

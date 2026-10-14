@@ -39,7 +39,7 @@ bool live_on_map(const Unit& u) { return u.alive && u.die_time < 0.0 && u.cargo_
 // 16-bit facing -> the 8-bit DirStruct value the deploy gate compares
 // (FUN_007383E0: ((raw >> 7) + 1) >> 1 & 0xFF).
 int facing8(double f16) {
-    int raw = static_cast<int>(std::lround(f16)) & 0xFFFF;
+    int raw = static_cast<int>(om::lround(f16)) & 0xFFFF;
     return (((raw >> 7) + 1) >> 1) & 0xFF;
 }
 

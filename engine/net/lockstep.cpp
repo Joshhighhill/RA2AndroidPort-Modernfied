@@ -156,6 +156,14 @@ int LockstepSession::process_packet(int conn_id, const std::vector<uint8_t>& pkt
     const FrameHeader h = FrameHeader::read(pkt.data());
     int ret = 0;
     const int32_t sf = h.sender_frame();
+    // W9-05-12 (clone hardening): the header's house is the sender's own
+    // (compressed events inherit it), and an honest sender's frame is never
+    // far ahead of ours. Anything else is forged or corrupt: dropped whole,
+    // before it can move their_frame (which opens the gate) or the counts.
+    if (h.house != conn_id || sf > static_cast<int32_t>(frame_) + kFrameWindow) {
+        ++stats_.rejected_packets;
+        return 0;
+    }
     if (p.their_frame < sf) {
         if (p.their_frame == -1) ret = 1;  // "Player ready"
         p.their_frame = sf;
@@ -174,9 +182,26 @@ int LockstepSession::process_packet(int conn_id, const std::vector<uint8_t>& pkt
     int n = cfg_.protocol == 0 ? decode_raw_events(pkt.data(), pkt.size(), evs, room)
                                : dec_.extract(pkt.data(), pkt.size(), evs, room);
     if (n == -1) return 3;
-    if (h.type == T(EventType::FRAMEINFO) && n > 0) --n;
-    p.received += static_cast<uint32_t>(n) & 0xFFFFu;
-    for (auto& e : evs) dolist_.push_back(std::move(e));
+    // The command count: every decoded event except the FRAMEINFO header
+    // itself (the original: n - 1). W9-05-12: a rejected event does not count
+    // either -- an honest sender never sends one, and counting forged events
+    // could let the gate open before a lost real command arrived.
+    bool header = h.type == T(EventType::FRAMEINFO);
+    uint32_t counted = 0;
+    for (auto& e : evs) {
+        const bool is_header = header && e.type == T(EventType::FRAMEINFO);
+        if (is_header) header = false;
+        // W9-05-12: every event must be the sender's own (a raw packet, or a
+        // second FRAMEINFO record, can name any house) and inside the frame
+        // window.
+        if (e.house != conn_id || static_cast<int64_t>(e.frame) > static_cast<int64_t>(frame_) + kFrameWindow) {
+            ++stats_.rejected_events;
+            continue;
+        }
+        if (!is_header) ++counted;
+        dolist_.push_back(std::move(e));
+    }
+    p.received += counted & 0xFFFFu;
     return ret;
 }
 
@@ -369,6 +394,12 @@ void LockstepSession::execute_net_event(const Event& e) {
             ev::Timing t = ev::get_timing(e);
             uint16_t ma = t.max_ahead;
             if (cfg_.fog_of_war && !cfg_.spawner_protocol_zero) ma = static_cast<uint16_t>(ma - 10);
+            // W9-05-12 (clone hardening): clamp to what the header can carry
+            // (Delay is a u8) and what an honest master sends. Every peer
+            // executes the same TIMING, so the clamp is deterministic.
+            ma = static_cast<uint16_t>(std::clamp<uint32_t>(ma, 1u, kMaxMaxAhead));
+            t.frame_send_rate = static_cast<uint8_t>(std::clamp<uint32_t>(t.frame_send_rate, 1u, kMaxFrameSendRate));
+            t.desired_fps = static_cast<uint16_t>(std::clamp<uint32_t>(t.desired_fps, 1u, 60u));
             const uint32_t fsr = t.frame_send_rate ? t.frame_send_rate : 1;
             if (max_ahead_ < ma || fsr_ < t.frame_send_rate) {
                 move_from_ = static_cast<int32_t>(e.frame);
@@ -383,7 +414,9 @@ void LockstepSession::execute_net_event(const Event& e) {
             fsr_ = t.frame_send_rate;
             break;
         }
-        case EventType::RESPONSE_TIME: max_ahead_ = ev::get_response_time(e); break;
+        case EventType::RESPONSE_TIME:
+            max_ahead_ = std::clamp<uint32_t>(static_cast<uint32_t>(ev::get_response_time(e)), 1u, kMaxMaxAhead);
+            break;
         case EventType::PROCESS_TIME: {
             const int32_t v = e.u16(0);
             if (e.house == cfg_.local_house)
@@ -392,7 +425,7 @@ void LockstepSession::execute_net_event(const Event& e) {
                 peers_[e.house].node_time = v;
             break;
         }
-        case EventType::LATENCYFUDGE: latency_fudge_ = e.i32(0); break;
+        case EventType::LATENCYFUDGE: latency_fudge_ = std::clamp(e.i32(0), 0, 3); break;
         case EventType::RESPONSE_TIME2: protocol_zero_handle(e); break;
         default: break;
     }
@@ -445,8 +478,13 @@ bool LockstepSession::execute_dolist() {
             } else if (t == T(EventType::MEGAMISSION)) {
                 if (mega.size() < 0x100) mega.push_back(e);
             } else if (t == T(EventType::TIMING) || t == T(EventType::RESPONSE_TIME) ||
-                       t == T(EventType::PROCESS_TIME) || t == T(EventType::LATENCYFUDGE) ||
-                       t == T(EventType::RESPONSE_TIME2)) {
+                       t == T(EventType::LATENCYFUDGE)) {
+                // W9-05-12: only the master times the session (Am_I_Master).
+                if (cfg_.master_house < 0 || h == cfg_.master_house)
+                    execute_net_event(e);
+                else
+                    ++stats_.rejected_events;
+            } else if (t == T(EventType::PROCESS_TIME) || t == T(EventType::RESPONSE_TIME2)) {
                 execute_net_event(e);
             } else {
                 exec_.push_back(ExecItem{e});
@@ -660,6 +698,59 @@ void LockstepSession::end_frame() {
     }
     phase_ = Phase::Idle;
     ++frame_;
+}
+
+// --------------------------------------------------------- test hook
+void LockstepSession::send_test_garbage(int kind) {
+    // W9-05-12 two-process test (RA2_NET_FUZZ): forged / malformed packets to
+    // every peer. Each kind must be dropped by the receivers without any
+    // effect on the match (the trails stay identical).
+    const int other = cfg_.houses.empty() ? 0 : (cfg_.houses.front() == cfg_.local_house ? cfg_.houses.back()
+                                                                                          : cfg_.houses.front());
+    std::array<uint8_t, kMaxGamePacket + 8> b{};
+    FrameHeader h;
+    h.type = T(EventType::FRAMEINFO);
+    h.house = static_cast<int8_t>(cfg_.local_house);
+    h.frame = stamp_frame(frame_, max_ahead_, fsr_, cfg_.protocol);
+    // A real header otherwise: sender frame (Frame - Delay) = our last
+    // begun frame with its CRC, so the receiver's CRC compare matches.
+    const uint32_t sf = frame_ > 0 ? frame_ - 1 : 0;
+    h.crc = crc_hist_[sf & 0xFF];
+    h.command_count = static_cast<uint16_t>(cmd_count_);
+    h.delay = static_cast<uint8_t>(h.frame - sf);
+    size_t len = kFrameHeaderSize;
+    switch (kind & 3) {
+        case 0:   // another house's name in the header (impersonation)
+            h.house = static_cast<int8_t>(other);
+            break;
+        case 1:   // a frame far beyond the window (would open the gate early)
+            h.frame = frame_ + 50000;
+            break;
+        case 2: {   // a TIMING from a house that is not the master
+            ev::Timing t;
+            t.desired_fps = 999;
+            t.max_ahead = 60000;
+            t.frame_send_rate = 200;
+            Event e = ev::timing(cfg_.local_house, t);
+            const int ws = event_wire_size(e.type, false);
+            b[len] = e.type;
+            std::memcpy(b.data() + len + 1, e.data.data(), static_cast<size_t>(ws));
+            len += 1 + static_cast<size_t>(ws);
+            break;
+        }
+        default: {   // a MEGAMISSION replay naming cache slot 200
+            b[len] = T(EventType::MEGAMISSION);
+            b[len + 1] = 0;   // count 0: replay
+            const int ws = event_wire_size(T(EventType::MEGAMISSION), false);
+            std::memset(b.data() + len + 2, 0, static_cast<size_t>(ws));
+            b[len + 2 + 6] = 200;
+            len += 2 + static_cast<size_t>(ws);
+            break;
+        }
+    }
+    h.write(b.data());
+    net_.send_private(b.data(), len, false, -1);
+    net_.service();
 }
 
 // ------------------------------------------------------------------ exit

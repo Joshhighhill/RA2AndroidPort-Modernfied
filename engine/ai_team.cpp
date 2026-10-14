@@ -53,8 +53,8 @@ Cellxy gather_cell(int ex, int ey, std::uint32_t& rng) {
     const double theta =
         (double)ai_rand(rng) / 4294967296.0 * 6.283185307179586;  // [0, 2*pi)
     const double rad = (double)kAiSafeDistance;
-    return Cellxy{ex + (int)std::lround(rad * om::cos(theta)),
-                  ey + (int)std::lround(rad * om::sin(theta))};
+    return Cellxy{ex + (int)om::lround(rad * om::cos(theta)),
+                  ey + (int)om::lround(rad * om::sin(theta))};
 }
 
 namespace {

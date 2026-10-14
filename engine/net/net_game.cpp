@@ -17,6 +17,7 @@ LockstepConfig make_session_config(const NetGameConfig& c) {
     s.local_house = c.local_house;
     s.houses = c.human_houses;
     s.master = c.master;
+    s.master_house = c.master_house;
     s.max_ahead = c.max_ahead;
     s.frame_send_rate = c.frame_send_rate;
     s.game_speed = c.game_speed;
@@ -91,7 +92,12 @@ NetGame::Step NetGame::step(const std::function<uint32_t()>& state_hash, std::ve
     recs.reserve(session_.executed().size());
     for (const ExecItem& x : session_.executed()) {
         NetCommand n;
-        if (event_to_command(x.ev, n)) recs.push_back(std::move(n));
+        if (!event_to_command(x.ev, n)) continue;
+        if (n.kind == EventType::REMOVEPLAYER && !removeplayer_allowed(n.house, n.value)) {
+            ++rejected_removes_;
+            continue;
+        }
+        recs.push_back(std::move(n));
     }
     out = from_net(recs);
     const uint32_t f = session_.frame();
@@ -99,6 +105,19 @@ NetGame::Step NetGame::step(const std::function<uint32_t()>& state_hash, std::ve
     session_.end_frame();
     begun_ = false;
     return Step::Run;
+}
+
+// W9-05-12 (clone hardening; the original executed any REMOVEPLAYER): a
+// house may be removed by the master (the host's timeout / "Drop player"),
+// by itself, or -- when the master is the one that vanished -- by any human
+// house. The target must be a human house of this match. Decided from the
+// event alone (house + target), so every peer decides the same.
+bool NetGame::removeplayer_allowed(int sender, int target) const {
+    const auto& hh = cfg_.human_houses;
+    if (std::find(hh.begin(), hh.end(), target) == hh.end()) return false;
+    if (std::find(hh.begin(), hh.end(), sender) == hh.end()) return false;
+    if (cfg_.master_house < 0) return true;
+    return sender == cfg_.master_house || sender == target || target == cfg_.master_house;
 }
 
 const char* NetGame::step_name(Step s) {

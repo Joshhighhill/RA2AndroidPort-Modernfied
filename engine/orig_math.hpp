@@ -23,6 +23,7 @@
 // Results are returned as double: the original leaves the float table value in
 // ST0, which a double holds exactly.
 #include <cstdint>
+#include <cstring>
 
 namespace ra2engine {
 namespace om {
@@ -41,6 +42,40 @@ inline std::int32_t ftol(double x) {
     return 0;
 }
 inline std::int32_t ftol(float x) { return ftol(static_cast<double>(x)); }
+
+// W9-05-13: the sim's std::lround replacement. std::lround returns `long`:
+// 32-bit on Windows, 64-bit on Android, so a result beyond int32 (or a NaN)
+// differed between the two builds (MinGW UCRT returns 0; bionic returns the
+// 64-bit value, which the int cast then wraps). This rounds half away from
+// zero exactly like std::lround and reproduces the Windows result everywhere:
+// NaN, or a rounded value outside int32, gives 0.
+inline std::int32_t lround(double x) {
+    if (!(x >= -2147483649.0 && x <= 2147483648.0)) return 0;   // NaN / far out of range
+    const std::int64_t t = static_cast<std::int64_t>(x);          // truncation, in range
+    const double frac = x - static_cast<double>(t);               // exact
+    const std::int64_t r = t + (frac >= 0.5 ? 1 : frac <= -0.5 ? -1 : 0);
+    if (r < -2147483647LL - 1 || r > 2147483647LL) return 0;
+    return static_cast<std::int32_t>(r);
+}
+// W9-05-13: a plain (int) truncation of a double that is defined for every
+// input -- static_cast<int>(double) is UB out of range (x86 CVTTSD2SI gives
+// 0x80000000, arm64 FCVTZS saturates, NaN -> 0). This is the x86 result on
+// every platform: NaN / out of int32 range -> INT32_MIN.
+inline std::int32_t itrunc(double x) {
+    if (!(x > -2147483649.0 && x < 2147483648.0)) return -2147483647 - 1;
+    return static_cast<std::int32_t>(x);
+}
+// W9-05-13: the ONE canonical bit pattern of a double for everything two
+// peers compare (the save / full sync hash io_scalar AND the per-frame
+// net_frame_crc): every NaN is the quiet NaN 0x7FF8000000000000 (an SSE
+// default NaN is 0xFFF8..., an arm64 one 0x7FF8..., payloads vary); every
+// other value keeps its exact IEEE bits (-0 stays -0: IEEE produces it the
+// same way on every platform, and atan2 / division tell it from +0).
+inline std::uint64_t canonical_bits(double d) {
+    std::uint64_t b = 0x7FF8000000000000ull;
+    if (d == d) std::memcpy(&b, &d, sizeof b);
+    return b;
+}
 // Integral arguments are a type error: an integer->int cast is a plain
 // static_cast, not _ftol (this also lets the sim's ftol sweep be compiler-checked).
 template <class T> std::int32_t ftol(T) = delete;

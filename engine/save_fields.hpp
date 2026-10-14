@@ -143,6 +143,11 @@ struct SaveAccess {
         // L2 per-house economy (save v32): wallets + queues of every player
         // and AI house, the human mask, the latched outcomes, the cheer flags.
         save::io(ar, w.econ_); save::mark(ar, "econ_");
+        // W9-05: the per-house production rules are not saved (the host
+        // re-installs them), but both peers must have built them alike: the
+        // digest taken at install time is hashed.
+        save::io_hash_only(ar, w.econ_rules_set_);
+        save::io_hash_only(ar, w.econ_rules_digest_); save::mark(ar, "econ_rules_digest_");
         save::io(ar, w.human_mask_); save::mark(ar, "human_mask_");
         save::io(ar, w.house_outcome_); save::mark(ar, "house_outcome_");
         save::io(ar, w.victory_cheered_); save::mark(ar, "victory_cheered_");
@@ -151,7 +156,7 @@ struct SaveAccess {
         save::io(ar, w.sw_any_); save::mark(ar, "sw_any_");
         // W2-AN (save v9): air/naval/SW v2 state + the amphibious scratch grid
         save::io(ar, w.an_); save::mark(ar, "an_");
-        save::io(ar, w.amphib_passable_); save::mark(ar, "amphib_passable_");
+        save::io_unhashed(ar, w.amphib_passable_); save::mark(ar, "amphib_passable_");   // W9-05: derived (amphib_grid)
         // Capture
         save::io(ar, w.capture_any_); save::mark(ar, "capture_any_");
         save::io(ar, w.tech_income_); save::mark(ar, "tech_income_");
@@ -278,12 +283,12 @@ struct SaveAccess {
         save::io(ar, w.bridge_version_); save::mark(ar, "bridge_version_");
         save::io(ar, w.bridge_rng_); save::mark(ar, "bridge_rng_");
         save::io(ar, w.hbridge_); save::mark(ar, "hbridge_");   // W4-SQ-10 (save v16)
-        save::io(ar, w.deck_land_); save::mark(ar, "deck_land_");   // R-210 derived scratch (save v30)
-        save::io(ar, w.deck_amph_); save::mark(ar, "deck_amph_");
-        save::io(ar, w.deck_ver_); save::mark(ar, "deck_ver_");
+        save::io_unhashed(ar, w.deck_land_); save::mark(ar, "deck_land_");   // R-210 derived scratch (save v30)
+        save::io_unhashed(ar, w.deck_amph_); save::mark(ar, "deck_amph_");   // W9-05: deck_grid() rebuilds it
+        save::io_unhashed(ar, w.deck_ver_); save::mark(ar, "deck_ver_");
         save::io(ar, w.w5_); save::mark(ar, "w5_");   // wave-5 abilities (agent C)
-        save::io(ar, w.w5_hide_); save::mark(ar, "w5_hide_");   // wave-5 gap scratch (the amphib_passable_ precedent)
-        save::io(ar, w.w5_own_); save::mark(ar, "w5_own_");
+        save::io_unhashed(ar, w.w5_hide_); save::mark(ar, "w5_hide_");   // wave-5 gap scratch (the amphib_passable_ precedent)
+        save::io_unhashed(ar, w.w5_own_); save::mark(ar, "w5_own_");     // W9-05: rebuilt by w5_gap_pass(0)
         // W5-B R-062 land speed (save v20)
         save::io(ar, w.land_speed_armed_); save::mark(ar, "land_speed_armed_");
         save::io(ar, w.speed_land_); save::mark(ar, "speed_land_");
@@ -304,8 +309,8 @@ struct SaveAccess {
         save::io(ar, w.wall_ov_types_); save::mark(ar, "wall_ov_types_");
         save::io(ar, w.wall_ov_stage_); save::mark(ar, "wall_ov_stage_");   // W6-04-05 their damage stages
         save::io(ar, w.w6_wall_kills_); save::mark(ar, "w6_wall_kills_");   // W6-04-05 walls destroyed this frame (opened next step)
-        save::io(ar, w.crush_grid_); save::mark(ar, "crush_grid_");  // P4 derived scratch (the amphib_passable_ precedent)
-        save::io(ar, w.crush_leak_); save::mark(ar, "crush_leak_");
+        save::io_unhashed(ar, w.crush_grid_); save::mark(ar, "crush_grid_");  // P4 derived scratch (the amphib_passable_ precedent)
+        save::io_unhashed(ar, w.crush_leak_); save::mark(ar, "crush_leak_");  // W9-05: crush_grid()/crush_leak() rebuild them
         save::io(ar, w.sw_quarry_); save::mark(ar, "sw_quarry_");   // W5-A AI SW PreferredTarget (save v21)
     }
 
@@ -1010,6 +1015,30 @@ template <class Ar> void fields(Ar& ar, UnitTypeDef& v) {
     io(ar, v.harvester);
     io(ar, v.storage);
     io(ar, v.w5);   // wave-5 stolen tech (agent C)
+}
+// W9-05: never saved (re-installed by the host after a load) -- only hashed,
+// once per install, as World::econ_rules_digest_ (save::econ_rules_digest).
+template <class Ar> void fields(Ar& ar, PlayerEconRules& v) {
+    io(ar, v.units);
+    io(ar, v.unit_anims);
+    io(ar, v.unit_has_anim);
+    io(ar, v.factory_types);
+    io(ar, v.groups);
+    io(ar, v.water_bound);
+    io(ar, v.wall);
+    io(ar, v.wall_fill_range);
+    io(ar, v.buildup_total);
+    io(ar, v.base_normal);
+    io(ar, v.build_off_ally);   // W9-05-09 (w9fix-match)
+    io(ar, v.ally_eligible);
+    io(ar, v.bld_allowed);
+    io(ar, v.unit_build_limit);
+    io(ar, v.build_speed);
+    io(ar, v.low_power_mod);
+    io(ar, v.multiple_factory);
+    io(ar, v.wall_coefficient);
+    io(ar, v.max_queued);
+    io(ar, v.wall_rules);
 }
 template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.id);

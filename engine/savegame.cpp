@@ -30,7 +30,9 @@ std::vector<std::uint8_t> save_world(const World& w) {
 std::vector<std::pair<std::string, std::uint32_t>> world_field_hashes(const World& w) {
     FieldMarks marks;
     field_marks() = &marks;
-    const std::vector<std::uint8_t> b = save_world(w);
+    SyncWriter sw;   // W9-05: the sync-hash policy (derived caches hash as empty)
+    SaveAccess::world(sw, const_cast<World&>(w));
+    const std::vector<std::uint8_t> b = std::move(sw.buf);
     field_marks() = nullptr;
     std::vector<std::pair<std::string, std::uint32_t>> out;
     std::size_t from = 0;
@@ -39,6 +41,41 @@ std::vector<std::pair<std::string, std::uint32_t>> world_field_hashes(const Worl
         for (std::size_t i = from; i < m.second && i < b.size(); ++i) h = (h ^ b[i]) * 16777619u;
         out.emplace_back(m.first, h);
         from = m.second;
+    }
+    return out;
+}
+
+std::uint64_t world_sync_hash(const World& w, const MapTriggerSystem* triggers) {
+    SyncHasher h;
+    SaveAccess::world(h, const_cast<World&>(w));
+    if (triggers) SaveAccess::triggers(h, const_cast<MapTriggerSystem&>(*triggers));
+    return h.h;
+}
+
+std::uint64_t econ_rules_digest(const PlayerEconRules& r) {
+    SyncHasher h;
+    io(h, const_cast<PlayerEconRules&>(r));
+    return h.h;
+}
+
+std::vector<std::pair<std::string, std::uint64_t>> econ_rules_field_digests(const PlayerEconRules& r0) {
+    PlayerEconRules& r = const_cast<PlayerEconRules&>(r0);
+    std::vector<std::pair<std::string, std::uint64_t>> out;
+    auto d = [&out](const char* n, auto& v) {
+        SyncHasher h;
+        io(h, v);
+        out.emplace_back(n, h.h);
+    };
+    d("units", r.units); d("unit_anims", r.unit_anims); d("unit_has_anim", r.unit_has_anim);
+    d("factory_types", r.factory_types); d("groups", r.groups); d("water_bound", r.water_bound);
+    d("wall", r.wall); d("wall_fill_range", r.wall_fill_range); d("buildup_total", r.buildup_total);
+    d("base_normal", r.base_normal); d("build_off_ally", r.build_off_ally); d("ally_eligible", r.ally_eligible); d("bld_allowed", r.bld_allowed); d("unit_build_limit", r.unit_build_limit);
+    d("build_speed", r.build_speed); d("low_power_mod", r.low_power_mod); d("multiple_factory", r.multiple_factory);
+    d("wall_coefficient", r.wall_coefficient); d("max_queued", r.max_queued); d("wall_rules", r.wall_rules);
+    for (std::size_t i = 0; i < r.units.size(); ++i) {
+        SyncHasher h;
+        io(h, r.units[i]);
+        out.emplace_back("unit " + r.units[i].id, h.h);
     }
     return out;
 }

@@ -37,7 +37,8 @@ struct AiSoakProbe {
         std::uint32_t session_seed = 0;   // Net L0: --seed <n> (0 = none)
         double hash_full_us = 0, hash_crc_us = 0, hash_full_max = 0, hash_crc_max = 0;   // W9-01-04
         long long hash_n = 0;
-        int hash_every = 0;   // Net L0: --hash-every N prints fnv1a(save_world) (the match sync hash basis)
+        int players = 2;      // w9int: --players N (an 8-player sync-hash cost run)
+        int hash_every = 0;   // --hash-every N prints the full sync hash (world_sync_hash) + net_frame_crc
         auto side_of = [](const std::string& c) {
             if (c == "YuriCountry") return ra2engine::World::Side::Yuri;
             if (c == "Russians" || c == "Confederation" || c == "Africans" || c == "Arabs")
@@ -63,6 +64,7 @@ struct AiSoakProbe {
             else if (a == "--ruin-ai-at") ruin_at = std::atoi(next().c_str());   // W6-03-08 probe
             else if (a == "--diff-dump") diff_dump = next();
             else if (a == "--frames") diff_frames = std::atoll(next().c_str());
+            else if (a == "--players") players = std::max(2, std::min(8, std::atoi(next().c_str())));   // w9int: N combatants (2..N-1 = AI)
             else if (a == "--hash-every") hash_every = std::max(0, std::atoi(next().c_str()));   // Net L0
             else if (a == "--seed") session_seed = static_cast<std::uint32_t>(std::strtoul(next().c_str(), nullptr, 0));   // Net L0
             else if (a == "--no-human-deploy") no_human_deploy = true;
@@ -92,6 +94,16 @@ struct AiSoakProbe {
             cfg.slots[1].side = ra2engine::World::Side::Allied;  cfg.slots[1].country = "Americans";
         }
         if (ai_vs_ai) cfg.slots[0].is_ai = true;
+        for (int k = 2; k < players; ++k) {   // extra AI combatants, before the civilian slot
+            ra2engine::SkirmishSlot s = cfg.slots[static_cast<std::size_t>(k % 2)];
+            s.is_ai = true;
+            s.diff = diff;
+            s.color_ix = k;
+            s.alliance_team = k;
+            cfg.slots.insert(cfg.slots.begin() + k, s);
+        }
+        for (std::size_t k = static_cast<std::size_t>(players); k < cfg.slots.size(); ++k)
+            if (players > 2) { cfg.slots[k].color_ix = static_cast<int>(k) % 8; cfg.slots[k].alliance_team = static_cast<int>(k); }
         if (long_game) cfg.short_game = false;
         if (session_seed) cfg.session_seed = session_seed;   // Net L0: the original's Seed
         if (ai_passive) cfg.slots[1].is_ai = false;
@@ -170,13 +182,13 @@ struct AiSoakProbe {
             for (ra2engine::SuperweaponType t : w.sw_types(ai)) ready_before |= w.sw_ready(ai, t);
             const int seq0 = w.sw_events().empty() ? 0 : w.sw_events().back().seq;
             g.update(1.0 / 15.0);
-            if (hash_every > 0 && f % hash_every == 0) {   // Net L0: fnv1a(save_world), as net_state_hash
-                // W9-01-04: both sync hashes timed -- the debug full-World
-                // fnv1a and the per-frame net_frame_crc (the FRAMEINFO CRC).
+            if (hash_every > 0 && f % hash_every == 0) {
+                // W9-01-04 / W9-05: both sync hashes timed -- the debug
+                // full-World hash ([Net] FullHash=1: save::world_sync_hash,
+                // SyncHasher streamed under the sync-hash policy) and the
+                // per-frame net_frame_crc (the FRAMEINFO CRC).
                 const auto t0 = std::chrono::steady_clock::now();
-                const std::vector<std::uint8_t> sb = ra2engine::save::save_world(w);
-                std::uint64_t hh = 1469598103934665603ull;
-                for (std::uint8_t c : sb) { hh ^= c; hh *= 1099511628211ull; }
+                const std::uint64_t hh = ra2engine::save::world_sync_hash(w);
                 const auto t1 = std::chrono::steady_clock::now();
                 const std::uint32_t fc = ra2engine::net_frame_crc(w);
                 const auto t2 = std::chrono::steady_clock::now();
@@ -331,7 +343,7 @@ struct AiSoakProbe {
         std::cout << "[ai-soak] ai_base_hp_end=" << ai_hp.first << "/" << ai_hp.second
                   << " repair_frames=" << repair_frames << " sell_frames=" << sell_frames << "\n";
         if (hash_n)
-            std::printf("[ai-soak] hash cost: %lld samples, full save_world fnv1a avg %.1f us max %.1f us; "
+            std::printf("[ai-soak] hash cost: %lld samples, full world_sync_hash avg %.1f us max %.1f us; "
                         "frame crc avg %.2f us max %.2f us\n", hash_n, hash_full_us / hash_n, hash_full_max,
                         hash_crc_us / hash_n, hash_crc_max);
         std::cout << "[ai-soak] RESULT ai_units_built=" << ai_units_built

@@ -449,7 +449,7 @@ void World::w5_step_defuse() {
             continue;
         }
         if (!e.moving()) {
-            const std::vector<Cellxy> g = nearest_free_cells({(int)std::lround(tx), (int)std::lround(ty)}, 1,
+            const std::vector<Cellxy> g = nearest_free_cells({(int)om::lround(tx), (int)om::lround(ty)}, 1,
                                                              passable_, grid_w_, grid_h_, occ_);
             if (!g.empty()) order_unit_move(i, g[0].x, g[0].y);
         }

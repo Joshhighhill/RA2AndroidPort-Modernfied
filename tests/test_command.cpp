@@ -607,3 +607,36 @@ TEST_CASE("command bridge: to_event / from_event round-trip through the EventCla
     CHECK_FALSE(ra2::net::to_event(run, e));       // two records
     CHECK(ra2::net::to_events(run).size() == 2);
 }
+
+// W9-05-12: a command that arrived from the network is bounds-checked before
+// it reaches the World (forged / corrupt events are dropped, never applied).
+TEST_CASE("command: valid_net_command bounds-checks houses, ids and cells (W9-05-12)") {
+    NEED_MAP();
+    World w(ra2fixture::mapsmd03_map());
+    int x = 0, y = 0;
+    REQUIRE(open_area(w, 2, x, y));
+    add_unit(w, x, y, 0);
+    Command m = make_mega(w, {0}, Mission::Move, Target{}, Target::cell(x + 1, y));
+    m.house = 0;
+    CHECK(valid_net_command(w, m));
+    Command bad_house = m;
+    bad_house.house = 40;
+    CHECK_FALSE(valid_net_command(w, bad_house));
+    Command bad_unit = m;
+    bad_unit.whom.push_back(Target{Rtti::Unit, 999});
+    CHECK_FALSE(valid_net_command(w, bad_unit));
+    Command bad_cell = m;
+    bad_cell.dest = Target::cell(w.grid_w() + 10, 3);
+    CHECK_FALSE(valid_net_command(w, bad_cell));
+    Command bad_bld = make_building_event(EventType::Sell, 77);
+    bad_bld.house = 0;
+    CHECK_FALSE(valid_net_command(w, bad_bld));
+    Command place = make_type_event(EventType::Place, Rtti::BuildingType, 0, false);
+    place.house = 0;
+    place.cx = -3;
+    place.cy = 4;
+    CHECK_FALSE(valid_net_command(w, place));
+    place.cx = x;
+    place.cy = y;
+    CHECK(valid_net_command(w, place));
+}

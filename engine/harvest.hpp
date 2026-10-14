@@ -23,10 +23,10 @@ constexpr double kChronoWarpSecs = 1.0;  // CMIN in-transit time per warp
 // Cruentus 50) [rulesmd]. PurifierBonus does NOT apply (no purifier built).
 struct OreValues { int ore = 25; int gems = 50; };
 
-struct HarvestMove { int unit; int gx, gy; };     // path request
+struct HarvestMove { int unit = -1; int gx = 0, gy = 0; };     // path request (W9-05: initialised)
 struct HarvestEvent {                              // audio/render hooks
     enum class Kind { ChronoOut, ChronoIn, UnloadStart, UnloadEnd };
-    Kind kind; int unit;
+    Kind kind = Kind::ChronoOut; int unit = -1;
 };
 
 // The refinery dock cell [RE-GATE APPLIED: economy.md §2 — the binary

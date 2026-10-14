@@ -237,6 +237,7 @@ struct RaiseContext {
 class MapTriggerSystem {
 public:
     friend struct SaveAccess;  // P7 Save/Load (engine/save_fields.hpp)
+    friend struct NetCrcAccess;  // W9-05: the per-frame sync CRC folds the runtime (net_frame_crc.cpp)
     MapTriggerSystem(const MapTriggerData& data, int difficulty, std::uint32_t rng_seed);
 
     // Scenario start [RE §3.2]: locals initialised, globals cleared, tag

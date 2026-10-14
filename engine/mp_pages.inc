@@ -69,17 +69,28 @@ struct Prefs {
     }
 };
 
-// CRC-32 of the effective rulesmd.ini bytes: the version gate's "same game
-// data" check (05 §2.5). Computed once.
+// The version gate's "same game data" check (05 §2.5): CRC-32 chained over
+// the effective bytes of EVERY INI the simulation reads -- rulesmd.ini,
+// artmd.ini (infantry sequences, fire timing, foundations and buildup are in
+// the sync hash) and aimd.ini (AI players and the AI takeover run it on every
+// peer). W9-05-02: it covered rulesmd.ini only, so a modded artmd / aimd
+// joined and desynced minutes in. Maps are matched by their [Digest] (the
+// lobby) and by the frame-0 scenario CRC (TXT_SCENARIOS_DO_NOT_MATCH).
+// Computed once.
 inline std::uint32_t rules_crc() {
     static std::uint32_t crc = 0;
     static bool done = false;
     if (!done) {
         done = true;
-        try {
-            const std::vector<uint8_t> b = read_ra2md_file(env_install_dir(), "rulesmd.ini");
-            crc = ra2engine::save::crc32(b.data(), b.size());
-        } catch (const std::exception&) { crc = 0; }
+        for (const char* name : {"rulesmd.ini", "artmd.ini", "aimd.ini"}) {
+            std::vector<uint8_t> b;
+            try {
+                b = read_ra2md_file(env_install_dir(), name);
+            } catch (const std::exception&) { b.clear(); }
+            const std::uint32_t n = static_cast<std::uint32_t>(b.size());   // a missing file counts too
+            crc = ra2engine::save::crc32(reinterpret_cast<const std::uint8_t*>(&n), sizeof n, crc);
+            if (!b.empty()) crc = ra2engine::save::crc32(b.data(), b.size(), crc);
+        }
     }
     return crc;
 }
@@ -1536,8 +1547,9 @@ private:
             if ((st == ra2mp::LobbyClient::State::Rejected || st == ra2mp::LobbyClient::State::Lost) &&
                 !confirm_.open() && !told_) {
                 told_ = true;
-                const char* why = ra2mp::reject_text(client_->reject_reason());
-                std::string msg = *why ? why : "You left the game.";
+                std::string msg = client_->reject_message();   // W9-05-02: names both versions
+                mpui::log_line("join refused: " + (msg.empty() ? std::string("left the game") : msg));
+                if (msg.empty()) msg = "You left the game.";
                 // W9-04-15(a): a host that never answered was never "lost".
                 if (st == ra2mp::LobbyClient::State::Lost && client_->local_slot() < 0)
                     msg = "No answer from the host. Check the address, and that both devices are on the same network.";
@@ -1764,6 +1776,7 @@ private:
                 t["list:up"] = map_list_.strip_up();
                 t["list:down"] = map_list_.strip_down();
             }
+            t["list:maps"] = map_list_.r;   // the whole list (touch drag rel ...)
             return;
         }
         if (combo_ != CB_NONE) {
@@ -1798,6 +1811,8 @@ private:
             for (int s = 0; s < SL_COUNT; ++s) {
                 const ra2engine::SbRect r = slider_rect(s);
                 const int range = slider_range(s);
+                // The track itself (LobbyLayout; no readout): touch drag rel targets.
+                t[std::string("slider:") + slider_id(s)] = {r.x, r.y, r.w - ra2engine::kTrackbarReadoutW, r.h};
                 for (int pos = 0; pos <= range; ++pos) {
                     std::string v = s == SL_CREDITS ? std::to_string(min_money_ + pos * money_step_)
                                   : s == SL_UNITS ? std::to_string(min_units_ + pos) : std::to_string(pos);
@@ -1816,6 +1831,7 @@ private:
             static const char* kSt[5] = {"joining", "joined", "rejected", "lost", "started"};
             st = kSt[static_cast<int>(client_->state())];
             p.set_s("reject_reason", ra2mp::reject_text(client_->reject_reason()));
+            p.set_s("reject_message", client_->reject_message());   // W9-05-02
         }
         if (lobby().started()) st = "started";
         p.set_s("mp_state", st);
@@ -2026,7 +2042,9 @@ private:
             const ra2mp::LanBeacon& b = g[i].beacon;
             std::string row = b.room + "  -  " + b.map + "  " + std::to_string(b.players) + "/" + std::to_string(b.max);
             if (b.started) row += "  (started)";
-            if (!ra2mp::LanBrowser::compatible(g[i], ra2mp::kNetProto, ra2mp::kSimVersion, mpui::rules_crc())) row += "  (different version)";
+            // W9-05-02: tell a different build from different game data.
+            if (b.net_proto != ra2mp::kNetProto || b.sim_ver != ra2mp::sim_version()) row += "  (different version)";
+            else if (b.rules_crc != mpui::rules_crc()) row += "  (different game data)";
             row += mpui::platform_tag(b.platform, b.cross_platform);   // W9-04-13
             list_.items.push_back(row);
             list_.data.push_back(static_cast<int>(i));
@@ -2172,7 +2190,7 @@ private:
         prefs_.save();
         ra2mp::ServerHello h;
         h.ver = RA2_VERSION;
-        h.sim = ra2mp::kSimVersion;
+        h.sim = ra2mp::sim_version();
         h.proto = ra2mp::kNetProto;
         h.rules = mpui::rules_crc();
         h.plat = mpui::platform_code();
@@ -2428,6 +2446,8 @@ Scene* mp_start_session(const Rules& rules, bool no_audio, const MenuArt& art, c
         if (!p.local && p.peer) nc.remotes.emplace_back(p.house, transport->addr_of(p.peer));
     }
     nc.master = s.is_host;
+    for (const ra2mp::MpPlayer& p : s.players)   // W9-05-12: the host sits in slot 0
+        if (p.slot == 0 && !p.is_ai) nc.master_house = p.house;
     const bool lan = s.transport == ra2mp::MpTransportKind::Lan;
     nc.mode = lan ? ra2::net::GameMode::LAN : ra2::net::GameMode::Internet;
     // Start values (net-protocol.md §8): LAN FSR 5 / MaxAhead 10; Internet
