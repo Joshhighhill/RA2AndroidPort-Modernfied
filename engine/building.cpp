@@ -27,7 +27,8 @@ PlacementCheck placement_check(int cx, int cy, int fw, int fh, int house, int ad
                                const std::vector<Building>& buildings,
                                bool bypass_adjacency,
                                const std::vector<char>* base_normal_by_type,
-                               const BuildMask* mask) {
+                               const BuildMask* mask,
+                               const AllyBuild* ally) {
     PlacementCheck r;
     auto cells = foundation_cells(cx, cy, fw, fh);
     r.cell_ok.assign(cells.size(), false);
@@ -64,6 +65,20 @@ PlacementCheck placement_check(int cx, int cy, int fw, int fh, int house, int ad
                 b.type < static_cast<int>(base_normal_by_type->size()) &&
                 !(*base_normal_by_type)[b.type])
                 continue;   // G-28: BaseNormal=no neighbours do not extend the base
+            if (rect_gap(cx, cy, fw, fh, b.cx, b.cy, b.fw, b.fh) <= adjacent) {
+                r.adjacency = true;
+                break;
+            }
+        }
+    }
+    // W9-05-09 BuildOffAlly: an allied, EligibileForAllyBuilding building.
+    if (!r.adjacency && ally && ally->allied_owner && ally->eligible_type) {
+        for (const Building& b : buildings) {
+            if (!b.alive || b.state == Building::State::Dead || b.house == house || b.house < 0) continue;
+            if (b.house >= static_cast<int>(ally->allied_owner->size()) || !(*ally->allied_owner)[b.house]) continue;
+            if (b.type < 0 || b.type >= static_cast<int>(ally->eligible_type->size()) ||
+                !(*ally->eligible_type)[b.type])
+                continue;
             if (rect_gap(cx, cy, fw, fh, b.cx, b.cy, b.fw, b.fh) <= adjacent) {
                 r.adjacency = true;
                 break;

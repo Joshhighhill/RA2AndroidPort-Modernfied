@@ -1,0 +1,65 @@
+# net-ally-join -- JOIN half of the W9-05 diplomacy pair test
+# (scripts/play/net-match.ps1 -Pair ally). Joiner (house 1) sees Hosty's
+# one-way alliance, answers it from the Diplomacy page (mutual), talks on
+# the allies channel (Backspace, FUN_0055E050 mode 2) and sees its ally's
+# beacons. Runs 1500 logic frames and logs its sync-hash trail.
+set render_every 3000
+set max_frames 6000000
+set on_quit continue
+click button Network
+require scene == mp-lan
+click edit:nick
+key delete
+type "Joiner"
+key enter
+click edit:ip
+type "127.0.0.1:50020"
+key enter
+require scene == mp-lobby
+until 3000000 mp_state == joined
+require mp_state == joined
+assert local_slot == 1
+until 3000000 slot_has_map(1) == 1
+click combo:country1
+click list:down
+click list:down
+click list:down
+click pick:Russia
+until 3000000 country(1) >= 0
+click button Ready
+until 3000000 scene == game
+require scene == game
+require net == 1
+assert local_house == 1
+until 600000 sim_frame >= 40
+log waiting for the host's alliance
+until 1200000 ally_of_me(0) == 1                          @W9-05-03
+assert ally_view(0) == 0                                  # one way: not answered yet
+assert dip_events >= 1
+assert dip_last == "Hosty has allied with Joiner"         @W9-05-03
+click button:diplomacy
+wait 2
+assert dip_self == 1                                      @W9-05-11
+assert dip_ally(0) == 0
+assert dip_ally_enabled(0) == 1
+click dip:ally:0
+until 600000 ally_view(0) == 1                            @W9-05-03
+assert dip_last == "Joiner has allied with Hosty"
+# --- the allies channel: Backspace -> only the ally (Hosty) ----------------
+key backspace
+assert net_chat_open == 1
+assert chat_mode == 2                                     @W9-05-07
+type "allies only"
+key enter
+assert chat_sent == 1                                     @W9-05-07
+assert chat_last_to == 1
+# --- the ally's beacons ------------------------------------------------------
+until 1200000 beacons(0) >= 1                             @W9-05-08
+assert beacon_visible(0) == 1                             @W9-05-08
+until 1200000 beacon_events >= 4
+waituntil 6000000 sim_frame >= 1500 or net_end == 1
+assert net_end == 0
+shot net_end
+log net match done
+dump
+end

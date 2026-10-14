@@ -197,7 +197,7 @@ public:
         // local player only, once.
         if (!end_spoken_) {
             if (w.house_defeated(g_local_house)) { snd_.eva("EVA_YouHaveLost"); end_spoken_ = true; }
-            else if (w.winning_team() >= 0 && w.winning_team() == w.house_team(g_local_house)) {
+            else if (w.house_outcome(g_local_house) > 0) {   // W9-05-04: allied winners of any team
                 snd_.eva("EVA_YouAreVictorious");
                 end_spoken_ = true;
             }

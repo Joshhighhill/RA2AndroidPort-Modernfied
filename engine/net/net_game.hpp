@@ -101,10 +101,17 @@ public:
     bool is_remote(int house) const;
 
     // --- out-of-band messages on the global channel (never in the sync) ---
-    void send_chat(const std::string& sender, const std::string& utf8, int color);
+    // W9-05-07: `to` = the recipient houses (nullptr = every remote player;
+    // the original sends one DATA_ACK copy to each chosen listener).
+    void send_chat(const std::string& sender, const std::string& utf8, int color,
+                   const std::vector<int>* to = nullptr);
+    // W9-05-08: a beacon packet (place / delete / text) to every other player.
+    void send_beacon(const BeaconMsg& m);
     void send_away(bool back, uint32_t seconds);
     // Drains the global channel: chat lines and away notices.
     void poll_global(std::vector<NetChat>& chat, std::vector<AwayNotice>& away);
+    // ... and the beacon packets (house taken from the sender's address).
+    void poll_global(std::vector<NetChat>& chat, std::vector<AwayNotice>& away, std::vector<BeaconMsg>& beacons);
     int house_of(const PeerAddr& a) const;
 
 private:

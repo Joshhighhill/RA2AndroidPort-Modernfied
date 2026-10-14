@@ -1,0 +1,44 @@
+# net-observe-host -- HOST half of the W9-05 observer pair test
+# (scripts/play/net-match.ps1 -Pair observe). Hosty (house 0) + Joiner
+# (house 1) + an Easy AI (house 2). Joiner chooses Observe (DESTRUCT,
+# FUN_0048C7C0 case 3 -> 4); Hosty sees "Joiner has been defeated!" and the
+# match goes on (Hosty vs the AI) to frame 1500 with identical trails.
+set render_every 3000
+set max_frames 6000000
+set on_quit continue
+click button Network
+require scene == mp-lan
+click edit:nick
+key delete
+type "Hosty"
+key enter
+click button "Host Game"
+require scene == mp-lobby
+assert max_players >= 3
+click combo:country0
+click pick:America
+click combo:kind2
+click "pick:Easy Enemy"
+until 30 slot_kind(2) == AI
+log waiting for the joiner
+until 3000000 humans == 2
+until 3000000 slot_ready(1) == 1
+until 3000000 can_start == 1
+click button "Start Game"
+until 3000000 scene == game
+require scene == game
+require net == 1
+assert local_house == 0
+until 600000 sim_frame >= 40
+log waiting for the joiner to surrender
+until 3000000 defeated(1) == 1                            @W9-05-06
+assert defeated(0) == 0
+assert observer == 0
+assert game_over == 0                                     @W9-05-04
+waituntil 6000000 sim_frame >= 1500 or net_end == 1
+assert net_end == 0
+assert game_over == 0
+shot net_end
+log net match done
+dump
+end

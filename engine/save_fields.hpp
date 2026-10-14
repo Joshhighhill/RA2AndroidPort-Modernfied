@@ -165,6 +165,12 @@ struct SaveAccess {
         save::io(ar, w.short_game_); save::mark(ar, "short_game_");
         save::io(ar, w.house_defeated_); save::mark(ar, "house_defeated_");
         save::io(ar, w.winning_team_); save::mark(ar, "winning_team_");
+        // W9-05 (save v46): diplomacy rules, the game-over latch, observer reveal.
+        save::io(ar, w.allies_allowed_); save::mark(ar, "allies_allowed_");
+        save::io(ar, w.ally_change_allowed_); save::mark(ar, "ally_change_allowed_");
+        save::io(ar, w.game_over_); save::mark(ar, "game_over_");
+        save::io(ar, w.observer_reveal_); save::mark(ar, "observer_reveal_");
+        save::io(ar, w.victory_defeats_seen_); save::mark(ar, "victory_defeats_seen_");
         // Cargo / flight
         save::io(ar, w.cargo_any_); save::mark(ar, "cargo_any_");
         save::io(ar, w.cargo_events_); save::mark(ar, "cargo_events_");
@@ -1487,6 +1493,8 @@ template <class Ar> void fields(Ar& ar, SkirmishConfig& v) {
     io(ar, v.game_speed);            // skirmish page: lobby Game Speed (-1 = unset)
     io(ar, v.mcv_redeploys);         // skirmish page: MCV Repacks (-1 = unset)
     io(ar, v.session_seed);          // Net L0 (v34): the launcher's session seed
+    io(ar, v.build_off_ally);        // W9-05-09 (v46)
+    io(ar, v.mp_mode);               // W9-05-03 (v46)
 }
 
 // --- P10 campaign runtime state (the 'HOST' section of a campaign save) ---

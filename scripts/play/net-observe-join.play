@@ -1,0 +1,69 @@
+# net-observe-join -- JOIN half of the W9-05 observer pair test
+# (scripts/play/net-match.ps1 -Pair observe). Joiner (house 1) opens the MP
+# options (no Load / Save / Delete; Abort -> Quit / Observe / Resume) and
+# Observes: DESTRUCT resigns its house on every machine, it stays in the
+# match with the map revealed and the radar on (FUN_004FBED0 -> FUN_005779D0
+# / FUN_00656830), issues no orders, watches to frame 1500, then Quits with
+# the OK / Cancel confirm.
+set render_every 3000
+set max_frames 6000000
+set on_quit continue
+click button Network
+require scene == mp-lan
+click edit:nick
+key delete
+type "Joiner"
+key enter
+click edit:ip
+type "127.0.0.1:50020"
+key enter
+require scene == mp-lobby
+until 3000000 mp_state == joined
+require mp_state == joined
+assert local_slot == 1
+until 3000000 slot_has_map(1) == 1
+click combo:country1
+click list:down
+click list:down
+click list:down
+click pick:Russia
+until 3000000 country(1) >= 0
+click button Ready
+until 3000000 scene == game
+require scene == game
+require net == 1
+assert local_house == 1
+until 600000 sim_frame >= 120
+assert can_observe == 1                                   @W9-05-06
+key f10
+wait 2
+assert menu_open == 1
+assert menu_page == "options"
+click "menu:ABORT MISSION"
+wait 2
+assert menu_page == "abort"
+click "menu:OBSERVE"                                      @W9-05-06
+until 600000 observer == 1                                @W9-05-05
+assert net_left == 0                                      @W9-05-05
+assert defeated(1) == 1
+assert radar_on == 1                                      @W9-05-05
+until 600000 explored_pct >= 99                           @W9-05-05
+assert scene == game
+shot observer_view
+waituntil 6000000 sim_frame >= 1500 or net_end == 1
+assert net_end == 0
+assert scene == game                                      # still watching at the end
+dump
+# Leave: Quit asks OK / Cancel first (FUN_0048C7C0 case 2 / FUN_005C5AF0).
+key f10
+wait 2
+click "menu:ABORT MISSION"
+wait 2
+assert can_observe == 0                                   # an observer cannot observe again
+click "menu:QUIT"
+wait 2
+assert confirm_open == 1                                  @W9-05-06
+click confirm:yes
+until 600000 scene != game
+log net match done
+end
