@@ -137,5 +137,21 @@ playing come from the player's own files. The notes in `docs/re/` describe how
 the original game behaves, in our own words, so that the engine can match it;
 they contain no Electronic Arts source code, art, audio or map files.
 
-The engine is released under the [MIT License](LICENSE). Third-party
-components are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+## License
+
+RA2 Engine is free software, licensed under the **GNU General Public License
+version 3 or (at your option) any later version** (GPL-3.0-or-later). The
+full text is in [LICENSE](LICENSE).
+
+You may use, study, share and change it, and even sell it. If you distribute
+a changed version, you must release its source code under the same licence,
+so the engine stays free for everyone.
+
+Copyright (C) 2026 Omar El Arab
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+Third-party components keep their own licences; they are listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

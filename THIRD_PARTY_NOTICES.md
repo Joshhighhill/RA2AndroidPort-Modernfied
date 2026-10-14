@@ -1,6 +1,7 @@
 # Third-party notices
 
-The engine binaries (desktop `ra2engine` and the Android APK) include or link
+RA2 Engine itself is licensed under GPL-3.0-or-later (see `LICENSE`). The engine
+binaries (desktop `ra2engine` and the Android APK) also include or link
 the following third-party software.
 
 ## SDL 2.30.9 (Simple DirectMedia Layer)
