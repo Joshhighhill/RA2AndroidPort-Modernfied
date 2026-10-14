@@ -240,3 +240,44 @@ TEST_CASE("net lockstep: spawner Protocol 0 latency levels converge on all peers
     const size_t n = std::min(a.crcs.size(), b.crcs.size());
     for (size_t i = 0; i < n; ++i) REQUIRE(a.crcs[i] == b.crcs[i]);
 }
+
+// W9-01-03 [RE: FUN_00647090 TIMING = min(1000 / worst PROCESS_TIME, speed
+// cap); PROCESS_TIME = the processing time WITHOUT waits]: every peer adopts
+// the slowest machine's rate; DesiredFrameRate starts at 30 (0x52D7FD).
+TEST_CASE("W9-01-03: the TIMING frame rate follows the slowest peer's process time") {
+    World w;
+    LockstepConfig c = lan();
+    c.game_speed = 1;   // lobby speed 1: cap 45
+    w.make(2, c);
+    CHECK(w.peers[0]->s->desired_fps() == 30u);
+    // Peer 0 is fast (2 ms), peer 1 needs 80 ms per frame (a phone).
+    for (int i = 0; i < 20000 && w.peers[0]->s->frame() < 700; ++i) {
+        w.peers[0]->s->note_process_time(2.0);
+        w.peers[1]->s->note_process_time(80.0);
+        w.step();
+    }
+    REQUIRE(w.peers[0]->s->frame() >= 700);
+    CHECK(w.peers[0]->s->desired_fps() == 12u);   // 1000 / 80
+    CHECK(w.peers[1]->s->desired_fps() == 12u);
+}
+
+TEST_CASE("W9-01-01: a fast pair runs at the lobby speed cap (speed 1 = 45 fps, GAMESPEED changes it)") {
+    World w;
+    LockstepConfig c = lan();
+    c.game_speed = 1;
+    w.make(2, c);
+    for (int i = 0; i < 20000 && w.peers[0]->s->frame() < 600; ++i) {
+        for (auto& p : w.peers) p->s->note_process_time(3.0);
+        w.step();
+    }
+    CHECK(w.peers[0]->s->desired_fps() == 45u);
+    CHECK(w.peers[1]->s->desired_fps() == 45u);
+    // GAMESPEED 4 executed on both peers: the next TIMING caps at 15.
+    for (auto& p : w.peers) p->s->set_game_speed(4);
+    for (int i = 0; i < 20000 && w.peers[0]->s->frame() < 1100; ++i) {
+        for (auto& p : w.peers) p->s->note_process_time(3.0);
+        w.step();
+    }
+    CHECK(w.peers[0]->s->desired_fps() == 15u);
+    CHECK(w.peers[1]->s->desired_fps() == 15u);
+}

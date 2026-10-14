@@ -109,9 +109,39 @@ bool loco_is_track(const Unit& u) {
     return k == LocoKind::Drive || k == LocoKind::Ship;
 }
 
+// W9-02-06 / W9-02-10: the grid is a long-lived scratch (occupancy_cost_
+// scratch below). A call resets only the cells the previous call raised --
+// instead of allocating and filling w*h cells per blocked path -- when `out`
+// is the same buffer of the same size; any other vector is assigned in full.
+namespace {
+struct OccCostStamp {
+    const std::uint16_t* buf = nullptr;
+    std::size_t n = 0;
+    std::vector<std::uint32_t> raised;
+};
+OccCostStamp& occ_cost_stamp() {
+    static thread_local OccCostStamp s;
+    return s;
+}
+}  // namespace
+
+std::vector<std::uint16_t>& occupancy_cost_scratch() {
+    static thread_local std::vector<std::uint16_t> v;
+    return v;
+}
+
 void build_occupancy_cost(const std::vector<Unit>& units, const Occupancy& occ, int w, int h, int self,
                           bool blockage_mode, const World* world, std::vector<std::uint16_t>& out) {
-    out.assign(static_cast<std::size_t>(w > 0 ? w : 0) * static_cast<std::size_t>(h > 0 ? h : 0), 1);
+    const std::size_t n = static_cast<std::size_t>(w > 0 ? w : 0) * static_cast<std::size_t>(h > 0 ? h : 0);
+    OccCostStamp& st = occ_cost_stamp();
+    if (st.buf == out.data() && st.n == n && out.size() == n) {
+        for (const std::uint32_t k : st.raised) out[k] = 1;   // undo the last call's stamps
+    } else {
+        out.assign(n, 1);
+    }
+    st.raised.clear();
+    st.buf = out.data();
+    st.n = n;
     if (self < 0 || self >= static_cast<int>(units.size())) return;
     const Unit& me = units[static_cast<std::size_t>(self)];
     const bool me_inf = occ.is_infantry(self) && occ.subcells();
@@ -143,7 +173,10 @@ void build_occupancy_cost(const std::vector<Unit>& units, const Occupancy& occ, 
         else if (me.crusher && me.is_vehicle && can_crush(me, v)) c = 1;   // [RE: FUN_004B2550: a Crusher treats Move 4/5 as OK]
         else c = 20;   // Destroyable
         std::uint16_t& cell = out[static_cast<std::size_t>(y) * w + x];
-        if (c > cell) cell = static_cast<std::uint16_t>(c);
+        if (c > cell) {
+            if (cell == 1) st.raised.push_back(static_cast<std::uint32_t>(static_cast<std::size_t>(y) * w + x));
+            cell = static_cast<std::uint16_t>(c);
+        }
     }
 }
 
@@ -402,7 +435,7 @@ bool repath(StepEnv& e, Unit& u, int self, int mode) {
         u.movement_domain == MovementDomain::Water ? e.water_passable
         : (u.movement_domain == MovementDomain::Amphibious && e.amphib_passable) ? *e.amphib_passable
         : crush ? *e.crush_passable : e.passable;
-    std::vector<std::uint16_t> cost;
+    std::vector<std::uint16_t>& cost = occupancy_cost_scratch();   // W9-02-06: reused, reset incrementally
     if (mode > 0) build_occupancy_cost(e.units, e.occ, e.w, e.h, self, mode == 2, e.sc.world, cost);
     PathTerrain rt;
     std::vector<Cellxy> np = find_path_bounded_t(

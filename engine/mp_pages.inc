@@ -1477,12 +1477,13 @@ Scene* MpLobbyScene::make_return_page() {
 // ===========================================================================
 // NET-PLAY: the match hand-off (replaces the "Match Ready" placeholder).
 // ===========================================================================
-// The full-state sync hash runs every kNetHashEvery frames (RA2.INI [Net]
-// HashEvery overrides): fnv1a over save_world costs ~1-3 ms on a desktop for
-// a 2-player map and several times that on a phone (README "Networking"), so
-// once a second keeps the CPU cost low while a desync is still caught within
-// ~1-2 s.
-constexpr int kNetHashEvery = 15;
+// W9-01-04 [RE: ComputeFrameCRC FUN_0064D520 runs every frame from Queue_AI
+// FUN_00647090]: the sync CRC is the cheap per-frame net_frame_crc, computed
+// EVERY frame like the original's. The debug full-World hash ([Net]
+// FullHash=1) costs 10-100 ms (W9-02-04) and keeps the old period of
+// kNetFullHashEvery frames. RA2.INI [Net] HashEvery overrides either.
+constexpr int kNetHashEvery = 1;
+constexpr int kNetFullHashEvery = 15;
 
 Scene* defer_net_game_scene(bool no_audio, ra2engine::SkirmishConfig cfg, std::shared_ptr<NetPlay> np,
                             std::uint32_t seed, std::vector<int> starts, int local_house) {
@@ -1536,7 +1537,8 @@ Scene* mp_start_session(const Rules& rules, bool no_audio, const MenuArt& art, c
     np->mpnet = transport;
     np->session = s;
     np->ai_takeover = s.lobby.opt.ai_takeover;
-    np->hash_every = net_ini_int("HashEvery", kNetHashEvery);
+    np->full_hash = net_full_hash_mode();
+    np->hash_every = net_ini_int("HashEvery", np->full_hash ? kNetFullHashEvery : kNetHashEvery);
     ra2::net::NetGameConfig nc;
     nc.local_house = s.local_house;
     std::vector<int> starts;
@@ -1555,6 +1557,10 @@ Scene* mp_start_session(const Rules& rules, bool no_audio, const MenuArt& art, c
     nc.frame_send_rate = static_cast<std::uint32_t>(net_ini_int("FrameSendRate", 5));
     nc.max_ahead = static_cast<std::uint32_t>(net_ini_int("MaxAhead", lan ? 10 : 15));
     nc.hash_every = np->hash_every;
+    // W9-01-01 [RE: FUN_00647090 @0x6476DA reads GameSpeed 0xA8DAC8 for the
+    // TIMING cap 60 / 45 / 60÷n]: the lobby's Game Speed (GameScene keeps it
+    // current with GAMESPEED events).
+    nc.game_speed = std::max(0, std::min(6, s.lobby.opt.game_speed));
     np->game = std::make_unique<ra2::net::NetGame>(transport->net(), nc);
     mpui::log_line("lockstep session: local house " + std::to_string(nc.local_house) + ", " +
                    std::to_string(nc.remotes.size()) + " remote player(s), " + (lan ? "LAN" : "tunnel") +

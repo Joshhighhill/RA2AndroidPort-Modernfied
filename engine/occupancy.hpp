@@ -132,6 +132,7 @@ public:
         release(x, y, unit);
         if (l == 1) grow_deck();
         spr(l, x, y, s) = unit;
+        note_claim(unit, x, y);
     }
 
     // --- whole-cell view (every pre-W5 caller) -------------------------------
@@ -180,6 +181,7 @@ public:
         const int l = layer == kAnyLayer ? layer_of(unit) : (layer > 0 ? 1 : 0);
         if (l == 1) grow_deck();
         drop_plane(1 - l, x, y, unit);
+        note_claim(unit, x, y);
         if (!is_infantry(unit)) {
             ownr(l, x, y) = unit;
             return;
@@ -205,17 +207,43 @@ public:
     void release(int x, int y, int unit) {
         if (!in(x, y)) return;
         for (int l = 0; l < planes(); ++l) drop_plane(l, x, y, unit);
+        forget_claim(unit, x, y);
     }
     // Clear EVERY cell owned by `unit` except (keep_x, keep_y). Used when a
     // unit is re-ordered mid-walk: it may hold a reservation on a next cell it
     // will now never enter, which would otherwise stay owned forever and block
-    // other units. O(w*h) scan -- called only on user orders, not per frame.
+    // other units.
+    // W9-02-01 / W9-02-09 [RE: the original keeps occupancy per object -- a
+    // FootClass marks only its own cell and its next-cell reservation, so an
+    // order costs O(1) for occupancy]: the cells a unit was ever written into
+    // (set / set_spot, either plane) are tracked per unit (claims_), and only
+    // those are visited -- O(claims), 1-4 cells, instead of the old O(w*h)
+    // scan of every cell on both planes (66 % of a late 8-player frame).
+    // The result is identical to the full scan: the list is a superset of the
+    // cells the unit holds (a stomp by another unit or clear() only leaves a
+    // stale entry, which release() ignores), and release() is per (cell,
+    // unit). After a load the index is rebuilt from the planes once.
     void release_all_of(int unit, int keep_x, int keep_y) {
-        for (int y = 0; y < h_; ++y)
-            for (int x = 0; x < w_; ++x) {
-                if (x == keep_x && y == keep_y) continue;
-                release(x, y, unit);
-            }
+        if (unit < 0) return;
+        if (claims_dirty_) rebuild_claims();
+        if (static_cast<std::size_t>(unit) >= claims_.size()) return;
+        std::vector<std::uint32_t>& c = claims_[static_cast<std::size_t>(unit)];
+        const bool keep_in = in(keep_x, keep_y);
+        const std::uint32_t keep = keep_in ? static_cast<std::uint32_t>(idx(keep_x, keep_y)) : 0xFFFFFFFFu;
+        bool kept = false;
+        for (const std::uint32_t k : c) {
+            if (k == keep) { kept = true; continue; }
+            const int x = static_cast<int>(k % static_cast<std::uint32_t>(w_));
+            const int y = static_cast<int>(k / static_cast<std::uint32_t>(w_));
+            for (int l = 0; l < planes(); ++l) drop_plane(l, x, y, unit);
+        }
+        c.clear();
+        if (kept) c.push_back(keep);
+    }
+    // Test seam: the number of tracked claim entries of `unit` (bounded: a
+    // walking unit's list never grows past its live cells + stale stomps).
+    std::size_t claim_count(int unit) const {
+        return unit >= 0 && static_cast<std::size_t>(unit) < claims_.size() ? claims_[static_cast<std::size_t>(unit)].size() : 0;
     }
 
 private:
@@ -244,6 +272,51 @@ private:
         if (owner_d_.empty()) owner_d_.assign(owner_.size(), kEmpty);
         if (subcells() && spots_d_.empty()) spots_d_.assign(spots_.size(), kEmpty);
     }
+    // W9-02-01: the per-unit claim index (derived, never saved; see
+    // release_all_of). Entries are flat cell indices, deduplicated.
+    void note_claim(int unit, int x, int y) {
+        if (unit < 0 || claims_dirty_) return;   // dirty: the rebuild will see it
+        if (static_cast<std::size_t>(unit) >= claims_.size()) claims_.resize(static_cast<std::size_t>(unit) + 1);
+        std::vector<std::uint32_t>& c = claims_[static_cast<std::size_t>(unit)];
+        const std::uint32_t k = static_cast<std::uint32_t>(idx(x, y));
+        for (const std::uint32_t e : c)
+            if (e == k) return;
+        c.push_back(k);
+    }
+    void forget_claim(int unit, int x, int y) {
+        if (unit < 0 || claims_dirty_ || static_cast<std::size_t>(unit) >= claims_.size()) return;
+        for (int l = 0; l < planes(); ++l) {
+            if (own(l, x, y) == unit) return;
+            if (subcells())
+                for (int s = kFirstSpot; s < kFirstSpot + kSpots; ++s)
+                    if (sp(l, x, y, s) == unit) return;
+        }
+        std::vector<std::uint32_t>& c = claims_[static_cast<std::size_t>(unit)];
+        const std::uint32_t k = static_cast<std::uint32_t>(idx(x, y));
+        for (std::size_t i = 0; i < c.size(); ++i)
+            if (c[i] == k) {
+                c[i] = c.back();
+                c.pop_back();
+                return;
+            }
+    }
+    // One O(w*h) pass after a load (the planes come from the save; the index
+    // does not).
+    void rebuild_claims() {
+        claims_dirty_ = false;
+        claims_.clear();
+        for (int y = 0; y < h_; ++y)
+            for (int x = 0; x < w_; ++x)
+                for (int l = 0; l < planes(); ++l) {
+                    const int o = own(l, x, y);
+                    if (o != kEmpty) note_claim(o, x, y);
+                    if (subcells())
+                        for (int s = kFirstSpot; s < kFirstSpot + kSpots; ++s) {
+                            const int v = sp(l, x, y, s);
+                            if (v != kEmpty) note_claim(v, x, y);
+                        }
+                }
+    }
     void drop_plane(int l, int x, int y, int unit) {
         if (l < 0 || l >= planes()) return;
         if (ownr(l, x, y) == unit) ownr(l, x, y) = kEmpty;
@@ -258,6 +331,9 @@ private:
     std::vector<int> owner_d_;          // w8fix-layer: the deck plane (empty until a deck unit)
     std::vector<int> spots_d_;          // w8fix-layer: the deck plane's infantry spots
     std::vector<std::uint8_t> lay_;     // w8fix-layer: per unit index, 1 = on a deck
+    // W9-02-01: derived per-unit claim index (NOT saved; rebuilt after a load).
+    std::vector<std::vector<std::uint32_t>> claims_;
+    bool claims_dirty_ = false;
 };
 
 // W5-B R-061 [RE: spot coordinates DAT_0089D960, static initializer

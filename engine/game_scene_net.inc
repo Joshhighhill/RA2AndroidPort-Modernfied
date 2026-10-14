@@ -12,8 +12,11 @@
 // dump goes to the saves folder.
 // Local commands never enter the queue directly: issue() sends them through
 // the session (frame = now + MaxAhead) and they come back like everyone's.
-// Logic is a fixed 15 Hz (the lobby speed is not used), ticks are never
-// dropped (the backlog runs a few ticks per frame).
+// W9-01-01 / W9-01-05: the tick rate is the session's DesiredFrameRate (the
+// master's TIMING, capped by the lobby / GAMESPEED speed and lowered to the
+// slowest machine's PROCESS_TIME), at most ONE tick per rendered frame and no
+// catch-up -- the original's frame timer simply waits, time lost in
+// Wait_For_Players is lost (net_tick_multiplier, main.cpp's update loop).
 // [RE: 01-original-protocol.md §4.6 (EXIT / REMOVEPLAYER), §5 (sync),
 //  05-transport-infra.md §6.3 (in game), §7.2 (Android away).]
 
@@ -46,6 +49,79 @@
     std::vector<ra2engine::ProjectileEvent> net_proj_buf_;
 
     bool net_on() const { return net_ != nullptr; }
+
+    // --- W9-01-01 / W9-01-03 / W9-01-07: match pacing ---
+    // [RE: main loop FUN_0055CFF0 @0x55D10E..0x55D1C0, network branch: the
+    // frame timer is 1000 / DesiredFrameRate ms (DesiredFrameRate 0xA8A4C0,
+    // 0 -> 33 ms); @0x55D1C8..0x55D2F0 on the Internet (GameMode 4) with
+    // MaxAhead 0xA8A4B8 > 30 the frame grows by +10 ms for each of
+    // MaxAhead/4, /2 and 3/4 that the most-behind peer lags.] The clone's rule
+    // time base is 15 frames per engine second (gamespeed.md §2), so the
+    // accumulator multiplier is the wall frame rate / 15.
+    double net_tick_fps() const {
+        const ra2::net::LockstepSession& s = net_->game->session();
+        const std::uint32_t fps = s.desired_fps();
+        int frame_ms = fps == 0 ? 33 : static_cast<int>(1000 / fps);
+        if (net_->game->config().mode == ra2::net::GameMode::Internet && s.max_ahead() > 30) {
+            const std::uint32_t lag = s.peer_lag_frames(), ma = s.max_ahead();
+            if (lag != 0) {
+                if (lag >= ma / 4) frame_ms += 10;
+                if (lag >= ma / 2) frame_ms += 10;
+                if (lag >= ma * 3 / 4) frame_ms += 10;
+            }
+        }
+        return frame_ms > 0 ? 1000.0 / frame_ms : 60.0;
+    }
+    double net_tick_multiplier() const { return net_tick_fps() / 15.0; }
+    // W9-01-03: a tick's processing time (gate + commands + logic + CRC) plus
+    // the CPU time of the last rendered frame -- the original's ProcessTicks
+    // span covers its render and logic but neither the frame-limiter wait nor
+    // the Wait_For_Players stall. Reported to the session per executed frame.
+    double net_render_ms_ = 0.0;
+    void net_note_tick(std::chrono::steady_clock::time_point t0) {
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        net_->game->session().note_process_time(ms + net_render_ms_);
+    }
+    struct NetRenderClock {   // times GameScene::render for net_note_tick
+        double& out;
+        std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+        explicit NetRenderClock(double& o) : out(o) {}
+        ~NetRenderClock() {
+            out = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        }
+    };
+    // W9-01-07 [RE: the in-game Options dialog FUN_004E1EF0 shows the speed
+    // slider in a network game too (6 - GameSpeed 0xA8DAC8, the session's
+    // speed); its OK handler FUN_004E1CF0 does NOT set the speed in a network
+    // game (GameMode != 0 and != 5) but queues a GAMESPEED event (0x0D) with
+    // the new value; EventClass::Execute FUN_004C6BD0 @0x4C786E stores it in
+    // 0xA8DAC8 on every peer at the same frame, and the master's next TIMING
+    // caps DesiredFrameRate with it]. Any player may change it. The clone's
+    // Options overlay edits the shared Settings::game_speed: in a match the
+    // slider shows the match speed, a change becomes a GAMESPEED command, and
+    // the user's own single-player speed is put back when the match ends.
+    int net_match_speed_ = 1;
+    int net_user_speed_ = -1;   // the Options value before the match (restored at teardown)
+    void net_speed_attach() {
+        net_match_speed_ = std::max(0, std::min(6, net_->session.lobby.opt.game_speed));
+        net_->game->session().set_game_speed(net_match_speed_);
+        if (g_user_settings) {
+            net_user_speed_ = g_user_settings->game_speed;
+            g_user_settings->game_speed = net_match_speed_;
+        }
+    }
+    void net_speed_poll() {
+        if (!g_user_settings || g_user_settings->game_speed == net_match_speed_ || net_local_left_) return;
+        ra2engine::Command c;
+        c.type = ra2engine::EventType::GameSpeed;
+        c.value = std::max(0, std::min(6, g_user_settings->game_speed));
+        g_user_settings->game_speed = net_match_speed_;   // shown again until the event executes
+        issue(c);
+    }
+    void net_speed_restore() {
+        if (g_user_settings && net_user_speed_ >= 0) g_user_settings->game_speed = net_user_speed_;
+        net_user_speed_ = -1;
+    }
     static constexpr std::uint32_t kNetAwaySeconds = 90;   // 05 §7.2
 
     void net_attach() {
@@ -53,6 +129,7 @@
         net_ = std::move(g_pending_netplay);
         g_pending_netplay.reset();
         world_.set_order_issuer(local_house_);
+        net_speed_attach();   // W9-01-07
         std::cerr << "[net] lockstep match: local house " << local_house_ << ", " << net_->session.players.size()
                   << " houses, hash every " << net_->hash_every << " frames, max_ahead "
                   << net_->game->session().max_ahead() << " fsr " << net_->game->session().frame_send_rate() << "\n";
@@ -76,26 +153,35 @@
         net_proj_buf_.insert(net_proj_buf_.end(), pe.begin(), pe.end());
     }
 
-    // The sync hash: the complete World (save_world bytes, bit-exact doubles)
-    // plus the scene's sim-side FreeUnit tracker. UI state (camera, sidebar,
-    // the local player's pending placement) stays out. Folded to the 32-bit
-    // CRC the FRAMEINFO packet carries.
+    // The sync CRC fed to FRAMEINFO. W9-01-04 [RE: ComputeFrameCRC
+    // FUN_0064D520]: by default the cheap per-frame CRC over the sim state
+    // (net_frame_crc: positions, facings, health, economy, every RNG stream)
+    // plus the scene's sim-side FreeUnit tracker -- microseconds, no
+    // allocation. Debug mode ([Net] FullHash=1): the complete World (save_world
+    // bytes, bit-exact doubles) + the tracker, fnv1a. UI state (camera,
+    // sidebar, pending placement) is in neither. Timed for the perf log.
     std::uint32_t net_state_hash() {
         const auto t0 = std::chrono::steady_clock::now();
-        std::uint64_t h = 1469598103934665603ull;
-        auto mix = [&h](const std::vector<uint8_t>& b) {
-            for (uint8_t c : b) { h ^= c; h *= 1099511628211ull; }
-        };
-        mix(ra2engine::save::save_world(world_));
-        for (int v : bstates_) {
-            h ^= static_cast<std::uint32_t>(v);
-            h *= 1099511628211ull;
+        std::uint32_t out = 0;
+        if (net_ && net_->full_hash) {
+            std::uint64_t h = 1469598103934665603ull;
+            auto mix = [&h](const std::vector<uint8_t>& b) {
+                for (uint8_t c : b) { h ^= c; h *= 1099511628211ull; }
+            };
+            mix(ra2engine::save::save_world(world_));
+            for (int v : bstates_) {
+                h ^= static_cast<std::uint32_t>(v);
+                h *= 1099511628211ull;
+            }
+            out = static_cast<std::uint32_t>(h ^ (h >> 32));
+        } else {
+            out = ra2engine::net_frame_crc(world_, &bstates_);
         }
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
         net_hash_ms_sum_ += ms;
         net_hash_ms_max_ = std::max(net_hash_ms_max_, ms);
         ++net_hash_n_;
-        return static_cast<std::uint32_t>(h ^ (h >> 32));
+        return out;
     }
 
     // Before every tick: may this tick run? (Run: this frame's commands are queued.)
@@ -132,7 +218,9 @@
         // The hash trail (stderr / play log): one line per hash period, the
         // two-process tests compare these between the machines.
         const std::uint32_t f = sim_frame_;
-        const std::uint32_t every = static_cast<std::uint32_t>(std::max(1, net_->hash_every));
+        // W9-01-04: the trail stays one line per 15 frames whatever the CRC
+        // period (the CRC now runs every frame).
+        const std::uint32_t every = static_cast<std::uint32_t>(std::max(15, net_->hash_every));
         if (f % every == 0 && f != net_last_trail_) {
             net_last_trail_ = f;
             const std::uint32_t crc = net_->game->crc_of(f);
@@ -147,6 +235,14 @@
     // same frame): the leaver's house is defeated (or handed to the AI).
     void net_on_command(const ra2engine::Command& c) {
         if (!net_) return;
+        if (c.type == ra2engine::EventType::GameSpeed) {   // W9-01-07 (FUN_004C6BD0 @0x4C786E)
+            net_match_speed_ = std::max(0, std::min(6, static_cast<int>(c.value)));
+            net_->game->session().set_game_speed(net_match_speed_);
+            if (g_user_settings) g_user_settings->game_speed = net_match_speed_;
+            std::cerr << "[net] game speed " << net_match_speed_ << " (house " << static_cast<int>(c.house)
+                      << ") at frame " << sim_frame_ << "\n";
+            return;
+        }
         if (c.type == ra2engine::EventType::Exit) net_house_left(c.house, /*left=*/true);
         else if (c.type == ra2engine::EventType::RemovePlayer) net_house_left(c.value, /*left=*/false);
     }
@@ -259,6 +355,7 @@
     // away countdowns, and leaving once our EXIT executed.
     void net_frame() {
         if (!net_) return;
+        net_speed_poll();   // W9-01-07
         if (net_->mpnet) net_->mpnet->tick(ra2mp::now_ms());   // tunnel keep-alive (no-op on LAN)
         std::vector<ra2::net::NetChat> chat;
         std::vector<ra2::net::AwayNotice> away;
@@ -319,6 +416,10 @@
             net_held_next_ = nullptr;
         }
         if (!net_end_dialog_ && !net_->game->exiting()) net_->game->request_exit();
+        net_speed_restore();   // W9-01-07
+        std::cerr << "[net] pacing: desired fps " << net_->game->session().desired_fps() << ", tick fps "
+                  << net_tick_fps() << ", max_ahead " << net_->game->session().max_ahead() << " fsr "
+                  << net_->game->session().frame_send_rate() << "\n";
         if (net_hash_n_)
             std::cerr << "[net] sync hash: " << net_hash_n_ << " computed, avg "
                       << (net_hash_ms_sum_ / net_hash_n_) << " ms, max " << net_hash_ms_max_ << " ms; stalls "

@@ -135,6 +135,10 @@ public:
     uint8_t latency_level() const { return p0_level_; }
     bool reconnect_dialog() const { return dialog_open_; }  // stall passed the dialog timeout
     int slowest_peer() const;                                 // house we wait on, -1 none
+    // W9-01-03 [RE: FUN_0055CFF0 @0x55D1C8: the largest per-connection lag
+    // 0xA8CAE4[]] [ANCHORED: the clone's lag = our frame minus the peer's
+    // reported frame]: how many frames the most-behind peer trails us (0 none).
+    uint32_t peer_lag_frames() const;
     int players() const { return mplayer_count_; }            // Session.MPlayerCount
     const std::map<int, PeerState>& peers() const { return peers_; }
     const OutOfSyncInfo& out_of_sync() const { return oos_; }
@@ -144,6 +148,19 @@ public:
     // Average processing ms per frame for PROCESS_TIME (ProcessTicks /
     // ProcessFrames, main loop accounting). Default: measured internally.
     void set_process_time_sample(uint32_t total_ms, uint32_t frames);
+    // W9-01-03 [RE: main loop FUN_0055CFF0 -- ProcessTicks accumulates from
+    // the loop start 0x55D04E to just before Queue_AI 0x55DA5B, i.e. the
+    // frame's own work WITHOUT the frame-limiter wait and WITHOUT the
+    // Wait_For_Players stall inside Queue_AI]: the driver reports each
+    // executed frame's processing time. Once called, the internal sample
+    // (wall time between begin_frame calls, which counted every wait and so
+    // could only ever report the current rate) is no longer used.
+    void note_process_time(double ms);
+    // W9-01-07 [RE: EventClass::Execute FUN_004C6BD0 case GAMESPEED 0x0D @
+    // 0x4C786E: GameSpeed 0xA8DAC8 = the event's value, on every peer at the
+    // same frame]: the master's TIMING cap follows it from then on.
+    void set_game_speed(int speed) { cfg_.game_speed = speed; }
+    int game_speed() const { return cfg_.game_speed; }
 
     // Destroy_Connection(id, error): error 1 = lost (queues REMOVEPLAYER when
     // frame > 0), 0 = left (EXIT executed).
@@ -181,7 +198,10 @@ private:
     std::vector<ExecItem> exec_;
 
     uint32_t frame_ = 0;
-    uint32_t max_ahead_, fsr_, desired_fps_ = 60, max_max_ahead_ = 0;
+    // desired_fps_ starts at 30 [RE: scenario/session init FUN_0052D6E0 @
+    // 0x52D7FD: DesiredFrameRate 0xA8A4C0 = 0x1E] until the master's first
+    // TIMING executes.
+    uint32_t max_ahead_, fsr_, desired_fps_ = 30, max_max_ahead_ = 0;
     uint32_t precalc_max_ahead_, precalc_fps_;
     int latency_fudge_;
     uint32_t cur_crc_ = 0;
@@ -206,6 +226,9 @@ private:
     // process time accounting
     uint32_t proc_ms_ = 0, proc_frames_ = 0, last_begin_ms_ = 0;
     bool have_last_begin_ = false;
+    bool ext_proc_ = false;                    // W9-01-03: the driver reports process time
+    double ext_proc_ms_ = 0.0;
+    uint32_t ext_proc_frames_ = 0;
 
     // exit
     bool exiting_ = false;

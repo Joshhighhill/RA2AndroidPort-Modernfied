@@ -20,7 +20,11 @@ struct NetPlay {
     std::unique_ptr<ra2::net::NetGame> game;      // lockstep driver over mpnet->net()
     ra2mp::MpSessionConfig session;               // seed, house table, names, colours
     bool ai_takeover = false;                     // host option: leaver's house -> AI
-    int hash_every = 1;                           // full-state hash period (frames)
+    int hash_every = 1;                           // sync CRC period (frames; 1 = every frame, the original)
+    // W9-01-04: false = the per-frame CRC (net_frame_crc, FUN_0064D520's
+    // shape); true = the debug full-World hash (fnv1a over save_world, the
+    // pre-W9 CRC) -- RA2.INI [Net] FullHash=1 or RA2_NET_FULL_HASH=1.
+    bool full_hash = false;
     // Linger (after the scene): EXIT flushed or given up.
     std::uint64_t linger_start_ms = 0;
 
@@ -71,6 +75,13 @@ void net_linger_pump() {
 
 // RA2.INI [Net] overrides for experiments: FrameSendRate / MaxAhead (start
 // values; the host's TIMING adapts them) and HashEvery (sync-hash period).
+int net_ini_int(const char* key, int fallback);
+// W9-01-04: the debug full-World sync hash (RA2.INI [Net] FullHash=1, or the
+// environment RA2_NET_FULL_HASH=1 for test runs).
+bool net_full_hash_mode() {
+    if (const char* e = std::getenv("RA2_NET_FULL_HASH")) return *e && *e != '0';
+    return net_ini_int("FullHash", 0) > 0;
+}
 int net_ini_int(const char* key, int fallback) {
     const ra2engine::IniDoc doc = read_settings_doc(settings_file_path());
     if (auto v = doc.get("Net", key)) {

@@ -35,6 +35,8 @@ struct AiSoakProbe {
         long long diff_frames = -1;
         bool no_human_deploy = false, long_game = false, ai_passive = false;
         std::uint32_t session_seed = 0;   // Net L0: --seed <n> (0 = none)
+        double hash_full_us = 0, hash_crc_us = 0, hash_full_max = 0, hash_crc_max = 0;   // W9-01-04
+        long long hash_n = 0;
         int hash_every = 0;   // Net L0: --hash-every N prints fnv1a(save_world) (the match sync hash basis)
         auto side_of = [](const std::string& c) {
             if (c == "YuriCountry") return ra2engine::World::Side::Yuri;
@@ -169,10 +171,20 @@ struct AiSoakProbe {
             const int seq0 = w.sw_events().empty() ? 0 : w.sw_events().back().seq;
             g.update(1.0 / 15.0);
             if (hash_every > 0 && f % hash_every == 0) {   // Net L0: fnv1a(save_world), as net_state_hash
+                // W9-01-04: both sync hashes timed -- the debug full-World
+                // fnv1a and the per-frame net_frame_crc (the FRAMEINFO CRC).
+                const auto t0 = std::chrono::steady_clock::now();
                 const std::vector<std::uint8_t> sb = ra2engine::save::save_world(w);
                 std::uint64_t hh = 1469598103934665603ull;
                 for (std::uint8_t c : sb) { hh ^= c; hh *= 1099511628211ull; }
-                std::printf("[ai-soak] hash f=%lld h=%016llx\n", f, static_cast<unsigned long long>(hh));
+                const auto t1 = std::chrono::steady_clock::now();
+                const std::uint32_t fc = ra2engine::net_frame_crc(w);
+                const auto t2 = std::chrono::steady_clock::now();
+                const double full_us = std::chrono::duration<double, std::micro>(t1 - t0).count();
+                const double crc_us = std::chrono::duration<double, std::micro>(t2 - t1).count();
+                hash_full_us += full_us; hash_crc_us += crc_us; ++hash_n;
+                hash_full_max = std::max(hash_full_max, full_us); hash_crc_max = std::max(hash_crc_max, crc_us);
+                std::printf("[ai-soak] hash f=%lld h=%016llx crc=%08x\n", f, static_cast<unsigned long long>(hh), fc);
             }
             if (ddump) simdiff::write_frame(ddump, w, (int)(f - 1));   // frame 0 = state after the first logic step
             // W2-AN-21: every AI superweapon launch/activation (any type).
@@ -318,6 +330,10 @@ struct AiSoakProbe {
         const auto ai_hp = base_hp(ai);
         std::cout << "[ai-soak] ai_base_hp_end=" << ai_hp.first << "/" << ai_hp.second
                   << " repair_frames=" << repair_frames << " sell_frames=" << sell_frames << "\n";
+        if (hash_n)
+            std::printf("[ai-soak] hash cost: %lld samples, full save_world fnv1a avg %.1f us max %.1f us; "
+                        "frame crc avg %.2f us max %.2f us\n", hash_n, hash_full_us / hash_n, hash_full_max,
+                        hash_crc_us / hash_n, hash_crc_max);
         std::cout << "[ai-soak] RESULT ai_units_built=" << ai_units_built
                   << " max_ai_units_alive=" << max_alive << " sw_ever_ready=" << sw_was_ready
                   << " sw_shots=" << sw_shots

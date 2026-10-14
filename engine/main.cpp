@@ -104,6 +104,7 @@ static char* ra2_cli_pref_path() {
 #include "mp/mp_lobby.hpp"
 #include "mp/server_link.hpp"
 #include "net/net_game.hpp"     // NET-PLAY: the lockstep driver (net_play.inc)
+#include "net_frame_crc.hpp"    // W9-01-04: the per-frame lockstep CRC
 #include "maplist.hpp"
 #include "map_trigger.hpp" // MapTriggerSystem (P9 Map triggers; --demo-triggers only)
 #include "campaign.hpp"    // P10 campaign core [RE: campaign.md]
@@ -6917,7 +6918,7 @@ public:
         // Net L0: a frame that took longer than 1 s (a debugger, an OS suspend)
         // counts as 1 s of game time -- like the original, which never catches
         // up wall time at all -- so the carried backlog stays bounded.
-        logic_acc_ += std::min(dt, 1.0) * (net_ ? 1.0   // NET-PLAY: fixed 15 Hz logic
+        logic_acc_ += std::min(dt, 1.0) * (net_ ? net_tick_multiplier()   // W9-01-01: the TIMING frame rate
                             : cfg_.game_speed >= 0
                                 ? ra2engine::game_speed_multiplier(cfg_.game_speed)
                                 : g_user_settings
@@ -6932,11 +6933,12 @@ public:
             // kMaxLogicSteps per frame, so rendering keeps going). A lockstep
             // peer must run every tick; a slow device runs the game slower
             // rather than skipping simulation.
-            if (logic_steps == kMaxLogicSteps) {
-                // NET-PLAY: a lockstep match bounds the backlog to 2 s of catch-up.
-                if (net_) logic_acc_ = std::min(logic_acc_, 30 * kLogicDt);
-                break;
-            }
+            // W9-01-05 [RE: FUN_0055CFF0 -- one logic frame per main-loop
+            // pass when the frame timer expired; time lost waiting is never
+            // caught up]: a match runs at most ONE tick per rendered frame
+            // (single player keeps kMaxLogicSteps and its carried backlog).
+            if (logic_steps == (net_ ? 1 : kMaxLogicSteps)) break;
+            const auto net_t0 = std::chrono::steady_clock::now();   // W9-01-03 process time
             if (net_ && !net_gate()) break;   // NET-PLAY: the session decides (stall / end)
             logic_acc_ -= kLogicDt;
             ++logic_steps;
@@ -7010,9 +7012,10 @@ public:
         }
         if (net_) net_drain_tick_events();   // NET-PLAY: frame-time events leave the World per tick
         ++sim_frame_;   // NET L1: the command clock
+        if (net_) net_note_tick(net_t0);   // W9-01-03: PROCESS_TIME sample (no waits)
         }   // G-13 fixed logic tick
-        if (net_) {   // NET-PLAY: no burst after a stall; chat / away / leaving
-            if (net_stalled_) logic_acc_ = std::min(logic_acc_, kLogicDt);
+        if (net_) {   // NET-PLAY: no catch-up (W9-01-05); chat / away / leaving
+            logic_acc_ = std::min(logic_acc_, kLogicDt);
             net_frame();
         }
         input_.selection().prune(world_);   // NET L1: units the tick boarded / consumed
@@ -7264,6 +7267,7 @@ public:
     // render_world + placement cursor + sidebar chrome + production chrome.
     // begin_frame/present are the driver's responsibility.
     void render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override {
+        NetRenderClock net_rclock_(net_render_ms_);   // W9-01-03: render CPU time for PROCESS_TIME
         SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
         radar_.set_view(cam_, playfield_w_, kWinH);   // G-09 viewport box
         update_light_sources();   // W3-FIX-A
