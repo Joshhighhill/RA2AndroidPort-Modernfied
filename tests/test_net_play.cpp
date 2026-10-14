@@ -94,14 +94,13 @@ struct EconHost : ra2engine::CommandHost {
     void place(int h, int, int, int cx, int cy) override { w->econ_place(h, QueueCat::Structure, cx, cy); }
 };
 
-bool g_frame_crc = false;   // W9-01-04: feed net_frame_crc instead of the full save hash
+bool g_frame_crc = false;   // W9-01-04: feed net_frame_crc instead of the full sync hash
 std::uint32_t world_hash32(const ra2engine::World& w);
 std::uint32_t sync_hash32(const ra2engine::World& w) {
     return g_frame_crc ? ra2engine::net_frame_crc(w) : world_hash32(w);
 }
-std::uint32_t world_hash32(const ra2engine::World& w) {
-    std::uint64_t h = 1469598103934665603ull;
-    for (std::uint8_t c : ra2engine::save::save_world(w)) { h ^= c; h *= 1099511628211ull; }
+std::uint32_t world_hash32(const ra2engine::World& w) {   // the debug full hash (W9-05 policy)
+    const std::uint64_t h = ra2engine::save::world_sync_hash(w);
     return static_cast<std::uint32_t>(h ^ (h >> 32));
 }
 
@@ -263,6 +262,7 @@ struct Match {
             cfg.human_houses = {0, 1};
             cfg.remotes = {{1 - k, addr[1 - k]}};
             cfg.master = k == 0;
+            cfg.master_house = 0;   // W9-05-12
             cfg.hash_every = hash_every;
             cfg.crc_check_from_frame = crc_from;
             q.game = std::make_unique<NetGame>(*q.nm, cfg);
@@ -447,6 +447,27 @@ TEST_CASE("W9-01-04: net play with the per-frame CRC -- in sync, and a divergenc
         CHECK(world_hash32(*m.p[0].w) == world_hash32(*m.p[1].w));
     }
     g_frame_crc = false;
+}
+
+// W9-05-12: REMOVEPLAYER is honoured from the master, from the removed house
+// itself, or (the master vanished) against the master -- never a peer
+// removing another non-master peer, nor a house that is not a human player.
+TEST_CASE("net play: REMOVEPLAYER sender rules (W9-05-12)") {
+    std::uint32_t now = 1000;
+    ra2::net::LoopbackHub hub{[&now]() { return now; }, 7};
+    ra2::net::NetManager nm(*hub.create(ra2::net::PeerAddr{ra2::net::NetAddr{0x0A000001u, 1234}, 0}),
+                            [&now]() { return now; });
+    ra2::net::NetGameConfig cfg;
+    cfg.local_house = 1;
+    cfg.human_houses = {0, 1, 2};
+    cfg.master_house = 0;
+    NetGame g(nm, cfg);
+    CHECK(g.removeplayer_allowed(0, 2));    // the host drops a timed-out player
+    CHECK(g.removeplayer_allowed(2, 2));    // a player removes itself
+    CHECK(g.removeplayer_allowed(1, 0));    // the host vanished: anyone removes it
+    CHECK_FALSE(g.removeplayer_allowed(1, 2));   // a peer griefing another peer
+    CHECK_FALSE(g.removeplayer_allowed(0, 5));   // not a human house of this match
+    CHECK_FALSE(g.removeplayer_allowed(7, 7));   // not a player at all
 }
 
 // W9-05-03/06: ALLY (one-way, then mutual) and DESTRUCT travel as EventClass

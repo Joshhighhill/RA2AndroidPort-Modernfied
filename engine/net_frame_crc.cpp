@@ -1,6 +1,7 @@
 // engine/net_frame_crc.cpp -- see net_frame_crc.hpp. SDL-free.
 #include "net_frame_crc.hpp"
 
+#include "map_trigger.hpp"
 #include "world.hpp"
 
 namespace ra2engine {
@@ -8,7 +9,7 @@ namespace ra2engine {
 // World's private sim state is read through this friend (world.hpp), the
 // SaveAccess pattern. Read-only.
 struct NetCrcAccess {
-    static std::uint32_t crc(const World& w, const std::vector<int>* extra) {
+    static std::uint32_t crc(const World& w, const std::vector<int>* extra, const MapTriggerSystem* triggers) {
         FrameCrc c;
         // --- units [RE: FUN_0064D520 infantry / unit loops]: position, facing
         // (body + turret), plus the clone's stronger terms.
@@ -85,6 +86,14 @@ struct NetCrcAccess {
                 c.add_i(static_cast<int>(e.backlog[static_cast<std::size_t>(q)].size()));
             }
         }
+        // W9-05 (sync-hash policy, io_hash_only): the per-house production
+        // rules each peer INSTALLED (not saved; the digest is taken at
+        // install time) -- a different rulesmd / tech mask is a frame-0
+        // desync, not a slow drift. The human mask joins it.
+        c.add_i(static_cast<int>(w.econ_rules_set_.size()));
+        for (char v : w.econ_rules_set_) c.add_i(v);
+        for (std::uint64_t v : w.econ_rules_digest_) c.add_u64(v);
+        c.add_u64(w.human_mask_);
         for (double v : w.house_credits_) c.add_d(v);
         for (std::uint8_t v : w.house_defeated_) c.add(v);
         for (int v : w.house_outcome_) c.add_i(v);
@@ -123,10 +132,44 @@ struct NetCrcAccess {
         c.add_u64(w.repair_frame_);
         if (extra)
             for (int v : *extra) c.add_i(v);
+        if (triggers) trig(c, *triggers);
         return c.v;
+    }
+    // The campaign / co-op map-trigger runtime (the full sync hash's
+    // SaveAccess::triggers, minus the text log and the static tables): a few
+    // hundred words even on a large campaign map.
+    static void trig(FrameCrc& c, const MapTriggerSystem& s) {
+        c.add(s.rng_);
+        c.add_i(static_cast<int>(s.frame_));
+        c.add_i(static_cast<int>(s.globals_.size()));
+        for (std::uint8_t v : s.globals_) c.add(v);
+        c.add_i(static_cast<int>(s.locals_.size()));
+        for (std::uint8_t v : s.locals_) c.add(v);
+        c.add_i(static_cast<int>(s.mt_start_));
+        c.add_i(static_cast<int>(s.mt_left_));
+        c.add_i(s.outcome_);
+        for (unsigned v : s.house_flags_) c.add(v);
+        c.add_i(s.fired_);
+        c.add_i(s.logic_fired_);
+        c.add_i(s.house_fired_);
+        c.add_i(s.variable_fired_);
+        c.add_i(static_cast<int>(s.tags_.size()));
+        for (const MapTriggerSystem::Tag& t : s.tags_) {
+            c.add(static_cast<std::uint32_t>(t.type) + (t.destroyed ? 0x10000u : 0u) +
+                  (static_cast<std::uint32_t>(t.instance_count) << 17));
+            for (const MapTriggerSystem::Trig& g : t.trigs) {
+                c.add(static_cast<std::uint32_t>(g.type) + (g.enabled ? 0x10000u : 0u) + (g.destroyed ? 0x20000u : 0u));
+                c.add(g.bits);
+                c.add_i(static_cast<int>(g.t_start));
+                c.add_i(static_cast<int>(g.t_left));
+                c.add_i(g.house_override);
+            }
+        }
     }
 };
 
-std::uint32_t net_frame_crc(const World& w, const std::vector<int>* extra) { return NetCrcAccess::crc(w, extra); }
+std::uint32_t net_frame_crc(const World& w, const std::vector<int>* extra, const MapTriggerSystem* triggers) {
+    return NetCrcAccess::crc(w, extra, triggers);
+}
 
 }  // namespace ra2engine

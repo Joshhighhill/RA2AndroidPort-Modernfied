@@ -26,10 +26,13 @@
 #include <utility>
 #include <vector>
 
+#include "orig_math.hpp"   // W9-05-13 om::canonical_bits
+
 namespace ra2engine {
 
 class World;
 class MapTriggerSystem;
+struct PlayerEconRules;
 
 namespace save {
 
@@ -39,9 +42,13 @@ namespace save {
 constexpr std::uint32_t kFormatVersion = 47;   // 47: w9fix-menus SkirmishConfig::mode_rules (game type rules overlay) on top of 46; 46: w9fix-match -- World diplomacy rules (allies_allowed_/ally_change_allowed_), game_over_, observer_reveal_, victory_defeats_seen_ on top of 45; 45: w8fix-place -- World::build_static_ (placement BuildMask) on top of 44; 44: w8fix-save -- AnUnit para_passes/para_overfly/para_timer (paradrop Approach/Overfly) on top of 43; 43: w8fix-layer -- Occupancy deck plane (owner_d_/spots_d_) + per-unit layer lay_, on top of 42; 42: wave-8 fix (w8fix-misc: UnitW6::hover_spin, the Robot Tank power-off spin); 40: fv7c -- per-house masks 32-bit (Unit::seen_by_mask, AnUnit::detected_mask, World w5_hide_/w5_own_; were uint8_t, capped at 8 houses) + UnitW7::missile_holds removed (dead since the spawn-manager merge); 39 (+ w7fix-move: UnitCombat/Unit loco -- locomotor kind, acceleration keys, speed percentage, Drive/Ship track, hover ramp, blocked-move timers; World::loco_rules_; AnType jj_accel/strafe/fighter/slowdown_distance, AnUnit jj_speed/fly_throttle/strafe_left); 39: w7fix-combat mission model (UnitTgt mission/scan timer/override/home/attack-move/help/crush warn/ROF parts, UnitTypeTgt W7 keys, World combat-W7 rules + house IQ + hit log) on top of 38; 38: wave-7 presentation (InfAnimState erupt/air; World rad/nuke/storm_inf_death_ + frag_events_) on top of 37; 37: wave-7 AI (Unit::ai guard clock, AiHouseConfig auto_deploy_frames / roster_to_protect) on top of 36; 36: wave-7 units + air/naval merged (35 + AnType crash weapon / spawner range / sonic / DistributedFire / RadarInvisible / HoverAttack / AirportBound, AnUnit spawn-manager nodes + launch hold + loaner + crash_hp + naval_cell + shot list, AnWorld sonic waves, SwParams C4Warhead); 35: wave-7 fix (units) -- UnitTypeW7 / UnitW7 / BldW7 (unit_w7.hpp: role flags, Mirage blink, drone paralysis, deploy timers, depot timer, mind-control capacity); 34: Net L0 whole-frame int timers (Unit::rearm_frames, Building def/garrison_rearm_frames + iron_left_frames, AnUnit surface/iron/chrono_left_frames were double seconds) + World::session_seed_ / SkirmishConfig::session_seed (Net L0 session seed); 33: NET L1 -- Unit::selected removed (the selection is local UI state, commands carry unit ids); 32: L2 per-house economy (World::econ_ wallets + six queues + backlog/hold for player AND AI houses, human mask, latched outcomes, cheer flags; HouseAiRec loses credits/queues; wallet_hint_ removed; SceneSave loses the wallet/queues; the QBKL section is no longer written); 31: warhead BombDisarm= (WeaponSlot + UnitTypeW6 bomb_disarm, GetFireError gate); 30: R-210 bridges and cliffs (Unit::on_deck, BldTypeW6::gate, World deck grids); 29: W6 fix #2 (missions): Unit/UnitCombat tg (rules id, Insignificant/LegalTarget/ImmuneToPsionics/GuardRange, IsInPlayfield, area guard), Building tg, World playfield/usable area + per-house handicap; 28: wave-6 #4 units/weapons (WeaponSlot/WeaponStats/WeaponSpec Burst, UnitCombat/Unit/Building w6: burst index + type data); walls' damage stages, map wall overlays, warhead wall keys, IFV elite weapons) merged with 27; 27: W6-05-04 MapTriggerSystem::timer_text_ (action 103 TimerText label); 26: W6 skirmish AI (BuildingTypeDef wall/insignificant, HouseAiRec anger table + hate-delay clock, AiHouseConfig virtual purifiers) merged with 25; 25: W6-06-04 campaign trigger particle systems section PFX; 24: Unit::w_mind_control (campaign mind-control shot captures, no damage); 23: P4 building death weapons (BldTypeW5 explodes/delay_kill_eligible/death) + WeaponSpec delay kill; 22: W5-A campaign host state (building TurnOff/On, AI SW quarry, FireSale houses, teams that left the map, ResizeView area) + World wall leak mask / SW quarry + AiHouseConfig fire_superweapons; 21: W5-E2 Building::power_off; 20: W5-B infantry sub-cell spots (Occupancy spots_/inf_) + Unit spot/sub offset/speed/crush/is_infantry/land-speed loco + land speed/crush/elevation rules + AffectsAllies + projectile SubjectTo*; 19: W5-E audio section AUDI (music track / on); 18: wave-5 abilities (stolen tech, prism/tesla/gap, tech heal, OpenTopped, DeployTime, defuse, IFV swap, Boris, squid, ship C4, vet abilities; BldTypeW5/UnitTypeW5/BldW5/UnitW5/WorldW5 + WeaponSpec projectile); 17: W5-F build-queue backlog/hold section QBKL + load_world index range checks; 16: W4-SQ paradrop fall (AnUnit para_alt, SwParams parachute_fall) + team airdrop flag + player-order queue + passive houses; 15: W4 per-type rocket blocks/warheads + RocketLocomotion flight + homing projectiles; 14: W3-B infantry sequence/fear state + warhead InfDeath/ProneDamage; 13: W2-SK ore mines + harvester/AI/spy/depot/unit-special state; 12: w2fix-campaign PlayerControl/pair alliances/entered events/mind control; 11: W2-AR-20 CRC-32 trailer over the whole file; 10: W2-AN air/naval/SW state; 9: W2-GA-03 FogOfWar flag; 2: P10 campaign; 3: gap-A queues/roster flags; 4: gap-C weapon/defense; 5: gap-D AI; 6: gap-D AI + gF MCV deploy combined; 7: G16 garrison/bridge state; 8: skirmish-page game_speed/mcv_redeploys in the config
 
 // --- archives ---------------------------------------------------------------
-class Writer {
+// BasicWriter<false> = Writer (the save file); BasicWriter<true> = SyncWriter,
+// the same bytes under the SYNC-HASH POLICY below (the desync dump's
+// per-member hashes, world_field_hashes).
+template <bool SyncHash> class BasicWriter {
 public:
     static constexpr bool kLoading = false;
+    static constexpr bool kSyncHash = SyncHash;
     void bytes(const void* p, std::size_t n) {
         const auto* b = static_cast<const std::uint8_t*>(p);
         buf.insert(buf.end(), b, b + n);
@@ -49,6 +56,46 @@ public:
     bool ok() const { return true; }
     std::vector<std::uint8_t> buf;
 };
+using Writer = BasicWriter<false>;
+using SyncWriter = BasicWriter<true>;
+
+// W9-05 sync hash: the streaming archive of the lockstep state hash. Folds
+// every byte straight into FNV-1a 64 (no buffer), under the sync-hash policy.
+class SyncHasher {
+public:
+    static constexpr bool kLoading = false;
+    static constexpr bool kSyncHash = true;
+    void bytes(const void* p, std::size_t n) {
+        const auto* b = static_cast<const std::uint8_t*>(p);
+        for (std::size_t i = 0; i < n; ++i) {
+            h ^= b[i];
+            h *= 0x100000001b3ull;
+        }
+    }
+    bool ok() const { return true; }
+    std::uint64_t h = 0xcbf29ce484222325ull;
+};
+
+// --- W9-05: the SYNC-HASH POLICY ----------------------------------------------
+// One rule set for every hash two peers compare (the full-World debug hash,
+// the desync dump's per-member hashes, and any cheaper frame CRC built on
+// these visitors): an archive with `kSyncHash == true` is a hash. The SAVE
+// bytes never change; only these two visitor helpers branch on it:
+//   io_unhashed(ar, x)  -- a DERIVED cache that a const accessor rebuilds
+//       lazily (amphib_grid(), crush_grid(), deck_grid(), the gap scratch).
+//       Whether a presentation-side call refreshed it on ONE peer must not
+//       read as a desync: saved (load stays bit-identical), never hashed.
+//   io_hash_only(ar, x) -- state the save does not carry (re-installed after
+//       a load) that both peers must nevertheless have built identically
+//       (the per-house production rules digest): hashed, never saved.
+// tests/test_saveload.cpp pins the exact list of unhashed World members
+// (kUnhashedWorldMembers there), so a new member cannot be silently unhashed.
+namespace detail {
+template <class Ar, class = void> struct sync_hash_ar : std::false_type {};
+template <class Ar>
+struct sync_hash_ar<Ar, std::void_t<decltype(Ar::kSyncHash)>> : std::bool_constant<Ar::kSyncHash> {};
+}  // namespace detail
+template <class Ar> inline constexpr bool kHashing = detail::sync_hash_ar<Ar>::value;
 
 // NET-PLAY: optional per-member marks while a World is written, so a desync
 // report can name the World member whose bytes differ between two machines
@@ -56,7 +103,7 @@ public:
 struct FieldMarks { std::vector<std::pair<const char*, std::size_t>> v; };
 inline FieldMarks*& field_marks() { static FieldMarks* m = nullptr; return m; }
 template <class Ar> inline void mark(Ar&, const char*) {}
-inline void mark(Writer& w, const char* name) {
+template <bool H> inline void mark(BasicWriter<H>& w, const char* name) {
     if (FieldMarks* m = field_marks()) m->v.emplace_back(name, w.buf.size());
 }
 
@@ -146,7 +193,16 @@ template <class Ar, class T> void io_scalar(Ar& ar, T& v) {
         static_assert(sizeof(double) == 8, "IEEE double expected");
         double d = static_cast<double>(v);
         if constexpr (Ar::kLoading) { ar.bytes(&d, 8); v = static_cast<T>(d); }
-        else ar.bytes(&d, 8);
+        else {
+            // W9-05-13: a NaN's sign / payload bits are not portable (an SSE
+            // default NaN is 0xFFF8..., an arm64 one 0x7FF8...): every NaN is
+            // written (and hashed) as the one quiet NaN 0x7FF8000000000000.
+            // Any NaN behaves the same in IEEE arithmetic and comparisons, so
+            // a load still continues bit-identically.
+            // (om::canonical_bits: the same rule net_frame_crc folds.)
+            const std::uint64_t q = om::canonical_bits(d);
+            ar.bytes(&q, 8);
+        }
     } else if constexpr (sizeof(T) == 1) {
         if constexpr (Ar::kLoading) ar.bytes(&v, 1);
         else ar.bytes(&v, 1);
@@ -225,13 +281,31 @@ template <class Ar, class T> void io(Ar& ar, T& v) {
     }
 }
 
+// The sync-hash policy helpers (see "W9-05: the SYNC-HASH POLICY" above).
+template <class Ar, class T> void io_unhashed(Ar& ar, T& v) {
+    if constexpr (!kHashing<Ar>) io(ar, v);
+}
+template <class Ar, class T> void io_hash_only(Ar& ar, T& v) {
+    if constexpr (kHashing<Ar>) io(ar, v);
+}
+
 // --- World / map-trigger entry points (savegame.cpp) ------------------------
 // save_world never mutates the World (the writer only reads) -- serialization
 // is read-only w.r.t. simulation, so every byte-identity gate is untouched.
 std::vector<std::uint8_t> save_world(const World& w);
 // NET-PLAY: FNV-1a of each World member's save bytes, in visit order
 // ("name" -> 32-bit hash); two machines' lists differ at the desynced member.
+// Both follow the sync-hash policy (derived caches left out).
 std::vector<std::pair<std::string, std::uint32_t>> world_field_hashes(const World& w);
+// W9-05: the full-state sync hash of a World (+ the map-trigger runtime when
+// `triggers` is set: campaign / co-op), FNV-1a 64 streamed over the visitors
+// under the sync-hash policy -- no 8 MB buffer.
+std::uint64_t world_sync_hash(const World& w, const MapTriggerSystem* triggers = nullptr);
+// W9-05: the digest World::set_player_econ_rules keeps per house (hashed in
+// place of the unsaved rules themselves).
+std::uint64_t econ_rules_digest(const PlayerEconRules& r);
+// The same, per field (and per unit def): the desync dump names what differs.
+std::vector<std::pair<std::string, std::uint64_t>> econ_rules_field_digests(const PlayerEconRules& r);
 // Overwrites EVERY serialized member of `w` (all but the MapFile pointer).
 // `w` must have been constructed from the same map. Returns false on a
 // truncated/corrupt blob (w is then in an unspecified-but-valid state).

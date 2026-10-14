@@ -39,7 +39,7 @@ int altitude_to_screen_dy(double altitude) {
     // unwound): the voxel up/z term is ~36.74 px per cell-of-z (voxel-render.md
     // §6), so dy = (altitude/256) * 36.74.]
     if (altitude <= 0.0) return 0;
-    return static_cast<int>(std::lround(altitude / 256.0 * 36.74));
+    return static_cast<int>(om::lround(altitude / 256.0 * 36.74));
 }
 
 FlightState advance_flight_state(FlightState state, double altitude,
@@ -79,7 +79,7 @@ double jumpjet_ramp(double cur, double target, double max_speed, double accel) {
 }
 
 int facing_diff_256(double from, double to) {
-    int d = static_cast<int>(std::lround(to - from)) & 0xFFFF;
+    int d = static_cast<int>(om::lround(to - from)) & 0xFFFF;
     if (d >= 0x8000) d = 0x10000 - d;                // shortest arc, |d|
     return ((d >> 7) + 1) >> 1;
 }

@@ -334,6 +334,53 @@ TEST_CASE("mp: version / rules gate, full room, kick, leave") {
     CHECK(host.model().slots[3].kind == SlotKind::Open);
 }
 
+// W9-05-02: a different BUILD (sim version) or different game data is refused
+// before the match, and BOTH sides are told which.
+TEST_CASE("mp: different build / game data -> clear message on the joiner AND the host (W9-05-02)") {
+    std::uint64_t t = 0;
+    MemNet hub(t);
+    MpNet& eh = hub.add(1);
+    MpIdentity hid = ident("Host", 1);
+    hid.version = "0.9.0+gaaaaaaa";
+    LobbyHost host(eh, hid, host_model());
+    auto host_said = [&](const std::string& needle) {
+        for (const ChatLine& l : host.chat_log())
+            if (l.text.find(needle) != std::string::npos) return true;
+        return false;
+    };
+    {
+        MpNet& e = hub.add(2);
+        MpIdentity other = ident("Other", 2);
+        other.sim_ver = sim_version() ^ 0x5A5A5A5Au;   // another commit's build
+        other.version = "0.9.0+gbbbbbbb";
+        LobbyClient c(e, mem_peer(1), other);
+        pump(host, {&c}, t, [&] { return c.state() == LobbyClient::State::Rejected; });
+        CHECK(c.reject_reason() == RejectReason::Version);
+        CHECK(c.reject_message().find("0.9.0+gbbbbbbb") != std::string::npos);   // mine
+        CHECK(c.reject_message().find("0.9.0+gaaaaaaa") != std::string::npos);   // the host's
+        CHECK(host_said("Other could not join: different game version (theirs: 0.9.0+gbbbbbbb)"));
+    }
+    {
+        MpNet& e = hub.add(3);
+        LobbyClient c(e, mem_peer(1), ident("Modder", 3, 0xBAD));
+        pump(host, {&c}, t, [&] { return c.state() == LobbyClient::State::Rejected; });
+        CHECK(c.reject_reason() == RejectReason::Rules);
+        CHECK(c.reject_message().find("artmd.ini") != std::string::npos);
+        CHECK(host_said("Modder could not join: different game data"));
+    }
+    // Announced once per joiner, although the joiner re-queries.
+    int n = 0;
+    for (const ChatLine& l : host.chat_log()) n += l.text.find("could not join") != std::string::npos ? 1 : 0;
+    CHECK(n == 2);
+}
+
+TEST_CASE("mp: the sim version comes from the build, not a constant (W9-05-02)") {
+    CHECK(sim_version() != 1u);
+    CHECK(sim_version() == sim_version());
+    CHECK(std::string(sim_build_id()).size() > 0);
+    CHECK(MpIdentity{}.sim_ver == sim_version());
+}
+
 TEST_CASE("mp: lobby converges over a lossy link (resend + dedupe)") {
     std::uint64_t t = 0;
     MemNet hub(t);

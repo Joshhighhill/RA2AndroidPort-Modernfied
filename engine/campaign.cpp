@@ -300,7 +300,7 @@ std::vector<MapObjectRec> parse_map_objects(const ra2assets::Ini& map) {
 
 int campaign_strength(int type_strength, int health256, bool building) {
     if (building && health256 > 255) health256 = 256;
-    int s = (int)std::lround((double)type_strength * (double)health256 / 256.0);
+    int s = (int)om::lround((double)type_strength * (double)health256 / 256.0);
     if (s > type_strength - 3) s = type_strength;
     if (s < 1) s = 1;
     return s;
@@ -333,7 +333,7 @@ void MissionEnd::flag(int outcome, long frame) {
 }
 
 int borrowed_time_frames(double savour_delay_minutes) {
-    return (int)std::lround(savour_delay_minutes * 900.0);
+    return (int)om::lround(savour_delay_minutes * 900.0);
 }
 
 // ---------------------------------------------------------------------------

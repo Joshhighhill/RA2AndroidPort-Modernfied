@@ -33,7 +33,7 @@ constexpr double kLept = 256.0;
 // DAT_00b0afa8 [RE: this audit]: the nine (dx,dy) offsets of a 3x3 area.
 constexpr int kArea3x3[9][2] = {{0, 0}, {-1, -1}, {0, -1}, {1, -1}, {1, 0},
                                 {1, 1}, {0, 1},   {-1, 1}, {-1, 0}};
-int frames_of(double dt) { return std::max(1, static_cast<int>(std::lround(dt * 15.0))); }
+int frames_of(double dt) { return std::max(1, static_cast<int>(om::lround(dt * 15.0))); }
 }  // namespace
 
 // ---------------------------------------------------------------- registry --
@@ -304,7 +304,7 @@ void World::an_area_damage(int house, double cx, double cy, int damage, double s
     // impact cell with the bridge flag and Z above floor + BridgeHeight/2
     // scans the deck chain +0xE8 of every cell, else the ground chain +0xE4]:
     // one layer per blast (z is the height over the impact cell's ground).
-    const bool deck_blast = deck_intact(static_cast<int>(std::lround(cx)), static_cast<int>(std::lround(cy))) && z > 208.0;
+    const bool deck_blast = deck_intact(static_cast<int>(om::lround(cx)), static_cast<int>(om::lround(cy))) && z > 208.0;
     for (int j = 0; j < static_cast<int>(units_.size()); ++j) {
         const Unit& w = units_[j];
         if (!w.alive || w.die_time >= 0.0 || w.cargo_of >= 0) continue;
@@ -331,7 +331,7 @@ void World::an_area_damage(int house, double cx, double cy, int damage, double s
     if (has_wall_overlays() && z <= 0.0)
         for (int dy = -wr; dy <= wr; ++dy)
             for (int dx = -wr; dx <= wr; ++dx) {
-                const int x = static_cast<int>(std::lround(cx)) + dx, y = static_cast<int>(std::lround(cy)) + dy;
+                const int x = static_cast<int>(om::lround(cx)) + dx, y = static_cast<int>(om::lround(cy)) + dy;
                 if (om::hypot((x - cx) * kLept, (y - cy) * kLept) <= radius)
                     w6_overlay_wall_hit(x, y, wall_flags, damage);
             }

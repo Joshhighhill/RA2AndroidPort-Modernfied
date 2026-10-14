@@ -413,8 +413,8 @@ void World::collect_crate(int slot, int unit_idx) {
     const int ccx = cr.x * kLepton + kLepton / 2;
     const int ccy = cr.y * kLepton + kLepton / 2;
     auto in_radius_unit = [&](const Unit& o) {
-        const int ox = static_cast<int>(std::lround(o.fx * kLepton)) + kLepton / 2;
-        const int oy = static_cast<int>(std::lround(o.fy * kLepton)) + kLepton / 2;
+        const int ox = static_cast<int>(om::lround(o.fx * kLepton)) + kLepton / 2;
+        const int oy = static_cast<int>(om::lround(o.fy * kLepton)) + kLepton / 2;
         const double dx = static_cast<double>(ccx - ox);
         const double dy = static_cast<double>(ccy - oy);
         const double sq = dx * dx;

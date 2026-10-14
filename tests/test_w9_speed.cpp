@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 
 #include "net_frame_crc.hpp"
@@ -79,7 +80,7 @@ TEST_CASE("W9-02-01: release_all_of is O(claims) on a 263x263 map") {
     for (int u = 0; u < 1000; ++u) CHECK(o.at(u % 263, u / 263) == u);
 }
 
-TEST_CASE("W9-01-04: the frame CRC fold is FUN_0064D520's rotl1 + term, NaN and -0 canonical") {
+TEST_CASE("W9-01-04: the frame CRC fold is FUN_0064D520's rotl1 + term, NaN canonical (W9-05 policy)") {
     ra2engine::FrameCrc c;
     c.add(5);
     CHECK(c.v == 5u);
@@ -91,10 +92,19 @@ TEST_CASE("W9-01-04: the frame CRC fold is FUN_0064D520's rotl1 + term, NaN and 
     a.add_d(std::numeric_limits<double>::quiet_NaN());
     b.add_d(-std::numeric_limits<double>::quiet_NaN());
     CHECK(a.v == b.v);
+    // W9-05 sync-hash policy (w9int): the CRC folds om::canonical_bits, the
+    // save / full-hash rule -- NaN canonical, everything else bit-exact.
+    ra2engine::FrameCrc n1, n2;
+    std::uint64_t pay = 0x7FF0000000000123ull;   // a signalling NaN with a payload
+    double sn = 0.0;
+    std::memcpy(&sn, &pay, 8);
+    n1.add_d(sn);
+    n2.add_u64(0x7FF8000000000000ull);
+    CHECK(n1.v == n2.v);
     ra2engine::FrameCrc z1, z2;
     z1.add_d(0.0);
     z2.add_d(-0.0);
-    CHECK(z1.v == z2.v);
+    CHECK(z1.v != z2.v);
     ra2engine::FrameCrc p1, p2;
     p1.add_d(1.0);
     p2.add_d(std::nextafter(1.0, 2.0));

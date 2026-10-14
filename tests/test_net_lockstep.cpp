@@ -2,7 +2,9 @@
 // loopback hub and the deterministic StubSim (engine/net/stub_sim.hpp).
 #include "doctest.h"
 
+#include "net/event_codec.hpp"
 #include "net/lockstep.hpp"
+#include "net/net_bytes.hpp"
 #include "net/net_manager.hpp"
 #include "net/stub_sim.hpp"
 
@@ -46,6 +48,7 @@ struct World {
             c.local_house = i;
             c.houses = houses;
             c.master = (i == 0);
+            c.master_house = 0;   // W9-05-12: TIMING from house 0 only
             p->s = std::make_unique<LockstepSession>(*p->net, c);
             Peer* raw = p.get();
             p->s->on_player_removed = [raw](int h, int) { raw->removed.push_back(h); };
@@ -108,16 +111,18 @@ TEST_CASE("net lockstep: timeouts table 0x836338") {
     CHECK(wait_timeouts(GameMode::Serial).total == 3600);
 }
 
-TEST_CASE("net lockstep: two peers stay in sync for 700 frames (clean link)") {
+TEST_CASE("net lockstep: two peers stay in sync for 3000 frames (clean link)") {
+    // W9-05-14: was 700 frames, too short to reach the megamission cache-slot
+    // artefact the StubSim hashed at ~2,550 (ra2netpeer --selftest).
     World w;
     w.make(2, lan());
-    REQUIRE(w.run_until_frame(700, 20000));
+    REQUIRE(w.run_until_frame(3000, 90000));
     auto& a = *w.peers[0];
     auto& b = *w.peers[1];
     CHECK(a.last == FrameStatus::Proceed);
     CHECK(b.last == FrameStatus::Proceed);
     const size_t n = std::min(a.crcs.size(), b.crcs.size());
-    REQUIRE(n >= 700);
+    REQUIRE(n >= 3000);
     for (size_t i = 0; i < n; ++i) REQUIRE(a.crcs[i] == b.crcs[i]);
     CHECK(a.sim.executed > 50);
     CHECK(a.s->commands_sent() > 4);
@@ -280,4 +285,93 @@ TEST_CASE("W9-01-01: a fast pair runs at the lobby speed cap (speed 1 = 45 fps, 
     }
     CHECK(w.peers[0]->s->desired_fps() == 15u);
     CHECK(w.peers[1]->s->desired_fps() == 15u);
+}
+
+// ---------------------------------------------------------------------------
+// W9-05-12: malformed / forged packets are dropped, never executed, and the
+// honest peers stay in sync.
+
+TEST_CASE("net lockstep: forged sender house / far-future frame / non-master TIMING are dropped (W9-05-12)") {
+    World w;
+    w.make(3, lan());
+    REQUIRE(w.run_until_frame(300, 20000));
+    // Peer 1 (not the master) sends every kind of forged packet a few times
+    // (the engine's RA2_NET_FUZZ hook): impersonating another house, a frame
+    // 50000 ahead, a TIMING with absurd values, a megamission naming slot 200.
+    int sent = 0;
+    for (int pass = 0; pass < 40000 && sent < 12; ++pass) {
+        w.step();
+        if (w.peers[1]->s->frame() % 5 == 0 && w.peers[1]->s->frame() > 300 + static_cast<uint32_t>(sent) * 10) {
+            w.peers[1]->s->send_test_garbage(sent);
+            ++sent;
+        }
+    }
+    REQUIRE(sent == 12);
+    REQUIRE(w.run_until_frame(900, 40000));
+    auto& a = *w.peers[0];
+    for (int k : {0, 2}) {
+        const LockstepStats& st = w.peers[k]->s->stats();
+        INFO("peer " << k);
+        CHECK(st.rejected_packets >= 6);   // kinds 0 and 1, three times each
+        CHECK(st.rejected_events >= 3);    // the non-master TIMING
+        CHECK(w.peers[k]->s->max_ahead() <= kMaxMaxAhead);
+    }
+    CHECK(a.s->max_ahead() == w.peers[2]->s->max_ahead());
+    CHECK(a.s->frame_send_rate() == w.peers[1]->s->frame_send_rate());
+    for (int k = 1; k < 3; ++k) {
+        CHECK(w.peers[k]->last != FrameStatus::OutOfSync);
+        const size_t n = std::min(a.crcs.size(), w.peers[k]->crcs.size());
+        for (size_t i = 0; i < n; ++i) REQUIRE(a.crcs[i] == w.peers[k]->crcs[i]);
+    }
+}
+
+TEST_CASE("net lockstep: a megamission cache slot beyond 0-7 is refused by the decoder (W9-05-12)") {
+    // [04][count 0][23-byte payload with slot byte 9]: replaying "slot 9" of
+    // house 0 would read house 1's cache (0*8 + 9).
+    std::vector<uint8_t> pkt(kFrameHeaderSize, 0);
+    FrameHeader h;
+    h.house = 0;
+    h.frame = 100;
+    h.write(pkt.data());
+    EventDecoder dec;
+    // Seed house 1 slot 1 with a 3-unit list through a legal packet.
+    {
+        std::deque<Event> q;
+        for (uint32_t u = 1; u <= 3; ++u) {
+            ev::MegaMission m;
+            m.whom = TargetRef{u, 0x0F};
+            m.mission = 5;
+            q.push_back(ev::mega_mission(1, m));
+        }
+        std::vector<uint8_t> b(kMaxGamePacket + 8, 0);
+        FrameHeader h1;
+        h1.house = 1;
+        h1.frame = 100;
+        h1.write(b.data());
+        EventEncoder enc;
+        std::vector<Event> echo;
+        int n = 0;
+        const size_t len = enc.add_compressed(q, b.data(), kMaxGamePacket, kFrameHeaderSize, 16, 100, 1, 100, echo, 64, n);
+        b.resize(len);
+        std::vector<Event> out;
+        dec.extract(b.data(), b.size(), out);
+    }
+    size_t seeded = 0;
+    for (int s = 0; s < 8; ++s) seeded += dec.cached_count(1, s);
+    REQUIRE(seeded >= 2);   // house 1 has a cached list in some slot
+    for (int slot = 8; slot < 256; ++slot) {
+        std::vector<uint8_t> bad = pkt;
+        bad.push_back(static_cast<uint8_t>(EventType::MEGAMISSION));
+        bad.push_back(0);   // count 0: replay the cached list
+        std::vector<uint8_t> payload(23, 0);
+        payload[6] = static_cast<uint8_t>(slot);
+        bad.insert(bad.end(), payload.begin(), payload.end());
+        std::vector<Event> out;
+        dec.extract(bad.data(), bad.size(), out);
+        size_t megas = 0;
+        for (const Event& e : out)
+            if (e.type == static_cast<uint8_t>(EventType::MEGAMISSION)) ++megas;
+        INFO("slot " << slot);
+        CHECK(megas == 0);   // nothing replayed from another house's cache
+    }
 }

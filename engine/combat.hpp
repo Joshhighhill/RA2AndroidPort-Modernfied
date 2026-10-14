@@ -121,8 +121,8 @@ void deliver_building_hit(std::vector<Unit>& units, std::vector<Building>& build
 // agnostic (same "produce requests, let the caller act" shape as the rest of
 // the pure engine layer).
 struct MoveRequest {
-    int unit;
-    int goal_x, goal_y;
+    int unit = -1;
+    int goal_x = 0, goal_y = 0;   // W9-05: default-initialised (no indeterminate scalar)
     // true: `goal_x/goal_y` is the TARGET's own cell and the caller (World)
     // must resolve a distinct firing position near it (docs/re/
     // infantry-anim.md §7 -- the original never paths an attacker to the

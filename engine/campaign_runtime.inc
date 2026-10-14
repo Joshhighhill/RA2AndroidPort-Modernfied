@@ -2260,8 +2260,8 @@ private:
         }
         const std::string team_tag =
             tt.tag.empty() || camp::up(tt.tag) == "<NONE>" ? std::string() : tt.tag;
-        const int plane = w_.spawn_drop_plane("PDPLANE", tm.house, sx, sy, x, y, (int)std::lround(ex),
-                                              (int)std::lround(ey));
+        const int plane = w_.spawn_drop_plane("PDPLANE", tm.house, sx, sy, x, y, (int)ra2engine::om::lround(ex),
+                                              (int)ra2engine::om::lround(ey));
         if (plane >= 0) {
             placing_ = true;
             sync_tracks();   // the plane is not a team member

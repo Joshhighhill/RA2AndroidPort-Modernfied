@@ -549,10 +549,16 @@ private:
                     tg_.finger_up(1, x + 3, y + 2, t + 260);
                 }
             } else if (g == "drag" || g == "boxdrag" || g == "pan2") {
-                if (c.args.size() < 6) { fail(c, "touch " + g + " xy|cell X1 Y1 X2 Y2"); return kConsume; }
+                if (c.args.size() < 6) { fail(c, "touch " + g + " xy|cell X1 Y1 X2 Y2 | rel <target> FX1 FY1 FX2 FY2"); return kConsume; }
                 Cmd a = c, b = c;
-                a.args = {c.args[1], c.args[2], c.args[3]};
-                b.args = {c.args[1], c.args[4], c.args[5]};
+                if (lower(c.args[1]) == "rel") {   // w9int: both ends relative to one target's rectangle
+                    if (c.args.size() < 7) { fail(c, "touch " + g + " rel <target> FX1 FY1 FX2 FY2"); return kConsume; }
+                    a.args = {c.args[1], c.args[2], c.args[3], c.args[4]};
+                    b.args = {c.args[1], c.args[2], c.args[5], c.args[6]};
+                } else {
+                    a.args = {c.args[1], c.args[2], c.args[3]};
+                    b.args = {c.args[1], c.args[4], c.args[5]};
+                }
                 int x1, y1, x2, y2;
                 if (!point_of(a, p, 0, x1, y1) || !point_of(b, p, 0, x2, y2)) return kConsume;
                 uint32_t tt = t;
@@ -718,6 +724,24 @@ private:
         return name;
     }
 
+    static bool is_number(const std::string& a) {
+        if (a.empty()) return false;
+        std::size_t k = (a[0] == '-' || a[0] == '+') ? 1 : 0;
+        if (k >= a.size()) return false;
+        for (; k < a.size(); ++k)
+            if (std::isdigit(static_cast<unsigned char>(a[k])) == 0 && a[k] != '.') return false;
+        return true;
+    }
+    // A probe target's window rectangle (`rel` points).
+    bool target_rect(const Cmd& c, Probe& p, const std::string& name, Rect& r) {
+        const auto it = p.targets.find(name);
+        if (it == p.targets.end()) {
+            fail(c, "no target '" + name + "' on scene '" + p.scene + "'");
+            return false;
+        }
+        r = it->second;
+        return true;
+    }
     bool point_of(const Cmd& c, Probe& p, std::size_t i, int& x, int& y) {
         const std::string k = lower(c.args[i]);
         // B's bare form "click X Y" = window pixels.
@@ -725,6 +749,25 @@ private:
             std::isdigit(static_cast<unsigned char>(c.args[i + 1][0])) != 0) {
             x = std::atoi(c.args[i].c_str());
             y = std::atoi(c.args[i + 1].c_str());
+            return true;
+        }
+        // w9int: `rel <target> FX FY [DX DY]` -- a point relative to a target's
+        // rectangle (FX / FY: 0 = left / top edge, 1 = right / bottom edge;
+        // DX / DY: window pixels added), so a script follows a layout change.
+        if (k == "rel") {
+            if (c.args.size() < i + 4) { fail(c, "rel <target> FX FY [DX DY]"); return false; }
+            Rect r;
+            if (!target_rect(c, p, c.args[i + 1], r)) return false;
+            const double fx = std::atof(c.args[i + 2].c_str()), fy = std::atof(c.args[i + 3].c_str());
+            int dx = 0, dy = 0;
+            if (c.args.size() >= i + 6 && is_number(c.args[i + 4]) && is_number(c.args[i + 5])) {
+                dx = std::atoi(c.args[i + 4].c_str());
+                dy = std::atoi(c.args[i + 5].c_str());
+            }
+            x = r.x + static_cast<int>(std::floor(fx * r.w + 0.5)) + dx;
+            y = r.y + static_cast<int>(std::floor(fy * r.h + 0.5)) + dy;
+            if (fx >= 1.0 && dx == 0) x = r.x + r.w - 1;   // the last pixel inside, not the next one
+            if (fy >= 1.0 && dy == 0) y = r.y + r.h - 1;
             return true;
         }
         if (k == "xy") {

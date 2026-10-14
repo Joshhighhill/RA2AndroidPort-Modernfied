@@ -301,7 +301,7 @@ void World::ability_area_damage(int src_unit, double cx, double cy, const Weapon
     if (z_abs == kZOfSource)
         z_abs = (src_unit >= 0 && src_unit < static_cast<int>(units_.size()))
                     ? unit_abs_z(units_[static_cast<std::size_t>(src_unit)])
-                    : cell_level(static_cast<int>(std::lround(cx)), static_cast<int>(std::lround(cy))) * 104;
+                    : cell_level(static_cast<int>(om::lround(cx)), static_cast<int>(om::lround(cy))) * 104;
     const int iz = z_abs;
     // P4 [RE: FUN_00700DA0 @0x701327]: a lethal CausesDelayKill hit on an
     // EligibleForDelayKill building starts the delay instead.
@@ -632,8 +632,8 @@ void World::ability_death_pass() {
                     // weapon (the Nuclear Reactor's NukePayload, RadLevel 500)
                     // leaves its fallout like a unit's (§F above).
                     if (tw.death.rad_level > 0)
-                        rad_.detonate(static_cast<int>(std::lround(bld_cx(bb))),
-                                      static_cast<int>(std::lround(bld_cy(bb))),
+                        rad_.detonate(static_cast<int>(om::lround(bld_cx(bb))),
+                                      static_cast<int>(om::lround(bld_cy(bb))),
                                       ability_ftol(tw.death.cell_spread), tw.death.rad_level,
                                       ability_frame_, ability_rules_);
                 }
