@@ -85,6 +85,6 @@ sweep(1, 160, "TESLA")
 for k in range(60):   # hunt the last units (AllToHunt sends most of them to us)
     for h in (1, 2):
         g = f"outcome == RUNNING and units({h}) > 0"
-        p.add(*SEL(g), f"if {g} then click unit {h}:*:0", f"if {g} then wait 200", f"if {g} then dump")
+        p.add(*SEL(g), f"if {g} then click unit {h}:*:0 soft", f"if {g} then wait 200", f"if {g} then dump")
 p.add("until 3000 outcome == WON", "dump", "end expect WON")
 p.save(OUT)
