@@ -4720,6 +4720,8 @@ pwsh scripts/play/net-match.ps1                      # two processes, LAN lobby,
                                                      # (+ chat and an Android-style AWAY / BACK from the joiner)
 pwsh scripts/play/net-match.ps1 -Online              # same through a local ra2lobbyd + the V3 tunnel
 pwsh scripts/play/net-match.ps1 -DesyncAt 600        # joiner diverges at 600: both stop out of sync + dumps
+pwsh scripts/play/net-match.ps1 -Fuzz                # W9-05-12: joiner also sends forged packets; host drops them, trails identical
+pwsh scripts/play/net-match.ps1 -VersionMismatch     # W9-05-02: joiner is "another build"; both lobbies say so, no match
 pwsh scripts/play/mp-lan-loopback.ps1                # lobby agreement (now ends in the running match)
 pwsh scripts/play/mp-online-loopback.ps1
 ```

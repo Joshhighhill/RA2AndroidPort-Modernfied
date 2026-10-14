@@ -304,6 +304,8 @@ std::uint64_t world_sync_hash(const World& w, const MapTriggerSystem* triggers =
 // W9-05: the digest World::set_player_econ_rules keeps per house (hashed in
 // place of the unsaved rules themselves).
 std::uint64_t econ_rules_digest(const PlayerEconRules& r);
+// The same, per field (and per unit def): the desync dump names what differs.
+std::vector<std::pair<std::string, std::uint64_t>> econ_rules_field_digests(const PlayerEconRules& r);
 // Overwrites EVERY serialized member of `w` (all but the MapFile pointer).
 // `w` must have been constructed from the same map. Returns false on a
 // truncated/corrupt blob (w is then in an unspecified-but-valid state).

@@ -352,7 +352,7 @@ with large `until` budgets (`until 2000000 humans == 2`). Two-process tests:
 50010) and `scripts/play/mp-online-loopback.ps1` (also starts `ra2lobbyd
 --allow-loopback`; the join goes through the room list and the CnCNet V3
 tunnel). Both check that the two games agree on the seed and options string
-and that the match starts. `scripts/play/net-match.ps1` [`-Online`] [`-DesyncAt N`]
+and that the match starts. `scripts/play/net-match.ps1` [`-Online`] [`-DesyncAt N`] [`-Fuzz`] [`-VersionMismatch`]
 plays a whole 3000-frame match between two processes (net-*-host/join.play)
 and compares the two machines' sync-hash trails (`[net] trail f=N crc=X`
 on stderr); in a match Enter opens the chat line (`type`, `key enter`).

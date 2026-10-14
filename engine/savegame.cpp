@@ -58,6 +58,28 @@ std::uint64_t econ_rules_digest(const PlayerEconRules& r) {
     return h.h;
 }
 
+std::vector<std::pair<std::string, std::uint64_t>> econ_rules_field_digests(const PlayerEconRules& r0) {
+    PlayerEconRules& r = const_cast<PlayerEconRules&>(r0);
+    std::vector<std::pair<std::string, std::uint64_t>> out;
+    auto d = [&out](const char* n, auto& v) {
+        SyncHasher h;
+        io(h, v);
+        out.emplace_back(n, h.h);
+    };
+    d("units", r.units); d("unit_anims", r.unit_anims); d("unit_has_anim", r.unit_has_anim);
+    d("factory_types", r.factory_types); d("groups", r.groups); d("water_bound", r.water_bound);
+    d("wall", r.wall); d("wall_fill_range", r.wall_fill_range); d("buildup_total", r.buildup_total);
+    d("base_normal", r.base_normal); d("bld_allowed", r.bld_allowed); d("unit_build_limit", r.unit_build_limit);
+    d("build_speed", r.build_speed); d("low_power_mod", r.low_power_mod); d("multiple_factory", r.multiple_factory);
+    d("wall_coefficient", r.wall_coefficient); d("max_queued", r.max_queued); d("wall_rules", r.wall_rules);
+    for (std::size_t i = 0; i < r.units.size(); ++i) {
+        SyncHasher h;
+        io(h, r.units[i]);
+        out.emplace_back("unit " + r.units[i].id, h.h);
+    }
+    return out;
+}
+
 bool load_world(World& w, const std::vector<std::uint8_t>& bytes) {
     Reader r(bytes);
     SaveAccess::world(r, w);
