@@ -27,17 +27,26 @@ words.
 
 ### 1. Get the game files
 
-Copy these files from your Red Alert 2 install folder (the folder that holds
-`ra2.mix`):
+Open your Red Alert 2 install folder (the folder that holds `ra2.mix`) and
+copy **every `.mix` and `.csf` file** in it, about 1 GB in total. That is the
+easy way to make sure nothing is missing. You can leave out the `.exe`, `.dll`
+and other files.
+
+What the files are for:
 
 | File | Needed? | Used for |
 |---|---|---|
-| `ra2.mix`, `ra2md.mix`, `language.mix`, `multimd.mix` | **yes** | rules, art, units, voices, menus, skirmish maps |
-| `langmd.mix`, `mapsmd03.mix`, `theme.mix`, `expand01.mix`, `ra2.csf` | no | map names, default map, music, patch rules, strings |
-| `Maps01.mix`, `MAPS02.MIX` | no | Allied / Soviet campaign maps |
+| `ra2.mix`, `ra2md.mix`, `language.mix`, `multimd.mix` | **required** | rules, art, units, sounds, voices, menus, skirmish maps |
+| `langmd.mix`, `ra2.csf` | recommended | Yuri's Revenge names and text |
+| `theme.mix`, `thememd.mix` | recommended | music (Red Alert 2 and Yuri's Revenge soundtracks) |
+| `Maps01.mix`, `MAPS02.MIX`, `mapsmd03.mix` | recommended | Allied and Soviet campaign maps, default map |
+| `expand01.mix`, `ecache01.mix`, `expandmd01.mix` … | if present | official patch data |
+| `MOVIES01.MIX`, `MOVIES02.MIX`, `MOVMD03.MIX` | if present | campaign cutscenes; some digital versions ship them as tiny placeholder files |
 
-That is about 750 MB. If a required file is missing, the game opens a
-**GAME FILES NEEDED** page that lists what is missing and where it looked.
+Only the four required files stop the game from starting. Without the
+others you lose that part of the game: music, campaigns, cutscenes or patch
+rules. If a required file is missing, the game opens a **GAME FILES NEEDED**
+page that lists what is missing and where it looked.
 
 ### 2a. Windows
 

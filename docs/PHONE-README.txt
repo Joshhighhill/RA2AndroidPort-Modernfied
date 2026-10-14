@@ -8,8 +8,9 @@ RA2 Engine - phone install
    update the old saves are listed as "Older version" and cannot be
    loaded. Finish a mission before you update.
 
-2. Copy the whole RA2 folder (11 files, ~712 MB) into the phone's
-   Download folder, so you have Download/RA2/ra2.mix etc.
+2. Copy the whole RA2 folder (every .mix and .csf file from your Red Alert 2
+   install, about 1 GB) into the phone's Download folder, so you have
+   Download/RA2/ra2.mix etc. Include thememd.mix (the Yuri's Revenge music).
 
 3. Open RA2 Engine -> "Import game files". The picker opens at
    Download/RA2. IMPORTANT: select the RA2 folder itself (Android does not

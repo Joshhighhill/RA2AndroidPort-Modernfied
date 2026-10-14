@@ -7,23 +7,26 @@ Electronic Arts. See the "Legal" section of the main README.
 
 ## 1. The game files you need
 
-Copy these from the folder where Red Alert 2 (with Yuri's Revenge) is
-installed, the one that holds `ra2.mix`:
+Open the folder where Red Alert 2 (with Yuri's Revenge) is installed, the one
+that holds `ra2.mix`, and copy **every `.mix` and `.csf` file** in it (about
+1 GB). That is the easy way to make sure nothing is missing; the `.exe`,
+`.dll` and other files are not needed.
 
-| File | Required | Used for |
+| File | Needed? | Used for |
 |---|---|---|
-| `ra2.mix` | yes | rules, art, theaters, units, menus |
-| `ra2md.mix` | yes | rulesmd / artmd / soundmd, voxels |
-| `language.mix` | yes | voices, EVA, cameos, strings |
-| `multimd.mix` | yes | the skirmish maps |
-| `langmd.mix` | no | skirmish map names |
-| `mapsmd03.mix` | no | the default map |
-| `theme.mix` | no | music |
-| `expand01.mix` | no | the campaign rules patch |
-| `Maps01.mix`, `MAPS02.MIX` | no | Allied / Soviet campaign maps |
-| `ra2.csf` | no | the patched string table |
+| `ra2.mix` | required | rules, art, theaters, units, menus |
+| `ra2md.mix` | required | rulesmd / artmd / soundmd, voxels |
+| `language.mix` | required | voices, EVA, cameos, strings |
+| `multimd.mix` | required | the skirmish maps |
+| `langmd.mix` | recommended | Yuri's Revenge strings, skirmish map names |
+| `ra2.csf` | recommended | the patched string table |
+| `theme.mix`, `thememd.mix` | recommended | music (RA2 and Yuri's Revenge soundtracks) |
+| `Maps01.mix`, `MAPS02.MIX` | recommended | Allied / Soviet campaign maps |
+| `mapsmd03.mix` | recommended | the default map |
+| `expand01.mix`, `ecache01.mix`, `expandmd01.mix` ... | if present | official patch data |
+| `MOVIES01.MIX`, `MOVIES02.MIX`, `MOVMD03.MIX` | if present | campaign cutscenes (some digital versions ship 4-byte placeholders) |
 
-About 750 MB in total. Without a required file the engine shows a
+Without a required file the engine shows a
 **GAME FILES NEEDED** page that lists what is missing and where it looked.
 Without an optional file you lose only that feature; for example, starting a
 campaign without `Maps01.mix` shows an error page that names the file and
@@ -70,14 +73,12 @@ build (the log prints in the terminal).
    copy them over USB (file transfer), or use adb:
    ```powershell
    adb shell mkdir -p /sdcard/Download/RA2
-   foreach ($f in "ra2.mix","ra2md.mix","language.mix","langmd.mix","multimd.mix",
-                  "mapsmd03.mix","theme.mix","expand01.mix","Maps01.mix","MAPS02.MIX","ra2.csf") {
-     adb push "C:\path\to\Red Alert 2\$f" /sdcard/Download/RA2/
-   }
+   Get-ChildItem "C:\path\to\Red Alert 2\*" -Include *.mix,*.csf |
+     ForEach-Object { adb push $_.FullName /sdcard/Download/RA2/ }
    ```
 3. Open **RA2 Engine**. The first screen lists the missing files. Tap
    **Import game files**, choose the `RA2` folder and allow access. The app
-   copies the files into its own storage (about 750 MB, which takes a minute)
+   copies the files into its own storage (about 1 GB, which takes a minute or two)
    and then starts the game.
 
 Alternative: copy the files over USB (MTP) straight into
