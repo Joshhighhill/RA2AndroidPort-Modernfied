@@ -4,6 +4,9 @@
 > files you need, desktop and Android install, mouse and touch controls, and
 > troubleshooting. Version: `VERSION` (`ra2engine --version`).
 >
+> **Unofficial fan project.** This is a non-commercial, fan-made reimplementation.
+> You need your own legally owned copy of Red Alert 2 with Yuri's Revenge to play.
+>
 > **Legal.** This repository contains an engine only (license: [`LICENSE`](LICENSE);
 > third-party code: [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)). It does
 > not include and does not distribute any Command & Conquer: Red Alert 2 /
@@ -12,6 +15,9 @@
 > "Red Alert" are trademarks of Electronic Arts Inc. This project is not
 > affiliated with, endorsed by or sponsored by Electronic Arts. The art,
 > logos, sounds and text shown at run time come from the player's own files.
+> The behaviour notes in `docs/re/` describe how the original game behaves, in
+> our own words, so that the engine can match it; they contain no Electronic
+> Arts source code, art, audio or map files.
 
 A portable C++17 library that decodes Red Alert 2 / Yuri's Revenge game data
 (`ra2assets`: MIX archives, PAL palettes, SHP sprites, VXL/HVA voxel models
