@@ -14,7 +14,13 @@ type "Hosty"
 key enter
 click button "Host Game"
 require scene == mp-lobby
-assert max_players >= 3
+# A 4-player map (the default one has 2 starts): room for the AI in slot 2.
+click button "Customize Battle"
+require choosing == 1
+click map:xarena.map
+click button "Use Map"
+require choosing == 0
+assert max_players == 4
 click combo:country0
 click pick:America
 click combo:kind2
@@ -31,7 +37,7 @@ require net == 1
 assert local_house == 0
 until 600000 sim_frame >= 40
 log waiting for the joiner to surrender
-until 3000000 defeated(1) == 1                            @W9-05-06
+until 20000 defeated(1) == 1                            @W9-05-06
 assert defeated(0) == 0
 assert observer == 0
 assert game_over == 0                                     @W9-05-04

@@ -43,11 +43,11 @@ click "menu:ABORT MISSION"
 wait 2
 assert menu_page == "abort"
 click "menu:OBSERVE"                                      @W9-05-06
-until 600000 observer == 1                                @W9-05-05
+until 20000 observer == 1                                @W9-05-05
 assert net_left == 0                                      @W9-05-05
 assert defeated(1) == 1
 assert radar_on == 1                                      @W9-05-05
-until 600000 explored_pct >= 99                           @W9-05-05
+until 20000 explored_pct >= 99                           @W9-05-05
 assert scene == game
 shot observer_view
 waituntil 6000000 sim_frame >= 1500 or net_end == 1

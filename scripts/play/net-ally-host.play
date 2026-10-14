@@ -17,7 +17,13 @@ type "Hosty"
 key enter
 click button "Host Game"
 require scene == mp-lobby
-assert max_players >= 3
+# A 4-player map (the default one has 2 starts): room for the AI in slot 2.
+click button "Customize Battle"
+require choosing == 1
+click map:xarena.map
+click button "Use Map"
+require choosing == 0
+assert max_players == 4
 click combo:country0
 click pick:America
 # Slot 2: an Easy AI (the joiner takes the first open slot, 1).
@@ -49,11 +55,11 @@ assert dip_ally_enabled(1) == 1                           @W9-05-03
 assert dip_ally_enabled(2) == 0                           # ToggleAlliance: humans only
 assert dip_ally(1) == 0
 click dip:ally:1
-until 600000 ally_view(1) == 1                            @W9-05-03
+until 20000 ally_view(1) == 1                            @W9-05-03
 assert ally_of_me(1) == 0                                 # one way until Joiner answers
 assert dip_events >= 1
 log waiting for the reply
-until 1200000 ally_of_me(1) == 1                          @W9-05-03
+until 20000 ally_of_me(1) == 1                          @W9-05-03
 assert dip_events >= 2
 assert ally_view(2) == 0
 
