@@ -23,11 +23,12 @@ bool touch_banner_visible() const {
 }
 // Armed-mode instructions and cancel sit above the shortcut dock.
 SDL_Rect touch_banner_rect() const {
-    return SDL_Rect{8, touch_bar_top() - 60, std::max(120, playfield_w_ - 16), 56};
+    const auto b = ra2engine::TouchBarLayout::banner(playfield_w_,touch_bar_top());
+    return SDL_Rect{b.x,b.y,b.w,b.h};
 }
 SDL_Rect touch_cancel_rect() const {
     const SDL_Rect b = touch_banner_rect();
-    return SDL_Rect{b.x + b.w - 56, b.y, 56, 56};
+    return SDL_Rect{b.x+b.w-44,b.y+2,44,44};
 }
 static bool in_rect(const SDL_Rect& r, int x, int y) {
     return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
@@ -48,20 +49,20 @@ void touch_cancel_mode() {
 }
 void draw_touch_mode_banner(SDL_Renderer* ren) {
     if (!touch_banner_visible()) return;
-    static const char* kText[5] = {"", "SELL - TAP A BUILDING, TAP AGAIN TO SELL",
-                                   "REPAIR - TAP A BUILDING, TAP AGAIN TO REPAIR",
-                                   "PLACE - TAP THE GROUND, TAP AGAIN TO BUILD",
-                                   "TARGET - TAP THE MAP, TAP AGAIN TO FIRE"};
+    static const char* kTitle[5] = {"", "SELL BUILDING", "REPAIR BUILDING", "PLACE BUILDING", "TARGET ABILITY"};
+    static const char* kHelp[5] = {"", "Tap twice to sell", "Tap twice to repair", "Tap twice to build", "Tap twice to fire"};
     const SDL_Rect b = touch_banner_rect();
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(ren, 20, 24, 28, 0xC8);
     SDL_RenderFillRect(ren, &b);
     SDL_SetRenderDrawColor(ren, 230, 190, 60, 0xF0);
     SDL_RenderDrawRect(ren, &b);
-    const std::string aim = touch_aim_text();   // W6-01-02 / -07
-    const std::string line = aim.empty() ? std::string(kText[touch_mode()]) : aim;
-    const int scale = static_cast<int>(line.size()) * 12 <= b.w - 76 ? 2 : 1;
-    draw_text(ren, line, b.x + 10, b.y + (b.h - 7 * scale) / 2, scale, 240, 220, 120);
+    const int max_chars = std::max(1,(b.w-60)/6);
+    const std::string aim = touch_aim_text();
+    const std::string title = std::string(kTitle[touch_mode()]).substr(0,max_chars);
+    const std::string detail = (aim.empty() ? std::string(kHelp[touch_mode()]) : aim).substr(0,max_chars);
+    draw_text(ren,title,b.x+8,b.y+9,1,240,220,120);
+    draw_text(ren,detail,b.x+8,b.y+28,1,220,215,180);
     const SDL_Rect c = touch_cancel_rect();
     SDL_SetRenderDrawColor(ren, 150, 40, 30, 0xE0);
     SDL_RenderFillRect(ren, &c);
@@ -290,13 +291,6 @@ bool touch_snap_sidebar(ra2engine::InputEvent& ev) const {
 bool touch_ui_handle(ra2engine::InputEvent& ev) {
     if (!ev.touch) return false;
     if (cameo_menu_handle(ev)) return true;   // W6-01-03 cameo popup
-    // The mode banner's [X].
-    if (touch_banner_visible() && (ev.kind == ra2engine::InputEvent::PointerDown ||
-                                   ev.kind == ra2engine::InputEvent::PointerUp) &&
-        in_rect(touch_cancel_rect(), ev.x, ev.y)) {
-        if (ev.kind == ra2engine::InputEvent::PointerUp) touch_cancel_mode();
-        return true;
-    }
     // W4-AM-11: an open briefing closes on the next tap.
     if (show_briefing_ && ev.kind == ra2engine::InputEvent::PointerDown &&
         !(sidebar_up_ && lay_.contains(ev.x, ev.y))) {
@@ -439,3 +433,19 @@ void draw_cameo_menu(SDL_Renderer* ren) {
     }
 }
 int cm_type_ = -1, cm_tab_ = -1, cm_x_ = 0, cm_y_ = 0, cm_h_ = 0;
+
+ra2engine::TouchBannerCapture touch_banner_capture_;
+bool touch_banner_handle(ra2engine::InputEvent& ev) {
+    if(!ev.touch) return false;
+    using C=ra2engine::TouchBannerCapture;
+    auto phase=C::Other;
+    if(ev.kind==ra2engine::InputEvent::PointerDown) phase=C::Down;
+    else if(ev.kind==ra2engine::InputEvent::PointerUp) phase=C::Up;
+    else if(ev.kind==ra2engine::InputEvent::PointerMove) phase=C::Move;
+    else if(ev.kind==ra2engine::InputEvent::Pan) phase=C::Pan;
+    const auto b=touch_banner_rect(),c=touch_cancel_rect();
+    const auto result=touch_banner_capture_.route(phase,ev.x,ev.y,ev.x0,ev.y0,touch_banner_visible(),
+        {b.x,b.y,b.w,b.h},{c.x,c.y,c.w,c.h});
+    if(result==C::Cancel) touch_cancel_mode();
+    return result!=C::Pass;
+}
