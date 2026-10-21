@@ -1,22 +1,25 @@
 #pragma once
 #include <algorithm>
-
 namespace ra2engine {
-// Shared by drawing, input hit testing and the diagnostics targets.
 struct TouchBarLayout {
     struct Rect { int x, y, w, h; };
-    static constexpr int columns = 9;
-    static constexpr int height = 56, gap = 2, margin = 8;
+    static constexpr int columns = 4, height = 56, gap = 4, margin = 8;
+    static constexpr int panel_width = 300, header_height = 52;
     static int top(int viewport_height, int count) {
-        return viewport_height - margin - height - (count > columns ? height + gap : 0);
+        const int content = count == 13 ? 164 : ((count + 3) / 4) * 60 - 4;
+        return viewport_height - margin - content - header_height;
     }
     static Rect button(int viewport_width, int viewport_height, int count, int index) {
-        const int row = index / columns;
-        const int row_count = std::min(columns, count - row * columns);
-        const int width = std::min(50, std::max(1, (viewport_width - 2 * margin - (columns - 1) * gap) / columns));
-        const int row_width = row_count * width + (row_count - 1) * gap;
-        return {(viewport_width - row_width) / 2 + (index % columns) * (width + gap),
-                viewport_height - margin - height - row * (height + gap), width, height};
+        const int pw = std::min(panel_width, viewport_width - 2 * margin);
+        if (count == 13 && index >= 8) {
+            const int w = (pw - 16) / 5;
+            return {margin + (index - 8) * (w + gap), viewport_height - margin - 164,
+                    w, 44};
+        }
+        const int rows = count == 13 ? 2 : (count + 3) / 4;
+        const int w = (pw - 12) / 4;
+        return {margin + (index % 4) * (w + gap),
+                viewport_height - margin - (rows * 60 - 4) + (index / 4) * 60, w, height};
     }
 };
 }

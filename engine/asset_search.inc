@@ -74,3 +74,24 @@ inline std::shared_ptr<ra2assets::Palette> asset_art_palette(const std::string& 
         return nullptr;
     }
 }
+
+// Missing legacy cameos may live in patch or Yuri archives. Keep the legacy
+// hit unchanged, then use the shared ordered search for absent icons.
+inline bool asset_cameo_fallback(const std::string& name, ra2assets::ShpFile& out) {
+    std::string file = name;
+    for (char& c : file) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (file.size() < 4 || file.substr(file.size()-4) != ".shp") file += ".shp";
+    std::vector<uint8_t> raw;
+    if (!asset_read(file, raw)) {
+        std::cerr << "[cameo] missing " << file << " in imported archives\n";
+        return false;
+    }
+    try {
+        out = ra2assets::ShpFile::load(raw);
+        std::cerr << "[cameo] fallback " << file << " from " << asset_fs().where(file) << "\n";
+        return out.count() > 0;
+    } catch (const std::exception& ex) {
+        std::cerr << "[cameo] invalid " << file << ": " << ex.what() << "\n";
+        return false;
+    }
+}

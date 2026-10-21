@@ -50,6 +50,8 @@ std::vector<AssetMixSpec> asset_search_order(const TheaterChain* chain,
     ra2(c->iso_mix);                                   // ISOTEMP / ISOSNOW / ISOURB
     ra2("isogen.mix");
     ra2("neutral.mix");
+    out.push_back({"language.mix", "cameo.mix"});
+    out.push_back({"cameo.mix", ""});
     // [RE-FALLBACK] SNOW: Init_Theater never opens GENERIC.MIX for a snow
     // scenario that is the session's first (prev theater -1); a session that
     // played a non-snow map first still has it open. The clone keeps it as
@@ -66,6 +68,9 @@ std::vector<AssetMixSpec> asset_search_order(const TheaterChain* chain,
     md("genermd.mix");
     md("isogenmd.mix");
     md("cameomd.mix");
+    out.push_back({"langmd.mix", "cameomd.mix"});
+    out.push_back({"language.mix", "cameomd.mix"});
+    out.push_back({"cameomd.mix", ""});
     // Theater md overlays: "%sMD.MIX" over the theater names.
     const std::string an = lower(c->art_mix);          // "temperat.mix"
     md(an.substr(0, an.size() - 4) + "md.mix");        // temperatmd.mix / snowmd.mix / urbanmd.mix

@@ -65,3 +65,13 @@ Test 1 accidentally used Android Studio's internal injected ABI option, marking 
 
 ## Bottom shortcut dock (test 3)
 The primary command row remains visible at the bottom centre of the tactical viewport. CMD toggles the second row, initially expanded. The extra row collapses after a one-shot action; there is no idle timeout. The mode banner and first-use hints stack above the dock. Gesture thresholds and game command handlers are unchanged.
+
+## Test 4: bottom-left unit panel and missing cameo search
+
+The native panel now sits at bottom left. Main page: Stop, Guard, Deploy/Undeploy/Unload (Action for a mixed selection), Scatter, Force fire, Force move, Add selection, More; groups 1–5 remain visible above the actions. More retains BOX, teams 6–10, views and navigation. Deployment is available only for supported selected units or an occupied owned garrison. Unit portrait uses loaded roster cameo when available; otherwise an explicit UNIT fallback and rules identifier are shown. No game artwork ships in the APK.
+
+Command icons are drawn from engine primitives with readable labels. Double-tap same-type selection and existing pan/hold-box gestures are unchanged. Panel gaps/header consume taps and panel-origin drags; map-origin selection drags still receive their release when crossing the panel.
+
+Unit/building cameo loaders now fall back to the shared archive search when the legacy language.mix/cameo.mix lookup fails. Search includes language cameo archives, Yuri cameo archives and existing patches. Truly absent pictures show the item ID and NO ART; logs identify missing/invalid cameo files. This is not proof every missing icon on the tester's installation is fixed; actual files and affected unit IDs are still needed to verify.
+
+Validation for this change: 15 gesture/layout cases, 13,315 assertions; 4 asset search cases, 33 assertions. Real-install asset test excluded because retail files are unavailable here. Phone visuals, capability behaviour and icon recovery still require user testing. Resolution settings and wider Yuri gameplay issues remain future work.

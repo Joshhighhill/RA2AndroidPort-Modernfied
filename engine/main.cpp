@@ -2205,6 +2205,8 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
                 }
             }
 
+            if (!have_cameo) have_cameo = asset_cameo_fallback(d.cameo, cshp);
+
             if (e.vehicle && !art.voxel(image) &&
                 to_lower(rules.section_string(e.id, "Locomotor", "")).find("2bea74e1") != std::string::npos) {
                 // W2-AN-15 [RE: artmd [DLPH]/[SQD] Voxel=no WalkFrames= FiringFrames=]:
@@ -2818,6 +2820,7 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
                         slot.has_cameo = true;
                     }
                 } catch (const std::exception&) { slot.has_cameo = false; }
+                if (!slot.has_cameo) slot.has_cameo = asset_cameo_fallback(d.cameo, slot.cameo);
             }
         } catch (const std::exception& ex) {
             std::cerr << "[building] " << id << " main image missing (" << ex.what() << ")\n";
@@ -5458,6 +5461,14 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
                 blit_shp(ren, tc, "cam:" + ba.roster[type].id, ba.art[type].cameo, 0, ba.cameo_pal,
                          c.rect.x, c.rect.y);
         }
+        const bool picture = unit_tab ? (type < static_cast<int>(ur->has_cameo.size()) && ur->has_cameo[type]) : ba.art[type].has_cameo;
+        if (!picture) {
+            SDL_SetRenderDrawColor(ren,35,43,40,255); SDL_RenderFillRect(ren,&c.rect);
+            SDL_SetRenderDrawColor(ren,120,100,70,255); SDL_RenderDrawRect(ren,&c.rect);
+            const std::string tag = (unit_tab ? ur->defs[type].id : ba.roster[type].id).substr(0,8);
+            draw_text(ren,tag,c.rect.x+3,c.rect.y+8,1,220,205,170);
+            draw_text(ren,"NO ART",c.rect.x+3,c.rect.y+25,1,160,155,130);
+        }
         // CB-5 [RE: techtree.md §1]: unit tabs now compute buildability too (was
         // building-tabs-only). Unit cameo availability reuses can_start_unit
         // against the SAME predicate; building cameos keep can_start. Render-only;
@@ -7340,7 +7351,7 @@ public:
         draw_beacons(ren, tc);    // W9-05-08: own + mutual allies' beacons
         draw_messages(ren, tc);   // W2-UI-21 (game saved, defeated, low power)
         draw_timer_stack(ren, tc);   // W6-05-04/05 mission timer + SW countdowns
-        draw_touch_bar(ren);      // W2-AR-08 (touch only)
+        draw_touch_bar(ren, tc);      // W2-AR-08 (touch only)
         draw_touch_aim(ren);           // W6-01-02 / -07 (touch only)
         draw_touch_mode_banner(ren);   // W4-AM-03 (touch only)
         draw_touch_hint(ren);          // W4-AM-01 (touch only)

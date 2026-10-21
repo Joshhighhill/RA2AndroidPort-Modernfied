@@ -97,3 +97,13 @@ TEST_CASE("AssetFS: real install -- landmarks, snow art, patch art, YR civilians
     for (const auto& m : sno.mixes()) has_ecache |= m.first == "ecache01.mix";
     CHECK(has_ecache);
 }
+
+TEST_CASE("cameo archives are searchable without losing RA2-before-Yuri ordering") {
+    const auto o = asset_search_order(theater_chain("TEMPERATE"), {"expand01.mix"});
+    CHECK(index_of(o,"language.mix/cameo.mix") >= 0);
+    CHECK(index_of(o,"cameo.mix") >= 0);
+    CHECK(index_of(o,"langmd.mix/cameomd.mix") >= 0);
+    CHECK(index_of(o,"cameomd.mix") >= 0);
+    CHECK(index_of(o,"expand01.mix") < index_of(o,"language.mix/cameo.mix"));
+    CHECK(index_of(o,"language.mix/cameo.mix") < index_of(o,"ra2md.mix"));
+}
