@@ -229,7 +229,7 @@ bool find_reachable_ore(const OreField& ore, const std::vector<std::uint8_t>& pa
 }
 
 int nearest_refinery(const std::vector<Building>& buildings,
-                     const std::vector<BuildingTypeDef>& /*types*/,
+                     const std::vector<BuildingTypeDef>& types,
                      const std::vector<int>& refinery_types, int house, int x, int y) {
     int best = -1;
     int best_dist = INT_MAX;
@@ -237,6 +237,7 @@ int nearest_refinery(const std::vector<Building>& buildings,
         const Building& b = buildings[i];
         if (!b.alive || b.state != Building::State::Idle) continue;
         if (b.house != house) continue;
+        if (b.type >= 0 && b.type < static_cast<int>(types.size()) && types[b.type].slave_count > 0) continue;
         bool is_ref = false;
         for (int rt : refinery_types) {
             if (b.type == rt) { is_ref = true; break; }
@@ -286,6 +287,12 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
             u.is_aircraft)
             continue;  // carried harvester: mission FSM parks (CB-1); CB-2: an
                        // aircraft is never a harvester (data-unreachable, guarded)
+        if (u.w7.slave_manager >= 0) {
+            const int manager = u.w7.slave_manager;
+            if (manager >= static_cast<int>(buildings.size()) || !buildings[manager].alive ||
+                buildings[manager].state != Building::State::Idle || buildings[manager].house != u.house) continue;
+            u.dock_refinery = manager;
+        }
 
         // Auto-resume after a manual move order [RE-GATE APPLIED §1 PROBABLE:
         // "was harvesting" flag restores the mission once the ordered move
@@ -434,6 +441,7 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                 // refinery that answered it].
                 int ref = u.dock_refinery;
                 bool fresh_pick = false;
+                if (u.w7.slave_manager >= 0) ref = u.w7.slave_manager;
                 if (ref < 0 || ref >= (int)buildings.size() ||
                     !buildings[(size_t)ref].alive ||
                     buildings[(size_t)ref].state != Building::State::Idle) {

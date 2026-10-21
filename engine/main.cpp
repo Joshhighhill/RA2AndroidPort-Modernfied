@@ -2419,7 +2419,7 @@ int spawn_harvester(ra2engine::World& world, const VehicleAssets& va, bool chron
 std::vector<int> refinery_type_indices(const BuildingAssets& ba, const Rules& rules) {
     std::vector<int> v;
     for (int i = 0; i < static_cast<int>(ba.roster.size()); ++i)
-        if (!rules.free_unit(ba.roster[i].id).empty()) v.push_back(i);
+        if (!rules.free_unit(ba.roster[i].id).empty() || ba.roster[i].slave_count > 0) v.push_back(i);
     return v;
 }
 
@@ -2750,6 +2750,13 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         const std::string art_id = rules.image(id);
         ra2engine::BuildingTypeDef d;
         d.id = id;
+        const std::string slave = rules.section_string(id, "Enslaves", "");
+        if (!slave.empty()) {
+            d.slave_combat = resolve_combat_unit(rules, slave).combat;
+            d.slave_count = std::clamp(static_cast<int>(rules.section_double(id, "SlavesNumber", 5)), 0, 32);
+            d.slave_regen_rate = std::max(1, static_cast<int>(rules.section_double(id, "SlaveRegenRate", 500)));
+            d.slave_storage = std::max(1, rules.storage(slave));
+        }
         d.fw = d.fh = 1;
         art.foundation(art_id, d.fw, d.fh);
         d.strength = rules.strength(id);

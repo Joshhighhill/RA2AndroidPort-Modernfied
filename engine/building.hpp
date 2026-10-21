@@ -12,6 +12,7 @@
 #include "unit_w6.hpp"   // wave-6 #4 (BldW6)
 #include "target_w6.hpp" // W6 fix #2 (BldTgt)
 #include "unit_w7.hpp"   // wave-7 fix (units) (BldW7)
+#include "unit_combat.hpp"
 
 namespace ra2engine {
 
@@ -21,6 +22,10 @@ class OreField;   // ore.hpp (W8-03-01 BuildMask)
 // Rules/Art, or a test by hand). Index into the roster vector is the
 // Building::type key used everywhere.
 struct BuildingTypeDef {
+    UnitCombat slave_combat;
+    int slave_count = 0;
+    int slave_regen_rate = 500;
+    int slave_storage = 4;
     std::string id;                  // "GAPOWR"
     int fw = 1, fh = 1;              // Art Foundation=WxH
     int strength = 1;

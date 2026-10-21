@@ -210,6 +210,7 @@ void fill_unit_w7(const ra2assets::Rules& rules, const std::string& type_id, con
     if (tw.slot[0].valid &&
         rules.section_flag(rules.section_string(tw.slot[0].id, "Warhead", ""), "MindControl", false)) {
         w.mc_capacity = std::max(1, om::ftol(rules.section_double(tw.slot[0].id, "Damage", 1.0)));
+        w.mind_control = true;
         w.mc_infinite = rules.section_flag(tw.slot[0].id, "InfiniteMindControl", false);
     }
 }

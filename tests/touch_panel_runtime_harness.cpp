@@ -1,0 +1,105 @@
+// Standalone integration harness; includes the production touch_bar.inc.
+// Build with engine/include and SDL2 include paths plus touch_gestures.cpp.
+// SDL drawing is stubbed; this checks event routing, not rendered appearance.
+#include <cassert>
+#include <iostream>
+#include <string>
+#include <vector>
+#include <climits>
+#include <SDL.h>
+#undef main
+#include "input.hpp"
+#include "touch_gestures.hpp"
+#include "touch_bar_layout.hpp"
+#include "texture_cache.hpp"
+#include "building.hpp"
+#include "ra2assets/shp.hpp"
+using ra2engine::InputEvent;
+extern "C" {
+int SDL_SetRenderDrawBlendMode(SDL_Renderer*,SDL_BlendMode){return 0;}
+int SDL_SetRenderDrawColor(SDL_Renderer*,Uint8,Uint8,Uint8,Uint8){return 0;}
+int SDL_RenderFillRect(SDL_Renderer*,const SDL_Rect*){return 0;}
+int SDL_RenderDrawRect(SDL_Renderer*,const SDL_Rect*){return 0;}
+int SDL_RenderDrawLine(SDL_Renderer*,int,int,int,int){return 0;}
+}
+void draw_text(SDL_Renderer*,const std::string&,int,int,int,int,int,int){}
+void blit_shp(SDL_Renderer*,ra2engine::TextureCache&,const std::string&,const ra2assets::ShpFile&,int,const ra2assets::Palette&,int,int){}
+struct FakeWorld {
+ std::vector<ra2engine::Unit> us;
+ std::vector<ra2engine::Building> bs;
+ const auto& units()const{return us;} const auto& buildings()const{return bs;}
+ bool controllable(int h)const{return h==0;}
+};
+struct FakeInput {
+ ra2engine::Selection sel; int building=-1,stops=0,group=0,created=0;
+ auto& selection(){return sel;} const auto& selection()const{return sel;}
+ int selected_building()const{return building;}
+ void type_select(){} void stop_selected(){++stops;} void guard_selected(){} void scatter_selected(){}
+ void group_create(int n){created=n;} void group_select(int n,uint32_t){group=n;}
+ bool placement_active()const{return false;} void placement_cell(int&,int&){} void handle(const InputEvent&){}
+};
+struct Scene {
+ FakeWorld world_; FakeInput input_; int local_house_=0;
+ struct Menu{bool open_=false;} menu_;
+ struct Dialog{bool is_open()const{return false;}}sld_;
+ struct Abort{bool open()const{return false;}}gf_abort_;
+ bool input_locked_=false,campaign_=false,show_briefing_=false,sidebar_up_=false;
+ struct Layout{bool contains(int,int)const{return false;}}lay_;
+ struct Cam{double x=0,y=0;}cam_;
+ double view_cam_[3][2]{}; bool view_set_[3]{};
+ int kWinH=548,playfield_w_=800,deploys=0;
+ struct Def{std::string id;ra2engine::UnitCombat combat;};
+ struct Roster{std::vector<Def> defs;std::vector<char>has_cameo;std::vector<ra2assets::ShpFile>cameos;}ur_;
+ struct Assets{ra2assets::Palette cameo_pal;}ba_;
+ void center_base(){}void hotkey_radar_event(uint32_t){}void cycle_object(int){}void hotkey_follow(){}void deploy_selected(){++deploys;}
+ #include "touch_bar.inc"
+};
+InputEvent event(InputEvent::Kind kind,int x,int y){InputEvent e;e.kind=kind;e.touch=true;e.x=x;e.y=y;return e;}
+int main(){
+ Scene s;s.touch_ui_=true;
+ s.touch_add_=true;s.touch_box_=true;s.touch_command(s.TB_FIRE,false,0);
+ assert(s.touch_fire_);assert(!s.touch_add_);assert(!s.touch_box_);
+ auto fireDown=event(InputEvent::PointerDown,500,200);
+ assert(!s.touch_bar_handle(fireDown));assert(fireDown.ctrl);
+ auto fireMove=event(InputEvent::PointerMove,500,200);
+ assert(!s.touch_bar_handle(fireMove));assert(fireMove.ctrl);
+ auto fireUp=event(InputEvent::PointerUp,500,200);
+ assert(!s.touch_bar_handle(fireUp));assert(fireUp.ctrl);assert(!s.touch_fire_);
+
+ assert(!s.touch_button_enabled(s.TB_DEPLOY));
+ ra2engine::Unit gi;gi.house=0;gi.alive=true;gi.deploy_fire=true;s.world_.us.push_back(gi);s.input_.sel.set(0);
+ assert(s.touch_button_enabled(s.TB_DEPLOY));assert(std::string(s.touch_deploy_label())=="DEPLOY");
+ s.world_.us[0].deployed=true;assert(std::string(s.touch_deploy_label())=="UNDEPLOY");
+ s.world_.us[0].deploy_fire=false;s.world_.us[0].passengers_max=5;assert(!s.touch_button_enabled(s.TB_DEPLOY));
+ s.world_.us[0].cargo.push_back(1);assert(std::string(s.touch_deploy_label())=="UNLOAD");assert(s.touch_button_enabled(s.TB_DEPLOY));
+ s.world_.us[0].house=1;assert(!s.touch_button_enabled(s.TB_DEPLOY));assert(!s.touch_button_enabled(s.TB_STOP));
+ s.world_.us[0].house=0;s.world_.us[0].die_time=0;assert(!s.touch_button_enabled(s.TB_DEPLOY));s.world_.us[0].die_time=-1;
+ auto r=s.touch_btn_rect(0);auto d=event(InputEvent::PointerDown,r.x+4,r.y+4);auto u=d;u.kind=InputEvent::PointerUp;
+ assert(s.touch_bar_handle(d));assert(s.touch_bar_handle(u));assert(s.input_.stops==1);
+ // A disabled command consumes its tap, issuing nothing.
+ s.input_.sel.clear();assert(s.touch_bar_handle(d));assert(s.touch_bar_handle(u));assert(s.input_.stops==1);
+ // Slide-off must consume release and not fire.
+ s.input_.sel.set(0);assert(s.touch_bar_handle(d));u.x=500;assert(s.touch_bar_handle(u));assert(s.input_.stops==1);
+ // Map-origin selection release over the panel must reach the map input.
+ s.touch_down_btn_=-1;s.touch_panel_capture_=false;u.x=r.x+4;assert(!s.touch_bar_handle(u));
+ // The header and gaps consume complete taps; drags don't scroll terrain.
+ auto p=s.touch_panel_rect();d=event(InputEvent::PointerDown,p.x+3,p.y+3);assert(s.touch_bar_handle(d));
+ auto mv=d;mv.kind=InputEvent::PointerMove;mv.x=600;assert(s.touch_bar_handle(mv));
+ u=mv;u.kind=InputEvent::PointerUp;assert(s.touch_bar_handle(u));assert(!s.touch_panel_capture_);
+ auto pan=event(InputEvent::Pan,600,250);pan.x0=p.x+3;pan.y0=p.y+3;assert(s.touch_bar_handle(pan));
+ // Group holds assign instead of invoking any deploy command.
+ r=s.touch_btn_rect(8);d=event(InputEvent::PointerDown,r.x+3,r.y+3);u=d;u.kind=InputEvent::PointerUp;u.button=InputEvent::Right;
+ assert(s.touch_bar_handle(d));assert(s.touch_bar_handle(u));assert(s.input_.created==1);assert(s.deploys==0);
+ // Arrow toggles once per complete tap; old panel space becomes battlefield.
+ auto a=s.touch_panel_toggle_rect();d=event(InputEvent::PointerDown,a.x+5,a.y+5);u=d;u.kind=InputEvent::PointerUp;
+ assert(s.touch_bar_handle(d));assert(!s.touch_panel_collapsed_);assert(s.touch_bar_handle(u));
+ assert(s.touch_panel_collapsed_);assert(s.touch_btn_count()==0);assert(s.touch_btn_at(r.x,r.y)==-1);
+ assert(!s.touch_panel_contains(p.x+5,p.y+5));
+ a=s.touch_panel_toggle_rect();d=event(InputEvent::PointerDown,a.x+5,a.y+5);u=d;u.kind=InputEvent::PointerUp;
+ assert(s.touch_bar_handle(d));assert(s.touch_bar_handle(u));assert(!s.touch_panel_collapsed_);assert(s.touch_btn_count()==13);
+ // Releasing outside the arrow does not hide the panel.
+ a=s.touch_panel_toggle_rect();d=event(InputEvent::PointerDown,a.x+5,a.y+5);u=d;u.kind=InputEvent::PointerUp;u.x=600;
+ assert(s.touch_bar_handle(d));assert(s.touch_bar_handle(u));assert(!s.touch_panel_collapsed_);
+ s.menu_.open_=true;assert(s.touch_btn_at(r.x,r.y)==-1);
+ std::cout<<"Panel integration checks passed: capabilities, labels, disabled actions, capture, slide-off, map release, group hold and menu suppression.\n";
+}

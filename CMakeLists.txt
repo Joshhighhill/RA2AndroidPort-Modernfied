@@ -105,7 +105,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_orig_math.cpp engine/orig_math
 # reconciliation are unit-tested here (test_world.cpp) alongside the projection
 # it must agree with. Compiled from the same single source of truth as the
 # ra2engine executable below (same pattern as iso_project.cpp / pathfind.cpp).
-target_sources(ra2assets_tests PRIVATE tests/test_world.cpp engine/world.cpp
+target_sources(ra2assets_tests PRIVATE tests/test_world.cpp engine/world.cpp engine/world_yuri.cpp tests/test_yuri_core.cpp
                                        engine/world_loco.cpp engine/locomotion.cpp tests/test_locomotion.cpp  # W7 locomotion
                                        engine/world_econ.cpp  # L2 per-house economy
                                        tests/test_house_econ.cpp

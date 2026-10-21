@@ -849,14 +849,16 @@ template <class Ar> void fields(Ar& ar, UnitTypeW7& v) {
     io(ar, v.detect_disguise); io(ar, v.selectable_combatant); io(ar, v.move_to_shroud);
     io(ar, v.default_to_guard_area); io(ar, v.has_turret); io(ar, v.fake_blink); io(ar, v.fake_blink_elite);
     io(ar, v.deploy_area_fire); io(ar, v.undeploy_delay); io(ar, v.mc_capacity); io(ar, v.mc_infinite);
-    io(ar, v.build_time_mult);
+    io(ar, v.build_time_mult); io(ar, v.mind_control);
 }
 template <class Ar> void fields(Ar& ar, UnitW7& v) {
     io(ar, v.t); io(ar, v.blink_left); io(ar, v.redisguise_left); io(ar, v.flash_seen); io(ar, v.hull_aiming);
     io(ar, v.paralysed_until); io(ar, v.host_raw_hit); io(ar, v.deploy_ready_at); io(ar, v.undeploy_at); io(ar, v.erased_by);
     io(ar, v.depot_target); io(ar, v.mc_controller); io(ar, v.mc_victims); io(ar, v.mc_shot);
+    io(ar, v.mc_original_house); io(ar, v.slave_manager);
 }
 template <class Ar> void fields(Ar& ar, BldW7& v) {
+    io(ar, v.slaves_initialized); io(ar, v.slave_regen_left);
     io(ar, v.depot_next); io(ar, v.depot_client); io(ar, v.warp_unpowered); io(ar, v.garrison_target_building);
 }
 template <class Ar> void fields(Ar& ar, UnitAi& v) { io(ar, v.guard_since); }   // W7 (save v35)
@@ -1041,6 +1043,7 @@ template <class Ar> void fields(Ar& ar, PlayerEconRules& v) {
     io(ar, v.wall_rules);
 }
 template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
+    io(ar, v.slave_combat); io(ar, v.slave_count); io(ar, v.slave_regen_rate); io(ar, v.slave_storage);
     io(ar, v.id);
     io(ar, v.fw); io(ar, v.fh);
     io(ar, v.strength);

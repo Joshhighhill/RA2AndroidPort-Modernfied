@@ -1,0 +1,116 @@
+#include "world.hpp"
+#include <algorithm>
+
+namespace ra2engine {
+namespace {
+bool active(const Unit& u) { return u.alive && u.die_time < 0 && u.cargo_of < 0 && u.garrison_of < 0; }
+}
+
+void World::prepare_skirmish_mind_control() {
+    if (playfield_.campaign) return; // CampaignRuntime owns its team bookkeeping.
+    for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
+        Unit& v = units_[i];
+        const int c = v.w7.mc_controller;
+        if (c >= 0 && (c >= static_cast<int>(units_.size()) || !active(units_[c]) ||
+                       units_[c].warp_remaining > 0 || !active(v) || units_[c].house != v.house)) {
+            if (c < static_cast<int>(units_.size())) {
+                auto& victims = units_[c].w7.mc_victims;
+                victims.erase(std::remove(victims.begin(), victims.end(), i), victims.end());
+            }
+            if (v.alive && v.die_time < 0 && v.w7.mc_original_house >= 0)
+                set_unit_owner(i, v.w7.mc_original_house);
+            v.w7.mc_controller = v.w7.mc_original_house = -1;
+        }
+    }
+    for (Unit& u : units_) {
+        if (!u.w7.t.mind_control) continue;
+        u.w_mind_control = true;
+        if (!active(u)) { u.w7.mc_shot = -1; continue; }
+        if (u.target >= 0 && u.target < static_cast<int>(units_.size())) {
+            const Unit& v = units_[u.target];
+            const bool full = !u.w7.t.mc_infinite &&
+                static_cast<int>(u.w7.mc_victims.size()) >= u.w7.t.mc_capacity;
+            if (!psionic_target_ok(u.target) || v.an.iron_left_frames > 0 || v.w7.mc_controller >= 0 ||
+                (full && (!u.attack_order || u.w7.t.mc_capacity != 1))) {
+                u.target = -1; u.attack_order = false;
+            }
+        }
+    }
+}
+
+void World::resolve_skirmish_mind_control() {
+    if (playfield_.campaign) return;
+    for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
+        Unit& u = units_[i];
+        if (!u.w7.t.mind_control) continue;
+        const int vi = u.w7.mc_shot; u.w7.mc_shot = -1;
+        if (!active(u) || vi < 0 || vi >= static_cast<int>(units_.size()) || vi == i) continue;
+        Unit& v = units_[vi];
+        if (!active(v) || v.house == u.house || v.is_aircraft || !psionic_target_ok(vi) ||
+            v.an.iron_left_frames > 0 || v.w7.mc_controller >= 0) continue;
+        auto& held = u.w7.mc_victims;
+        if (!u.w7.t.mc_infinite && static_cast<int>(held.size()) >= std::max(1, u.w7.t.mc_capacity)) {
+            if (u.w7.t.mc_capacity != 1) continue;
+            const int old = held.front();
+            if (old >= 0 && old < static_cast<int>(units_.size())) {
+                Unit& freed = units_[old];
+                if (freed.w7.mc_controller == i) {
+                    if (freed.alive && freed.die_time < 0 && freed.w7.mc_original_house >= 0)
+                        set_unit_owner(old, freed.w7.mc_original_house);
+                    freed.w7.mc_controller = freed.w7.mc_original_house = -1;
+                }
+            }
+            held.clear();
+        }
+        const int original = v.house;
+        set_unit_owner(vi, u.house);
+        v.w7.mc_original_house = original; v.w7.mc_controller = i;
+        held.push_back(vi);
+        u.target = -1; u.attack_order = false;
+    }
+}
+
+void World::step_yuri_workers() {
+    // An undeployed/destroyed/captured manager releases its workers. A known
+    // killer receives freed slaves; absent a killer they retain their house.
+    for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
+        Unit& u = units_[i]; const int manager = u.w7.slave_manager;
+        if (manager < 0) continue;
+        if (manager < static_cast<int>(buildings_.size())) {
+            const Building& b = buildings_[manager];
+            if (b.alive && b.state != Building::State::Dead && b.house == u.house) continue;
+            if (b.killed_by >= 0 && b.killed_by < static_cast<int>(units_.size()) && active(u))
+                set_unit_owner(i, units_[b.killed_by].house);
+        }
+        u.w7.slave_manager = -1; u.is_harvester = false;
+        u.harv = HarvState::None; u.dock_refinery = -1;
+        u.path.clear(); u.path_idx = 0;
+    }
+    for (int bi = 0; bi < static_cast<int>(buildings_.size()); ++bi) {
+        Building& b = buildings_[bi];
+        if (!b.alive || b.state != Building::State::Idle || b.type < 0 ||
+            b.type >= static_cast<int>(btypes().size())) continue;
+        const BuildingTypeDef& def = btypes()[b.type];
+        if (def.slave_count <= 0 || def.slave_combat.image.empty()) continue;
+        int count = 0;
+        for (const Unit& u : units_)
+            if (u.alive && u.die_time < 0 && u.w7.slave_manager == bi) ++count;
+        if (count >= def.slave_count) continue;
+        if (b.w7.slave_regen_left > 0) { --b.w7.slave_regen_left; continue; }
+        const int to_spawn = b.w7.slaves_initialized ? 1 : def.slave_count - count;
+        int spawned = 0;
+        for (int n = 0; n < to_spawn; ++n) {
+            const int id = launch_unit(bi, def, def.slave_combat);
+            if (id < 0) break; // blocked exits retry without deleting workers
+            make_harvester(id, false, std::max(1, def.slave_storage));
+            units_[id].w7.slave_manager = bi;
+            units_[id].dock_refinery = bi;
+            ++spawned;
+        }
+        if (spawned > 0) {
+            b.w7.slaves_initialized = true;
+            b.w7.slave_regen_left = std::max(1, def.slave_regen_rate);
+        }
+    }
+}
+} // namespace ra2engine

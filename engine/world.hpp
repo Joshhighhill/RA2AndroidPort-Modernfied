@@ -1060,6 +1060,9 @@ public:
     // check walkable() and unit_at_cell() first; seeding two units onto one
     // cell silently breaks the one-unit-per-cell invariant.
     Unit& add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat& c);
+    void step_yuri_workers();
+    void prepare_skirmish_mind_control();
+    void resolve_skirmish_mind_control();
 
     // Registers (or replaces) the animation sequence used for Unit::image ==
     // `image`; anim_for_image falls back to default_anim() for any image

@@ -6023,6 +6023,7 @@ void World::step(double dt) {
     // P2 firewall: the launch sink is passed ONLY when projectiles are enabled;
     // nullptr keeps step_combat's instant-hit path byte-identical.
     std::vector<ProjectileLaunch> launches;
+    prepare_skirmish_mind_control();
     const std::vector<MoveRequest> reqs = step_combat(*this, units_, buildings_, occ_, dt,
                                                       projectiles_enabled_ ? &launches : nullptr,
                                                       &combat_rng_);   // G-50 ROF jitter
@@ -6427,6 +6428,8 @@ void World::step(double dt) {
     // A pure INSERTION; `if (!abilities_any_) return;` (after the frame tick)
     // is the only cost every pre-P4 demo pays -- none registers a profile.
     step_abilities(dt);
+    resolve_skirmish_mind_control();
+    step_yuri_workers();
     step_victory();
     update_sub_offsets();   // W5-B R-061: derive the infantry sub-cell offsets
     // L2: every human house's production (was GameScene's per-tick glue,

@@ -173,8 +173,14 @@ void touch_command(int id, bool long_press, uint32_t t_ms) {
         case TB_PREV: cycle_object(-1); one_shot = false; break;   // PreviousObject
         case TB_FOLLOW: hotkey_follow(); break;              // Follow
         case TB_ADD: touch_add_ = !touch_add_; one_shot = false; break;
-        case TB_FIRE: touch_fire_ = !touch_fire_; touch_move_ = false; one_shot = false; break;
-        case TB_MOVE: touch_move_ = !touch_move_; touch_fire_ = false; one_shot = false; break;
+        case TB_FIRE:
+            touch_fire_ = !touch_fire_; touch_move_ = false;
+            if (touch_fire_) { touch_add_ = false; touch_box_ = false; }
+            one_shot = false; break;
+        case TB_MOVE:
+            touch_move_ = !touch_move_; touch_fire_ = false;
+            if (touch_move_) touch_box_ = false;
+            one_shot = false; break;
         case TB_STOP: input_.stop_selected(); break;
         case TB_GUARD: input_.guard_selected(); break;
         case TB_SCATTER: input_.scatter_selected(); break;
@@ -209,10 +215,17 @@ bool touch_bar_handle(ra2engine::InputEvent& ev) {
     // A drag that starts on the dock does not scroll the map.
     if (ev.kind == ra2engine::InputEvent::Pan && ev.touch && touch_panel_contains(ev.x0, ev.y0)) return true;
     const bool ptr = ev.kind == ra2engine::InputEvent::PointerDown || ev.kind == ra2engine::InputEvent::PointerUp;
-    if (!ptr) return touch_panel_capture_ && ev.kind == ra2engine::InputEvent::PointerMove;
+    if (!ptr) {
+        if (ev.kind == ra2engine::InputEvent::PointerMove && !touch_panel_capture_)
+            touch_apply_modifiers(ev);
+        return touch_panel_capture_ && ev.kind == ra2engine::InputEvent::PointerMove;
+    }
     if (ev.kind == ra2engine::InputEvent::PointerDown) touch_panel_capture_ = touch_panel_contains(ev.x,ev.y);
     // A map-origin selection drag must still receive its release over the panel.
-    if (ev.kind == ra2engine::InputEvent::PointerUp && !touch_panel_capture_ && touch_down_btn_ < 0) return false;
+    if (ev.kind == ra2engine::InputEvent::PointerUp && !touch_panel_capture_ && touch_down_btn_ < 0) {
+        touch_apply_modifiers(ev);
+        return false;
+    }
     if (ev.kind == ra2engine::InputEvent::PointerDown && touch_panel_toggle_at(ev.x,ev.y)) {
         touch_down_btn_ = -2; // Capture the arrow; release must land on it too.
         return true;
@@ -265,7 +278,13 @@ bool touch_bar_handle(ra2engine::InputEvent& ev) {
     } else {
         touch_place_cx_ = touch_place_cy_ = INT_MIN;
     }
-    // Modifier toggles (playfield only; the sidebar ignores modifiers).
+    touch_apply_modifiers(ev);
+    return false;
+}
+void touch_apply_modifiers(ra2engine::InputEvent& ev) {
+    if (!ev.touch) return;
+    // Apply on move AND release: Input refreshes Ctrl on every pointer
+    // event and commits the command on release, not on press.
     if (!(sidebar_up_ && lay_.contains(ev.x, ev.y))) {
         ev.shift = ev.shift || touch_add_;
         ev.ctrl = ev.ctrl || touch_fire_;
@@ -276,7 +295,6 @@ bool touch_bar_handle(ra2engine::InputEvent& ev) {
             touch_fire_ = touch_move_ = false;
         }
     }
-    return false;
 }
 // The dock stays where the player left it; commands collapse the extra row.
 void touch_bar_tick(double dt) {

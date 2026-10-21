@@ -98,6 +98,7 @@ set(RA2_ENGINE_SOURCES
     ${RA2_ROOT}/engine/iso_project.cpp
     ${RA2_ROOT}/engine/iso_renderer.cpp
     ${RA2_ROOT}/engine/world.cpp
+    ${RA2_ROOT}/engine/world_yuri.cpp
     ${RA2_ROOT}/engine/world_loco.cpp   # W7 locomotion (step_units)
     ${RA2_ROOT}/engine/locomotion.cpp   # W7 locomotion (tracks / speeds, pure)
     ${RA2_ROOT}/engine/world_econ.cpp   # L2 per-house economy
