@@ -104,11 +104,10 @@ bool rp_is_lobby_sw_building(const Rules& rules, const std::string& id) {
 // default (Americans / Russians). The lobby's side button changes only the
 // side, so a stale "Americans" on a Soviet slot must not leak through.
 std::string rp_player_country(const Rules& rules, const ra2engine::SkirmishSlot& s) {
-    const bool soviet = s.side == ra2engine::World::Side::Soviet;
-    const std::string want = soviet ? "NOD" : "GDI";
+    const std::string want = ra2engine::faction_rules_side(s.side);
     if (!s.country.empty() && rp_upper(rules.section_string(s.country, "Side", "")) == want)
         return s.country;
-    return soviet ? "Russians" : "Americans";
+    return ra2engine::faction_country(s.side);
 }
 
 // One unit queue category per rules type [RE: roster2.md TL;DR 7;

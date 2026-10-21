@@ -231,3 +231,21 @@ TEST_CASE("lobby: Random resolution never duplicates a colour; deterministic per
         CHECK(a[i].country == b[i].country);
     }
 }
+
+TEST_CASE("lobby: unsupported preview countries never enter AI or random picks") {
+    auto c=ctx(); c.countries.push_back("YuriCountry");
+    c.side_of=[](const std::string& name){return name=="YuriCountry" ? World::Side::Yuri : World::Side::Allied;};
+    auto st=lobby_first_run(LobbyRulesInfo{});
+    st.rows[0].country=9;st.rows[1].country=9;
+    c.country_allowed=[](int row,const std::string& name){return name!="YuriCountry" || row==0;};
+    auto cfg=lobby_to_config(st,c);
+    CHECK(cfg.slots[0].country=="YuriCountry");
+    CHECK(cfg.slots[0].side==World::Side::Yuri);
+    CHECK(cfg.slots[1].country!="YuriCountry");
+    c.country_allowed=[](int,const std::string& name){return name!="YuriCountry";};
+    st.rows[0].country=kLobbyRandom;st.rows[1].country=kLobbyRandom;
+    for(unsigned seed=1;seed<=50;++seed) {
+        c.seed=seed;const auto resolved=lobby_resolve(st,c);
+        for(const auto& row:resolved) CHECK(row.country!=9);
+    }
+}

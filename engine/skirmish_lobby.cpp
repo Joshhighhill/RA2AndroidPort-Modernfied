@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <stdexcept>
 
 namespace ra2engine {
 
@@ -325,7 +326,14 @@ std::vector<LobbyResolved> lobby_resolve(const LobbyState& st, const LobbyConver
         const LobbyRow& r = st.rows[row];
         LobbyResolved z;
         z.row = row;
-        z.country = (r.country >= 0 && r.country < nc) ? r.country : rng.range(0, nc - 1);
+        if(ctx.country_allowed) {
+            std::vector<int> allowed;
+            for(int c=0;c<static_cast<int>(ctx.countries.size());++c)
+                if(ctx.country_allowed(row,ctx.countries[c])) allowed.push_back(c);
+            if(allowed.empty()) throw std::runtime_error("No supported country for lobby row");
+            z.country=std::find(allowed.begin(),allowed.end(),r.country)!=allowed.end() ? r.country :
+                allowed[rng.range(0,static_cast<int>(allowed.size())-1)];
+        } else z.country = (r.country >= 0 && r.country < nc) ? r.country : rng.range(0, nc - 1);
         if (r.color >= 0 && r.color < kLobbyColors) {
             z.color = r.color;
         } else {

@@ -17,6 +17,7 @@ namespace ra2assets {
 class Rules {
 public:
     static Rules load(const Ini& ini);
+    std::vector<std::string> listed_types(const std::string& section) const;
 
     // Art image (SHP base name) for a unit id, e.g. "E1" -> "GI" (then
     // GI.SHP). Reads [unit_id] Image=; falls back to unit_id itself if the

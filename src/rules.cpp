@@ -360,3 +360,9 @@ Rules::BuildCategory Rules::build_category(const std::string& id) const {
 }
 
 } // namespace ra2assets
+
+std::vector<std::string> ra2assets::Rules::listed_types(const std::string& section) const {
+    std::vector<std::string> out;
+    for(const auto& item : ini_->section(section)) if(!item.second.empty()) out.push_back(item.second);
+    return out;
+}

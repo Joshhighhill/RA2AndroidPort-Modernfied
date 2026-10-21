@@ -78,6 +78,8 @@ static char* ra2_cli_pref_path() {
 #include "harvest.hpp"     // OreValues/HarvestEvent/dock_cell + step_harvest (Economy phase)
 #include "input.hpp"
 #include "touch_bar_layout.hpp"
+#include "faction_support.hpp"
+#include "menu_readability.hpp"
 #include "hotkeys.hpp"       // G-04 KeyboardMD.ini command table
 #include "bink_async.hpp"     // W5-E2 R-173: Bink decoding off the main thread
 #include "touch_gestures.hpp" // G-70 (controls self-test drives the real gesture layer)
@@ -2714,11 +2716,19 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     };
     (void)get_mix;
 
-    ba.roster.reserve(40);
-    ba.art.reserve(40);
+    std::vector<std::string> building_ids(std::begin(kRoster),std::end(kRoster));
+    // Append the rules-defined Yuri structures; retain all existing indices.
+    for(const auto& id : rules.listed_types("BuildingTypes")) {
+        std::string owners=rules.section_string(id,"Owner","");
+        owners.erase(std::remove_if(owners.begin(),owners.end(),[](unsigned char c){return std::isspace(c);}),owners.end());
+        for(char& c:owners)c=static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        if((","+owners+",").find(",YURICOUNTRY,")!=std::string::npos &&
+           std::find(building_ids.begin(),building_ids.end(),id)==building_ids.end()) building_ids.push_back(id);
+    }
+    ba.roster.reserve(building_ids.size());
+    ba.art.reserve(building_ids.size());
     int ok_n = 0;
-    for (const char* id_c : kRoster) {
-        const std::string id = id_c;
+    for (const std::string& id : building_ids) {
         // [RE: roster2.md §A, RE-FALLBACK] P6 indices honour rules Image= for the
         // art lookups (AMRADR draws as GAAIRC). Gap owner A (G-26/G-64): ALL
         // indices now honour Image= -- keeping the id for 0..23 left the Prism
@@ -6390,7 +6400,11 @@ void draw_shell(SDL_Renderer* ren, ra2engine::TextureCache& tc, const MenuArt& a
     //    canvas scale and shrink per-label if a long label would overflow.
     if (art.font && art.font_pal && art.fnt_ok) {
         const ra2assets::Font& f = *art.font;
+#ifdef __ANDROID__
+        const int lbl_scale = std::max(1,static_cast<int>(std::ceil(canvas_scale*1.5)));
+#else
         const int lbl_scale = std::max(1, static_cast<int>(std::lround(canvas_scale)));
+#endif
         const int hdr_scale = std::max(1, static_cast<int>(std::floor(canvas_scale)));
         // ldx/ldy = LOGICAL label shift (0 normally; §7.2 pressed = +2,+5).
         auto centered = [&](const std::string& s, int lx, int ly, int lw, int lh,
@@ -6406,7 +6420,14 @@ void draw_shell(SDL_Renderer* ren, ra2engine::TextureCache& tc, const MenuArt& a
         for (int i = 0; i < static_cast<int>(buttons.size()); ++i) {
             const ShellButton& b = buttons[i];
             const int brow = (b.rect.y - 199) / 42;
-            if (row_frames && brow >= 0 && brow < 6 && row_frames[brow] >= 0) continue;   // W2-UI-24
+#ifdef __ANDROID__
+            // Cover baked small lettering before painting larger native labels.
+            SDL_Rect face=dev(b.rect.x+3,b.rect.y+3,b.rect.w-6,b.rect.h-6);
+            SDL_SetRenderDrawColor(ren,i==pressed_ix ? 60 : 22,30,34,255);
+            SDL_RenderFillRect(ren,&face);
+#else
+            if (row_frames && brow >= 0 && brow < 6 && row_frames[brow] >= 0) continue;
+#endif
             const bool pressed = (i == pressed_ix);
             centered(b.label, b.rect.x, b.rect.y, b.rect.w, b.rect.h, lbl_scale,
                      pressed ? 2 : 0, pressed ? 5 : 0);

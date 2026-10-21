@@ -81,3 +81,13 @@ Tap the left-pointing arrow in the unit panel header to hide the panel. Only a 4
 
 The HTML preview also has an accessible fold/restore button. No change to the simulation, deployment rules, gesture thresholds or missing-art search was made in this pass.
 The instruction banner shown in the tester's screenshot is now a compact 300-by-48 logical-pixel card aligned with the panel, with two clipped text lines and a 44-pixel cancel button. It stays above the panel or restore arrow. Its gestures are captured before building placement, preventing a tap on instructions/cancel from previewing a building underneath. Complete cancel taps are required; slide-off and map-origin releases do not cancel.
+
+## Test 6: readable Android menus and explicit human Yuri preview
+
+Android shell controls now target at least 16 logical-pixel text rather than rounding small labels down to a single glyph scale. Text is clipped within each control and constrained by its height. Main-menu buttons repaint baked small labels with larger native labels, retaining outer button frames and the existing shared draw/hit transform. Physical device resolution is unchanged; this is a UI readability change.
+
+The stock selector explicitly omitted YuriCountry. The skirmish human row now offers Yuri (preview) when imported rules define its side. ThirdSide maps to World::Side::Yuri; player-country fallback preserves YuriCountry rather than substituting Americans. Existing building roster indices are retained and Yuri-owned BuildingTypes entries are appended from the imported rules. The existing rules-driven unit roster then uses Yuri ownership. Multiplayer's default list stays unchanged. Yuri is excluded from AI rows and all random picks unless the human explicitly selected it.
+
+LIMIT: this is not full Yuri's Revenge support. The engine has no Slave Miner economy implementation, and its classic-superweapon filter does not enable Yuri superweapons. The selector shows that warning even when tooltips are off. Yuri uses existing fallback shell/sidebar art; not all Yuri mechanics are verified. Start/deploy/build and actual unit art must be tested with the tester's real files; no retail game files are available locally. Do not call the entire faction working or faithful based only on selector tests.
+
+Validation: 13 faction/rules-list/menu-metrics/lobby cases, 991 assertions passed, including explicit Yuri side preservation and keeping unsupported AI/random picks out. Full native syntax/build/package results are attached to the release after completion. Prior gesture thresholds and command-panel behaviour are unchanged.

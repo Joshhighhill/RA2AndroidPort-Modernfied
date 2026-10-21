@@ -58,7 +58,7 @@ inline std::vector<std::string> gf_tokens(const std::string& v) {
 }
 
 inline std::string gf_default_country(ra2engine::World::Side side) {
-    return side == ra2engine::World::Side::Soviet ? "Russians" : "Americans";
+    return ra2engine::faction_country(side);
 }
 
 inline bool gf_owner_has(const Rules& rules, const std::string& id, const std::string& country) {
@@ -394,16 +394,18 @@ Scene* gf_make_restart_scene(bool no_audio, const ra2engine::SkirmishConfig& cfg
 // gF G-17 [RE: multihouse.md §1, CONFIRMED [Countries] + per-country Side=]:
 // the lobby picks a COUNTRY; the side follows from its rules Side= (GDI ->
 // Allied, Nod -> Soviet). The playable list is the [Countries] order minus
-// YuriCountry (Yuri's side is a non-goal) and the passive/civilian houses.
-inline const std::vector<std::string>& gf_lobby_countries() {
+// Passive/civilian houses are omitted. Yuri is an explicit human skirmish preview.
+inline const std::vector<std::string>& gf_lobby_countries(bool include_yuri = false) {
     static const std::vector<std::string> k = {"Americans", "Alliance", "French", "Germans",
                                                "British", "Africans", "Arabs", "Confederation",
                                                "Russians"};
-    return k;
+    static const std::vector<std::string> yr = []{auto v=k;v.push_back("YuriCountry");return v;}();
+    return include_yuri ? yr : k;
 }
 inline ra2engine::World::Side gf_side_of_country(const Rules& rules, const std::string& c) {
     std::string side = rules.section_string(c, "Side", "");
     for (char& ch : side) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    if (side == "THIRDSIDE" || c == "YuriCountry") return ra2engine::World::Side::Yuri;
     if (side == "NOD") return ra2engine::World::Side::Soviet;
     if (side == "GDI") return ra2engine::World::Side::Allied;
     const auto& k = gf_lobby_countries();   // rules without Side=: the documented split

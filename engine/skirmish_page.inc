@@ -164,7 +164,7 @@ class SkirmishSetupScene : public Scene {
 public:
     SkirmishSetupScene(const Rules& rules, bool no_audio, const MenuArt& art)
         : rules_(rules), no_audio_(no_audio), art_(art) {
-        countries_ = gf_lobby_countries();
+        countries_ = gf_lobby_countries(!rules.section_string("YuriCountry","Side","").empty());
         text_.load(countries_);
         // [Rules] [MultiplayerDialogSettings] defaults + slider ranges.
         auto ri = [&](const char* k, int d) {
@@ -368,6 +368,7 @@ private:
         }
     }
     std::string country_label(int c) const {
+        if(c>=0 && c<static_cast<int>(countries_.size()) && countries_[c]=="YuriCountry") return "Yuri (preview)";
         return (c >= 0 && c < static_cast<int>(text_.country.size())) ? text_.country[(size_t)c]
                                                                         : text_.random_country;
     }
@@ -402,6 +403,7 @@ private:
             list_.items.push_back(text_.random_country);
             list_.data.push_back(ra2engine::kLobbyRandom);
             for (int c = 0; c < static_cast<int>(countries_.size()); ++c) {
+                if(row>0 && countries_[c]=="YuriCountry") continue;
                 list_.items.push_back(country_label(c));
                 list_.data.push_back(c);
                 if (c == st_.rows[row].country) cur = static_cast<int>(list_.data.size()) - 1;
@@ -507,6 +509,9 @@ private:
     ra2engine::SkirmishConfig build_config(std::uint32_t seed) const {
         ra2engine::LobbyConvertCtx ctx;
         ctx.countries = countries_;
+        const bool explicit_yuri=st_.rows[0].country>=0 && st_.rows[0].country<static_cast<int>(countries_.size()) &&
+                                 countries_[st_.rows[0].country]=="YuriCountry";
+        ctx.country_allowed=[explicit_yuri](int row,const std::string& c){return c!="YuriCountry" || (row==0 && explicit_yuri);};
         const Rules* r = &rules_;
         ctx.side_of = [r](const std::string& c) { return gf_side_of_country(*r, c); };
         ctx.seed = seed;
@@ -711,7 +716,7 @@ void SkirmishSetupScene::play_probe(ra2play::Probe& p) {
                                    ? countries_[(size_t)r.country] : "Random");
         p.set_s("side" + n, r.country < 0 || r.country >= (int)countries_.size() ? "RANDOM"
                             : gf_side_of_country(rules_, countries_[(size_t)r.country]) ==
-                                      ra2engine::World::Side::Soviet ? "SOVIET" : "ALLIED");
+                                      ra2engine::World::Side::Soviet ? "SOVIET" : gf_side_of_country(rules_,countries_[(size_t)r.country])==ra2engine::World::Side::Yuri ? "YURI" : "ALLIED");
         p.set("color" + n, r.color);
         p.set("row_active" + n, ra2engine::lobby_row_active(st_, k) ? 1 : 0);
     }
@@ -834,8 +839,11 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
     }
 
     // --- status line 0x695: the hovered control's STT:* tooltip ---
-    if (!g_user_settings || g_user_settings->tooltips) {
-        const std::string tip = tooltip_at(lmx, lmy);
+    const bool yuri_preview=st_.rows[0].country>=0 && st_.rows[0].country<static_cast<int>(countries_.size()) && countries_[st_.rows[0].country]=="YuriCountry";
+    if (yuri_preview || !g_user_settings || g_user_settings->tooltips) {
+        std::string tip = tooltip_at(lmx, lmy);
+        if(st_.rows[0].country>=0 && st_.rows[0].country<static_cast<int>(countries_.size()) &&
+           countries_[st_.rows[0].country]=="YuriCountry") tip="Yuri preview: no slave income / Yuri superweapons.";
         const ra2engine::SbRect s = status_rect();
         p.label(p.fit(tip, s.w), s.x, s.y, s.w, s.h, 0);
     }

@@ -13,6 +13,11 @@
 // All geometry is LOGICAL 640x480, mapped through the page's ShellXform.
 // ============================================================================
 
+#ifdef __ANDROID__
+static constexpr bool kReadableTouchMenus=true;
+#else
+static constexpr bool kReadableTouchMenus=false;
+#endif
 struct ShellPainter {
     SDL_Renderer* ren;
     ra2engine::TextureCache& tc;
@@ -54,7 +59,7 @@ struct ShellPainter {
     bool fnt() const { return art.font && art.fnt_ok; }
     double text_w(const std::string& s, double logical_px) const {
         if (!fnt()) return 0.0;
-        const double sc = std::max(1.0, std::round(xf.s * logical_px / 16.0));
+        const double sc = ra2engine::menu_font_scale(xf.s,logical_px,kReadableTouchMenus);
         return fnt_text_width(*art.font, s) * sc / xf.s;   // in LOGICAL px
     }
     // align: 0 = left, 1 = centre, 2 = right; vertically centred in the rect.
@@ -64,14 +69,23 @@ struct ShellPainter {
         const ra2assets::Font& f = *art.font;
         // 12metfnt cell = 16 px; snap to an integer glyph scale (fractional
         // nearest-neighbour scaling visibly mangles the 1-px bevel strokes).
-        const double sc = std::max(1.0, std::round(xf.s * logical_px / 16.0));
+        double sc = ra2engine::menu_font_scale(xf.s,logical_px,kReadableTouchMenus);
         const SDL_Rect box = dev(lx, ly, lw, lh);
+        if(kReadableTouchMenus) sc=std::min(sc,box.h/static_cast<double>(std::max(1,f.height())));
         const double tw = fnt_text_width(f, s) * sc;
         const double th = f.height() * sc;
         double tx = box.x;
         if (align == 1) tx = box.x + (box.w - tw) / 2.0;
         else if (align == 2) tx = box.x + box.w - tw;
+        SDL_Rect previous; const bool clipped=SDL_RenderIsClipEnabled(ren)==SDL_TRUE;
+        SDL_RenderGetClipRect(ren,&previous);
+        if(kReadableTouchMenus) {
+            SDL_Rect clip=box;
+            if(clipped) SDL_IntersectRect(&previous,&box,&clip);
+            SDL_RenderSetClipRect(ren,&clip);
+        }
         draw_fnt_text_f(ren, tc, f, *pal, s, tx, box.y + (box.h - th) / 2.0, keypfx, sc);
+        if(kReadableTouchMenus) SDL_RenderSetClipRect(ren,clipped ? &previous : nullptr);
     }
     // Yellow control text (dark red when disabled).
     void label(const std::string& s, int x, int y, int w, int h, int align, bool en = true) const {

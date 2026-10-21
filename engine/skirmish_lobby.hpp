@@ -137,6 +137,7 @@ struct LobbyConvertCtx {
     std::uint32_t seed = 1;                                   // Random resolution RNG
     int tech_level = 10;                                      // rules TechLevel (no page control)
     std::string map_file;                                     // "" = engine default map
+    std::function<bool(int,const std::string&)> country_allowed; // optional per-row capability filter
 };
 
 // The resolved per-row picks (exposed for tests / the probe).
