@@ -3,12 +3,18 @@
 Inspected 21 October 2026. This is a source audit and a tested gesture-layer
 change, not a claim that either full game or an APK was built here.
 
+**Follow-up:** both checkouts now have a local
+`codex/generals-touch-unification` branch. The web implementation and expanded
+validation are recorded in the follow-up section at the end of this report.
+The comparison below describes the pinned upstream snapshots and initial
+native pass, not the subsequent web changes.
+
 ## Source snapshots and result
 
 | Repository | Inspected revision | Role |
 |---|---|---|
 | [omarelarab/ra2-engine](https://github.com/omarelarab/ra2-engine/tree/a8cfdccfef8592c13a6517c3fb76d834b1534027) | `a8cfdccfef8592c13a6517c3fb76d834b1534027` | Selected implementation base |
-| [Mustafa-MS/RedAlert2-Android](https://github.com/Mustafa-MS/RedAlert2-Android/tree/b332c3f78ef4cff46ce4f5b6a93703b970beb3a2) | `b332c3f78ef4cff46ce4f5b6a93703b970beb3a2` | Read-only comparison checkout |
+| [Mustafa-MS/RedAlert2-Android](https://github.com/Mustafa-MS/RedAlert2-Android/tree/b332c3f78ef4cff46ce4f5b6a93703b970beb3a2) | `b332c3f78ef4cff46ce4f5b6a93703b970beb3a2` | Initial comparison; follow-up implementation now available |
 | [MYSOREZ/GeneralsZH-Android-Port](https://github.com/MYSOREZ/GeneralsZH-Android-Port/tree/e707c1dafe597cfb92e75f942ae320741d59e047) | `e707c1dafe597cfb92e75f942ae320741d59e047` | Control-design reference, not copied code |
 
 The exact MYSOREZ project is **GeneralsZH-Android-Port**, a fork in the
@@ -90,17 +96,20 @@ Generals engine code or assets.
 | Building/ability targeting | Preview under finger, explicit commit/cancel | Existing RA2 placement/confirmation retained | Keep existing mode semantics until preview/commit is tested; no Generals rotation copied into fixed-footprint RA2 buildings |
 
 The native branch is a **partial implementation of the unified contract**,
-not a complete reproduction of Generals X controls and not a change to both
-engines. Keeping Omar's cancel-only stationary hold avoids silently changing
+not a complete reproduction of Generals X controls. The initial pass changed
+only this native engine; the follow-up below adds web changes. Keeping Omar's
+cancel-only stationary hold avoids silently changing
 production holds and existing selection behavior. Zoom, continuous aiming,
 new army-category buttons and inertial camera motion remain future work.
 
-For a later web implementation, introduce a pure gesture classifier with
+The original recommendation for a later web implementation was to introduce a pure gesture classifier with
 tap/pan/box/cancel/zoom intents, then adapt those intents to WorldInteraction's
 existing handlers. First resolve UI ownership, then gesture intent, then engine
 context actions. Test normal and right-click-move settings, minimap boundaries,
 placement, production buttons and third-finger transitions. Share the contract
-and event-trace tests across languages, rather than engine code.
+and event-trace tests across languages, rather than engine code. The follow-up
+instead adapts the existing world interaction handlers, which keeps UI gesture
+ownership separate without replacing the entire DOM input layer.
 
 ## Modified files
 
@@ -136,7 +145,8 @@ projects have the same provenance. No retail assets were imported or packaged.
 ## Validation actually performed
 
 The local branch is `codex/generals-touch-unification` in `work/ra2-engine`.
-The synced `sources/` directory was untouched. Mustafa's checkout is unchanged.
+The synced `sources/` directory was untouched. At the end of the initial pass,
+Mustafa's checkout was unchanged.
 
 The new regression suite was first compiled against the original gesture
 implementation: 13 total cases, 3 failures (queued hold, pan upgrade, hold
@@ -160,8 +170,68 @@ the writable workspace. An `assembleDebug --no-daemon` attempt with a workspace
 `GRADLE_USER_HOME` then failed downloading Gradle 8.9 with
 `UnknownHostException: services.gradle.org`, before Android compilation.
 No Android SDK environment variables or SDK at the usual LocalAppData path
-were found. No APK, device/emulator run, full CMake test suite, TypeScript
-build, WebView interaction test, asset import, gameplay test, multiplayer
-test or performance measurement was completed. The changed native controls
-still need device validation, especially finger slop, frame stalls, sidebar
-crossings, system cancellation and hold timing comfort.
+were found. At that stage no APK, device/emulator run, full CMake test suite,
+TypeScript build, WebView interaction test, asset import, gameplay test,
+multiplayer test or performance measurement had been completed. The expanded
+follow-up results below supersede those initial validation limits.
+
+## Follow-up implementation and verification
+
+Both local repositories now use branch `codex/generals-touch-unification`.
+The native gesture implementation remains the tested change in `b0941ad`;
+the follow-up adds a web implementation without copying engine code between
+projects. See `work/RedAlert2-Android/docs/ANDROID_TOUCH_CONTROLS.md` for its
+file-level changes, player controls and reproducible test commands.
+
+The web branch now provides one-finger pan, 250 ms hold-then-box selection,
+600 ms stationary cancel/deselect, preference-independent two-finger cancel,
+pinch/pan release protection, and suppression of separate UI click callbacks
+after cancellation or a drag. It preserves existing context actions, double
+tap, minimap routing, explicit keyboard modifiers and mouse box selection.
+The final camera delta is applied on touch release, including a drag completed
+between rendering frames, without adding a movement step to desktop velocity
+panning. The existing ActionFilter enum was isolated into a small module so
+input tests do not load unrelated circular dependencies in the order/task graph.
+
+Web validation:
+
+- **30 regression tests passed, 100 assertions**, across three explicit test
+  files: 23 touch/camera cases and seven existing performance helper cases.
+- **Vite production build succeeded**, exit 0. Bundle/dependency warnings remain.
+- Type checking reports **42 errors**, exactly matching the unmodified upstream
+  checkout using the same dependencies after path normalization. The touch
+  changes introduce no additional diagnostics; the type check is not green.
+- These are production-handler tests with mocked services, not browser, GPU,
+  WebView, real asset or multiplayer tests.
+
+Native validation was expanded by installing build tools inside this task's
+workspace and compiling the repository's full `ra2assets_tests` target with
+CMake/Ninja/GNU C++14.2 (`RA2_BUILD_ENGINE=OFF`). Compilation and linking succeeded.
+This compiles the library, simulation/input sources and test executable, not
+the SDL game application or Android libraries.
+
+The dedicated touch filter passed **14 cases / 100 assertions**. Its 1121
+reported skips are other tests excluded by that filter. The earlier standalone
+15-case total included the test harness's extra sanity case.
+
+The full native suite was also run. The initial sandboxed run reported ten
+failed cases. Repeating it with working workspace temporary storage and local
+loopback sockets permitted cleared four failures. The final result is **1129
+reported passes, six failed cases, 140309 passing assertions**. All six remaining
+cases throw `mix: too small` in real-game-rules fixtures. The log contains 276
+`skipped:` messages from tests returning early without a retail install, which
+the test framework misleadingly counts as passed rather than skipped. This
+is not a full gameplay pass and the six fixture exceptions are not repaired.
+
+The Android build was retried with network access and a workspace Gradle cache.
+Gradle 8.9 downloaded and project configuration ran, then `assembleDebug` failed
+with **SDK location not found**. No SDK/NDK installation was provisioned here,
+and no APK or device run was produced. This replaces the earlier DNS failure
+as the confirmed remaining Android build blocker.
+
+Remaining scope is explicit: no native pinch zoom, new web touch command column,
+continuous anchored pinch, redesigned ability targeting, inertial camera or
+Generals building rotation. Web long hold deselects when idle; native long hold
+retains its 450 ms cancel-only behavior and existing tooltip/team semantics.
+Both need real-device testing with the user's own game assets before release.
+All changes are local; no repository was pushed, published or merged.
