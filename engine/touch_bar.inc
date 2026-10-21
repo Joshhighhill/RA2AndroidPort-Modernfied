@@ -1,8 +1,8 @@
-// W2-AR-08 / -07 / -16, W4-AM-03/05/11: the touch command column (GameScene
+// Touch shortcut dock (bottom centre) (GameScene
 // members, textually included in the class body). Every hotkey-only command
 // gets an on-screen affordance once the player uses touch (or always on Android):
 //
-//   [CMD] open / close the column
+//   [CMD] show / hide the extra shortcut row
 //   [+SEL] sticky Shift  (taps ADD to the selection)
 //   [FIRE] one-shot Ctrl (force-fire the next order)
 //   [MOVE] one-shot Alt  (force-move the next order)
@@ -17,34 +17,24 @@
 //          [FOLW] Follow (F)   [6]..[0] teams 6-10 (tap select, hold create)
 //          [V1]..[V3] View1-3 (tap = jump, hold = SetView)   [BACK] page 1
 //
-// W4-AM-05: the column sits along the LEFT edge of the tactical view and is
-// CLOSED by default (only [CMD] at the left edge), so it never covers
-// the bottom of the playfield; it closes itself after a one-shot command and
-// after 6 s without use. The armed modifiers stay visible on [CMD] when closed.
-// W4-AM-03: an armed cursor mode (sell / repair / placement / superweapon
-// target) shows a banner with a 56 px [X] cancel button (touch_ui.inc).
-//
-// The buttons call the SAME command handlers the KeyboardMD.ini hotkeys use
-// (game_scene_controls.inc hotkey()), so behaviour is identical. Buttons are
-// 50x56 logical px: >= 42x48 dp on a phone canvas. Desktop with a mouse never
-// shows it. [Engine affordance, not original UI: the original is mouse + keyboard only.]
+// Bottom-centred shortcut dock, inspired by the Generals X command bar.
+// The primary row stays visible; CMD expands a second row for teams and extras.
+// Commands retain the existing RA2 handlers and hold-to-assign team behaviour.
+// The dock is centred within the tactical viewport, clear of the sidebar.
 struct TouchBtn { const char* label; int id; };
 enum : int { TB_TOGGLE = 1, TB_ADD, TB_FIRE, TB_MOVE, TB_STOP, TB_GUARD, TB_SCATTER, TB_DEPLOY, TB_BRIEF,
              TB_BOX, TB_MORE, TB_TYPE, TB_HOME, TB_EVENT, TB_NEXT, TB_PREV, TB_FOLLOW,
              TB_VIEW1 = 90, TB_GROUP1 = 100 };
-// W6-01-09: 8 rows (8 x 58 = 464 logical px fits the 548-px phone canvas below
-// the EVA lines), two columns per page.
-static constexpr int kTbW = 50, kTbH = 56, kTbGap = 2, kTbX = 4, kTbRows = 8;
-// The column is vertically centred on the left edge, below the EVA message lines.
-int tb_y0() const { return std::max(56, (kWinH - kTbRows * (kTbH + kTbGap)) / 2); }
-static constexpr double kTbAutoClose = 6.0;   // seconds without use
+int touch_bar_top() const {
+    return ra2engine::TouchBarLayout::top(kWinH, touch_btn_count());
+}
 const std::vector<TouchBtn>& touch_buttons() const {
     static const std::vector<TouchBtn> all = {
         {"CMD", TB_TOGGLE}, {"+SEL", TB_ADD}, {"FIRE", TB_FIRE}, {"MOVE", TB_MOVE},
         {"STOP", TB_STOP}, {"GRD", TB_GUARD}, {"SCAT", TB_SCATTER}, {"DPLY", TB_DEPLOY},
         {"BOX", TB_BOX}, {"BRF", TB_BRIEF},
         {"1", TB_GROUP1}, {"2", TB_GROUP1 + 1}, {"3", TB_GROUP1 + 2}, {"4", TB_GROUP1 + 3}, {"5", TB_GROUP1 + 4},
-        {"MORE", TB_MORE}};
+        {"TYPE", TB_TYPE}, {"HOME", TB_HOME}, {"MORE", TB_MORE}};
     static const std::vector<TouchBtn> no_brief = [] {
         std::vector<TouchBtn> v;
         for (const TouchBtn& b : all)
@@ -63,13 +53,14 @@ const std::vector<TouchBtn>& touch_buttons() const {
 bool touch_bar_visible() const {
     return touch_ui_ && !menu_.open_ && !sld_.is_open() && !gf_abort_.open() && !input_locked_;
 }
-// Button i's rectangle: column-major, kTbRows per column, from the top-left.
+// Primary row sits at the bottom; extra shortcuts expand upwards.
 SDL_Rect touch_btn_rect(int i) const {
-    const int col = i / kTbRows, row = i % kTbRows;
-    return SDL_Rect{kTbX + col * (kTbW + kTbGap), tb_y0() + row * (kTbH + kTbGap), kTbW, kTbH};
+    const auto r = ra2engine::TouchBarLayout::button(playfield_w_, kWinH, touch_btn_count(), i);
+    return SDL_Rect{r.x, r.y, r.w, r.h};
 }
 int touch_btn_count() const {
-    return touch_bar_open_ ? static_cast<int>(touch_buttons().size()) : 1;
+    return touch_bar_open_ ? static_cast<int>(touch_buttons().size()) :
+           std::min(ra2engine::TouchBarLayout::columns, static_cast<int>(touch_buttons().size()));
 }
 int touch_btn_at(int x, int y) const {
     if (!touch_bar_visible()) return -1;
@@ -81,7 +72,6 @@ int touch_btn_at(int x, int y) const {
     return -1;
 }
 void touch_command(int id, bool long_press, uint32_t t_ms) {
-    touch_bar_idle_ = 0.0;
     bool one_shot = true;
     switch (id) {
         case TB_TOGGLE: touch_bar_open_ = !touch_bar_open_; touch_page2_ = false; one_shot = false; break;
@@ -124,14 +114,14 @@ void touch_command(int id, bool long_press, uint32_t t_ms) {
             }
             break;
     }
-    if (one_shot) { touch_bar_open_ = false; touch_page2_ = false; }   // W4-AM-05: out of the way again
+    if (one_shot) { touch_bar_open_ = false; touch_page2_ = false; } // Keep primary shortcuts visible.
 }
 // Consumes taps on the bar; stamps the modifier toggles on other touch
 // pointer events (so Input sees Shift / Ctrl / Alt exactly as from a
 // keyboard). Returns true when the event was consumed.
 bool touch_bar_handle(ra2engine::InputEvent& ev) {
     if (ev.touch) touch_ui_ = true;
-    // A drag that starts on the column does not scroll the map.
+    // A drag that starts on the dock does not scroll the map.
     if (ev.kind == ra2engine::InputEvent::Pan && ev.touch && touch_btn_at(ev.x0, ev.y0) >= 0) return true;
     const bool ptr = ev.kind == ra2engine::InputEvent::PointerDown || ev.kind == ra2engine::InputEvent::PointerUp;
     if (!ptr) return false;
@@ -186,13 +176,10 @@ bool touch_bar_handle(ra2engine::InputEvent& ev) {
     }
     return false;
 }
-// Per frame: the open column closes itself after kTbAutoClose seconds unused.
+// The dock stays where the player left it; commands collapse the extra row.
 void touch_bar_tick(double dt) {
-    // W6-01-11: BOX drags only on the open playfield (menus / dialogs scroll).
+    (void)dt;
     ra2engine::TouchGestures::set_box_mode(touch_box_ && touch_bar_visible());
-    if (!touch_bar_open_) { touch_bar_idle_ = 0.0; return; }
-    touch_bar_idle_ += dt;
-    if (touch_bar_idle_ >= kTbAutoClose) { touch_bar_open_ = false; touch_page2_ = false; }
 }
 void draw_touch_bar(SDL_Renderer* ren) {
     if (!touch_bar_visible()) return;
@@ -221,12 +208,11 @@ void draw_touch_bar(SDL_Renderer* ren) {
     }
 }
 #ifdef __ANDROID__
-bool touch_ui_ = true;    // a phone: the column is there from the first frame
+bool touch_ui_ = true;    // a phone: the dock is there from the first frame
 #else
 bool touch_ui_ = false;   // desktop: appears after the first touch event
 #endif
-bool touch_bar_open_ = false;   // W4-AM-05: closed by default
-double touch_bar_idle_ = 0.0;
+bool touch_bar_open_ = true; // Show team shortcuts on first use; CMD collapses them.
 bool touch_add_ = false, touch_fire_ = false, touch_move_ = false;
 bool touch_box_ = false;     // W6-01-11 sticky BOX (TouchGestures::set_box_mode)
 bool touch_page2_ = false;   // W6-01-09 the MORE page

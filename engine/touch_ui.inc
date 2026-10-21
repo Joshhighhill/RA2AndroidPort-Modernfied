@@ -21,12 +21,9 @@ bool touch_banner_visible() const {
     return touch_ui_ && !mouse_present_ && touch_mode() != 0 && !menu_.open_ && !sld_.is_open() &&
            !input_locked_;
 }
-// The banner runs along the bottom of the tactical view, right of the command
-// column (the top carries the EVA messages); the [X] cancel button is its
-// right end (56x56 logical px).
+// Armed-mode instructions and cancel sit above the shortcut dock.
 SDL_Rect touch_banner_rect() const {
-    const int x = kTbX + 2 * (kTbW + kTbGap) + 4;
-    return SDL_Rect{x, kWinH - 60, std::max(120, playfield_w_ - x - 8), 56};
+    return SDL_Rect{8, touch_bar_top() - 60, std::max(120, playfield_w_ - 16), 56};
 }
 SDL_Rect touch_cancel_rect() const {
     const SDL_Rect b = touch_banner_rect();
@@ -237,7 +234,7 @@ void draw_touch_hint(SDL_Renderer* ren) {
                                     "DOUBLE TAP: ALL OF TYPE    HOLD + DRAG: BOX",
                                     "HOLD: CANCEL MODE    TWO-FINGER TAP: DESELECT"};
     const int w = std::min(playfield_w_ - 16, 46 * 12 + 16);
-    const int y = touch_banner_visible() ? kWinH - 60 - 72 : kWinH - 72;
+    const int y = (touch_banner_visible() ? touch_banner_rect().y : touch_bar_top()) - 72;
     const SDL_Rect r{(playfield_w_ - w) / 2, y, w, 66};
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(ren, 10, 12, 16, 0xB0);

@@ -13,7 +13,7 @@
   [the phone test instructions](docs/ANDROID_TOUCH_TESTING.md).
 - One-finger drag pans; hold for 250 ms, then drag to box-select. Adding a
   finger during a pan no longer turns the release into an accidental cancel.
-- Existing upstream context actions, command column, groups and production
+- Existing upstream context actions, bottom-centred command dock, groups and production
   controls are retained. Native pinch zoom is still pending.
 - [Source comparison and validation limits](docs/ANDROID_TOUCH_COMPARISON.md).
 - Native gesture regression tests and APK package/signature checks passed;

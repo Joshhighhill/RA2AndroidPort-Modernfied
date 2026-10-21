@@ -121,7 +121,7 @@ target_sources(ra2assets_tests PRIVATE tests/test_input.cpp engine/input.cpp eng
 # G-04: KeyboardMD.ini hotkey table.
 target_sources(ra2assets_tests PRIVATE tests/test_hotkeys.cpp engine/hotkeys.cpp)
 # G-70/G-71: touch gesture layer.
-target_sources(ra2assets_tests PRIVATE tests/test_touch_gestures.cpp engine/touch_gestures.cpp)
+target_sources(ra2assets_tests PRIVATE tests/test_touch_gestures.cpp tests/test_touch_bar_layout.cpp engine/touch_gestures.cpp)
 # occupancy.cpp is a pure C++17 cell-ownership grid (no SDL) used by the
 # multi-unit movement/collision logic; compiled into both this test binary and
 # ra2engine from one source of truth (same pattern as pathfind.cpp/world.cpp).

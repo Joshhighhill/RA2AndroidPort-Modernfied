@@ -77,6 +77,7 @@ static char* ra2_cli_pref_path() {
 #include "flight.hpp"       // altitude_to_screen_dy (CB-2 raised-sprite draw)
 #include "harvest.hpp"     // OreValues/HarvestEvent/dock_cell + step_harvest (Economy phase)
 #include "input.hpp"
+#include "touch_bar_layout.hpp"
 #include "hotkeys.hpp"       // G-04 KeyboardMD.ini command table
 #include "bink_async.hpp"     // W5-E2 R-173: Bink decoding off the main thread
 #include "touch_gestures.hpp" // G-70 (controls self-test drives the real gesture layer)
@@ -6845,7 +6846,7 @@ public:
     void update(double dt) override {
         menu_.set_mp(net_ != nullptr, mp_can_observe());   // W9-05-06: the MP options / exit pages
         tooltip_tick(dt);   // W2-UI-07 hover timer (game time)
-        touch_bar_tick(dt);   // W4-AM-05: the open touch column closes itself
+        touch_bar_tick(dt);   // Keep touch selection mode in sync with the shortcut dock
         touch_hint_tick(dt);  // W4-AM-01: the gesture hint
         // P7: the options menu / save-load dialog pause the game (the original
         // runs them as a modal loop; the scenario does not advance meanwhile).

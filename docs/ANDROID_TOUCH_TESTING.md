@@ -31,7 +31,11 @@ delete or replace.
 | Drag with two fingers | Move the camera without clearing selection |
 | Add a second finger during a pan, then lift | Stop panning without an accidental cancel |
 | Two-finger tap | Cancel an armed mode, otherwise clear selection |
-| Open CMD | Show the existing command buttons and control groups |
+| Bottom shortcuts | STOP, GRD, SCAT, DPLY and selection modifiers stay visible at bottom centre |
+| Tap CMD | Show/hide the second row: groups 1–5, TYPE, HOME and MORE |
+| Group button | Tap to select; hold to assign selected units; double tap to centre |
+| Tap MORE / BACK | Reach teams 6–10, views and extra commands / return |
+| Arm sell/repair/placement | Instructions and X cancel appear above the dock, without covering it |
 | Build a structure and place it | Show and place the footprint normally |
 | Fight the AI for several minutes | Commands and rendering continue working |
 
@@ -58,3 +62,6 @@ the real-device validation for this build.
 ## Corrected sideload package (test 2)
 Test 1 accidentally used Android Studio's internal injected ABI option, marking the APK testOnly and blocking normal installation. Build test 2 with ordinary assembleRelease, -Pra2.abis=arm64-v8a and -Pra2.buildNumber=3. Keep the existing signing key in ignored android/keystore.properties. Before publication run tools/android/verify_sideload.py with --build-tools and --report; it rejects testOnly and debuggable manifests and verifies signing, alignment and ZIP integrity. No phone installation is implied by these checks.
 
+
+## Bottom shortcut dock (test 3)
+The primary command row remains visible at the bottom centre of the tactical viewport. CMD toggles the second row, initially expanded. The extra row collapses after a one-shot action; there is no idle timeout. The mode banner and first-use hints stack above the dock. Gesture thresholds and game command handlers are unchanged.
