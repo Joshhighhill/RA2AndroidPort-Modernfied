@@ -5463,8 +5463,9 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
         }
         const bool picture = unit_tab ? (type < static_cast<int>(ur->has_cameo.size()) && ur->has_cameo[type]) : ba.art[type].has_cameo;
         if (!picture) {
-            SDL_SetRenderDrawColor(ren,35,43,40,255); SDL_RenderFillRect(ren,&c.rect);
-            SDL_SetRenderDrawColor(ren,120,100,70,255); SDL_RenderDrawRect(ren,&c.rect);
+            const SDL_Rect missing_rect{c.rect.x,c.rect.y,c.rect.w,c.rect.h};
+            SDL_SetRenderDrawColor(ren,35,43,40,255); SDL_RenderFillRect(ren,&missing_rect);
+            SDL_SetRenderDrawColor(ren,120,100,70,255); SDL_RenderDrawRect(ren,&missing_rect);
             const std::string tag = (unit_tab ? ur->defs[type].id : ba.roster[type].id).substr(0,8);
             draw_text(ren,tag,c.rect.x+3,c.rect.y+8,1,220,205,170);
             draw_text(ren,"NO ART",c.rect.x+3,c.rect.y+25,1,160,155,130);
