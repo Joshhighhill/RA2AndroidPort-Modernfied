@@ -64,6 +64,12 @@ if (keystorePropsFile.exists()) {
     keystorePropsFile.withInputStream { keystoreProps.load(it) }
 }
 
+// Use a public build property: IDE injected ABI options can mark APKs testOnly.
+def ra2Abis = (project.findProperty('ra2.abis') ?: 'arm64-v8a,x86_64').toString().split(',').collect { it.trim() }
+if (!ra2Abis || ra2Abis.any { !(it in ['arm64-v8a', 'x86_64']) }) {
+    throw new GradleException('ra2.abis must contain arm64-v8a and/or x86_64')
+}
+
 android {
     if (buildAsApplication) {
         namespace "org.ra2.engine"
@@ -103,11 +109,11 @@ android {
                     arguments "-DCMAKE_JOB_POOLS=ra2=" + project.findProperty('ra2.jobs'),
                               "-DCMAKE_JOB_POOL_COMPILE=ra2", "-DCMAKE_JOB_POOL_LINK=ra2"
                 }
-                abiFilters 'arm64-v8a', 'x86_64'
+                abiFilters(*ra2Abis)
             }
         }
         ndk {
-            abiFilters 'arm64-v8a', 'x86_64'
+            abiFilters(*ra2Abis)
         }
     }
     signingConfigs {

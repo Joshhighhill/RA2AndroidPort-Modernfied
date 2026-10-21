@@ -54,3 +54,7 @@ Please report your Android/HyperOS version and these results:
 If the app closes, mention whether it happened during import, loading or actual
 play. This package has not been tested on your phone in advance; your test is
 the real-device validation for this build.
+
+## Corrected sideload package (test 2)
+Test 1 accidentally used Android Studio's internal injected ABI option, marking the APK testOnly and blocking normal installation. Build test 2 with ordinary assembleRelease, -Pra2.abis=arm64-v8a and -Pra2.buildNumber=3. Keep the existing signing key in ignored android/keystore.properties. Before publication run tools/android/verify_sideload.py with --build-tools and --report; it rejects testOnly and debuggable manifests and verifies signing, alignment and ZIP integrity. No phone installation is implied by these checks.
+
