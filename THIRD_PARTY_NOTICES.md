@@ -1,5 +1,22 @@
 # Third-party notices
 
+## Source of this modified fork
+
+Original RA2 Engine author: **Omar El Arab**.
+Source: https://github.com/omarelarab/ra2-engine
+Starting revision: a8cfdccfef8592c13a6517c3fb76d834b1534027.
+The upstream engine is licensed under 0BSD; its LICENSE is retained.
+
+This Android touch-control fork is maintained by shietgrupe-cpu13 with OpenAI
+Codex assistance. Its gesture changes and tests are modifications to Omar's
+engine, not a new engine written by this fork.
+
+MYSOREZ/GeneralsZH-Android-Port was studied as a touch-control design reference:
+https://github.com/MYSOREZ/GeneralsZH-Android-Port . No Generals source or assets
+were copied. Mustafa-MS/RedAlert2-Android was compared as a separate Android
+architecture: https://github.com/Mustafa-MS/RedAlert2-Android . No code from
+that project is included in this native APK. Full provenance is in CREDITS.md.
+
 RA2 Engine itself is licensed under the Zero-Clause BSD licence (0BSD, see
 `LICENSE`). The engine
 binaries (desktop `ra2engine` and the Android APK) also include or link

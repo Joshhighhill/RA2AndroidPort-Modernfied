@@ -1,5 +1,27 @@
 # RA2 Engine
 
+> **Android touch-control test fork.** The original engine is by
+> **[Omar El Arab](https://github.com/omarelarab/ra2-engine)**. This fork adds
+> focused touch improvements and test APK packaging. See [CREDITS.md](CREDITS.md)
+> for the exact source revision, control-design references and bundled libraries.
+> The ARM64 debug release is for testing; it has not yet been validated on the
+> target POCO X7 Pro. Your own RA2 + Yuri's Revenge game files are required.
+
+## This fork's Android test build
+
+- [Download the ARM64 test APK](../../releases) and follow
+  [the phone test instructions](docs/ANDROID_TOUCH_TESTING.md).
+- One-finger drag pans; hold for 250 ms, then drag to box-select. Adding a
+  finger during a pan no longer turns the release into an accidental cancel.
+- Existing upstream context actions, command column, groups and production
+  controls are retained. Native pinch zoom is still pending.
+- [Source comparison and validation limits](docs/ANDROID_TOUCH_COMPARISON.md).
+- Native gesture regression tests and APK package/signature checks passed;
+  broader asset-dependent tests are not a full gameplay pass.
+
+The upstream project description follows. Its gameplay claims are upstream
+documentation, not new device-test results for this fork.
+
 An **unofficial, open-source engine for Command & Conquer: Red Alert 2 — Yuri's
 Revenge**, for **Windows and Android**. You play the original campaign,
 skirmish and multiplayer with the game files from **your own copy** of the
