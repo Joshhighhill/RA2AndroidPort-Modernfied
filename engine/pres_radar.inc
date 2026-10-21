@@ -109,7 +109,10 @@ public:
                 for (int x = 0; x < gw_; ++x) {
                     ra2assets::Rgba c = base_[static_cast<std::size_t>(y) * gw_ + x];
                     if (c.a == 0) continue;
-                    if (!w.explored_at(g_local_house, x, y)) { plot(x, y, ra2assets::Rgba{0, 0, 0, 255}, 1.0); continue; }
+                    // The cleared image already represents shroud. At small
+                    // scales several cells share a pixel: never let a later
+                    // unexplored cell erase an explored cell's colour.
+                    if (!w.explored_at(g_local_house, x, y)) continue;
                     if (w.ore().has_ore(x, y))
                         c = w.ore().kind_at(x, y) == ra2engine::OreKind::Gems ? ra2assets::Rgba{60, 110, 200, 255}
                                                                                 : ra2assets::Rgba{200, 170, 40, 255};

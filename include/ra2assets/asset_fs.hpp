@@ -49,8 +49,11 @@ public:
     // First archive (in search order) holding `name` (case-insensitive).
     // Returns nullptr when absent everywhere; `label` gets the archive label.
     // `ra2_only` stops before the YR tail (the RA2 game.exe archives only).
+    // `prefer_yr` searches that tail first, with classic fallback; ignored
+    // when ra2_only is set. Opt in only for expansion artwork overrides.
     const MixEntry* find(const std::string& name, const MixFile** owner = nullptr,
-                         std::string* label = nullptr, bool ra2_only = false) const;
+                         std::string* label = nullptr, bool ra2_only = false,
+                         bool prefer_yr = false) const;
     bool has(const std::string& name) const { return find(name) != nullptr; }
     // Reads `name`; returns false (out untouched) when absent.
     bool read(const std::string& name, std::vector<uint8_t>& out) const;

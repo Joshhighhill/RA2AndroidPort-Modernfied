@@ -1821,7 +1821,18 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
             // first, YR localmd.mix last) [RE: asset-search.md §1].
             {
                 std::vector<uint8_t> vr, hr;
-                if (asset_read(part_base + ".vxl", vr) && asset_read(part_base + ".hva", hr)) {
+                const bool yuri_art = rules_ini.get(unit_id, "Owner").find("YuriCountry") != std::string::npos;
+                auto read_model = [&](const std::string& file, std::vector<uint8_t>& bytes) {
+                    const MixFile* owner = nullptr;
+                    std::string source;
+                    const MixEntry* entry = asset_fs().find(file, &owner, &source, false, yuri_art);
+                    if (!entry) return false;
+                    bytes = owner->read(*entry);
+                    std::cerr << "[vehicle-art] type=" << unit_id << " image=" << image
+                              << " file=" << file << " archive=" << source << "\n";
+                    return true;
+                };
+                if (read_model(part_base + ".vxl", vr) && read_model(part_base + ".hva", hr)) {
                     m = ra2assets::load_vxl(vr.data(), vr.size());
                     h = ra2assets::load_hva(hr.data(), hr.size());
                     return true;
