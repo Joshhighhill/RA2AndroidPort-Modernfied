@@ -41,6 +41,7 @@ void TouchGestures::emit_pan(int dx, int dy, int x, int y, uint32_t t) {
 }
 
 void TouchGestures::finger_down(int64_t id, int x, int y, uint32_t t) {
+    tick(t);   // event timestamps classify holds even while SDL's queue stays busy
     switch (st_) {
         case State::Idle:
             st_ = State::Pending;
@@ -52,9 +53,11 @@ void TouchGestures::finger_down(int64_t id, int x, int y, uint32_t t) {
             t0_ = t;
             return;
         case State::Pending:
+        case State::Held:
         case State::Panning:
             // A second finger: two-finger gesture (a one-finger pan simply
             // continues as a two-finger pan).
+            two_tap_candidate_ = st_ != State::Panning;
             st_ = State::TwoFinger;
             id1_ = id;
             x1_ = x;
@@ -74,6 +77,7 @@ void TouchGestures::finger_down(int64_t id, int x, int y, uint32_t t) {
 }
 
 void TouchGestures::finger_move(int64_t id, int x, int y, uint32_t t) {
+    tick(t);
     if (st_ == State::TwoFinger) {
         if (id == id0_) { cx_ = x; cy_ = y; }
         else if (id == id1_) { x1_ = x; y1_ = y; }
@@ -92,8 +96,10 @@ void TouchGestures::finger_move(int64_t id, int x, int y, uint32_t t) {
     cx_ = x;
     cy_ = y;
     const bool beyond = std::abs(x - x0_) > cfg_.slop_px || std::abs(y - y0_) > cfg_.slop_px;
-    if (st_ == State::Pending && beyond && box_mode_) {
-        st_ = State::BandDrag;   // W6-01-11: BOX mode -- the drag is a band box
+    if (st_ == State::Pending && beyond &&
+        (box_mode_ || t - t0_ >= cfg_.selection_hold_ms)) {
+        // Generals-inspired short selection hold; BOX mode still bypasses it.
+        st_ = State::BandDrag;
         emit(InputEvent::PointerMove, x0_, y0_, false, t0_);
         emit(InputEvent::PointerDown, x0_, y0_, false, t0_);
         emit(InputEvent::PointerMove, x, y, false, t);
@@ -151,6 +157,7 @@ void TouchGestures::finger_cancel(int64_t id, int x, int y, uint32_t t) {
 }
 
 void TouchGestures::finger_up(int64_t id, int x, int y, uint32_t t) {
+    tick(t);
     switch (st_) {
         case State::Pending:
             if (id != id0_) return;
@@ -181,7 +188,7 @@ void TouchGestures::finger_up(int64_t id, int x, int y, uint32_t t) {
             if (three_) {
                 // R-170: the first lift of a three-finger gesture decides it;
                 // the other two fingers' lifts are swallowed (WaitUp x2).
-                if (travel_ <= cfg_.slop_px * 2 && t - t2_ <= cfg_.three_finger_tap_ms) {
+                if (two_tap_candidate_ && travel_ <= cfg_.slop_px * 2 && t - t2_ <= cfg_.three_finger_tap_ms) {
                     InputEvent e;
                     e.kind = InputEvent::Key;
                     e.key = kKeyPerfToggle;
@@ -196,7 +203,7 @@ void TouchGestures::finger_up(int64_t id, int x, int y, uint32_t t) {
             }
             if (id != id0_ && id != id1_) return;
             // Two-finger TAP (short, no pan) = right click at the first finger.
-            if (travel_ <= cfg_.slop_px && t - t2_ <= cfg_.two_finger_tap_ms)
+            if (two_tap_candidate_ && travel_ <= cfg_.slop_px && t - t2_ <= cfg_.two_finger_tap_ms)
                 emit_click(x0_, y0_, true, t);
             // Wait for the other finger without re-entering a one-finger state.
             st_ = State::WaitUp;

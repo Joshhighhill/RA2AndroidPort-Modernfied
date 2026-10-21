@@ -11,13 +11,15 @@
 // sits inside Android's own 400-500 ms long-press window)]:
 //   tap                         -> left click (select / order / sidebar / menu)
 //   one-finger drag             -> Pan (the map follows the finger)
-//   hold, then drag             -> left band box from the hold point (box select)
+//   hold 250 ms, then drag      -> left band box from the hold point (box select)
 //   hold, then lift             -> right click marked `hold` (cancel the armed
 //                                  mode; on a cameo: hold / abandon; on a team
 //                                  button: create the team). It NEVER deselects
 //                                  units (W4-AM-07).
 //   two-finger drag             -> Pan
 //   two-finger tap              -> right click (cancel a mode, else deselect)
+// A second finger can upgrade a stationary hold, but an already-started pan
+// remains camera-only until every finger lifts (it cannot become a cancel).
 //   three-finger tap            -> Key kKeyPerfToggle (R-170: the FPS / perf
 //                                  overlay; the scene driver eats it)
 //   W6-01-11: while BOX mode is on (the sticky [BOX] button of the command
@@ -41,6 +43,9 @@ public:
         uint32_t two_finger_tap_ms = 300;
         uint32_t feedback_delay_ms = 150;   // the hold ring appears after this
         uint32_t three_finger_tap_ms = 500;
+        // Separate from hold-release: selecting a box should respond sooner
+        // without making a 250-449 ms stationary tap into a cancel.
+        uint32_t selection_hold_ms = 250;
     };
     TouchGestures() = default;
     explicit TouchGestures(Config c) : cfg_(c) {}
@@ -92,6 +97,7 @@ private:
     int travel_ = 0;                          // two-finger centroid travel (px)
     uint32_t t2_ = 0;                         // two-finger start time
     bool three_ = false;                      // R-170: a third finger joined
+    bool two_tap_candidate_ = false;          // never revive a consumed one-finger pan
     int up_left_ = 0;                         // fingers still down after a 3-finger lift
     std::deque<InputEvent> out_;
     inline static bool box_mode_ = false;

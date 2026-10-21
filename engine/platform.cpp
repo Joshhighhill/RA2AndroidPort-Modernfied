@@ -350,9 +350,9 @@ bool Platform::poll(InputEvent& ev) {
             ev.ctrl = (SDL_GetModState() & KMOD_CTRL) != 0;
             ev.alt = (SDL_GetModState() & KMOD_ALT) != 0;
             break;
-        // G-70: fingers go through the gesture layer (tap = left click, drag =
-        // band box, long-press / two-finger tap = right click, two-finger drag =
-        // pan); the produced events are drained at the top of poll().
+        // Fingers use TouchGestures: tap selects/orders, drag pans, hold then
+        // drag selects a box; two-finger tap cancels and two-finger drag pans.
+        // The produced events are drained at the top of poll().
         case SDL_FINGERDOWN:
             p_->last_touch = true;
             p_->touch.finger_down(e.tfinger.fingerId, static_cast<int>(e.tfinger.x * p_->w),

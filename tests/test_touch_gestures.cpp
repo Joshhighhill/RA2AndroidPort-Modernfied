@@ -15,6 +15,96 @@ std::vector<InputEvent> drain(TouchGestures& g) {
 }
 }  // namespace
 
+TEST_CASE("touch: short selection hold is independent of hold-release cancel") {
+    TouchGestures g;
+    g.finger_down(1, 100, 100, 1000);
+    g.finger_move(1, 160, 140, 1250);
+    g.finger_up(1, 160, 140, 1300);
+    auto v = drain(g);
+    REQUIRE(v.size() == 4);
+    CHECK(v[1].kind == InputEvent::PointerDown);
+    CHECK(v[1].button == InputEvent::Left);
+    CHECK(v[1].x == 100);
+    CHECK(v[1].y == 100);
+    CHECK(v.back().kind == InputEvent::PointerUp);
+
+    g.finger_down(1, 100, 100, 2000);
+    g.finger_up(1, 100, 100, 2400);
+    v = drain(g);
+    REQUIRE(v.size() == 3);
+    CHECK(v[1].button == InputEvent::Left);
+    CHECK_FALSE(v[1].hold);
+}
+
+TEST_CASE("touch: drag just before selection hold stays a pan even after waiting") {
+    TouchGestures g;
+    g.finger_down(1, 100, 100, 1000);
+    g.finger_move(1, 160, 140, 1249);
+    g.tick(2000);
+    g.finger_move(1, 180, 160, 2010);
+    g.finger_up(1, 180, 160, 2020);
+    const auto v = drain(g);
+    REQUIRE(v.size() == 2);
+    for (const auto& e : v) CHECK(e.kind == InputEvent::Pan);
+}
+
+TEST_CASE("touch: queued hold events do not need an idle tick") {
+    TouchGestures g;
+    g.finger_down(1, 100, 100, 1000);
+    g.finger_move(1, 160, 140, 1500);
+    g.finger_up(1, 160, 140, 1550);
+    auto v = drain(g);
+    REQUIRE(v.size() == 4);
+    CHECK(v[1].kind == InputEvent::PointerDown);
+    CHECK(v[1].button == InputEvent::Left);
+    CHECK(v.back().kind == InputEvent::PointerUp);
+
+    g.finger_down(1, 100, 100, 2000);
+    g.finger_up(1, 100, 100, 2500);
+    v = drain(g);
+    REQUIRE(v.size() == 3);
+    CHECK(v[1].button == InputEvent::Right);
+    CHECK(v[1].hold);
+}
+
+TEST_CASE("touch: upgrading an existing pan must never become cancel") {
+    TouchGestures g;
+    g.finger_down(1, 100, 100, 1000);
+    g.finger_move(1, 160, 100, 1010);
+    (void)drain(g);
+    g.finger_down(2, 200, 100, 1020);
+    g.finger_up(2, 200, 100, 1050);
+    g.finger_up(1, 160, 100, 1060);
+    CHECK_FALSE(g.pending());
+}
+
+TEST_CASE("touch: opposing finger movement cannot become cancel even after returning") {
+    TouchGestures g;
+    g.finger_down(1, 100, 100, 1000);
+    g.finger_down(2, 200, 100, 1010);
+    g.finger_move(1, 80, 100, 1020);
+    g.finger_move(2, 220, 100, 1030);
+    g.finger_move(1, 100, 100, 1040);
+    g.finger_move(2, 200, 100, 1050);
+    (void)drain(g);
+    g.finger_up(2, 200, 100, 1060);
+    g.finger_up(1, 100, 100, 1070);
+    CHECK_FALSE(g.pending());
+}
+
+TEST_CASE("touch: a second finger upgrades a stationary hold to two-finger cancel") {
+    TouchGestures g;
+    g.finger_down(1, 100, 100, 1000);
+    g.tick(1500);
+    g.finger_down(2, 200, 100, 1510);
+    g.finger_up(2, 200, 100, 1550);
+    g.finger_up(1, 100, 100, 1560);
+    const auto v = drain(g);
+    REQUIRE(v.size() == 3);
+    CHECK(v[1].button == InputEvent::Right);
+    CHECK_FALSE(v[1].hold);
+}
+
 TEST_CASE("touch: a tap is ONE left click (no synthetic duplicate)") {
     TouchGestures g;
     g.finger_down(1, 100, 200, 1000);

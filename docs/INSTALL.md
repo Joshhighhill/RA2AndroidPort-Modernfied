@@ -142,7 +142,7 @@ yet (they are listed as "Older version"), so finish a mission first.
 | Tap the only selected unit (wait half a second) | Deploy / unload it (or use **DPLY**) |
 | Drag with one finger | Scroll the map (with **BOX** on: draw a selection box) |
 | Drag with two fingers | Scroll the map |
-| Hold (a ring fills at the finger), then drag | Draw a selection box |
+| Hold for a quarter second, then drag | Draw a selection box. You can start dragging before the hold ring is full. |
 | Hold, then lift | Cancel the armed mode (sell, repair, placement, superweapon target). It never deselects. On a team button: create the team. |
 | Hold on a cameo | Show its name and price above the finger. It does not pause the build. If the cameo is building, a small menu opens beside it: **PAUSE** / **RESUME**, **CANCEL** (one), **ALL** (every queued copy). Tap elsewhere to close it. |
 | Two-finger tap | Right-click: cancel a mode, else deselect everything |
@@ -150,6 +150,10 @@ yet (they are listed as "Older version"), so finish a mission first.
 | Tap the radar | Look there (it never moves the selection; arm **MOVE** first to send units there) |
 | Drag on the radar | Scroll the view with the finger |
 | Swipe up / down on the cameo strip | Scroll the build list |
+
+A second finger can turn a stationary hold into a two-finger gesture. Once a
+drag has started scrolling, adding a finger and lifting cannot cancel your
+selection. A stationary hold-release still uses the separate 450 ms delay.
 
 - A short hint with these gestures shows for 12 seconds when you get control.
 - The **command column** sits on the left edge of the battlefield. It is
