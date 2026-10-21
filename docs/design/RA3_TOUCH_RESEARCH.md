@@ -37,3 +37,18 @@ Keep the pan and hold-box scheme the user reports works well. Native pinch zoom 
 ## Artifacts
 
 ra3-unit-panel.html is an interactive design prototype. Existing APK test 3 is unchanged. No full APK rebuild was done for this research pass, to conserve the user's remaining usage.
+
+## Resolution and engine follow-up
+
+User additionally requests a bigger game resolution later. Preserve both possible meanings: seeing more battlefield and making units/UI larger. These require separate controls.
+
+Source findings: engine/app_robust.inc::game_logical_size currently clamps Android logical height to 520..720 based on display DPI, with viewport aspect constrained to 16:9..2.39:1. engine/platform.cpp already implements Platform::set_logical_size through SDL_RenderSetLogicalSize, and output_size via SDL_GetRendererOutputSize. GameScene::set_canvas_size in engine/main.cpp and engine/game_scene_lifecycle.inc already participate in canvas changes. Therefore another engine is not required merely to expose higher logical resolutions. A physical high-resolution output alone does not mean the world is rendered at that logical resolution.
+
+Recommended settings: Battlefield detail/area presets (candidate logical heights 720, 900, 1080, preserving the actual supported aspect); independent UI size; and separate camera zoom after renderer/input projection audit. Presets are design candidates, not tested capabilities. Keep current mode as safe fallback, offer a timed Revert preview, rebuild sidebar/radar/layout and reproject input on change, respect cutouts/system gestures, and persist only after confirmation. Higher world canvas can show more map but shrink sprites; stretching low-resolution art does not create detail. Profile frame time, texture limits, memory, loading and thermal behaviour on POCO rather than promising native-panel resolution or a target FPS.
+
+Engine comparison (primary documentation checked 21 October 2026):
+- Existing C++/SDL2: recommended path. SDL already distinguishes logical canvas from renderer output. No simulation/asset importer migration needed. https://wiki.libsdl.org/SDL2/SDL_RenderSetLogicalSize and https://wiki.libsdl.org/SDL2/SDL_RenderGetLogicalSize . Rendering and input must remain in matching coordinates.
+- Godot: documented viewport/stretch/canvas-items and UI scaling facilities are relevant design references. https://docs.godotengine.org/en/stable/tutorials/rendering/multiple_resolutions.html . Assessment: moving this native RA2 simulation, MIX assets, renderer and touch routing to Godot would be substantial integration/rewrite work, not a resolution switch. No compatibility prototype was run.
+- OpenRA: purpose-built moddable RTS engine, but its public supported-game description is not a verified drop-in RA2/Yuri replacement. https://www.openra.net/about/ . Assessment: requires a separate compatibility and Android audit; no migration recommendation or claim of full Yuri support. Historical gen2 progress is not current proof: https://www.openra.net/news/devblog-20200629/ .
+
+Next-session priority: icon panel, resolution/UI-size settings using existing SDL path, then investigate the user's exact Yuri issue. No engine replacement, new APK, performance benchmark or device-resolution test was done in this research pass.
