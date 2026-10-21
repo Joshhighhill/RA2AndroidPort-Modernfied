@@ -9,6 +9,11 @@ struct TouchBarLayout {
         const int content = count == 13 ? 164 : ((count + 3) / 4) * 60 - 4;
         return viewport_height - margin - content - header_height;
     }
+    static Rect toggle(int viewport_width, int viewport_height, int count, bool collapsed) {
+        if (collapsed) return {margin, viewport_height-margin-44, 44, 44};
+        return {margin+std::min(panel_width,viewport_width-2*margin)-48,
+                top(viewport_height,count)+4,44,44};
+    }
     static Rect button(int viewport_width, int viewport_height, int count, int index) {
         const int pw = std::min(panel_width, viewport_width - 2 * margin);
         if (count == 13 && index >= 8) {

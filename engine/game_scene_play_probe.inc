@@ -401,7 +401,9 @@
         }
         for (std::size_t i = 0; i < lay_.cameos.size() && i < buildable_.size(); ++i)
             p.targets["cameo:" + play_entry_id(active_tab_, buildable_[i])] = rect(lay_.cameos[i].rect);
-        if (touch_bar_visible()) {   // W4-AM: touch column buttons + the mode banner's [X]
+        if (touch_bar_visible()) {   // Includes the collapsed panel's restore arrow.
+            const SDL_Rect arrow = touch_panel_toggle_rect();
+            p.targets["touch:panel-toggle"] = ra2play::Rect{arrow.x,arrow.y,arrow.w,arrow.h};
             for (int i = 0; i < touch_btn_count(); ++i) {
                 const SDL_Rect r = touch_btn_rect(i);
                 p.targets[std::string("touch:") + touch_buttons()[static_cast<std::size_t>(i)].label] =

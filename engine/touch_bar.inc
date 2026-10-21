@@ -47,7 +47,27 @@ bool touch_button_enabled(int id) const {
     return true;
 }
 SDL_Rect touch_panel_rect() const {
+    if (touch_panel_collapsed_) return touch_panel_toggle_rect();
     return SDL_Rect{8, touch_bar_top(), std::min(300, playfield_w_-16), kWinH-8-touch_bar_top()};
+}
+SDL_Rect touch_panel_toggle_rect() const {
+    const auto r = ra2engine::TouchBarLayout::toggle(playfield_w_,kWinH,
+        static_cast<int>(touch_buttons().size()),touch_panel_collapsed_);
+    return SDL_Rect{r.x,r.y,r.w,r.h};
+}
+bool touch_panel_toggle_at(int x,int y) const {
+    const auto r = touch_panel_toggle_rect();
+    return touch_bar_visible() && x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h;
+}
+void draw_touch_panel_toggle(SDL_Renderer* ren) {
+    const auto r = touch_panel_toggle_rect();
+    SDL_SetRenderDrawBlendMode(ren,SDL_BLENDMODE_BLEND);
+    const bool armed = touch_add_ || touch_fire_ || touch_move_ || touch_box_;
+    SDL_SetRenderDrawColor(ren,armed ? 95 : 25,36,39,235);SDL_RenderFillRect(ren,&r);
+    SDL_SetRenderDrawColor(ren,210,170,110,255);SDL_RenderDrawRect(ren,&r);
+    const int x=r.x+r.w/2,y=r.y+r.h/2,d=touch_panel_collapsed_ ? 1 : -1;
+    SDL_RenderDrawLine(ren,x-d*5,y-10,x+d*5,y);
+    SDL_RenderDrawLine(ren,x+d*5,y,x-d*5,y+10);
 }
 bool touch_panel_contains(int x, int y) const {
     const auto r = touch_panel_rect();
@@ -94,11 +114,12 @@ void draw_touch_selection(SDL_Renderer* ren, ra2engine::TextureCache& tc) {
         SDL_Rect p{panel.x+4,panel.y+5,54,40}; SDL_SetRenderDrawColor(ren,70,87,72,255);SDL_RenderDrawRect(ren,&p);
         draw_text(ren,"UNIT",p.x+8,p.y+16,1,170,190,150);
     }
-    title = title.substr(0,28);
+    title = title.substr(0,26);
     draw_text(ren,title,panel.x+66,panel.y+10,1,235,225,200);
     draw_text(ren,"TAP GROUP / HOLD TO ASSIGN",panel.x+66,panel.y+30,1,165,185,165);
 }
 int touch_bar_top() const {
+    if (touch_panel_collapsed_) return touch_panel_toggle_rect().y;
     return ra2engine::TouchBarLayout::top(kWinH, touch_btn_count());
 }
 const std::vector<TouchBtn>& touch_buttons() const {
@@ -124,7 +145,7 @@ SDL_Rect touch_btn_rect(int i) const {
     return SDL_Rect{r.x, r.y, r.w, r.h};
 }
 int touch_btn_count() const {
-    return static_cast<int>(touch_buttons().size());
+    return touch_panel_collapsed_ ? 0 : static_cast<int>(touch_buttons().size());
 }
 int touch_btn_at(int x, int y) const {
     if (!touch_bar_visible()) return -1;
@@ -192,6 +213,16 @@ bool touch_bar_handle(ra2engine::InputEvent& ev) {
     if (ev.kind == ra2engine::InputEvent::PointerDown) touch_panel_capture_ = touch_panel_contains(ev.x,ev.y);
     // A map-origin selection drag must still receive its release over the panel.
     if (ev.kind == ra2engine::InputEvent::PointerUp && !touch_panel_capture_ && touch_down_btn_ < 0) return false;
+    if (ev.kind == ra2engine::InputEvent::PointerDown && touch_panel_toggle_at(ev.x,ev.y)) {
+        touch_down_btn_ = -2; // Capture the arrow; release must land on it too.
+        return true;
+    }
+    if (ev.kind == ra2engine::InputEvent::PointerUp && touch_down_btn_ == -2) {
+        if (touch_panel_toggle_at(ev.x,ev.y)) touch_panel_collapsed_ = !touch_panel_collapsed_;
+        touch_down_btn_ = -1;
+        touch_panel_capture_ = false;
+        return true;
+    }
     const int bi = touch_btn_at(ev.x, ev.y);
     if (bi >= 0) {
         if (ev.kind == ra2engine::InputEvent::PointerDown) {
@@ -254,7 +285,9 @@ void touch_bar_tick(double dt) {
 }
 void draw_touch_bar(SDL_Renderer* ren, ra2engine::TextureCache& tc) {
     if (!touch_bar_visible()) return;
+    if (touch_panel_collapsed_) { draw_touch_panel_toggle(ren); return; }
     draw_touch_selection(ren, tc);
+    draw_touch_panel_toggle(ren);
     const auto& bs = touch_buttons();
     const int n = touch_btn_count();
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
@@ -302,3 +335,5 @@ int touch_place_cx_ = INT_MIN, touch_place_cy_ = INT_MIN;
 bool touch_place_swallow_up_ = false;
 
 bool touch_panel_capture_ = false;
+
+bool touch_panel_collapsed_ = false; // Hide only the GUI; keep gesture/modifier state.

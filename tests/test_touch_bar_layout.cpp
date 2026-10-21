@@ -27,3 +27,19 @@ TEST_CASE("unit panel fits landscape viewports with separate header and group ro
         }
     }
 }
+
+TEST_CASE("panel arrow fits both states and clears the expanded action buttons") {
+    using L=ra2engine::TouchBarLayout;
+    for(int width : {320,480,800,1280}) for(int count : {13,17}) {
+        const auto folded=L::toggle(width,548,count,true);
+        CHECK(folded.x==L::margin);
+        CHECK(folded.y+folded.h==548-L::margin);
+        CHECK(folded.w==44);
+        CHECK(folded.h==44);
+        const auto open=L::toggle(width,548,count,false);
+        CHECK(open.y>=L::top(548,count));
+        CHECK(open.x+open.w<=width-L::margin);
+        CHECK(open.y+open.h<=L::top(548,count)+L::header_height);
+        for(int i=0;i<count;++i) CHECK(open.y+open.h<=L::button(width,548,count,i).y);
+    }
+}

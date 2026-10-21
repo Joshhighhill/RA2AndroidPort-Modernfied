@@ -75,3 +75,8 @@ Command icons are drawn from engine primitives with readable labels. Double-tap 
 Unit/building cameo loaders now fall back to the shared archive search when the legacy language.mix/cameo.mix lookup fails. Search includes language cameo archives, Yuri cameo archives and existing patches. Truly absent pictures show the item ID and NO ART; logs identify missing/invalid cameo files. This is not proof every missing icon on the tester's installation is fixed; actual files and affected unit IDs are still needed to verify.
 
 Validation for this change: 15 gesture/layout cases, 13,315 assertions; 4 asset search cases, 33 assertions. Real-install asset test excluded because retail files are unavailable here. Phone visuals, capability behaviour and icon recovery still require user testing. Resolution settings and wider Yuri gameplay issues remain future work.
+
+## Test 5: hide/restore arrow
+Tap the left-pointing arrow in the unit panel header to hide the panel. Only a 44-by-44 logical-pixel right-pointing restore arrow remains at bottom left. Tap it to reopen the panel on the same page. A press released outside the arrow does not toggle. Hidden controls have no active hit boxes; the exposed area is available to battlefield gestures. The restore arrow remains touch-owned and turns red when selection/force-order/BOX modifiers remain armed. Hiding the GUI does not clear those modes. State is session-local, not a saved layout preference.
+
+The HTML preview also has an accessible fold/restore button. No change to the simulation, deployment rules, gesture thresholds or missing-art search was made in this pass.
