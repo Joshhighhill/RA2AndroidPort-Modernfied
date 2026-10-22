@@ -2,6 +2,10 @@
 #include "world.hpp"
 #include "harvest.hpp"
 #include "savegame.hpp"
+#include "weapon_resolve.hpp"
+#include "ra2assets/rules.hpp"
+#include "weapon_sound_loop.hpp"
+#include "weapon_unit.hpp"
 using namespace ra2engine;
 namespace {
 struct Rig {
@@ -16,6 +20,117 @@ struct Rig {
 UnitCombat unit(const char* image) {
     UnitCombat c; c.image = image; c.strength = 100; c.speed_cps = 2;
     c.verses.assign(11,100); c.tg.rules_id = image; return c;
+}
+TEST_CASE("Yuri core: infantry caps never auto-swap and deploy releases ownership") {
+    for (const char* id : {"YURI","YURIPR"}) {
+        Rig r;World w(r.map);auto c=unit(id);c.w7.mind_control=true;
+        c.deploy_fire=true;c.deploy_fire_slot=1;c.w7.deploy_area_fire=true;
+        c.secondary.valid=true;c.secondary.range=1;c.secondary.damage=0;
+        w.add_combat_unit(2,2,0,c);w.add_combat_unit(5,2,1,unit("A"));w.add_combat_unit(7,2,1,unit("B"));
+        w.units()[0].w7.mc_shot=1;w.resolve_skirmish_mind_control();
+        for(int n=0;n<20;++n){w.units()[0].w7.mc_shot=2;w.resolve_skirmish_mind_control();}
+        CHECK(w.units()[0].w7.mc_victims.size()==1);CHECK(w.units()[1].house==0);CHECK(w.units()[2].house==1);
+        REQUIRE(w.order_deploy(0));CHECK(w.units()[1].house==1);CHECK(w.units()[0].w7.mc_victims.empty());
+        w.units()[0].w7.mc_shot=2;w.resolve_skirmish_mind_control();CHECK(w.units()[2].house==1);
+    }
+}
+TEST_CASE("Yuri core: Mastermind overload uses configured damage and releases on death") {
+    Rig r;World w(r.map);auto c=unit("MIND");c.strength=500;c.w7.mind_control=true;
+    c.w7.mc_capacity=3;c.w7.mc_infinite=true;c.w7.overload_count={3,6,10};
+    c.w7.overload_damage={0,50,100};c.w7.overload_frames={2,2,2};w.add_combat_unit(2,2,0,c);
+    for(int j=0;j<4;++j){w.add_combat_unit(4+j,2,1,unit("TANK"));w.units()[0].w7.mc_shot=j+1;w.resolve_skirmish_mind_control();}
+    REQUIRE(w.units()[0].w7.mc_victims.size()==4);w.prepare_skirmish_mind_control();CHECK(w.units()[0].hp==450);
+    const auto state=save::save_world(w);World loaded(r.map);REQUIRE(save::load_world(loaded,state));
+    CHECK(loaded.units()[0].w7.overload_left==1);
+    w.prepare_skirmish_mind_control();CHECK(w.units()[0].hp==450);
+    w.prepare_skirmish_mind_control();CHECK(w.units()[0].hp==400);
+    w.units()[0].alive=false;w.prepare_skirmish_mind_control();
+    for(int j=1;j<=4;++j)CHECK(w.units()[j].house==1);
+}
+TEST_CASE("Yuri core: Psychic Tower refuses its fourth victim") {
+    Rig r;World w(r.map);BuildingTypeDef d;d.id="YAPSYT";d.mind_control=true;d.strength=100;
+    d.weapon[0].damage=3;w.set_economy({d},{},OreValues{},1000,0,0);w.add_building(0,2,2,1,1,0,100,0,0,true);
+    for(int i=0;i<4;++i)w.add_combat_unit(5+i,2,1,unit("TANK"));
+    for(int i=0;i<3;++i)CHECK(w.try_building_mind_control(0,i));
+    CHECK_FALSE(w.try_building_mind_control(0,3));CHECK(w.units()[3].house==1);
+    CHECK(w.buildings()[0].w7.mc_victims.size()==3);
+}
+TEST_CASE("Yuri core: Tank Bunker accepts one eligible tank, fires and unloads without changing owner") {
+    Rig r;World w(r.map);BuildingTypeDef d;d.id="NATBNK";d.tank_bunker=true;
+    d.can_be_occupied=d.can_occupy_fire=true;d.max_occupants=1;d.fw=d.fh=2;d.strength=1000;
+    w.set_economy({d},{},OreValues{},1000,0,0);w.add_building(0,8,8,2,2,0,1000,0,0,true);
+    auto tank=unit("LTNK");tank.is_vehicle=true;tank.w7.bunkerable=true;
+    tank.occupy_weapon.valid=true;tank.occupy_weapon.damage=20;tank.occupy_weapon.rof=10;tank.occupy_weapon.range=5;
+    tank.occupy_weapon.verses.assign(11,100);
+    w.add_combat_unit(7,8,0,tank);w.add_combat_unit(6,8,0,tank);w.add_combat_unit(12,8,1,unit("TARGET"));
+    CHECK(w.can_occupy(0,0));REQUIRE(w.campaign_occupy_now(0,0));
+    CHECK_FALSE(w.can_occupy(1,0));CHECK(w.units()[0].garrison_of==0);
+    w.buildings()[0].garrison_target=2;w.step(1.0/15.0);
+    CHECK(w.units()[2].hp==74);CHECK(w.garrison_range(0)==7);
+    const auto state=save::save_world(w);World loaded(r.map);REQUIRE(save::load_world(loaded,state));
+    CHECK(loaded.units()[0].garrison_of==0);CHECK(loaded.btypes()[0].tank_bunker);
+    w.unload_occupants(0);CHECK(w.units()[0].cargo_of<0);CHECK(w.units()[0].alive);CHECK(w.buildings()[0].house==0);
+    w.units()[1].w7.t.bunkerable=false;CHECK_FALSE(w.can_occupy(1,0));
+    w.units()[1].w7.t.bunkerable=true;w.units()[1].house=1;CHECK_FALSE(w.can_occupy(1,0));
+}
+TEST_CASE("Yuri core: a controlled tank retains its link inside a bunker and leaves on controller loss") {
+    Rig r;World w(r.map);BuildingTypeDef b;b.id="NATBNK";b.tank_bunker=true;
+    b.can_be_occupied=b.can_occupy_fire=true;b.max_occupants=1;b.strength=1000;
+    w.set_economy({b},{},OreValues{},1000,0,0);w.add_building(0,8,8,1,1,0,1000,0,0,true);
+    auto psychic=unit("YURI");psychic.w7.mind_control=true;w.add_combat_unit(2,2,0,psychic);
+    auto tank=unit("LTNK");tank.is_vehicle=true;tank.w7.bunkerable=true;w.add_combat_unit(7,8,1,tank);
+    w.units()[0].w7.mc_shot=1;w.resolve_skirmish_mind_control();REQUIRE(w.campaign_occupy_now(1,0));
+    w.prepare_skirmish_mind_control();CHECK(w.units()[1].house==0);CHECK(w.units()[0].w7.mc_victims.size()==1);
+    w.units()[0].alive=false;w.step(1.0/15.0);w.step(1.0/15.0);
+    CHECK(w.units()[1].house==1);CHECK(w.units()[1].cargo_of<0);CHECK(w.buildings()[0].house==0);
+}
+TEST_CASE("Yuri core: magnetic locomotor damage never becomes an ordinary lethal shot") {
+    Rig r;World w(r.map);auto c=unit("TELE");c.w7.magnetic=true;c.damage=5000;c.range=10;c.rof=1;
+    w.add_combat_unit(2,2,0,c);w.add_combat_unit(4,2,1,unit("TANK"));w.units()[0].target=1;w.units()[0].attack_order=true;
+    for(int i=0;i<30;++i)w.step(1.0/15.0);
+    CHECK(w.units()[1].hp==100);CHECK(w.units()[1].alive);
+    w.order_attack_cell(0,4,2);for(int i=0;i<30;++i)w.step(1.0/15.0);
+    CHECK(w.units()[1].hp==100);
+    w.units()[0].w2.valid=true;w.units()[0].w2.damage=80;w.units()[0].w2.ag=true;
+    CHECK(unit_weapon_for_building(w.units()[0],0)==1);
+    w.units()[0].w2.range=10;w.units()[0].w2.rof=10;w.units()[0].w2.verses.assign(11,100);
+    BuildingTypeDef target;target.id="TARGET";target.strength=200;
+    w.set_economy({target},{},OreValues{},1000,0,0);w.add_building(0,5,5,1,1,1,200,0,0,true);
+    w.order_unit_attack_building(0,0);
+    for(int i=0;i<30 && w.buildings()[0].hp==200;++i)w.step(1.0/15.0);
+    CHECK(w.buildings()[0].hp==120);
+}
+TEST_CASE("Yuri core: rules resolve bunker eligibility, magnetic behavior and overload tables") {
+    const auto ini=ra2assets::Ini::parse(
+        "[CombatDamage]\nOverloadCount=3,6,10\nOverloadDamage=0,50,100\nOverloadFrames=30,60,60\nBunkerWeaponRangeBonus=4\n"
+        "[VehicleTypes]\n0=LTNK\n1=TELE\n2=MIND\n[LTNK]\nTurret=yes\nPrimary=Gun\n[TELE]\nTurret=yes\nBunkerable=no\nPrimary=Beam\n"
+        "[MIND]\nPrimary=MC\n[NATBNK]\nBunker=yes\n[Gun]\nDamage=65\nROF=10\nRange=5\n[Beam]\nDamage=5000\nWarhead=Lift\n"
+        "[Lift]\nIsLocomotor=yes\n[MC]\nDamage=3\nInfiniteMindControl=yes\nWarhead=Control\n[Control]\nMindControl=yes\n");
+    const auto rules=ra2assets::Rules::load(ini);UnitCombat tank,mag,mind;
+    fill_unit_combat_extras(rules,"LTNK",resolve_type_weapons(rules,"LTNK"),tank);
+    fill_unit_combat_extras(rules,"TELE",resolve_type_weapons(rules,"TELE"),mag);
+    fill_unit_combat_extras(rules,"MIND",resolve_type_weapons(rules,"MIND"),mind);
+    CHECK(tank.w7.bunkerable);CHECK(tank.occupy_weapon.damage==65);CHECK_FALSE(mag.w7.bunkerable);CHECK(mag.w7.magnetic);
+    CHECK(mind.w7.mc_capacity==3);CHECK(mind.w7.mc_infinite);CHECK(mind.w7.overload_damage==std::vector<int>{0,50,100});
+    BuildingTypeDef b;fill_building_weapons(rules,"NATBNK",b);
+    CHECK(b.tank_bunker);CHECK(b.can_be_occupied);CHECK(b.max_occupants==1);CHECK(b.bunker_range==4);
+}
+TEST_CASE("Yuri core: firing report loop has one owner and stops on stop or distance loss") {
+    struct Audio {
+        int starts=0,stops=0,oneshots=0;bool audible=true;
+        bool sound_loops(const std::string& key){return key=="Gattling";}
+        unsigned loop_at(const std::string&,double,double){return ++starts;}
+        void stop_loop(unsigned){++stops;}
+        bool update_loop(unsigned,double,double){return audible;}
+        void play_at(const std::string&,double,double,const char*){++oneshots;}
+    } audio;
+    WeaponSoundLoop loop;
+    for(int i=0;i<100;++i){loop.shot(audio,"Gattling",2,2);loop.update(audio,true,2,2);}
+    CHECK(audio.starts==1);loop.update(audio,false,2,2);CHECK(audio.stops==1);CHECK(loop.handle==0);
+    loop.shot(audio,"Gattling",2,2);CHECK(audio.starts==2);audio.audible=false;loop.update(audio,true,2,2);CHECK(loop.handle==0);
+    loop.update(audio,true,2,2);CHECK(audio.starts==2);
+    audio.audible=true;loop.shot(audio,"Gattling",2,2);loop.shot(audio,"Cannon",2,2);
+    CHECK(audio.stops==2);CHECK(audio.oneshots==1);CHECK(loop.handle==0);
 }
 TEST_CASE("Yuri core: mobile slave miner satisfies PROC but not other prerequisites") {
     Rig r; World w(r.map);
@@ -110,6 +225,7 @@ TEST_CASE("Yuri core: capacity one swaps; multiple capacity refuses extra; immun
     w.add_combat_unit(2,2,0,c);
     w.add_combat_unit(4,2,1,unit("A")); w.add_combat_unit(6,2,1,unit("B"));
     w.units()[0].w7.mc_shot = 1; w.resolve_skirmish_mind_control();
+    w.units()[0].attack_order = true;
     w.units()[0].w7.mc_shot = 2; w.resolve_skirmish_mind_control();
     CHECK(w.units()[1].house == 1); CHECK(w.units()[2].house == 0);
     w.units()[0].w7.t.mc_capacity = 2;

@@ -84,6 +84,7 @@ void World::order_stop(int idx) {
 void World::set_unit_owner(int idx, int house) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     if (units_[idx].house == house) return;   // FUN_00700940: same owner -> no-op
+    release_unit_mind_control(idx);
     const int old_house=units_[idx].house;
     if (old_house>=0 && old_house<static_cast<int>(ai_houses_.size())) {
         for (auto& team:ai_houses_[old_house].team_state.teams)

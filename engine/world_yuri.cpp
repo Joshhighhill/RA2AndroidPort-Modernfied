@@ -6,6 +6,20 @@ namespace {
 bool active(const Unit& u) { return u.alive && u.die_time < 0 && u.cargo_of < 0 && u.garrison_of < 0; }
 }
 
+void World::release_unit_mind_control(int controller) {
+    if (controller < 0 || controller >= static_cast<int>(units_.size())) return;
+    auto victims=std::move(units_[controller].w7.mc_victims);
+    units_[controller].w7.mc_victims.clear();
+    units_[controller].w7.overload_left=0;
+    for (int vi : victims) {
+        if (vi < 0 || vi >= static_cast<int>(units_.size())) continue;
+        Unit& v=units_[vi]; if (v.w7.mc_controller != controller) continue;
+        const int original=v.w7.mc_original_house;
+        v.w7.mc_controller=v.w7.mc_original_house=-1;
+        if (v.alive && v.die_time < 0 && original >= 0) set_unit_owner(vi,original);
+    }
+}
+
 void World::prepare_skirmish_mind_control() {
     if (playfield_.campaign) return; // CampaignRuntime owns its team bookkeeping.
     for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
@@ -16,7 +30,7 @@ void World::prepare_skirmish_mind_control() {
             buildings_[bi].state != Building::State::Idle || buildings_[bi].house != v.house ||
             buildings_[bi].power_off || buildings_[bi].w7.warp_unpowered ||
             (buildings_[bi].type >= 0 && buildings_[bi].type < static_cast<int>(btypes().size()) &&
-             btypes()[buildings_[bi].type].powered && house_low_power(buildings_[bi].house)) || !active(v))) {
+             btypes()[buildings_[bi].type].powered && house_low_power(buildings_[bi].house)) || !v.alive || v.die_time>=0)) {
             if (bi < static_cast<int>(buildings_.size())) {
                 auto& held = buildings_[bi].w7.mc_victims;
                 held.erase(std::remove(held.begin(),held.end(),i),held.end());
@@ -26,7 +40,7 @@ void World::prepare_skirmish_mind_control() {
             v.w7.mc_building = v.w7.mc_original_house = -1;
         }
         if (c >= 0 && (c >= static_cast<int>(units_.size()) || !active(units_[c]) ||
-                       units_[c].warp_remaining > 0 || !active(v) || units_[c].house != v.house)) {
+                       units_[c].warp_remaining > 0 || !v.alive || v.die_time>=0 || units_[c].house != v.house)) {
             if (c < static_cast<int>(units_.size())) {
                 auto& victims = units_[c].w7.mc_victims;
                 victims.erase(std::remove(victims.begin(), victims.end(), i), victims.end());
@@ -38,8 +52,24 @@ void World::prepare_skirmish_mind_control() {
     }
     for (Unit& u : units_) {
         if (!u.w7.t.mind_control) continue;
+        auto& held=u.w7.mc_victims;
+        const int ci=static_cast<int>(&u-units_.data());
+        held.erase(std::remove_if(held.begin(),held.end(),[&](int vi) {
+            return vi<0 || vi>=static_cast<int>(units_.size()) || !units_[vi].alive || units_[vi].die_time>=0 ||
+                units_[vi].w7.mc_controller!=ci || units_[vi].house!=u.house;
+        }),held.end());
+        if (u.w7.t.mc_infinite && active(u)) {
+            const auto& t=u.w7.t;
+            const auto n=std::min({t.overload_count.size(),t.overload_damage.size(),t.overload_frames.size()});
+            std::size_t band=0;
+            while (band+1<n && static_cast<int>(held.size())>t.overload_count[band]) ++band;
+            if (n && t.overload_damage[band]>0 && static_cast<int>(held.size())>u.w7.t.mc_capacity) {
+                if (u.w7.overload_left>0) --u.w7.overload_left;
+                else { ability_damage_unit(ci,t.overload_damage[band]); u.w7.overload_left=std::max(1,t.overload_frames[band])-1; }
+            } else u.w7.overload_left=0;
+        }
         u.w_mind_control = true;
-        if (!active(u)) { u.w7.mc_shot = -1; continue; }
+        if (!active(u) || u.deployed) { u.w7.mc_shot = -1; u.target=-1; u.attack_order=false; continue; }
         if (u.target >= 0 && u.target < static_cast<int>(units_.size())) {
             const Unit& v = units_[u.target];
             const bool full = !u.w7.t.mc_infinite &&
@@ -58,13 +88,14 @@ void World::resolve_skirmish_mind_control() {
         Unit& u = units_[i];
         if (!u.w7.t.mind_control) continue;
         const int vi = u.w7.mc_shot; u.w7.mc_shot = -1;
-        if (!active(u) || vi < 0 || vi >= static_cast<int>(units_.size()) || vi == i) continue;
+        if (!active(u) || u.deployed || vi < 0 || vi >= static_cast<int>(units_.size()) || vi == i) continue;
         Unit& v = units_[vi];
         if (!active(v) || v.house == u.house || v.is_aircraft || !psionic_target_ok(vi) ||
             v.an.iron_left_frames > 0 || v.w7.mc_controller >= 0 || v.w7.mc_building >= 0) continue;
         auto& held = u.w7.mc_victims;
         if (!u.w7.t.mc_infinite && static_cast<int>(held.size()) >= std::max(1, u.w7.t.mc_capacity)) {
             if (u.w7.t.mc_capacity != 1) continue;
+            if (!u.attack_order) { u.target=-1; continue; } // full clones never auto-swap victims
             const int old = held.front();
             if (old >= 0 && old < static_cast<int>(units_.size())) {
                 Unit& freed = units_[old];

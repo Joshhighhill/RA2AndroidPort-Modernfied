@@ -1061,6 +1061,7 @@ public:
     // cell silently breaks the one-unit-per-cell invariant.
     Unit& add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat& c);
     void step_yuri_workers();
+    void release_unit_mind_control(int controller);
     void prepare_skirmish_mind_control();
     void resolve_skirmish_mind_control();
     bool try_building_mind_control(int building, int victim, int slot = 0);

@@ -850,12 +850,14 @@ template <class Ar> void fields(Ar& ar, UnitTypeW7& v) {
     io(ar, v.default_to_guard_area); io(ar, v.has_turret); io(ar, v.fake_blink); io(ar, v.fake_blink_elite);
     io(ar, v.deploy_area_fire); io(ar, v.undeploy_delay); io(ar, v.mc_capacity); io(ar, v.mc_infinite);
     io(ar, v.build_time_mult); io(ar, v.mind_control);
+    io(ar,v.bunkerable); io(ar,v.magnetic);
+    io(ar,v.overload_count); io(ar,v.overload_damage); io(ar,v.overload_frames);
 }
 template <class Ar> void fields(Ar& ar, UnitW7& v) {
     io(ar, v.t); io(ar, v.blink_left); io(ar, v.redisguise_left); io(ar, v.flash_seen); io(ar, v.hull_aiming);
     io(ar, v.paralysed_until); io(ar, v.host_raw_hit); io(ar, v.deploy_ready_at); io(ar, v.undeploy_at); io(ar, v.erased_by);
     io(ar, v.depot_target); io(ar, v.mc_controller); io(ar, v.mc_victims); io(ar, v.mc_shot);
-    io(ar, v.mc_original_house); io(ar, v.slave_manager); io(ar, v.mc_building);
+    io(ar, v.overload_left); io(ar, v.mc_original_house); io(ar, v.slave_manager); io(ar, v.mc_building);
 }
 template <class Ar> void fields(Ar& ar, BldW7& v) {
     io(ar, v.mc_victims);
@@ -1045,6 +1047,7 @@ template <class Ar> void fields(Ar& ar, PlayerEconRules& v) {
 }
 template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.mind_control);
+    io(ar,v.tank_bunker); io(ar,v.bunker_damage); io(ar,v.bunker_rof); io(ar,v.bunker_range);
     io(ar, v.slave_combat); io(ar, v.slave_count); io(ar, v.slave_regen_rate); io(ar, v.slave_storage);
     io(ar, v.id);
     io(ar, v.fw); io(ar, v.fh);

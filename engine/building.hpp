@@ -22,6 +22,8 @@ class OreField;   // ore.hpp (W8-03-01 BuildMask)
 // Rules/Art, or a test by hand). Index into the roster vector is the
 // Building::type key used everywhere.
 struct BuildingTypeDef {
+    bool tank_bunker = false;
+    double bunker_damage = 1.3, bunker_rof = 1.3, bunker_range = 2.0;
     bool mind_control = false;
     UnitCombat slave_combat;
     int slave_count = 0;

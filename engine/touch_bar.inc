@@ -29,7 +29,7 @@ const char* touch_deploy_label() const {
         if (!u.alive || u.die_time >= 0 || u.cargo_of >= 0 || !world_.controllable(u.house)) continue;
         if (!u.cargo.empty()) add("UNLOAD");
         else if (u.deploys_into >= 0 || u.deploy_fire || (u.abil.deployer && u.abil.deploy.valid))
-            add(u.deployed ? "UNDEPLOY" : "DEPLOY");
+            add(u.w7.t.mind_control && !u.w7.mc_victims.empty() ? "RELEASE" : u.deployed ? "UNDEPLOY" : "DEPLOY");
     }
     const int sb = input_.selected_building();
     if (sb >= 0 && sb < static_cast<int>(world_.buildings().size())) {

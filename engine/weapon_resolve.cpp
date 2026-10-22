@@ -5,6 +5,7 @@
 #include "ra2assets/rules.hpp"
 #include <algorithm>
 #include <cctype>
+#include <sstream>
 
 namespace ra2engine {
 
@@ -174,6 +175,10 @@ void fill_unit_combat_extras(const ra2assets::Rules& rules, const std::string& t
     if (!c.occupy_weapon.valid) c.occupy_weapon = tw.slot[0];
     if (!c.elite_occupy_weapon.valid) c.elite_occupy_weapon = c.occupy_weapon;
     fill_unit_w7(rules, type_id, tw, c.w7);
+    if (c.w7.bunkerable) {
+        c.occupy_weapon=tw.slot[0];
+        c.elite_occupy_weapon=tw.elite[0].valid ? tw.elite[0] : tw.slot[0];
+    }
 }
 
 // Wave-7 fix (units): the type keys unit_w7.hpp documents, each with the
@@ -191,6 +196,8 @@ void fill_unit_w7(const ra2assets::Rules& rules, const std::string& type_id, con
     w.move_to_shroud = rules.section_flag(type_id, "MoveToShroud", true);
     w.default_to_guard_area = rules.section_flag(type_id, "DefaultToGuardArea", false);
     w.has_turret = rules.section_flag(type_id, "Turret", false);
+    w.bunkerable = rules.is_vehicle(type_id) && w.has_turret && rules.section_flag(type_id,"Bunkerable",true);
+    w.magnetic = tw.slot[0].valid && rules.section_flag(rules.weapon_warhead(tw.slot[0].id),"IsLocomotor",false);
     if (tw.slot[0].valid)
         w.fake_blink = om::ftol(rules.section_double(tw.slot[0].id, "DisguiseFakeBlinkTime", 0.0));
     w.fake_blink_elite = tw.elite[0].valid
@@ -212,6 +219,15 @@ void fill_unit_w7(const ra2assets::Rules& rules, const std::string& type_id, con
         w.mc_capacity = std::max(1, om::ftol(rules.section_double(tw.slot[0].id, "Damage", 1.0)));
         w.mind_control = true;
         w.mc_infinite = rules.section_flag(tw.slot[0].id, "InfiniteMindControl", false);
+        auto integers = [&](const char* key) {
+            std::vector<int> result; std::string text=rules.section_string("CombatDamage",key,"");
+            for (char& ch : text) if (ch==',') ch=' ';
+            std::istringstream stream(text); int value;
+            while (stream >> value) result.push_back(value);
+            return result;
+        };
+        w.overload_count=integers("OverloadCount"); w.overload_damage=integers("OverloadDamage");
+        w.overload_frames=integers("OverloadFrames");
     }
 }
 
@@ -229,9 +245,13 @@ void fill_building_weapons(const ra2assets::Rules& rules, const std::string& typ
     d.guard_range = rules.section_double(type_id, "GuardRange", 0.0);
     // G16 (agent G) [RE: world-depth.md §A1, BuildingTypeClass::LoadFromINI
     // FUN_0045FE40]: the garrison / bridge-hut keys.
-    d.can_be_occupied = rules.section_flag(type_id, "CanBeOccupied", false);
-    d.can_occupy_fire = rules.section_flag(type_id, "CanOccupyFire", false);
-    d.max_occupants = om::ftol(rules.section_double(type_id, "MaxNumberOccupants", 0.0));
+    d.tank_bunker = rules.section_flag(type_id,"Bunker",false);
+    d.bunker_damage=rules.section_double("CombatDamage","BunkerDamageMultiplier",1.3);
+    d.bunker_rof=rules.section_double("CombatDamage","BunkerROFMultiplier",1.3);
+    d.bunker_range=rules.section_double("CombatDamage","BunkerWeaponRangeBonus",2.0);
+    d.can_be_occupied = d.tank_bunker || rules.section_flag(type_id, "CanBeOccupied", false);
+    d.can_occupy_fire = d.tank_bunker || rules.section_flag(type_id, "CanOccupyFire", false);
+    d.max_occupants = d.tank_bunker ? 1 : om::ftol(rules.section_double(type_id, "MaxNumberOccupants", 0.0));
     d.bridge_repair_hut = rules.section_flag(type_id, "BridgeRepairHut", false);
     d.w6.gate = rules.section_flag(type_id, "Gate", false);   // R-210
     fill_building_abilities(rules, type_id, d);   // wave-5 (agent C): abil_w5_rules.cpp

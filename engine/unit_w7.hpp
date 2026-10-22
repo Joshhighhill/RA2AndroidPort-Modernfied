@@ -50,6 +50,9 @@ struct UnitTypeW7 {
     int mc_capacity = 1;
     bool mind_control = false;
     bool mc_infinite = false;
+    bool bunkerable = false;
+    bool magnetic = false; // primary warhead IsLocomotor, not ordinary damage
+    std::vector<int> overload_count, overload_damage, overload_frames;
     // W7-04-03 [RE: Time_To_Build FUN_006F3D00 @0x6F3D4E, type +0x608]:
     // BuildTimeMultiplier= (HTNK / MTNK / LTNK 1.5, TTNK / ROBO 1.3).
     double build_time_mult = 1.0;
@@ -89,6 +92,7 @@ struct UnitW7 {
     std::vector<int> mc_victims;
     int mc_shot = -1;   // W7-10-04: the victim of this frame's Controller shot
     int mc_original_house = -1;
+    int overload_left = 0;
     int slave_manager = -1; // >=0 building; -1 free; -2-mobile unit index while packed
     // (W7-04-08's per-unit missile_holds list was removed in fv7c / save v40:
     // the PauseFrames + TiltFrames hold lives in the spawn-manager node,

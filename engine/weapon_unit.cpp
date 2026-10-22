@@ -84,7 +84,8 @@ bool unit_primary_can_fire_at(const Unit& u, const Unit& v) {
 
 int unit_weapon_for_building(const Unit& u, int armor_ix, bool target_bombed, bool in_water) {
     int want;
-    if (u.deploy_fire && u.deployed) want = u.deploy_fire_slot == 1 && u.w2.valid ? 1 : 0;
+    if (u.w7.t.magnetic) want=u.w2.valid && slot_can_target(secondary_view(u),false,armor_ix) ? 1 : -1;
+    else if (u.deploy_fire && u.deployed) want = u.deploy_fire_slot == 1 && u.w2.valid ? 1 : 0;
     else if (u.deploy_fire && u.is_infantry) want = slot_can_target(primary_view(u), false, armor_ix) ? 0 : -1;   // W7-01-06
     else if (!u.w2.valid) want = slot_can_target(primary_view(u), false, armor_ix) ? 0 : -1;
     else want = choose_weapon(primary_view(u), secondary_view(u), false, armor_ix);

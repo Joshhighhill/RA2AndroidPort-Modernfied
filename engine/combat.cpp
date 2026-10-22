@@ -186,6 +186,10 @@ void try_fire(const World& world, std::vector<Unit>& units, std::vector<Building
     // capture rides THIS shot (its ROF, facing and range already applied);
     // the runtime consumes Unit::w7.mc_shot. W7-08-13: only the Controller
     // weapon (slot 0) -- a deployed Yuri's PsiWave (slot 1) does damage.
+    // IsLocomotor weapon Damage is a behavior parameter, not hit damage.
+    // Until the magnetic locomotor is implemented, never detonate that value
+    // as an ordinary shell (stock Magnetron values can kill tanks instantly).
+    if (u.w7.t.magnetic && u.w_active == 0) return;
     if (u.w_mind_control && u.w_active == 0) {
         u.w7.mc_shot = victim_idx;
         return;
@@ -1451,6 +1455,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         // is resolved by World::step_depth (explosion on the cell + the bridge
         // roll); here: range, aim, ROF, and the approach request.
         if (u.attack_cell_x >= 0) {
+            if (u.w7.t.magnetic && u.w_active==0) continue;
             const double d = dist_leptons(u.fx, u.fy, static_cast<double>(u.attack_cell_x),
                                           static_cast<double>(u.attack_cell_y));
             (void)d;

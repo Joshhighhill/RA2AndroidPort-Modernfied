@@ -11,6 +11,7 @@
 #include "group_move.hpp"   // nearest_free_cells
 #include "veterancy.hpp"    // is_elite
 #include "world.hpp"
+#include "weapon_unit.hpp"
 
 namespace ra2engine {
 
@@ -62,16 +63,19 @@ bool World::can_occupy(int ui, int bi) const {
     if (bi < 0 || bi >= static_cast<int>(buildings_.size())) return false;
     const Unit& u = units_[ui];
     const Building& b = buildings_[bi];
-    if (!u.alive || u.die_time >= 0.0 || !u.occupier || u.is_vehicle) return false;
+    if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.is_aircraft || u.is_naval) return false;
     if (!b.alive || b.state != Building::State::Idle || b.selling) return false;
     if (b.type < 0 || b.type >= static_cast<int>(btypes().size())) return false;
     const BuildingTypeDef& t = btypes()[b.type];
     if (!t.can_be_occupied) return false;
+    if (t.tank_bunker) {
+        if (!u.is_vehicle || !u.w7.t.bunkerable || b.house != u.house) return false;
+    } else if (!u.occupier || u.is_vehicle) return false;
     const bool owner_ok = b.house == u.house || !house_combatant(b.house) || passive_house(b.house);
     // W7-08-09 [RE: CanBeOccupiedBy FUN_00457CE0]: no entry at or below
     // ConditionRed (Rules+0x1708).
     if (garrison_red(b)) return false;
-    return owner_ok && static_cast<int>(b.occupants.size()) != t.max_occupants;
+    return owner_ok && static_cast<int>(b.occupants.size()) < t.max_occupants;
 }
 
 // W7-08-09 [RE: FUN_004581F0 / FUN_00457CE0]: health ratio <= ConditionRed.
@@ -183,6 +187,7 @@ void World::occupy_now(int ui, int bi) {
 // EVA for the old owner); occupied and neutral -> the FIRST occupant's house.
 void World::sync_garrison_owner(int bi) {
     Building& b = buildings_[bi];
+    if (b.type >= 0 && b.type < static_cast<int>(btypes().size()) && btypes()[b.type].tank_bunker) return;
     const int neutral = neutral_house();
     if (neutral < 0) return;
     if (b.occupants.empty() && b.house != neutral) {
@@ -243,6 +248,9 @@ void World::unload_occupants(int bi, bool place_inside) {
         if (l >= 0) { exit = c; exit_layer = l; break; }
     }
     const int house = b.house;
+    // A blocked player unload keeps a tank safely inside its bunker.
+    if (exit.x < 0 && b.alive && b.state == Building::State::Idle && !b.selling &&
+        b.type >= 0 && btypes()[b.type].tank_bunker) return;
     std::vector<int> occ_list = b.occupants;
     b.occupants.clear();
     if (exit.x < 0 && !place_inside) {
@@ -375,6 +383,10 @@ bool World::garrison_firing(int bi) const {   // vtable +0x400 = FUN_00458DC0
 // + OccupyWeaponRange.
 double World::garrison_range(int bi) const {
     const Building& b = buildings_[bi];
+    if (btypes()[b.type].tank_bunker && !b.occupants.empty()) {
+        const Unit& u=units_[b.occupants.front()];
+        return u.occupy_w.range+btypes()[b.type].bunker_range;
+    }
     return std::min(b.fw, b.fh) / 2 + depth_rules_.occupy_weapon_range;
 }
 
@@ -398,7 +410,14 @@ void World::step_garrison_combat(double dt) {
         // occupant's OccupyWeapon (EliteOccupyWeapon when that occupant is elite).
         const Unit& occ = units_[b.occupants[b.firing_occupant]];
         const bool elite = occ.vet.recv ? is_elite(occ.vet.veterancy) : occ.veteran_rank >= 2;
-        const WeaponSlot& w = (elite && occ.occupy_w_elite.valid) ? occ.occupy_w_elite : occ.occupy_w;
+        WeaponSlot w = (elite && occ.occupy_w_elite.valid) ? occ.occupy_w_elite : occ.occupy_w;
+        const BuildingTypeDef& type=btypes()[b.type];
+        if (type.tank_bunker && occ.house!=b.house) continue;
+        auto bunker_slot = [&](const Unit& target) {
+            const int slot=unit_weapon_for_unit(occ,target);
+            return slot==1 ? secondary_view(occ) : slot==0 ?
+                ((elite && occ.occupy_w_elite.valid) ? occ.occupy_w_elite : occ.occupy_w) : WeaponSlot{};
+        };
         if (!w.valid) continue;
         const double range = garrison_range(bi);
         const double cx = b.cx + (b.fw - 1) / 2.0, cy = b.cy + (b.fh - 1) / 2.0;
@@ -408,7 +427,7 @@ void World::step_garrison_combat(double dt) {
             if (!v.alive || v.die_time >= 0.0 || v.cargo_of >= 0) return false;
             if (!is_enemy(b.house, v.house) || disguise_fools(b.house, v)) return false;   // W7-01-02
             if (!v.seen_by_house(b.house)) return false;   // fv7c: 32-bit house mask
-            if (!slot_can_target(w, v.is_aircraft && v.altitude > 0.0, v.armor_ix)) return false;
+            if (!slot_can_target(type.tank_bunker ? bunker_slot(v) : w, unit_airborne(v), v.armor_ix)) return false;
             return om::hypot(v.fx - cx, v.fy - cy) <= range + 0.5;
         };
         // W7-02-10: a structure target (an order, or the defence rule's
@@ -456,21 +475,29 @@ void World::step_garrison_combat(double dt) {
             }
         }
         const int tbld = b.garrison_target < 0 ? b.w7.garrison_target_building : -1;
+        if (type.tank_bunker && (b.garrison_target>=0 || tbld>=0)) {
+            const double tx=tbld>=0 ? buildings_[tbld].cx+(buildings_[tbld].fw-1)/2.0 : units_[b.garrison_target].fx;
+            const double ty=tbld>=0 ? buildings_[tbld].cy+(buildings_[tbld].fh-1)/2.0 : units_[b.garrison_target].fy;
+            units_[b.occupants.front()].turret_facing=facing_u16_from_delta(tx-cx,ty-cy);
+        }
         if ((b.garrison_target < 0 && tbld < 0) || b.garrison_rearm_frames > 0.0) continue;
+        if (type.tank_bunker && b.garrison_target >= 0) w=bunker_slot(units_[b.garrison_target]);
+        const double rof_mult=type.tank_bunker ? type.bunker_rof : depth_rules_.occupy_rof_mult;
+        const double damage_mult=type.tank_bunker ? type.bunker_damage : depth_rules_.occupy_damage_mult;
         // TechnoClass::GetROF (FUN_006FC460): ROF / OccupantCount, then
         // ftol(ROF / OccupyROFMultiplier) when the multiplier is > 1.0.
         // W7-02-10 [RE: GetROF FUN_006FC460 @0x6FC570/0x6FC594]: the
         // veterancy is the BUILDING's own (never veteran), the 0..2 jitter is
         // rearm_frames_for's Random(0,2).
         int rof = w.rof / static_cast<int>(b.occupants.size());
-        if (depth_rules_.occupy_rof_mult > 1.0) rof = ftol(rof / depth_rules_.occupy_rof_mult);
+        if (rof_mult > 1.0) rof = ftol(rof / rof_mult);
         if (w7_rules_.armed) {
             // W7-07-14 [RE: FUN_006FC460]: ftol((ROF * houseROF + Random(0,2))
             // / occupants / OccupyROFMultiplier) -- the jitter and the house
             // ROF before the divisions (ROF 20, 5 occupants: a constant 3).
             double t = w.rof * house_rof_mul(b.house) + combat_rng_.random(0, 2);
             t /= static_cast<double>(b.occupants.size());
-            if (depth_rules_.occupy_rof_mult > 1.0) t /= depth_rules_.occupy_rof_mult;
+            if (rof_mult > 1.0) t /= rof_mult;
             b.garrison_rearm_frames = ftol(t);
         } else {
             b.garrison_rearm_frames = rearm_frames_for(rof, &combat_rng_);
@@ -483,7 +510,7 @@ void World::step_garrison_combat(double dt) {
         shooter.fy = cy;
         shooter.cell_x = static_cast<int>(om::lround(cx));
         shooter.cell_y = static_cast<int>(om::lround(cy));
-        shooter.w_damage = ftol(w.damage * depth_rules_.occupy_damage_mult);
+        shooter.w_damage = ftol(w.damage * damage_mult);
         shooter.w_rof = rof;
         shooter.w_range = range;
         shooter.w_verses = w.verses;
@@ -978,6 +1005,10 @@ void World::step_depth(double dt) {
         b.occupants.erase(std::remove_if(b.occupants.begin(), b.occupants.end(),
                                          [&](int ui) { return !units_[ui].alive; }),
                           b.occupants.end());
+        if (btypes()[b.type].tank_bunker && !b.occupants.empty() &&
+            units_[b.occupants.front()].house!=b.house) {
+            unload_occupants(bi);continue;
+        }
         // The building died or is being sold: its occupants walk out
         // (FUN_004421B0 / FUN_00449B70 both call UnloadOccupants).
         // W8-06-07 [RE: FUN_00449B70 @0x44A4FC passes the place-inside flag;

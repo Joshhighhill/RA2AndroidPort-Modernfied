@@ -1194,11 +1194,12 @@ public:
     }
     void defense_fire_tick(const ra2engine::World& w, const std::vector<ra2engine::World::FireEvent>& evs) {
         const auto& bs = w.buildings();
+        building_shot_loops_.resize(bs.size());
         for (const auto& e : evs) {
             if (e.building < 0 || e.building >= static_cast<int>(bs.size()) || e.weapon.empty()) continue;
             const ra2engine::Building& b = bs[e.building];
             const double fx = b.cx + (b.fw - 1) / 2.0, fy = b.cy + (b.fh - 1) / 2.0;
-            snd_.play_at(fx_.weapon_report(e.weapon), fx, fy, "defense report");
+            building_shot_loops_[e.building].shot(snd_,fx_.weapon_report(e.weapon),fx,fy);
             if (b.house != g_local_house && !w.object_visible_at(g_local_house, b.cx, b.cy)) continue;
             // W2-GA-15: Tesla Coil bolts / Prism Tower beams from the tower top.
             const FxWeapon& bw = fx_.weapon_def(e.weapon);
@@ -1210,6 +1211,12 @@ public:
             }
             const std::vector<std::string> m = fx_.weapon_muzzle(e.weapon);
             if (!m.empty()) fx_.spawn(m.front(), fx, fy, building_level(w, b), 20.0);   // [RE-FALLBACK: building FireFLH not applied]
+        }
+        for (std::size_t i=0;i<bs.size();++i) {
+            const auto& b=bs[i];
+            building_shot_loops_[i].update(snd_,b.alive && b.state==ra2engine::Building::State::Idle &&
+                !b.selling && !b.power_off && b.def_fire_flash>0,
+                b.cx+(b.fw-1)/2.0,b.cy+(b.fh-1)/2.0);
         }
     }
 
@@ -1357,6 +1364,7 @@ private:
     void unit_fx_tick(const ra2engine::World& w) {
         const auto& units = w.units();
         prev_.resize(units.size(), {0.0, -1.0});
+        shot_loops_.resize(units.size());
         alive_prev_.resize(units.size(), 1);
         for (std::size_t i = 0; i < units.size(); ++i) {
             const auto& u = units[i];
@@ -1368,8 +1376,15 @@ private:
                 // deployed GI Para / GGI MissileLauncher, elite weapons).
                 const std::string wid = fired_weapon(w, u);
                 const std::string rep = wid.empty() ? v.report : fx_.weapon_fx(wid).report;
-                snd_.play_at(pick_report(rep), u.fx, u.fy, "report");
+                const std::string report=pick_report(rep);
+                shot_loops_[i].shot(snd_,report,u.fx,u.fy);
                 if (u.house == g_local_house || w.object_visible_at(g_local_house, u.cell_x, u.cell_y)) fire_fx(w, u);
+            }
+            auto& shot_loop=shot_loops_[i];
+            if (shot_loop.handle) {
+                const bool firing=u.alive && u.die_time<0 && u.cargo_of<0 && u.fire_flash>0 &&
+                    (u.target>=0 || u.target_building>=0 || u.attack_cell_x>=0);
+                shot_loop.update(snd_,firing,u.fx,u.fy);
             }
             if (u.die_time >= 0.0 && prev_[i].second < 0.0) {
                 // W2-GA-25: crushed infantry (killed by an adjacent Crusher
@@ -1833,6 +1848,8 @@ private:
     Slot slots_[ra2engine::kQueueCats];
     std::vector<Bld> bhp_;
     std::vector<std::pair<double, double>> prev_;
+    std::vector<ra2engine::WeaponSoundLoop> shot_loops_;
+    std::vector<ra2engine::WeaponSoundLoop> building_shot_loops_;
     bool low_power_ = false;
     bool sw_ready_ = false;
     bool radar_online_ = false;

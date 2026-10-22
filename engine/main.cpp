@@ -42,6 +42,7 @@ static char* ra2_cli_pref_path() {
 #include <climits>
 #include <cmath>
 #include <cstdint>
+#include "weapon_sound_loop.hpp"
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
@@ -4303,7 +4304,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // pick the SHP by the unit's own image ("GI"/"CONS"). An unrecognized
     // image is logged and skipped (not thrown) so one bad unit can't take
     // down the whole frame.
-    auto draw_one_unit = [&](int idx) {
+    auto draw_one_unit = [&](int idx, const ra2engine::Building* bunker = nullptr) {
         // W5-PRES R-100: a unit on a high-bridge deck draws BridgeHeight up.
         std::optional<ra2engine::Unit> lifted;
         const ra2engine::Unit* up = &us[idx];
@@ -4311,6 +4312,18 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             lifted.emplace(*up);
             lifted->level += lv;
             up = &*lifted;
+        }
+        if (bunker) {
+            if (!lifted) lifted.emplace(*up);
+            lifted->fx=bunker->cx+(bunker->fw-1)/2.0;
+            lifted->fy=bunker->cy+(bunker->fh-1)/2.0;
+            lifted->level=world.cell_level(bunker->cx,bunker->cy);
+            lifted->sub_x=lifted->sub_y=0;
+            lifted->cargo_of=-1;
+            lifted->fire_flash=bunker->def_fire_flash;
+            lifted->target=bunker->garrison_target;
+            lifted->target_building=bunker->w7.garrison_target_building;
+            up=&*lifted;
         }
         const ra2engine::Unit& u = *up;
         // W5-PRES R-120: Iron Curtain / elite flash / chrono warp draw tint.
@@ -4494,6 +4507,11 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                 g_turrets->draw(ren, tc, world, b, ba->roster[static_cast<std::size_t>(b.type)].id,
                                 mc ? mc->level : 0, cam, W, H);
             ra2engine::set_obj_tint(nullptr);
+            if (b.alive && b.state==ra2engine::Building::State::Idle &&
+                b.type>=0 && b.type<static_cast<int>(ba->roster.size()) && ba->roster[b.type].tank_bunker)
+                for (int ui : b.occupants)
+                    if (ui>=0 && ui<static_cast<int>(us.size()) && us[ui].alive)
+                        draw_one_unit(ui,&b);
         } else {
             draw_one_unit(d.idx);
         }
