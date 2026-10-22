@@ -43,6 +43,11 @@ static char* ra2_cli_pref_path() {
 #include <cmath>
 #include <cstdint>
 #include "weapon_sound_loop.hpp"
+#include "diagnostics.hpp"
+#include "ra2assets/asset_trace.hpp"
+#if defined(__ANDROID__) && !defined(RA2_ANDROID_CLI)
+#include <SDL_system.h>
+#endif
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
@@ -318,6 +323,7 @@ Assets load_assets(const std::string& dir, const ra2assets::MixFile& ra2,
     if (!me) throw std::runtime_error("map entry not found in " + sel.mix + ": " +
                                       (sel.name.empty() ? "id 0x133a0cb2" : sel.name));
     auto map_raw = maps.read(*me);
+    if(ra2engine::diag::state().enabled.load())ra2engine::diag::note("MAP archive=%s entry=%s id=%08x bytes=%zu fnv1a64=%016llx",sel.mix.c_str(),sel.name.c_str(),me->id,map_raw.size(),static_cast<unsigned long long>(ra2engine::diag::fingerprint(map_raw.data(),map_raw.size())));
     MapFile map = MapFile::parse(std::string(map_raw.begin(), map_raw.end()));
 
     // Theater chain [RE: maps.md §6 + §9.4]. Replaces the old TEMPERATE-only
@@ -686,6 +692,8 @@ struct BuildingAssets {
 std::vector<uint8_t> read_ra2md_file(const std::string& dir, const std::string& name);
 Ini load_ini_from_ra2md(const std::string& dir, const std::string& name) {
     const std::vector<uint8_t> ini_bytes = read_ra2md_file(dir, name);
+    if(ra2engine::diag::state().enabled.load())ra2engine::diag::note("INI loaded name=%s bytes=%zu fnv1a64=%016llx",name.c_str(),ini_bytes.size(),
+        static_cast<unsigned long long>(ra2engine::diag::fingerprint(ini_bytes.data(),ini_bytes.size())));
     return Ini::parse(std::string(ini_bytes.begin(), ini_bytes.end()));
 }
 
@@ -697,6 +705,7 @@ std::vector<uint8_t> read_ra2md_file(const std::string& dir, const std::string& 
     std::vector<uint8_t> ini_bytes;
     if (const MixEntry* e = top.find(mix_id(name))) {
         ini_bytes = top.read(*e);
+        ra2assets::trace_asset("ini-source",name,"ra2md.mix",ini_bytes.size());
     } else {
         static const char* candidates[] = {
             "localmd.mix",  "expandmd01.mix", "expandmd02.mix", "expandmd03.mix",
@@ -708,6 +717,7 @@ std::vector<uint8_t> read_ra2md_file(const std::string& dir, const std::string& 
                 MixFile nested = top.open_nested(cand);
                 if (const MixEntry* e2 = nested.find(mix_id(name))) {
                     ini_bytes = nested.read(*e2);
+                    ra2assets::trace_asset("ini-source",name,std::string("ra2md.mix/")+cand,ini_bytes.size());
                     break;
                 }
             } catch (const std::exception&) {
@@ -6631,10 +6641,30 @@ public:
         // real projectiles (tank arcs, Kirov bombs, flak scatter). This is one of
         // the only two enable_projectiles call sites (the other is
         // --demo-projectile) -- every byte-identity gate keeps the instant path.
+        if (ra2engine::diag::state().enabled.load()) {
+            std::ostringstream report;
+            report<<"engine="<<RA2_VERSION<<"\nmap="<<cfg.map_file<<" map_id="<<cfg.map_id
+                <<"\nmode_rules="<<cfg.mode_rules<<"\nseed="<<cfg.session_seed<<"\ncash="<<cfg.starting_cash
+                <<" tech="<<cfg.tech_level<<" units="<<cfg.unit_count<<" shroud="<<cfg.shroud
+                <<" crates="<<cfg.crates<<" superweapons="<<cfg.superweapons<<" short_game="<<cfg.short_game<<"\n";
+            for (std::size_t i=0;i<cfg.slots.size();++i) {
+                const auto& slot=cfg.slots[i];report<<"house="<<i<<" country="<<slot.country<<" side="<<static_cast<int>(slot.side)
+                    <<" ai="<<slot.is_ai<<" difficulty="<<static_cast<int>(slot.diff)<<" team="<<slot.alliance_team<<"\n";
+            }
+            for (const char* id : {"CMIN","CMON","ChronoMiner","CMINWO","ChronoOutSound","ChronoInSound"}) {
+                for (const auto& kv : rules_ini_.section(id)) report<<"rules ["<<id<<"] "<<kv.first<<"="<<kv.second<<"\n";
+                for (const auto& kv : art_ini_.section(id)) report<<"art ["<<id<<"] "<<kv.first<<"="<<kv.second<<"\n";
+            }
+            for (const char* id : {"General","CombatDamage","MultiplayerDialogSettings"})
+                for (const auto& kv : rules_ini_.section(id)) report<<"rules ["<<id<<"] "<<kv.first<<"="<<kv.second<<"\n";
+            ra2engine::diag::snapshot("skirmish.txt",report.str());
+            ra2engine::diag::note("SKIRMISH scene constructed map=%s mode=%s houses=%zu",cfg.map_file.c_str(),cfg.mode_rules.c_str(),cfg.slots.size());
+        }
         cfg_ = cfg;   // P7: the save's 'CONF' section rebuilds this scene's assets
         local_house_ = local_slot_of(cfg);   // L2: the house this client plays
         g_local_house = local_house_;
         world_.set_session_seed(session_seed_for(cfg));   // Net L0: before anything draws
+        ra2engine::diag::note("SKIRMISH actual-seed=%u local-house=%d",world_.session_seed(),local_house_);
         world_.enable_projectiles(ra2engine::resolve_projectile_rules(rules_));
         depth_arm_rules(world_, rules_);   // G16 (agent G): garrison + bridge rules
         w5_arm_combat(world_, rules_, &a_.map, &a_.theater);   // W5-B: sub-cells, land speed, crush
@@ -7089,13 +7119,17 @@ public:
         }
         campaign_audio_pump();   // W2-CA-12: trigger speech/sound/music
         campaign_visuals_pump();   // W3-FX: trigger anims/camera/radar/particles/flashes
+        ra2engine::diag::state().frame=sim_frame_;
+        if (sim_frame_%75==0) ra2engine::diag::note("TICK before-world frame=%u units=%zu buildings=%zu",sim_frame_,world_.units().size(),world_.buildings().size());
         world_.step(dt);   // L2: every human house's production runs inside the step
         pres_.note_launches(world_, world_.take_econ_launches());   // W7-12-01: EVA_UnitReady per launch (drained per tick)
         r210_track_steps();   // R-210 --play probes (scene-side, never saved)
         // wave-5 (R-042): spy-stolen tech unlocks -- the sidebar's copy of the
         // local roster (the World gates each house's own copy in its step).
         world_.apply_stolen_tech_gate(ur_.defs, local_house_);
+        if (sim_frame_%75==0) ra2engine::diag::note("TICK before-presentation frame=%u",sim_frame_);
         pres_.logic_tick(world_, ba_, lcredits(), world_.take_projectile_events());   // W3-B: anim clock, building slots, effects per logic tick
+        if (sim_frame_%75==0) ra2engine::diag::note("TICK after-presentation frame=%u",sim_frame_);
         world_.clear_frag_events();   // W7-12-07: the fragment beams were drawn by this tick's logic_tick
         rp_after_world_step();   // gap owner A: SW grant/revoke by building (G-25)
         gf_update(dt);   // gF: deploy EVA + skirmish game over
@@ -18827,6 +18861,22 @@ int run_demo_saveload() {
 #include "realplay_combat_probe.inc"   // gap owner C: --probe-combat (real GameScene harness)
 
 int main(int argc, char** argv) {
+#if defined(__ANDROID__) && !defined(RA2_ANDROID_CLI)
+    if (const char* root=SDL_AndroidGetInternalStoragePath()) {
+        if (ra2engine::diag::start(std::string(root)+"/diagnostics")) {
+            static auto* buffer=new ra2engine::diag::StreamBuffer;
+            std::cerr.rdbuf(buffer);std::cout.rdbuf(buffer);
+            struct Relay {SDL_LogOutputFunction previous=nullptr;void* context=nullptr;};
+            static Relay relay;SDL_LogGetOutputFunction(&relay.previous,&relay.context);
+            SDL_LogSetOutputFunction([](void* data,int category,SDL_LogPriority priority,const char* msg){
+                ra2engine::diag::note("SDL %s",msg);
+                auto* saved=static_cast<Relay*>(data);if(saved->previous)saved->previous(saved->context,category,priority,msg);
+            },&relay);
+            ra2assets::asset_trace_callback().store(ra2engine::diag::asset);
+            ra2engine::diag::note("ENGINE START version=%s",RA2_VERSION);
+        }
+    }
+#endif
     // W2-AR-30: SDL-internal assertions log and continue; they never block on
     // a console prompt (desktop) or a modal dialog (Android).
     install_sdl_assert_handler();
@@ -18846,7 +18896,9 @@ int main(int argc, char** argv) {
         // RA2Activity.onDestroy() then ends the process, so the next launch
         // starts with fresh statics (g_art_chain, caches, ...). (exit() from
         // this thread raced the Java side's teardown: SIGSEGV on the emulator.)
-        return run_menu(/*no_audio=*/false);
+        const int result=run_menu(/*no_audio=*/false);
+        ra2engine::diag::note("ENGINE NORMAL EXIT code=%d",result);
+        return result;
 #else
         // R-171 (dev): RA2_PROFILE=<file> samples the main thread until exit.
         struct ProfGuard {

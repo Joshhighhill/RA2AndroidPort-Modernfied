@@ -67,7 +67,7 @@ target_sources(main PRIVATE "${RA2_ROOT}/engine/audio_sdl.cpp")
 # a*b+c into FMA at -O2 and the float math (and saves) would drift from the
 # desktop build.
 target_compile_definitions(main PRIVATE RA2_VERSION="${RA2_VERSION}")
-target_compile_options(main PRIVATE -ffp-contract=off)
+target_compile_options(main PRIVATE -ffp-contract=off -gline-tables-only)
 set_target_properties(main PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON

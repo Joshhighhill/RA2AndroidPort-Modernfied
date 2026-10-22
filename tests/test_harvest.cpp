@@ -1,5 +1,11 @@
 #include "doctest.h"
 #include "../engine/harvest.hpp"
+#include "../engine/diagnostics.hpp"
+#include "ra2assets/asset_trace.hpp"
+#include "ra2assets/mix.hpp"
+#include <fstream>
+#include <iterator>
+#include <sstream>
 using namespace ra2engine;
 
 namespace {
@@ -745,4 +751,44 @@ TEST_CASE("harvest: part-loaded miner with no ore in reach returns to the refine
     u.bales_ore = 5;
     r.step(0.1);
     CHECK(r.units[0].harv == HarvState::ReturnToRef);
+}
+
+
+TEST_CASE("diagnostics: bounded rotation, named asset trace, snapshots and miner warp") {
+    namespace fs=std::filesystem;
+    const auto root=fs::temp_directory_path()/"ra2-diagnostics-test12";
+    fs::create_directories(root);
+    const auto read=[&](const char* name){std::ifstream in(root/name,std::ios::binary);return std::string(std::istreambuf_iterator<char>(in),{});};
+    struct Cleanup { ~Cleanup(){ra2assets::asset_trace_callback().store(nullptr);diag::stop();} } cleanup;
+    REQUIRE(diag::start(root.u8string(),128));
+    diag::write(std::string(100,'a').data(),100);
+    diag::write(std::string(100,'b').data(),100);
+    CHECK(read("engine-previous.log")==std::string(100,'a'));
+    CHECK(read("engine-current.log")==std::string(100,'b')); // flushed before close
+    diag::snapshot("skirmish.txt",std::string(70000,'s'));
+    CHECK(fs::file_size(root/"skirmish.txt")==65536);
+    diag::snapshot("../not-allowed.txt","no");CHECK_FALSE(fs::exists(root.parent_path()/"not-allowed.txt"));
+    REQUIRE(diag::start(root.u8string()));
+    ra2assets::asset_trace_callback().store(diag::asset);
+    std::vector<uint8_t> buf;
+    auto put32=[&](uint32_t v){for(int i=0;i<4;++i)buf.push_back(static_cast<uint8_t>(v>>(8*i)));};
+    put32(0);buf.push_back(1);buf.push_back(0);put32(1);
+    put32(ra2assets::mix_id("probe.ini"));put32(0);put32(1);buf.push_back('x');
+    auto mix=ra2assets::MixFile::open(std::move(buf));
+    REQUIRE(mix.find("probe.ini")!=nullptr);REQUIRE(mix.find("probe.ini")!=nullptr);
+    auto assets=read("assets-current.log");
+    CHECK(assets.find("file-hit probe.ini")!=std::string::npos);
+    CHECK(assets.find("file-hit probe.ini",assets.find("file-hit probe.ini")+1)==std::string::npos);
+    for(int i=0;i<9000;++i)diag::asset("test",std::to_string(i),"synthetic",1);
+    CHECK(diag::state().seen.size()==8192);
+    CHECK(fs::file_size(root/"assets-current.log")<=1024*1024);
+    Rig logged,plain;
+    for(auto* r:{&logged,&plain}){r->harv(1,1,true,20);r->units[0].harv=HarvState::ReturnToRef;r->units[0].bales_ore=20;}
+    logged.step(kChronoWarpSecs);
+    const auto log=read("engine-current.log");
+    CHECK(log.find("WARP begin")!=std::string::npos);CHECK(log.find("WARP complete")!=std::string::npos);
+    diag::stop();plain.step(kChronoWarpSecs);
+    CHECK(logged.units[0].cell_x==plain.units[0].cell_x);CHECK(logged.units[0].cell_y==plain.units[0].cell_y);
+    CHECK(logged.units[0].harv==plain.units[0].harv);CHECK(logged.units[0].dock_refinery==plain.units[0].dock_refinery);
+    CHECK(logged.events.size()==plain.events.size());CHECK(logged.claims_of(0)==plain.claims_of(0));
 }

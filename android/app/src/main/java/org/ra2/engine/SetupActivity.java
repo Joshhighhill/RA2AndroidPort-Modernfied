@@ -127,12 +127,7 @@ public class SetupActivity extends Activity {
         super.onCreate(state);
         File dir = dataDir(this);
         cleanParts(dir);
-        Intent in = getIntent();
-        boolean forceImport = in != null && (in.getBooleanExtra(EXTRA_IMPORT, false) || ACTION_IMPORT.equals(in.getAction()));
-        if (!forceImport && missing(dir, true).isEmpty()) {
-            startGame();
-            return;
-        }
+        // Keep the launcher reachable after a crash so reports can be shared.
         buildUi();
         refresh();
     }
@@ -185,6 +180,7 @@ public class SetupActivity extends Activity {
         exitButton = button(getString(R.string.setup_exit), v -> finish());
         row.addView(importButton);
         row.addView(startButton);
+        row.addView(button("Share game report", v -> Diagnostics.share(this)));
         row.addView(exitButton);
         root.addView(row);
         setContentView(root);
@@ -196,6 +192,7 @@ public class SetupActivity extends Activity {
         List<String> all = missing(dir, false);
         StringBuilder sb = new StringBuilder();
         sb.append(getString(R.string.setup_intro)).append("\n\n");
+        sb.append("After a crash, tap Share game report before starting another game.\n\n");
         sb.append(getString(R.string.setup_folder)).append("\n  ").append(dir.getAbsolutePath()).append("\n\n");
         // W6-06-05: opened to add / replace files with everything present.
         title.setText(req.isEmpty() ? R.string.setup_title_ready : R.string.setup_title);

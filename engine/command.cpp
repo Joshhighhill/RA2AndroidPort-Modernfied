@@ -2,6 +2,7 @@
 // reproduces exactly what the pre-L1 UI call did to the World, with the
 // "current selection" replaced by the command's explicit Whom list.
 #include "command.hpp"
+#include "diagnostics.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -345,6 +346,17 @@ bool valid_net_command(const World& w, const Command& c) {
 
 void apply_command(World& w, const Command& c, CommandHost* host) {
     const int H = c.house;
+    if(c.type!=EventType::SelectNotify) {
+        diag::note("COMMAND begin frame=%u seq=%u house=%d event=%s mission=%d actors=%zu target=%d:%d dest=%d:%d type=%d:%d cell=%d,%d value=%d",
+            c.frame,c.seq,H,event_name(c.type),static_cast<int>(c.mission),c.whom.size(),static_cast<int>(c.target.rtti),c.target.id,
+            static_cast<int>(c.dest.rtti),c.dest.id,c.rtti_type,c.heap_id,c.cx,c.cy,c.value);
+        if(diag::state().enabled.load())for(const auto& actor:c.whom) {
+            if(actor.is_unit() && actor.id>=0 && actor.id<static_cast<int>(w.units().size())) {
+                const auto& u=w.units()[actor.id];diag::note(" actor unit=%d rules=%s image=%s cell=%d,%d hp=%d harv=%d dock=%d",actor.id,u.tg.t.rules_id.c_str(),u.image.c_str(),u.cell_x,u.cell_y,u.hp,static_cast<int>(u.harv),u.dock_refinery);
+            } else if(actor.is_building())diag::note(" actor building=%d",actor.id);
+        }
+    }
+    struct Done {const Command& c;~Done(){if(c.type!=EventType::SelectNotify)diag::note("COMMAND end frame=%u seq=%u event=%s",c.frame,c.seq,event_name(c.type));}} done{c};
     switch (c.type) {
         case EventType::MegaMission:
             apply_mega(w, c, host);

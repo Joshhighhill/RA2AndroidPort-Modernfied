@@ -1,4 +1,5 @@
 #include "harvest.hpp"
+#include "diagnostics.hpp"
 #include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 
 #include <algorithm>
@@ -84,6 +85,7 @@ constexpr int kHarvesterTooFarDistance = 5;
 // stays in step_units).
 void teleport_unit(Unit& u, int self, int tx, int ty,
                    const std::vector<std::uint8_t>& passable, int gw, int gh, Occupancy& occ) {
+    diag::note("WARP begin unit=%d image=%s from=%d,%d requested=%d,%d hp=%d state=%d dock=%d ore=%.1f gems=%.1f",self,u.image.c_str(),u.cell_x,u.cell_y,tx,ty,u.hp,static_cast<int>(u.harv),u.dock_refinery,u.bales_ore,u.bales_gems);
     occ.release_all_of(self, /*keep_x*/ -1, /*keep_y*/ -1);  // off-grid keep = release ALL
     auto ok = [&](int x, int y) {
         return is_passable(passable, gw, gh, x, y) && occ.is_free(x, y);
@@ -114,6 +116,7 @@ void teleport_unit(Unit& u, int self, int tx, int ty,
                 }
             }
     }
+    diag::note("WARP destination unit=%d resolved=%d,%d found=%d",self,fx,fy,found);
     u.cell_x = fx;
     u.cell_y = fy;
     u.fx = (double)fx;
@@ -121,6 +124,7 @@ void teleport_unit(Unit& u, int self, int tx, int ty,
     u.path.clear();
     u.path_idx = 0;
     occ.set(fx, fy, self);
+    diag::note("WARP complete unit=%d placed=%d,%d",self,u.cell_x,u.cell_y);
 }
 
 // NEW-3 (gap owner A): the cell a DRIVING miner heads for. The dock cell

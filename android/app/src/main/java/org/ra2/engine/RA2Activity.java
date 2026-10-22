@@ -66,6 +66,7 @@ public class RA2Activity extends SDLActivity implements AudioManager.OnAudioFocu
      */
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        Diagnostics.begin(this);
         super.onCreate(savedInstanceState);
         if (Build.VERSION.SDK_INT >= 29) {
             final View root = getWindow().getDecorView();
@@ -214,7 +215,7 @@ public class RA2Activity extends SDLActivity implements AudioManager.OnAudioFocu
         // the player has quit, end the process so the next launch re-enters
         // main() with fresh statics instead of reusing this process. Done
         // after SDL's own teardown (an exit() from the SDL thread crashed).
-        if (isFinishing()) android.os.Process.killProcess(android.os.Process.myPid());
+        if (isFinishing()) { Diagnostics.finish(this); android.os.Process.killProcess(android.os.Process.myPid()); }
     }
 
     private void requestFocus() {

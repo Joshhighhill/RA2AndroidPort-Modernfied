@@ -51,6 +51,9 @@
         android:theme="@style/AppTheme"
         android:hardwareAccelerated="true" >
 
+        <provider android:name="org.ra2.engine.ReportProvider"
+            android:authorities="org.ra2.engine.reports" android:exported="false"
+            android:grantUriPermissions="true" />
         <!-- W2-AR-03/-04: launcher. Checks for the game files, offers the
              in-app import, then starts the game. Own process so the engine's
              exit() cannot kill it. -->

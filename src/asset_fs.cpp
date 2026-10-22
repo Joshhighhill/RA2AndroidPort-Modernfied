@@ -1,4 +1,5 @@
 #include "ra2assets/asset_fs.hpp"
+#include "ra2assets/asset_trace.hpp"
 
 #include <cctype>
 #include <cstdio>
@@ -139,6 +140,7 @@ const MixEntry* AssetFS::find(const std::string& name, const MixFile** owner, st
         if (const MixEntry* e = m.second->find(id)) {
             if (owner) *owner = m.second.get();
             if (label) *label = m.first;
+            trace_asset("resolve",name,m.first,e->size);
             return e;
         }
     }

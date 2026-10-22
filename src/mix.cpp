@@ -1,4 +1,5 @@
 #include "ra2assets/mix.hpp"
+#include "ra2assets/asset_trace.hpp"
 #include "ra2assets/blowfish.hpp"
 #include <cctype>
 #include <cstdio>
@@ -17,6 +18,7 @@ namespace detail {
 // a file on disk read with offset reads (open_path). Shared by every nested
 // view, so a child archive never copies its parent's bytes.
 struct MixSource {
+    std::string path="memory";
     std::vector<uint8_t> mem;      // memory-backed
     std::FILE* f = nullptr;        // file-backed
     uint64_t file_size = 0;
@@ -50,6 +52,7 @@ MixFile MixFile::open(std::vector<uint8_t> bytes) {
 }
 
 MixFile MixFile::open_path(const std::string& path) {
+    trace_asset("open-archive",path,"disk",0);
     // One shared handle per path (the loaders open ra2.mix / ra2md.mix many
     // times); weak so a closed game releases the file.
     static std::mutex reg_mu;
@@ -64,6 +67,7 @@ MixFile MixFile::open_path(const std::string& path) {
             if (!f) throw std::runtime_error("cannot open file: " + path);
             src = std::make_shared<detail::MixSource>();
             src->f = f;
+            src->path = path;
 #if defined(_WIN32)
             _fseeki64(f, 0, SEEK_END);
             const long long sz = _ftelli64(f);
@@ -200,7 +204,9 @@ uint32_t mix_id(const std::string& name_in) {
 }
 
 const MixEntry* MixFile::find(const std::string& name) const {
-    return find(mix_id(name));
+    const auto* entry=find(mix_id(name));
+    if(entry && asset_trace_callback().load(std::memory_order_relaxed))trace_asset("file-hit",name,src_->path+"@"+std::to_string(base_),entry->size);
+    return entry;
 }
 
 std::vector<std::string> MixFile::local_names() const {
@@ -225,6 +231,7 @@ std::vector<std::string> MixFile::local_names() const {
 }
 
 MixFile MixFile::open_nested(const std::string& name) const {
+    trace_asset("open-nested",name,"archive-view@"+std::to_string(base_),size_);
     const MixEntry* e = find(name);
     if (!e) throw std::runtime_error("mix: nested entry not found: " + name);
     // W2-GA-P5: a view into the same source -- no copy of the child's bytes.
