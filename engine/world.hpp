@@ -1063,6 +1063,7 @@ public:
     void step_yuri_workers();
     void prepare_skirmish_mind_control();
     void resolve_skirmish_mind_control();
+    bool try_building_mind_control(int building, int victim, int slot = 0);
 
     // Registers (or replaces) the animation sequence used for Unit::image ==
     // `image`; anim_for_image falls back to default_anim() for any image

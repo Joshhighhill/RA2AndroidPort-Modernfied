@@ -6282,6 +6282,19 @@ void World::step(double dt) {
         }
     }
 
+    // Ground Force Fire needs the same committed-cell hold as object attacks.
+    // Its approach path points at the clicked cell; without this pass it keeps
+    // walking down that path while firing. Checking and snapping in the same
+    // coordinate space avoids oscillating across the range boundary.
+    for (Unit& u : units_) {
+        if (!u.alive || u.die_time>=0 || u.path.empty() || !u.attack_order || u.attack_cell_x<0) continue;
+        if (weapon_in_range_from(*this,u,u.cell_x*256+om::ftol(u.sub_x),
+            u.cell_y*256+om::ftol(u.sub_y),unit_lept_z(u),u.attack_cell_x*256,
+            u.attack_cell_y*256,cell_level(u.attack_cell_x,u.attack_cell_y)*104)) {
+            u.path.clear();u.path_idx=0;u.fx=u.cell_x;u.fy=u.cell_y;
+        }
+    }
+
     // Fire/die animation override (Task 7, facing added Task 2): step_units
     // (above) already picked a stand/walk frame assuming the unit is simply
     // idle or walking; this pass OVERRIDES that choice for a unit that is

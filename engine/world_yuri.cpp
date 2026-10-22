@@ -11,6 +11,20 @@ void World::prepare_skirmish_mind_control() {
     for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
         Unit& v = units_[i];
         const int c = v.w7.mc_controller;
+        const int bi = v.w7.mc_building;
+        if (bi >= 0 && (bi >= static_cast<int>(buildings_.size()) || !buildings_[bi].alive ||
+            buildings_[bi].state != Building::State::Idle || buildings_[bi].house != v.house ||
+            buildings_[bi].power_off || buildings_[bi].w7.warp_unpowered ||
+            (buildings_[bi].type >= 0 && buildings_[bi].type < static_cast<int>(btypes().size()) &&
+             btypes()[buildings_[bi].type].powered && house_low_power(buildings_[bi].house)) || !active(v))) {
+            if (bi < static_cast<int>(buildings_.size())) {
+                auto& held = buildings_[bi].w7.mc_victims;
+                held.erase(std::remove(held.begin(),held.end(),i),held.end());
+            }
+            if (v.alive && v.die_time < 0 && v.w7.mc_original_house >= 0)
+                set_unit_owner(i,v.w7.mc_original_house);
+            v.w7.mc_building = v.w7.mc_original_house = -1;
+        }
         if (c >= 0 && (c >= static_cast<int>(units_.size()) || !active(units_[c]) ||
                        units_[c].warp_remaining > 0 || !active(v) || units_[c].house != v.house)) {
             if (c < static_cast<int>(units_.size())) {
@@ -30,7 +44,7 @@ void World::prepare_skirmish_mind_control() {
             const Unit& v = units_[u.target];
             const bool full = !u.w7.t.mc_infinite &&
                 static_cast<int>(u.w7.mc_victims.size()) >= u.w7.t.mc_capacity;
-            if (!psionic_target_ok(u.target) || v.an.iron_left_frames > 0 || v.w7.mc_controller >= 0 ||
+            if (!psionic_target_ok(u.target) || v.an.iron_left_frames > 0 || v.w7.mc_controller >= 0 || v.w7.mc_building >= 0 ||
                 (full && (!u.attack_order || u.w7.t.mc_capacity != 1))) {
                 u.target = -1; u.attack_order = false;
             }
@@ -47,7 +61,7 @@ void World::resolve_skirmish_mind_control() {
         if (!active(u) || vi < 0 || vi >= static_cast<int>(units_.size()) || vi == i) continue;
         Unit& v = units_[vi];
         if (!active(v) || v.house == u.house || v.is_aircraft || !psionic_target_ok(vi) ||
-            v.an.iron_left_frames > 0 || v.w7.mc_controller >= 0) continue;
+            v.an.iron_left_frames > 0 || v.w7.mc_controller >= 0 || v.w7.mc_building >= 0) continue;
         auto& held = u.w7.mc_victims;
         if (!u.w7.t.mc_infinite && static_cast<int>(held.size()) >= std::max(1, u.w7.t.mc_capacity)) {
             if (u.w7.t.mc_capacity != 1) continue;
@@ -68,6 +82,24 @@ void World::resolve_skirmish_mind_control() {
         held.push_back(vi);
         u.target = -1; u.attack_order = false;
     }
+}
+
+bool World::try_building_mind_control(int bi,int vi,int slot) {
+    if (playfield_.campaign || bi<0 || bi>=static_cast<int>(buildings_.size()) ||
+        vi<0 || vi>=static_cast<int>(units_.size()) || slot<0 || slot>1) return false;
+    Building& b=buildings_[bi]; Unit& v=units_[vi];
+    if (!b.alive || b.state!=Building::State::Idle || b.power_off || b.w7.warp_unpowered ||
+        b.type<0 || b.type>=static_cast<int>(btypes().size())) return false;
+    const auto& type=btypes()[b.type];
+    if (!type.mind_control || (type.powered && house_low_power(b.house)) ||
+        !active(v) || v.house==b.house || v.is_aircraft || !psionic_target_ok(vi) ||
+        v.an.iron_left_frames>0 || v.w7.mc_controller>=0 || v.w7.mc_building>=0 ||
+        static_cast<int>(b.w7.mc_victims.size())>=std::max(1,type.weapon[slot].damage)) return false;
+    const int original=v.house;
+    set_unit_owner(vi,b.house);
+    v.w7.mc_original_house=original; v.w7.mc_building=bi;
+    b.w7.mc_victims.push_back(vi);
+    return true;
 }
 
 void World::step_yuri_workers() {

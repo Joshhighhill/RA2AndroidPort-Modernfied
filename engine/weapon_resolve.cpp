@@ -220,6 +220,8 @@ void fill_building_weapons(const ra2assets::Rules& rules, const std::string& typ
     const TypeWeapons tw = resolve_type_weapons(rules, type_id);
     d.weapon[0] = tw.slot[0];
     d.weapon[1] = tw.slot[1];
+    d.mind_control = tw.slot[0].valid && rules.section_flag(
+        rules.section_string(tw.slot[0].id,"Warhead",""),"MindControl",false);
     d.armed = tw.slot[0].valid && tw.slot[0].range > 0.0 && tw.slot[0].damage != 0;
     d.powered = rules.section_flag(type_id, "Powered", false);
     d.rot = rules.rot(type_id);

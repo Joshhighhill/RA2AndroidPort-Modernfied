@@ -235,3 +235,22 @@ TEST_CASE("voxel_raster: real htnk hull renders deterministically") {
     // opaque=1038 anchor=(27,24).
     CHECK(fnv1a(s1.rgba) == 1209756769u);  // 0x481b6c61
 }
+
+TEST_CASE("voxel_raster: reordered named HVA sections preserve model and shadow") {
+    auto model=single_voxel_model(100,0);
+    model.sections[0].name="BODY";
+    model.sections.push_back(model.sections[0]);
+    model.sections[1].name="ENGINE";model.sections[1].voxels[0].color=160;
+    auto h=identity_hva();h.section_names={"BODY","ENGINE"};
+    auto moved=h.frames[0][0];moved.transform[0][3]=4;moved.transform[2][3]=2;
+    h.frames[0].push_back(moved);
+    auto reversed=h;
+    std::swap(reversed.section_names[0],reversed.section_names[1]);
+    std::swap(reversed.frames[0][0],reversed.frames[0][1]);
+    const auto a=ra2engine::rasterize_model(model,h,0,identity_vpl(),gray_pal());
+    const auto b=ra2engine::rasterize_model(model,reversed,0,identity_vpl(),gray_pal());
+    CHECK(a.w==b.w);CHECK(a.h==b.h);CHECK(a.anchor_x==b.anchor_x);CHECK(a.anchor_y==b.anchor_y);CHECK(a.rgba==b.rgba);
+    const auto sa=ra2engine::rasterize_shadow(model,h,0,128);
+    const auto sb=ra2engine::rasterize_shadow(model,reversed,0,128);
+    CHECK(sa.w==sb.w);CHECK(sa.h==sb.h);CHECK(sa.rgba==sb.rgba);
+}

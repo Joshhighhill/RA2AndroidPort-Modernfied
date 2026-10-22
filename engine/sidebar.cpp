@@ -5,13 +5,13 @@
 namespace ra2engine {
 
 namespace { int g_sidebar_style = 0; }
-void set_sidebar_style(int style) { g_sidebar_style = style == 1 ? 1 : 0; }
+void set_sidebar_style(int style) { g_sidebar_style = style == 1 || style == 2 ? style : 0; }
 int sidebar_style() { return g_sidebar_style; }
 
 SidebarLayout SidebarLayout::compute(int view_w, int view_h,
                                      const std::vector<int>& types, int top_row) {
     SidebarLayout lay;
-    const bool sov = g_sidebar_style == 1;   // W2-UI-08 constant set
+    const bool sov = g_sidebar_style != 0;   // Yuri shares the Soviet geometry (construction.md)
     const int side3_h = sov ? 18 : kSide3H;
 
     // Whole sidebar column on the right edge, full window height

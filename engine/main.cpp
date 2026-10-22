@@ -100,6 +100,7 @@ static char* ra2_cli_pref_path() {
 #include <filesystem>        // P7: temp save dir for --demo-saveload
 #include <ctime>             // P7: save timestamps
 #include "sidebar.hpp"
+#include "touch_theme.hpp"
 #include "texture_cache.hpp"
 #include "skirmish.hpp"
 #include "skirmish_lobby.hpp"
@@ -194,7 +195,8 @@ const char* g_sidebar_mix = "sidec01.mix";
 // side-art key ("sb:*", the SW clock "sw:gclk*") is cached per side.
 inline std::string side_tex_key(const std::string& k) {
     if (k.compare(0, 3, "sb:") == 0 || k.compare(0, 7, "sw:gclk") == 0)
-        return (std::string(g_sidebar_mix) == "sidec02.mix" ? "S2" : "S1") + k;
+        return (std::string(g_sidebar_mix) == "sidec03.mix" ? "S3" :
+                std::string(g_sidebar_mix) == "sidec02.mix" ? "S2" : "S1") + k;
     return k;
 }
 void hud_font_load(const ra2assets::MixFile& ra2);   // W2-UI-12 (hud_text.inc)
@@ -2904,7 +2906,32 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     // Sidebar chrome (player side = Allied sidec01) [RE-GATE: construction.md
     // §11]: four SEPARATE 28x27 tab SHPs + the 55-frame gclock2.shp clock.
     try {
-        MixFile sb = ra2.open_nested(g_sidebar_mix);   // G-91: sidec02 for a Soviet player
+        MixFile sb = [&]() {
+            if (std::string(g_sidebar_mix)=="sidec03.mix") {
+                auto complete=[](const MixFile& archive) {
+                    for (const char* file : {"sidebar.pal","top.shp","side1.shp","side2.shp",
+                        "tab00.shp","tab01.shp","tab02.shp","tab03.shp","powerp.shp","credits.shp","gclock2.shp"})
+                        if (!archive.find(std::string(file))) return false;
+                    return true;
+                };
+                for (const char* name : {"sidec03.mix","sidec03md.mix"}) {
+                    try {
+                        MixFile expansion=MixFile::open_path(env_install_dir()+"ra2md.mix");
+                        MixFile found=expansion.open_nested(name);
+                        if (complete(found)) {
+                            std::cerr<<"[sidebar] Yuri art from ra2md.mix/"<<name<<"\n";
+                            return found;
+                        }
+                    } catch(const std::exception&) {}
+                    try { auto found=ra2.open_nested(name); if(complete(found)) return found; } catch(const std::exception&) {}
+                    try { auto found=MixFile::open_path(env_install_dir()+name); if(complete(found)) return found; } catch(const std::exception&) {}
+                }
+                // Incomplete installs retain usable classic chrome and hit boxes.
+                std::cerr<<"[sidebar] Yuri archive absent; using Allied fallback\n";
+                g_sidebar_mix="sidec01.mix";ra2engine::set_sidebar_style(0);
+            }
+            return ra2.open_nested(g_sidebar_mix);
+        }();
         if (const MixEntry* se = sb.find(std::string("sidebar.pal"))) {   // W2-UI-01
             auto raw = sb.read(*se);
             ba.sb_pal = Palette::load(raw.data(), raw.size());
@@ -2933,7 +2960,8 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         auto opt = [&](ra2assets::ShpFile& dst, const char* fn, bool& flag) {
             try { dst = load_sb(fn); flag = true; } catch (const std::exception&) {}
         };
-        opt(ba.sb_radar, "radar.shp", ba.has_radar);
+        if (std::string(g_sidebar_mix)=="sidec03.mix") opt(ba.sb_radar,"radary.shp",ba.has_radar);
+        if (!ba.has_radar) opt(ba.sb_radar, "radar.shp", ba.has_radar);
         opt(ba.sb_side3, "side3.shp", ba.has_side3);
         opt(ba.sb_addon, "addon.shp", ba.has_addon);
         bool up = false, dn = false;
@@ -6534,8 +6562,11 @@ public:
           ua_((g_art_chain = a_.chain,
                g_sidebar_mix = (soviet_campaign(cfg) || (cfg.campaign_map.empty() && !cfg.slots.empty() &&
                                                          cfg.slots[(std::size_t)local_slot_of(cfg)].side == ra2engine::World::Side::Soviet))
-                                   ? "sidec02.mix" : "sidec01.mix",
-               ra2engine::set_sidebar_style(std::string(g_sidebar_mix) == "sidec02.mix" ? 1 : 0),   // W2-UI-08
+                                   ? "sidec02.mix" : (cfg.campaign_map.empty() && !cfg.slots.empty() &&
+                                     cfg.slots[(std::size_t)local_slot_of(cfg)].side==ra2engine::World::Side::Yuri)
+                                   ? "sidec03.mix" : "sidec01.mix",
+               ra2engine::set_sidebar_style(std::string(g_sidebar_mix) == "sidec03.mix" ? 2 :
+                                           std::string(g_sidebar_mix) == "sidec02.mix" ? 1 : 0),
                load_unit_assets(dir_, ra2_))),
           va_(load_vehicle_assets(dir_, ra2_, ua_.pal, "HTNK")),
           language_(ra2assets::MixFile::open_path(dir_ + "language.mix")),

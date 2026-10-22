@@ -898,9 +898,11 @@ int World::force_bridge_break(int x, int y) {
 }
 
 void World::order_attack_cell(int ui, int cx, int cy) {
+    if (cx < 0 || cy < 0 || cx >= grid_w_ || cy >= grid_h_) return;
     if (ui < 0 || ui >= static_cast<int>(units_.size())) return;
     Unit& u = units_[ui];
     if (!u.alive || u.die_time >= 0.0 || u.cargo_of >= 0 || u.w_damage <= 0) return;
+    order_stop(ui); // replace an earlier movement or attack-move mission
     u.target = -1;
     u.target_building = -1;
     u.occupy_target = -1;

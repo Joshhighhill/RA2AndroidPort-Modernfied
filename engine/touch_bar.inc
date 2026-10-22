@@ -2,6 +2,20 @@
 // group taps select, group holds assign, battlefield double-tap selects type.
 // Icons are original SDL primitives and never depend on retail icon sheets.
 struct TouchBtn { const char* label; int id; };
+ra2engine::TouchTheme touch_skin() const {
+    return ra2engine::touch_theme(static_cast<int>(world_.house_side(local_house_)));
+}
+void touch_colour(SDL_Renderer* ren, ra2assets::Rgba c) const {
+    SDL_SetRenderDrawColor(ren,c.r,c.g,c.b,c.a);
+}
+void touch_metal(SDL_Renderer* ren,const SDL_Rect& r,ra2assets::Rgba c) const {
+    touch_colour(ren,c);SDL_RenderFillRect(ren,&r);
+    SDL_SetRenderDrawColor(ren,std::min(255,c.r+28),std::min(255,c.g+28),std::min(255,c.b+28),255);
+    SDL_RenderDrawLine(ren,r.x+1,r.y+1,r.x+r.w-2,r.y+1);
+    SDL_RenderDrawLine(ren,r.x+1,r.y+1,r.x+1,r.y+r.h-2);
+    SDL_SetRenderDrawColor(ren,7,8,11,220);
+    SDL_RenderDrawLine(ren,r.x+1,r.y+r.h-2,r.x+r.w-2,r.y+r.h-2);
+}
 enum : int { TB_TOGGLE = 1, TB_ADD, TB_FIRE, TB_MOVE, TB_STOP, TB_GUARD, TB_SCATTER, TB_DEPLOY, TB_BRIEF,
              TB_BOX, TB_MORE, TB_TYPE, TB_HOME, TB_EVENT, TB_NEXT, TB_PREV, TB_FOLLOW,
              TB_VIEW1 = 90, TB_GROUP1 = 100 };
@@ -63,8 +77,9 @@ void draw_touch_panel_toggle(SDL_Renderer* ren) {
     const auto r = touch_panel_toggle_rect();
     SDL_SetRenderDrawBlendMode(ren,SDL_BLENDMODE_BLEND);
     const bool armed = touch_add_ || touch_fire_ || touch_move_ || touch_box_;
-    SDL_SetRenderDrawColor(ren,armed ? 95 : 25,36,39,235);SDL_RenderFillRect(ren,&r);
-    SDL_SetRenderDrawColor(ren,210,170,110,255);SDL_RenderDrawRect(ren,&r);
+    const auto skin = touch_skin();
+    touch_metal(ren,r,armed ? skin.active : skin.panel);
+    touch_colour(ren,skin.accent);SDL_RenderDrawRect(ren,&r);
     const int x=r.x+r.w/2,y=r.y+r.h/2,d=touch_panel_collapsed_ ? 1 : -1;
     SDL_RenderDrawLine(ren,x-d*5,y-10,x+d*5,y);
     SDL_RenderDrawLine(ren,x+d*5,y,x-d*5,y+10);
@@ -74,7 +89,7 @@ bool touch_panel_contains(int x, int y) const {
     return touch_bar_visible() && x >= r.x && x < r.x+r.w && y >= r.y && y < r.y+r.h;
 }
 void draw_touch_icon(SDL_Renderer* ren, int id, const SDL_Rect& r, bool enabled) {
-    SDL_SetRenderDrawColor(ren, enabled ? 225 : 105, enabled ? 216 : 110, enabled ? 170 : 105, 255);
+    touch_colour(ren,enabled ? touch_skin().accent : ra2assets::Rgba{112,112,119,255});
     const int x = r.x+r.w/2, y = r.y+20;
     auto line = [&](int a,int b,int c,int d){ SDL_RenderDrawLine(ren,x+a,y+b,x+c,y+d); };
     if (id == TB_STOP) { SDL_Rect q{x-9,y-9,18,18}; SDL_RenderDrawRect(ren,&q); }
@@ -93,8 +108,11 @@ void draw_touch_icon(SDL_Renderer* ren, int id, const SDL_Rect& r, bool enabled)
 void draw_touch_selection(SDL_Renderer* ren, ra2engine::TextureCache& tc) {
     const auto panel = touch_panel_rect();
     SDL_SetRenderDrawBlendMode(ren,SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(ren,14,22,25,235); SDL_RenderFillRect(ren,&panel);
-    SDL_SetRenderDrawColor(ren,190,95,65,255); SDL_RenderDrawRect(ren,&panel);
+    const auto skin = touch_skin();
+    touch_metal(ren,panel,skin.panel);
+    touch_colour(ren,skin.border); SDL_RenderDrawRect(ren,&panel);
+    touch_colour(ren,skin.accent);
+    SDL_RenderDrawLine(ren,panel.x+1,panel.y+1,panel.x+panel.w-2,panel.y+1);
     const int first = input_.selection().lowest();
     std::string title = "NO UNIT SELECTED";
     bool pictured = false;
@@ -114,9 +132,28 @@ void draw_touch_selection(SDL_Renderer* ren, ra2engine::TextureCache& tc) {
         SDL_Rect p{panel.x+4,panel.y+5,54,40}; SDL_SetRenderDrawColor(ren,70,87,72,255);SDL_RenderDrawRect(ren,&p);
         draw_text(ren,"UNIT",p.x+8,p.y+16,1,170,190,150);
     }
-    title = title.substr(0,26);
-    draw_text(ren,title,panel.x+66,panel.y+10,1,235,225,200);
-    draw_text(ren,"TAP GROUP / HOLD TO ASSIGN",panel.x+66,panel.y+30,1,165,185,165);
+    // Leave the fold arrow clear even with a long rules id.
+    title = title.substr(0,24);
+    draw_text(ren,title,panel.x+66,panel.y+8,1,skin.text.r,skin.text.g,skin.text.b);
+    int hp=0,maximum=0,count=0;
+    for (int id : input_.selection().ids()) {
+        if (id < 0 || id >= static_cast<int>(world_.units().size())) continue;
+        const auto& u=world_.units()[id];
+        if (!u.alive || u.die_time>=0) continue;
+        hp+=std::max(0,u.hp); maximum+=std::max(1,u.max_hp); ++count;
+    }
+    const int b=input_.selected_building();
+    if (!count && b>=0 && b<static_cast<int>(world_.buildings().size())) {
+        const auto& building=world_.buildings()[b]; hp=std::max(0,building.hp);maximum=std::max(1,building.max_hp);
+    }
+    if (maximum>0) {
+        SDL_Rect track{panel.x+66,panel.y+23,std::max(1,panel.w-122),5};
+        SDL_SetRenderDrawColor(ren,8,9,12,255);SDL_RenderFillRect(ren,&track);
+        track.w=std::clamp(static_cast<int>(static_cast<double>(track.w)*hp/maximum),0,track.w);
+        SDL_SetRenderDrawColor(ren,hp*2<maximum?220:112,hp*2<maximum?85:205,100,255);SDL_RenderFillRect(ren,&track);
+    }
+    const std::string detail=maximum>0 ? std::to_string(hp)+" / "+std::to_string(maximum)+" HP" : "TAP GROUP / HOLD TO ASSIGN";
+    draw_text(ren,detail,panel.x+66,panel.y+35,1,skin.text.r,skin.text.g,skin.text.b);
 }
 int touch_bar_top() const {
     if (touch_panel_collapsed_) return touch_panel_toggle_rect().y;
@@ -318,9 +355,9 @@ void draw_touch_bar(SDL_Renderer* ren, ra2engine::TextureCache& tc) {
                         (id == TB_MOVE && touch_move_) || (id == TB_TOGGLE && (touch_bar_open_ || armed_mod)) ||
                         (id == TB_BRIEF && show_briefing_) || (id == TB_BOX && touch_box_) ||
                         (id == TB_MORE && touch_page2_);
-        SDL_SetRenderDrawColor(ren, on ? 150 : 20, on ? 40 : 24, on ? 30 : 28, 0xB0);
-        SDL_RenderFillRect(ren, &r);
-        SDL_SetRenderDrawColor(ren, 200, 70, 55, 0xE0);
+        const auto skin=touch_skin();
+        touch_metal(ren,r,on ? skin.active : skin.panel);
+        touch_colour(ren,on ? skin.accent : skin.border);
         SDL_RenderDrawRect(ren, &r);
         const bool enabled = touch_button_enabled(id);
         if (!enabled) {

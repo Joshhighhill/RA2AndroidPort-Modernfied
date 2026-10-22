@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <cctype>
 
 namespace ra2engine {
 namespace {
@@ -13,6 +14,18 @@ namespace {
 constexpr double kPi = 3.14159265358979323846;
 
 struct V3 { double x, y, z; };
+std::size_t hva_section(const ra2assets::HvaModel& h, const std::string& name,
+                        std::size_t fallback, std::size_t count) {
+    auto equal=[](const std::string& a,const std::string& b) {
+        if(a.size()!=b.size()) return false;
+        for(std::size_t i=0;i<a.size();++i)
+            if(std::tolower(static_cast<unsigned char>(a[i]))!=std::tolower(static_cast<unsigned char>(b[i]))) return false;
+        return true;
+    };
+    for(std::size_t i=0;i<h.section_names.size() && i<count;++i)
+        if(equal(name,h.section_names[i])) return i;
+    return std::min(fallback,count-1); // unnamed legacy fixtures retain index ordering
+}
 
 // hva 3x4 (rows) applied to p, translation column pre-scaled by `scale`
 // [RE: voxel-render.md §1].
@@ -92,7 +105,7 @@ VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaMo
     double mnx = 1e9, mny = 1e9, mxx = -1e9, mxy = -1e9;
     for (size_t si = 0; si < m.sections.size(); ++si) {
         const auto& sec = m.sections[si];
-        const auto& xf = hva.frames.at(hf).at(std::min(si, hva.frames[hf].size() - 1));
+        const auto& xf = hva.frames.at(hf).at(hva_section(hva,sec.name,si,hva.frames[hf].size()));
         for (int corner = 0; corner < 8; ++corner) {
             const V3 lo = {sec.min_bounds[0], sec.min_bounds[1], sec.min_bounds[2]};
             const V3 hi = {sec.max_bounds[0], sec.max_bounds[1], sec.max_bounds[2]};
@@ -126,7 +139,7 @@ VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaMo
     // Pass 2: voxels.
     for (size_t si = 0; si < m.sections.size(); ++si) {
         const auto& sec = m.sections[si];
-        const auto& xf = hva.frames.at(hf).at(std::min(si, hva.frames[hf].size() - 1));
+        const auto& xf = hva.frames.at(hf).at(hva_section(hva,sec.name,si,hva.frames[hf].size()));
         const double stepx = (sec.max_bounds[0] - sec.min_bounds[0]) / sec.size_x;
         const double stepy = (sec.max_bounds[1] - sec.min_bounds[1]) / sec.size_y;
         const double stepz = (sec.max_bounds[2] - sec.min_bounds[2]) / sec.size_z;
@@ -174,7 +187,7 @@ VoxelSprite rasterize_shadow(const ra2assets::VxlModel& m, const ra2assets::HvaM
     double mnx = 1e9, mny = 1e9, mxx = -1e9, mxy = -1e9;
     for (size_t si = 0; si < m.sections.size(); ++si) {
         const auto& sec = m.sections[si];
-        const auto& xf = hva.frames.at(0).at(std::min(si, hva.frames[0].size() - 1));
+        const auto& xf = hva.frames.at(0).at(hva_section(hva,sec.name,si,hva.frames[0].size()));
         const double stepx = (sec.max_bounds[0] - sec.min_bounds[0]) / sec.size_x;
         const double stepy = (sec.max_bounds[1] - sec.min_bounds[1]) / sec.size_y;
         const double stepz = (sec.max_bounds[2] - sec.min_bounds[2]) / sec.size_z;

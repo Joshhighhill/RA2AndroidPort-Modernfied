@@ -141,3 +141,14 @@ TEST_CASE("sidebar layout: G-12 strip scrolling by top_row") {
     auto few = SidebarLayout::compute(1280, 720, {1, 2, 3}, 3);
     CHECK(few.top_row == 0);
 }
+
+TEST_CASE("sidebar layout: Yuri shares Soviet controls and preserves its style id") {
+    using namespace ra2engine;
+    set_sidebar_style(1);const auto soviet=SidebarLayout::compute(1280,720,{1,2,3});
+    set_sidebar_style(2);const auto yuri=SidebarLayout::compute(1280,720,{1,2,3});
+    CHECK(sidebar_style()==2);
+    CHECK(yuri.repair_btn.x==soviet.repair_btn.x);CHECK(yuri.repair_btn.y==soviet.repair_btn.y);
+    CHECK(yuri.sell_btn.x==soviet.sell_btn.x);CHECK(yuri.opt_btn.x==soviet.opt_btn.x);
+    CHECK(yuri.diplo_btn.x==soviet.diplo_btn.x);CHECK(yuri.cameos.size()==soviet.cameos.size());
+    set_sidebar_style(0);
+}

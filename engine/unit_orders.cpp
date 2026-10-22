@@ -5,6 +5,7 @@
 // guard = stop + guard post at the current cell (idle units auto-acquire and
 // are leashed to it -- combat.cpp); scatter = step to a free adjacent cell.
 #include <cmath>
+#include <algorithm>
 
 #include "world.hpp"
 #include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
@@ -83,6 +84,18 @@ void World::order_stop(int idx) {
 void World::set_unit_owner(int idx, int house) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     if (units_[idx].house == house) return;   // FUN_00700940: same owner -> no-op
+    const int old_house=units_[idx].house;
+    if (old_house>=0 && old_house<static_cast<int>(ai_houses_.size())) {
+        for (auto& team:ai_houses_[old_house].team_state.teams)
+            for (int k=static_cast<int>(team.members.size())-1;k>=0;--k)
+                if (team.members[k]==idx) {
+                    team.members.erase(team.members.begin()+k);
+                    if (k<static_cast<int>(team.member_types.size()))
+                        team.member_types.erase(team.member_types.begin()+k);
+                }
+    }
+    units_[idx].tg.team_aggressive=false;
+    units_[idx].tg.team_suicide=false;
     units_[idx].house = house;
     // W7-09-09 [RE: SetOwningHouse 0x700940 -> Assign_Mission(Guard)]: the
     // new owner's unit leaves Sleep / Harmless (order_stop clears the mission).

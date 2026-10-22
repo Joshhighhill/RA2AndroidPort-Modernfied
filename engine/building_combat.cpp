@@ -271,6 +271,9 @@ void World::step_building_combat(double dt) {
             if (j < 0 || j >= nu) return false;
             const Unit& v = units_[j];
             if (!v.alive || v.die_time >= 0.0 || v.cargo_of >= 0) return false;
+            if (t.mind_control && (playfield_.campaign || !psionic_target_ok(j) ||
+                v.an.iron_left_frames > 0 || v.w7.mc_controller >= 0 || v.w7.mc_building >= 0 ||
+                static_cast<int>(b.w7.mc_victims.size()) >= std::max(1,t.weapon[0].damage))) return false;
             if (!is_enemy(b.house, v.house) || disguise_fools(b.house, v)) return false;   // W7-01-02
             // W2-AN-13/14: base defenses are NavalTargeting=0 (UNDERWATER_NEVER).
             if (v.an.submerged) return false;
@@ -303,7 +306,7 @@ void World::step_building_combat(double dt) {
         // Insignificant= structures are never picked (W6-03-01). [RE-FALLBACK:
         // units first, then the nearest structure; a delayed-fire (Prism)
         // tower keeps to units.]
-        if (b.def_target < 0 && !(w5_.armed && t.w5.delayed_fire_delay > 0)) {
+        if (b.def_target < 0 && !t.mind_control && !(w5_.armed && t.w5.delayed_fire_delay > 0)) {
             auto bld_slot = [&](const Building& o) {
                 if (w5_.armed && t.w5.overpowerable) return b.w5.overpowered ? 1 : 0;
                 return choose_weapon(t.weapon[0], t.weapon[1], false, o.armor_ix);
@@ -445,6 +448,11 @@ void World::step_building_combat(double dt) {
         b.def_fire_flash = kFireFlashSecs;
         b.def_slot = slot;
         fire_events_.push_back({-1, bi, b.def_target, -1, slot, w.id});
+        if (t.mind_control) {
+            try_building_mind_control(bi,b.def_target,slot);
+            b.def_target = -1;
+            continue; // control weapons capture instead of dealing plain damage
+        }
         if (projectiles_enabled_ && w.proj.flies()) {
             launch_defense_projectile(bi, b.def_target, slot);
             continue;

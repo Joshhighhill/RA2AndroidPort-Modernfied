@@ -85,6 +85,7 @@ struct UnitW7 {
     // W7-10-02/03: the controller holding this unit (-1 none) -- the
     // original's MindControlledBy (+0x2C0) -- and a controller's victims.
     int mc_controller = -1;
+    int mc_building = -1;
     std::vector<int> mc_victims;
     int mc_shot = -1;   // W7-10-04: the victim of this frame's Controller shot
     int mc_original_house = -1;
@@ -96,6 +97,7 @@ struct UnitW7 {
 
 // Per-building state.
 struct BldW7 {
+    std::vector<int> mc_victims;
     bool slaves_initialized = false;
     int slave_regen_left = 0;
     // W7-08-03 [RE: BuildingClass::Mission_Repair 0x44B780, +0x620]: the

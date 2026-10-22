@@ -13,6 +13,7 @@
 #include "touch_bar_layout.hpp"
 #include "texture_cache.hpp"
 #include "building.hpp"
+#include "touch_theme.hpp"
 #include "ra2assets/shp.hpp"
 using ra2engine::InputEvent;
 extern "C" {
@@ -29,6 +30,7 @@ struct FakeWorld {
  std::vector<ra2engine::Building> bs;
  const auto& units()const{return us;} const auto& buildings()const{return bs;}
  bool controllable(int h)const{return h==0;}
+ ra2engine::World::Side house_side(int)const{return ra2engine::World::Side::Yuri;}
 };
 struct FakeInput {
  ra2engine::Selection sel; int building=-1,stops=0,group=0,created=0;
