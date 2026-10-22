@@ -160,6 +160,8 @@ void finished(InfAnimState& s, const InfTable& t, int& facing, const InfTickCtx&
     int next;
     if (q == kSqDeploy || q == kSqDeployedFire) next = kSqDeployed;
     else if (q == kSqUndeploy || q == kSqCheer) next = kSqReady;
+    else if (c.shoveling && t.e[kSqShovel].has && t.e[kSqShovel].count > 0) next = kSqShovel;
+    else if (c.moving && c.carrying && t.e[kSqCarry].has && t.e[kSqCarry].count > 0) next = kSqCarry;
     else if (c.moving && !is_deploy_group(q)) next = s.prone ? kSqCrawl : kSqWalk;
     else if (is_deploy_group(q)) next = kSqDeployed;
     else next = s.prone ? kSqProne : kSqReady;
@@ -278,6 +280,14 @@ int inf_anim_tick(InfAnimState& s, const InfTable& t, int& facing, const InfTick
             if (!c.moving && !c.deployed && t.e[kSqCheer].has) play(s, t, kSqCheer, c.in_water, true);
         }
         // ---- walking vs standing ----
+        if (!c.has_target && !c.deployed && !s.prone) {
+            if (c.shoveling && !c.moving && s.seq != kSqShovel && t.e[kSqShovel].has && t.e[kSqShovel].count > 0)
+                play(s,t,kSqShovel,c.in_water,true);
+            else if (c.moving && c.carrying && t.e[kSqCarry].has && t.e[kSqCarry].count > 0 && s.seq != kSqCarry)
+                play(s,t,kSqCarry,c.in_water,true);
+            else if ((!c.shoveling && s.seq == kSqShovel) || (!c.carrying && s.seq == kSqCarry))
+                play(s,t,c.moving ? kSqWalk : kSqReady,c.in_water,true);
+        }
         const InfDoControl& dc = inf_do_control(s.seq);
         if (c.moving && !dc.mobile && s.seq != kSqDown && s.seq != kSqUp && !is_deploy_group(s.seq))
             play(s, t, s.prone ? kSqCrawl : kSqWalk, c.in_water, false);

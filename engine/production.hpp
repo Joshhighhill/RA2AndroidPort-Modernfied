@@ -8,6 +8,7 @@
 #include "unit_type.hpp"
 
 namespace ra2engine {
+struct Unit;
 
 // [RE: construction.md §7] gamemd computes ftol(Cost x BuildSpeed x 0.9) in
 // EXACTLY that operation order (FUN_00711280). Do NOT algebraically
@@ -70,13 +71,15 @@ struct ProductionState {
 };
 
 // Prerequisite check [RE: construction.md §10]: every token must be satisfied.
-// A plain token = an ALIVE, IDLE (fully built) building of that id owned by
+// A plain token = an ALIVE, non-Dead building of that id owned by
 // `house` exists. Group tokens (POWER/BARRACKS/PROC/FACTORY/RADAR/TECH) =
-// any id in `groups[token]` satisfied the same way. Unknown tokens fail.
+// any id in `groups[token]` satisfied the same way. PROC also accepts the
+// single PROC_ALTERNATE vehicle type when the caller supplies live units.
+// Unknown tokens fail.
 bool prerequisites_met(const std::vector<std::string>& tokens,
                        const std::vector<Building>& buildings,
                        const std::vector<BuildingTypeDef>& types, int house,
-                       const std::vector<std::pair<std::string, std::vector<std::string>>>& groups);
+                       const std::vector<std::pair<std::string, std::vector<std::string>>>& groups, const std::vector<Unit>* units = nullptr);
 
 // Can `type` start building? conyard_alive = an own alive Idle ConYard exists
 // (the BuildingType factory); slot must be idle; prereqs met; TechLevel > 0.
@@ -86,7 +89,7 @@ bool can_start(const ProductionState& ps, int type,
                const std::vector<BuildingTypeDef>& types,
                const std::vector<Building>& buildings, int house,
                const std::vector<std::pair<std::string, std::vector<std::string>>>& groups,
-               bool conyard_alive);
+               bool conyard_alive, const std::vector<Unit>* units = nullptr);
 
 // Start building `type` (caller checked can_start): total_frames =
 // build_frames(cost, build_speed); step_ticks = clamp(total_frames /
@@ -148,7 +151,7 @@ bool can_start_unit(const ProductionState& ps, int unit_type,
                     const std::vector<Building>& buildings,
                     const std::vector<BuildingTypeDef>& btypes, int house,
                     const std::vector<std::pair<std::string, std::vector<std::string>>>& groups,
-                    bool factory_alive);
+                    bool factory_alive, const std::vector<Unit>* units = nullptr);
 
 // The FOUR concurrent production queues [RE-GATE APPLIED: production.md §1.1 —
 // per-house per-category FactoryClass queues; Structures (+0x53BC) and

@@ -2431,6 +2431,8 @@ public:
     // UndeploysInto [RE: repair-sell.md §B6]: the unit a ConstructionYard packs
     // back into when sold by a human in a skirmish session with MCVRedeploys.
     void set_undeploy_unit(int btype, const UnitCombat& c);
+    bool can_pack_slave_miner(int b_idx) const;
+    bool order_pack_slave_miner(int b_idx, int house);
     void set_mcv_redeploys(bool on) { mcv_redeploys_ = on; }
     bool mcv_redeploys() const { return mcv_redeploys_; }
     void set_skirmish_session(bool on) { skirmish_session_ = on; }

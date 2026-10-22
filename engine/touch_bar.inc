@@ -34,7 +34,10 @@ const char* touch_deploy_label() const {
     const int sb = input_.selected_building();
     if (sb >= 0 && sb < static_cast<int>(world_.buildings().size())) {
         const auto& b = world_.buildings()[sb];
-        if (b.house == local_house_ && !b.occupants.empty()) add("UNLOAD");
+        if (b.house == local_house_) {
+            if (!b.occupants.empty()) add("UNLOAD");
+            else if (world_.can_pack_slave_miner(sb)) add("UNDEPLOY");
+        }
     }
     return result ? result : "DEPLOY";
 }
@@ -48,7 +51,8 @@ bool touch_button_enabled(int id) const {
         }
         const int b = input_.selected_building();
         return b >= 0 && b < static_cast<int>(world_.buildings().size()) &&
-            world_.buildings()[b].house == local_house_ && !world_.buildings()[b].occupants.empty();
+            world_.buildings()[b].house == local_house_ &&
+            (!world_.buildings()[b].occupants.empty() || world_.can_pack_slave_miner(b));
     }
     if (id == TB_STOP || id == TB_GUARD || id == TB_SCATTER || id == TB_FIRE || id == TB_MOVE) {
         for (int i : input_.selection().ids()) {

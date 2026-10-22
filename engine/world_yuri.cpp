@@ -107,7 +107,19 @@ void World::step_yuri_workers() {
     // killer receives freed slaves; absent a killer they retain their house.
     for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
         Unit& u = units_[i]; const int manager = u.w7.slave_manager;
-        if (manager < 0) continue;
+        if (manager == -1) continue;
+        if (manager < -1) {
+            const int mobile = -2-manager;
+            if (mobile >= 0 && mobile < static_cast<int>(units_.size()) &&
+                active(units_[mobile]) && units_[mobile].house == u.house) {
+                const Unit& miner = units_[mobile];
+                if (active(u) && !u.moving() && std::max(std::abs(u.cell_x-miner.cell_x),std::abs(u.cell_y-miner.cell_y)) > 2)
+                    order_unit_move(i,miner.cell_x,miner.cell_y);
+                continue;
+            }
+            u.w7.slave_manager = -1;
+            continue;
+        }
         if (manager < static_cast<int>(buildings_.size())) {
             const Building& b = buildings_[manager];
             if (b.alive && b.state != Building::State::Dead && b.house == u.house) continue;

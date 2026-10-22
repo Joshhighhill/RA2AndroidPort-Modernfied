@@ -3040,6 +3040,13 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
         {"POWER", rules.prerequisite_group("Power")},
         {"BARRACKS", rules.prerequisite_group("Barracks")},
         {"PROC", rules.prerequisite_group("Proc")},
+        {"PROC_ALTERNATE", {[&] {
+            std::string id = rules.section_string("General", "PrerequisiteProcAlternate", "");
+            const auto comment = id.find(';'); if (comment != std::string::npos) id.resize(comment);
+            id.erase(std::remove_if(id.begin(),id.end(),[](unsigned char c){return std::isspace(c);}),id.end());
+            for (char& c : id) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            return id;
+        }()}},
         {"FACTORY", rules.prerequisite_group("Factory")},
         {"RADAR", rules.prerequisite_group("Radar")},
         {"TECH", rules.prerequisite_group("Tech")},
@@ -5533,10 +5540,10 @@ void draw_sidebar(SDL_Renderer* ren, ra2engine::TextureCache& tc, const Building
         bool can;
         if (unit_tab)
             can = ra2engine::can_start_unit(ps, type, ur->defs, world.buildings(), ba.roster, 0,
-                                            ba.groups, unit_factory_alive);
+                                            ba.groups, unit_factory_alive, &world.units());
         else
             can = ra2engine::can_start(ps, type, ba.roster, world.buildings(), 0, ba.groups,
-                                       conyard_alive(world, ba, g_local_house));
+                                       conyard_alive(world, ba, g_local_house), &world.units());
         // W2-UI-02/05 [RE: wave2/04 #2, FUN_0067F800]: DARKEN.SHP (0x401) when
         // the item cannot be built; while in production GCLOCK2 frame stage+1
         // TRANSLUCENT (0x404 = 50 %) with no shade under it; a ready item shows
@@ -6654,6 +6661,18 @@ public:
                     }
                 }
         } catch (const std::exception&) { /* conquer.mix missing: infantry render degrades */ }
+        for (const auto& d : ba_.roster) if (d.slave_count > 0 && !d.slave_combat.image.empty()) {
+            const auto& image = d.slave_combat.image;
+            if (ua_.shps.count(image)) continue;
+            try {
+                MixFile conquer = ra2_.open_nested("conquer.mix");
+                ua_.shps.emplace(image, load_unit_shp(conquer, image));
+                ua_.anims.emplace(image, anim_from_art(art_, image));
+                std::cerr << "[slave] preloaded image=" << image << " frames=" << ua_.shps.at(image).count() << '\n';
+            } catch (const std::exception& ex) {
+                std::cerr << "[slave] image=" << image << " unavailable: " << ex.what() << '\n';
+            }
+        }
         // W2-GA-11: every [VehicleTypes] entry whose art says Voxel=no (DRON,
         // DLPH, SQD) draws with the SHP-vehicle frame rule, roster or not.
         for (const auto& kv : rules_ini_.section("VehicleTypes")) {
@@ -7988,11 +8007,11 @@ private:
             const std::vector<int>& ft = rp_ft_of(cat);
             return ra2engine::can_start_unit(lq().state(cat), e, ur_.defs, world_.buildings(), ba_.roster,
                                              local_house_, ba_.groups,
-                                             !world_.factory_category_lost(ft, local_house_));
+                                             !world_.factory_category_lost(ft, local_house_), &world_.units());
         }
         const ra2engine::QueueCat bcat = (tab == 1) ? ra2engine::QueueCat::Defense : ra2engine::QueueCat::Structure;
         return ra2engine::can_start(lq().state(bcat), e, ba_.roster, world_.buildings(), local_house_, ba_.groups,
-                                    conyard_alive(world_, ba_, local_house_));
+                                    conyard_alive(world_, ba_, local_house_), &world_.units());
     }
     // "H:TYPE[:n]" (TYPE may be *).
     static bool play_parse_spec(const std::string& spec, int& h, std::string& type, int& n) {

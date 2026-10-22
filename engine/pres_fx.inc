@@ -658,7 +658,8 @@ public:
         // W3-FIX-A: Theater=yes anims (debris, waterfalls) take the theater
         // extension [RE: asset-search.md §1].
         const bool th = pres_lower(aget(key, "Theater")).rfind("y", 0) == 0;
-        if (auto shp = th ? theater_ext_shp(image) : load_shp(image)) {
+        const bool nt = pres_lower(aget(key, "NewTheater")).rfind("y", 0) == 0;
+        if (auto shp = th ? theater_ext_shp(image) : nt ? theater_shp(image) : load_shp(image)) {
             t = std::make_unique<FxAnimType>();
             fill_type(*t, key, shp);
         }

@@ -1,4 +1,5 @@
 #include "production.hpp"
+#include "world.hpp"
 #include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 #include <algorithm>
 #include <cmath>
@@ -50,7 +51,7 @@ double build_speed_multiplier(const PowerTotals& p, double low_power_penalty_mod
 bool prerequisites_met(const std::vector<std::string>& tokens,
                        const std::vector<Building>& buildings,
                        const std::vector<BuildingTypeDef>& types, int house,
-                       const std::vector<std::pair<std::string, std::vector<std::string>>>& groups) {
+                       const std::vector<std::pair<std::string, std::vector<std::string>>>& groups, const std::vector<Unit>* units) {
     auto have = [&](const std::string& id) {
         for (const Building& b : buildings) {
             // W5-B R-065 (G-31, RE-E1): the original's Prerequisite check reads
@@ -75,6 +76,13 @@ bool prerequisites_met(const std::vector<std::string>& tokens,
                 break;
             }
         }
+        // YR allows one configured vehicle type to satisfy PROC, even mobile.
+        if (!ok && tok == "PROC" && units) {
+            for (const auto& g : groups) if (g.first == "PROC_ALTERNATE" && g.second.size() == 1 && !g.second.front().empty())
+                for (const Unit& u : *units)
+                    if (u.alive && u.die_time < 0 && u.house == house && u.cargo_of < 0 &&
+                        u.tg.t.rules_id == g.second.front()) { ok = true; break; }
+        }
         if (!ok) return false;
     }
     return true;
@@ -84,11 +92,11 @@ bool can_start(const ProductionState& ps, int type,
                const std::vector<BuildingTypeDef>& types,
                const std::vector<Building>& buildings, int house,
                const std::vector<std::pair<std::string, std::vector<std::string>>>& groups,
-               bool conyard_alive) {
+               bool conyard_alive, const std::vector<Unit>* units) {
     if (type < 0 || type >= (int)types.size()) return false;
     if (!conyard_alive || ps.slot.type != -1) return false;
     if (types[type].tech_level <= 0) return false;       // -1 = never buildable
-    return prerequisites_met(types[type].prerequisite, buildings, types, house, groups);
+    return prerequisites_met(types[type].prerequisite, buildings, types, house, groups, units);
 }
 
 // [RE-GATE: production.md §1.5] Scalar entry point shared by ALL categories.
@@ -163,12 +171,12 @@ bool can_start_unit(const ProductionState& ps, int unit_type,
                     const std::vector<Building>& buildings,
                     const std::vector<BuildingTypeDef>& btypes, int house,
                     const std::vector<std::pair<std::string, std::vector<std::string>>>& groups,
-                    bool factory_alive) {
+                    bool factory_alive, const std::vector<Unit>* units) {
     if (unit_type < 0 || unit_type >= (int)unit_roster.size()) return false;
     if (!factory_alive || ps.slot.type != -1) return false;
     if (unit_roster[unit_type].tech_level <= 0) return false;
     // A unit's prereq tokens name BUILDINGS (BARRACKS/FACTORY) -> scan buildings.
-    return prerequisites_met(unit_roster[unit_type].prerequisite, buildings, btypes, house, groups);
+    return prerequisites_met(unit_roster[unit_type].prerequisite, buildings, btypes, house, groups, units);
 }
 
 void ProductionQueues::start_unit(QueueCat c, int unit_type,

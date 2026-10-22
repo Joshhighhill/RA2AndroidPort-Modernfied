@@ -843,7 +843,7 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
     if (yuri_preview || !g_user_settings || g_user_settings->tooltips) {
         std::string tip = tooltip_at(lmx, lmy);
         if(st_.rows[0].country>=0 && st_.rows[0].country<static_cast<int>(countries_.size()) &&
-           countries_[st_.rows[0].country]=="YuriCountry") tip="Yuri preview: no slave income / Yuri superweapons.";
+           countries_[st_.rows[0].country]=="YuriCountry") tip="Yuri preview: special abilities / superweapons incomplete.";
         const ra2engine::SbRect s = status_rect();
         p.label(p.fit(tip, s.w), s.x, s.y, s.w, s.h, 0);
     }

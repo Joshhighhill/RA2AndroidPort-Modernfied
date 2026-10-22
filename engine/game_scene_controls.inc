@@ -129,7 +129,8 @@
         c.type = ra2engine::EventType::Deploy;
         const int sb = input_.selected_building();
         if (sb >= 0 && sb < static_cast<int>(world_.buildings().size()) &&
-            world_.buildings()[sb].house == local_house_ && !world_.buildings()[sb].occupants.empty())
+            world_.buildings()[sb].house == local_house_ &&
+            (!world_.buildings()[sb].occupants.empty() || world_.can_pack_slave_miner(sb)))
             c.whom.push_back(ra2engine::Target::building(sb));
         int first = -1;
         for (int i : input_.selection().ids()) {

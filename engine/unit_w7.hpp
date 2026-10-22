@@ -89,7 +89,7 @@ struct UnitW7 {
     std::vector<int> mc_victims;
     int mc_shot = -1;   // W7-10-04: the victim of this frame's Controller shot
     int mc_original_house = -1;
-    int slave_manager = -1; // building index; workers return only to this miner
+    int slave_manager = -1; // >=0 building; -1 free; -2-mobile unit index while packed
     // (W7-04-08's per-unit missile_holds list was removed in fv7c / save v40:
     // the PauseFrames + TiltFrames hold lives in the spawn-manager node,
     // AnUnit::sp_state / sp_timer [RE: SpawnManagerClass::AI FUN_006B68B0 / 0x6B72E0].)

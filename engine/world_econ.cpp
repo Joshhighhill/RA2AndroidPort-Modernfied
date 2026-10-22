@@ -261,7 +261,7 @@ void World::econ_refill(int house, int only_cat) {
         const int type = bl.front();
         bl.erase(bl.begin());
         if (can_start_unit(e.queues.state(cat), type, r->units, buildings_, btypes(), house, r->groups,
-                           !factory_category_lost(r->factory_types[static_cast<std::size_t>(c)], house))) {
+                           !factory_category_lost(r->factory_types[static_cast<std::size_t>(c)], house), &units_)) {
             e.queues.set_credits(e.credits);
             e.queues.start_unit(cat, type, r->units, r->build_speed);
         }
@@ -284,11 +284,11 @@ bool World::econ_can_build(int house, QueueCat cat, int type) const {
             if (alive >= lim) return false;
         }
         return can_start_unit(probe, type, r->units, buildings_, btypes(), house, r->groups,
-                              !factory_category_lost(r->factory_types[static_cast<int>(cat)], house));
+                              !factory_category_lost(r->factory_types[static_cast<int>(cat)], house), &units_);
     }
     if (type < 0 || type >= static_cast<int>(btypes().size())) return false;
     if (!r->bld_allowed.empty() && !at_or<char>(r->bld_allowed, type, 0)) return false;
-    return can_start(probe, type, btypes(), buildings_, house, r->groups, econ_conyard_alive(house));
+    return can_start(probe, type, btypes(), buildings_, house, r->groups, econ_conyard_alive(house), &units_);
 }
 
 int World::econ_queued_count(int house, QueueCat cat, int type) const {

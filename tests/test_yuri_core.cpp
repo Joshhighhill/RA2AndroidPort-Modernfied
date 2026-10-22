@@ -17,6 +17,82 @@ UnitCombat unit(const char* image) {
     UnitCombat c; c.image = image; c.strength = 100; c.speed_cps = 2;
     c.verses.assign(11,100); c.tg.rules_id = image; return c;
 }
+TEST_CASE("Yuri core: mobile slave miner satisfies PROC but not other prerequisites") {
+    Rig r; World w(r.map);
+    BuildingTypeDef cy; cy.id="YACNST"; cy.conyard=true; cy.strength=100;
+    BuildingTypeDef barr; barr.id="YABRCK"; barr.strength=100;
+    BuildingTypeDef factory; factory.id="YAWEAP"; factory.tech_level=1;
+    factory.prerequisite={"PROC","YABRCK","YACNST"};
+    BuildingTypeDef ref; ref.id="YAREFN";
+    const std::vector<BuildingTypeDef> types={cy,barr,factory,ref};
+    w.set_economy(types,{},OreValues{},1000,0,0);
+    w.add_building(0,2,2,1,1,0,100,0,0,true);
+    w.add_building(1,4,2,1,1,0,100,0,0,true);
+    PlayerEconRules econ; econ.groups={{"PROC",{"YAREFN"}},{"PROC_ALTERNATE",{"SMIN"}}};
+    w.enable_player_economy(0,5000); w.set_player_econ_rules(0,econ);
+    CHECK_FALSE(w.econ_can_build(0,QueueCat::Structure,2));
+    w.add_combat_unit(6,2,1,unit("SMIN"));
+    CHECK_FALSE(w.econ_can_build(0,QueueCat::Structure,2));
+    w.set_unit_owner(0,0);
+    CHECK(w.econ_can_build(0,QueueCat::Structure,2));
+    w.units()[0].die_time=0;
+    CHECK_FALSE(w.econ_can_build(0,QueueCat::Structure,2));
+    w.units()[0].die_time=-1;
+    w.buildings()[1].alive=false;
+    CHECK_FALSE(w.econ_can_build(0,QueueCat::Structure,2));
+    w.buildings()[1].alive=true;
+    CHECK(w.econ_produce(0,QueueCat::Structure,2)==ProdResult::Started);
+}
+
+TEST_CASE("Yuri core: miner packs without selling and reuses workers after redeploy") {
+    Rig r; World w(r.map); BuildingTypeDef d;
+    d.id="YAREFN"; d.fw=d.fh=2; d.strength=200; d.slave_count=2;
+    d.slave_combat=unit("SLAV"); d.slave_combat.is_infantry=true;
+    w.set_economy({d},{0},OreValues{},1000,0,0);
+    auto mobile=unit("SMIN"); mobile.deploys_into="YAREFN";
+    w.set_undeploy_unit(0,mobile);
+    w.add_building(0,8,8,2,2,0,200,0,0,true); w.buildings()[0].hp=100;
+    w.step_yuri_workers(); REQUIRE(w.units().size()==2);
+    CHECK_FALSE(w.order_pack_slave_miner(0,1));
+    REQUIRE(w.order_pack_slave_miner(0,0));
+    CHECK(w.buildings()[0].state==Building::State::Dead); REQUIRE(w.units().size()==3);
+    CHECK(w.units()[2].hp==50); CHECK(w.units()[2].deploys_into==0);
+    CHECK(w.units()[0].w7.slave_manager==-4); CHECK_FALSE(w.units()[0].is_harvester);
+    const auto state=save::save_world(w); World loaded(r.map); REQUIRE(save::load_world(loaded,state));
+    CHECK(loaded.units()[0].w7.slave_manager==-4);
+    REQUIRE(w.order_deploy(2));
+    for(int i=0;i<150 && w.units()[2].alive;++i) w.step(1.0/15.0);
+    REQUIRE_FALSE(w.units()[2].alive); REQUIRE(w.buildings().size()==2);
+    CHECK(w.units().size()==3); CHECK(w.units()[0].w7.slave_manager==1);
+    CHECK(w.units()[0].is_harvester); CHECK_FALSE(w.units()[0].manual_hold);
+    CHECK(w.buildings()[1].hp==100); CHECK(w.take_income(0)==0);
+}
+
+TEST_CASE("Yuri core: blocked miner packing keeps the building and workforce") {
+    Rig r; World w(r.map); BuildingTypeDef d;
+    d.id="YAREFN";d.fw=d.fh=2;d.strength=100;d.slave_count=2;d.slave_combat=unit("SLAV");
+    w.set_economy({d},{0},OreValues{},1000,0,0);w.set_undeploy_unit(0,unit("SMIN"));
+    w.add_building(0,8,8,2,2,0,100,0,0,true);w.step_yuri_workers();
+    w.add_combat_unit(8,8,0,unit("BLOCKER"));
+    CHECK_FALSE(w.order_pack_slave_miner(0,0));
+    CHECK(w.buildings()[0].state==Building::State::Idle);CHECK(w.buildings()[0].hp==100);
+    CHECK(w.units().size()==3);CHECK(w.units()[0].w7.slave_manager==0);
+}
+
+TEST_CASE("Yuri core: worker shovel and carry sequences animate and return to ready") {
+    InfTable t; t.crawls=false;
+    t.e[kSqReady]={0,1,0,-1,true}; t.e[kSqWalk]={8,4,4,-1,true};
+    t.e[kSqShovel]={40,3,3,-1,true}; t.e[kSqCarry]={64,4,4,-1,true};
+    InfAnimState s; InfTickCtx c; int facing=0; c.shoveling=true;
+    inf_anim_tick(s,t,facing,c); CHECK(s.seq==kSqShovel);
+    int first=inf_anim_frame(s,t,facing); bool changed=false;
+    for(int i=0;i<20;++i) changed |= inf_anim_tick(s,t,facing,c)!=first;
+    CHECK(changed);
+    c.shoveling=false; c.moving=true; c.carrying=true;
+    inf_anim_tick(s,t,facing,c); CHECK(s.seq==kSqCarry);
+    c.moving=false; c.carrying=false;
+    inf_anim_tick(s,t,facing,c); CHECK(s.seq==kSqReady);
+}
 }
 TEST_CASE("Yuri core: shot captures and controller death restores original owner") {
     Rig r; World w(r.map);

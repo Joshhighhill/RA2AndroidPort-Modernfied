@@ -6342,6 +6342,8 @@ void World::step(double dt) {
                     if (u.ia.rng == 0) u.ia.rng = static_cast<std::uint32_t>(ui) * 2654435761u + 0x9E3779B9u;
                 }
                 InfTickCtx c;
+                c.shoveling = u.w7.slave_manager >= 0 && u.harv == HarvState::Harvesting;
+                c.carrying = u.w7.slave_manager >= 0 && u.bales_ore + u.bales_gems > 0;
                 c.moving = u.moving();
                 c.has_destination = !u.path.empty();
                 // W7-09-12 [RE: IsControlledByHuman 0x50B550 includes PlayerControl]

@@ -30,6 +30,8 @@ struct FakeWorld {
  std::vector<ra2engine::Building> bs;
  const auto& units()const{return us;} const auto& buildings()const{return bs;}
  bool controllable(int h)const{return h==0;}
+ bool packable=false;
+ bool can_pack_slave_miner(int)const{return packable;}
  ra2engine::World::Side house_side(int)const{return ra2engine::World::Side::Yuri;}
 };
 struct FakeInput {
@@ -80,6 +82,10 @@ int main(){
  assert(s.touch_bar_handle(d));assert(s.touch_bar_handle(u));assert(s.input_.stops==1);
  // A disabled command consumes its tap, issuing nothing.
  s.input_.sel.clear();assert(s.touch_bar_handle(d));assert(s.touch_bar_handle(u));assert(s.input_.stops==1);
+ s.world_.bs.emplace_back();s.world_.bs[0].house=0;s.input_.building=0;s.world_.packable=true;
+ assert(s.touch_button_enabled(s.TB_DEPLOY));assert(std::string(s.touch_deploy_label())=="UNDEPLOY");
+ s.world_.bs[0].house=1;assert(!s.touch_button_enabled(s.TB_DEPLOY));
+ s.world_.bs.clear();s.input_.building=-1;s.world_.packable=false;
  // Slide-off must consume release and not fire.
  s.input_.sel.set(0);assert(s.touch_bar_handle(d));u.x=500;assert(s.touch_bar_handle(u));assert(s.input_.stops==1);
  // Map-origin selection release over the panel must reach the map input.

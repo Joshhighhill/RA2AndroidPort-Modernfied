@@ -75,6 +75,8 @@ struct InfAnimState {
 
 // What the machine needs from the World for one unit and one tick.
 struct InfTickCtx {
+    bool shoveling = false;
+    bool carrying = false;
     bool moving = false;
     bool has_destination = false;
     bool human = false;          // the house is player-controlled (FUN_0050b550)

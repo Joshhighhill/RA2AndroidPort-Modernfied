@@ -43,7 +43,11 @@ inline std::string asset_find_shp(const std::vector<std::string>& bases, const s
 // building (NABNKR, NAINDP) stays art-absent and therefore unbuildable, as
 // before; map objects and dressing take the YR tail too.
 inline bool asset_building_shp(const std::string& image, ra2assets::ShpFile& out, bool ra2_only = false) {
-    return !asset_find_shp(ra2assets::art_base_names(image, art_chain().letter), {".shp"}, out, ra2_only).empty();
+    auto bases = ra2assets::art_base_names(image, art_chain().letter);
+    std::string literal = image;
+    for (char& c : literal) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (std::find(bases.begin(),bases.end(),literal) == bases.end()) bases.push_back(literal);
+    return !asset_find_shp(bases, {".shp"}, out, ra2_only).empty();
 }
 
 // Map-dressing / anim art: `Theater=yes` names take the theater extension

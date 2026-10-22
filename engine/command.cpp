@@ -298,7 +298,10 @@ void apply_deploy(World& w, const Command& c) {
     for (const Target& t : c.whom)
         if (t.is_building() && bld_ok(w, t.id)) {
             const Building& b = w.buildings()[static_cast<std::size_t>(t.id)];
-            if (b.house == H && !b.occupants.empty()) w.unload_occupants(t.id);
+            if (b.house == H) {
+                if (!b.occupants.empty()) w.unload_occupants(t.id);
+                else (void)w.order_pack_slave_miner(t.id, H);
+            }
         }
     const std::vector<int> ids = unit_whom(c);
     w.group_unload(H, ids);

@@ -137,6 +137,17 @@ void World::finish_deploy(int idx) {
     Building& nb = buildings_[static_cast<std::size_t>(b)];
     nb.hp = std::max(1, om::ftol(ratio * nb.max_hp));
     nb.ai_repairable = !human_commanded(house);   // fv7c [RE: FUN_007383E0, non-human deploy]
+    if (d.slave_count > 0) {
+        for (int wi = 0; wi < static_cast<int>(units_.size()); ++wi) {
+            Unit& worker = units_[wi];
+            if (worker.w7.slave_manager != -2-idx || !live_on_map(worker) || worker.house != house) continue;
+            order_stop(wi);
+            worker.w7.slave_manager = b;
+            make_harvester(wi, false, std::max(1,d.slave_storage));
+            worker.manual_hold = false;
+            worker.dock_refinery = b;
+        }
+    }
     deploy_events_.push_back({DeployEvent::Kind::Deployed, idx, b, house});
 }
 
@@ -214,6 +225,45 @@ bool World::try_undeploy(int b_idx) {
         static_cast<double>((t.deploy_facing & 0xFF) << 8);
     const int ui = static_cast<int>(units_.size()) - 1;
     deploy_events_.push_back({DeployEvent::Kind::Undeployed, ui, b_idx, house});
+    return true;
+}
+
+bool World::can_pack_slave_miner(int bi) const {
+    if (bi < 0 || bi >= static_cast<int>(buildings_.size())) return false;
+    const Building& b = buildings_[bi];
+    return b.alive && b.state == Building::State::Idle && !b.selling &&
+        b.type >= 0 && b.type < static_cast<int>(btypes().size()) &&
+        btypes()[b.type].slave_count > 0 &&
+        std::find(undeploy_types_.begin(), undeploy_types_.end(), b.type) != undeploy_types_.end();
+}
+
+bool World::order_pack_slave_miner(int bi, int house) {
+    if (!can_pack_slave_miner(bi) || buildings_[bi].house != house) return false;
+    Building& b = buildings_[bi];
+    const auto k = static_cast<std::size_t>(std::find(undeploy_types_.begin(), undeploy_types_.end(), b.type) - undeploy_types_.begin());
+    // Validate before changing the footprint: blocked packing must never sell it.
+    const int x = b.cx, y = b.cy;
+    if (!occ_.is_free(x,y)) return false;
+    const double ratio = b.max_hp > 0 ? static_cast<double>(b.hp) / b.max_hp : 1.0;
+    for (const Cellxy& c : foundation_cells(b.cx,b.cy,b.fw,b.fh))
+        if (c.x >= 0 && c.y >= 0 && c.x < grid_w_ && c.y < grid_h_)
+            passable_[static_cast<std::size_t>(c.y)*grid_w_+c.x] = 1;
+    b.blocking_released = true;
+    const int facing = btypes()[b.type].deploy_facing;
+    kill_building(b); b.sold = true; b.selling = false; b.being_repaired = false;
+    Unit& u = add_combat_unit(x,y,house,undeploy_units_[k]);
+    u.hp = std::max(1,om::ftol(ratio*u.max_hp));
+    u.body_facing = u.turret_facing = static_cast<double>((facing & 255) << 8);
+    const int mobile = static_cast<int>(units_.size())-1;
+    for (int wi = 0; wi < mobile; ++wi) {
+        Unit& worker = units_[wi];
+        if (worker.w7.slave_manager != bi || !live_on_map(worker) || worker.house != house) continue;
+        order_stop(wi);
+        worker.w7.slave_manager = -2-mobile;
+        worker.is_harvester = false; worker.harv = HarvState::None; worker.dock_refinery = -1;
+    }
+    deploy_events_.push_back({DeployEvent::Kind::Undeployed,mobile,bi,house});
+    step_yuri_workers();
     return true;
 }
 
