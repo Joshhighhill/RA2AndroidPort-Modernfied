@@ -122,6 +122,8 @@ public:
         }
     }
     ~Presentation() {
+        for (auto& loop : shot_loops_) loop.update(snd_,false,0,0);
+        for (auto& loop : building_shot_loops_) loop.update(snd_,false,0,0);
         if (g_shroud_shp == shroud_.get()) g_shroud_shp = nullptr;
         if (g_fog_shp == fog_.get()) g_fog_shp = nullptr;
         if (g_game_font == font_.get()) { g_game_font = nullptr; g_game_font_pal = nullptr; }
