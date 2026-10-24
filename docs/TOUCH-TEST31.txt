@@ -1,0 +1,39 @@
+Build 900031 — bunker transition timing and elevated projectile rendering
+25 October 2026
+
+New report reviewed: RA2 game diagnostics 0.9.0+gv0.9.0-37-g33dffe1,
+Drive ID 1ez3VcQGNqaspOvR16DY-3VCLfU3SuBX-. This is build 900029,
+not a test of the 900030 portrait launcher. Description: tank gun projectiles
+still incorrect. Current session ends with ENGINE NORMAL EXIT code=0 at
+frame 17256. Low-memory flag false. One Tank Bunker entry is recorded.
+
+Changes:
+- Bunker vehicle motion uses the opening/closing SHP timing from the user's
+  art instead of an unrelated 15-tick interval. Entry and exit layer guards
+  share that duration; sub-tick interpolation remains cosmetic.
+- BUNKER_VISUAL logs record transition direction, duration and endpoints once
+  per entry/exit, not every rendered frame.
+- Bullet drawing retains its terrain anchor. World bullet Z is terrain-
+  relative, while the previous renderer treated it as absolute and placed
+  shots too low on elevated cells. Flight/collision/damage are unchanged.
+- Vehicle visibility uses the actual local viewing house rather than house 0
+  for the submerged/cloaked check in the main drawing path. This is a viewer
+  correction, not a full submarine detection rewrite.
+
+The portrait launcher, touch controls, terms, attribution, signing and save
+format 53 are retained. No Gagarin code or retail assets are bundled.
+
+Remaining: PC-perfect bunker trajectory/facing/door timing needs matched
+footage. This update synchronizes a visual approximation; it does not claim
+to reproduce original locomotor entry physics. Missing firing art on other
+weapons, V3 spawner presentation, full submarine detection rules, dynamic
+pathfinding and broad particle/animation parity remain open in R-027–R-030.
+No generic cannonball is added to intentionally invisible weapons.
+
+Phone checks: enter/exit NATBNK with several vehicles, including damaged
+bunkers and immediate movement orders after exit. Share a report containing
+BUNKER_VISUAL events. Fire Rhino/Lasher shells on flat and elevated terrain
+and compare the muzzle and impact. Test submerged targets as different player
+houses with/without legitimate detection. No emulator/phone test was performed
+during this build. Automated results and APK details are in the Drive tracker.
+APK delivery is Google Drive only; no GitHub Release.
