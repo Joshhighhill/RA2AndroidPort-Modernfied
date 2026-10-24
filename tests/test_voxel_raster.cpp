@@ -1,6 +1,7 @@
 #include "doctest.h"
 #include "voxel_raster.hpp"
 #include "terrain_tilt.hpp"
+#include "voxel_animation_cache.hpp"
 #include "ra2assets/vxl.hpp"
 #include "ra2assets/hva.hpp"
 #include "ra2assets/vpl.hpp"
@@ -14,6 +15,57 @@
 #include <vector>
 
 namespace fs = std::filesystem;
+
+TEST_CASE("voxel animation cache: frame-boundary eviction preserves live part references") {
+    ra2engine::VoxelAnimationCache cache(700);
+    cache.begin_frame(1,1);
+    ra2engine::VoxelSprite hull;hull.w=10;hull.rgba.assign(400,42);
+    const auto* held=&cache.insert("hull",std::move(hull));
+    ra2engine::VoxelSprite turret;turret.rgba.assign(400,17);
+    cache.insert("turret",std::move(turret));
+    CHECK(cache.bytes()>700);
+    cache.begin_frame(1,1); // Another unit of the same type in this frame.
+    CHECK(cache.find("hull")==held);CHECK(held->rgba[0]==42);
+    CHECK(cache.evicted()==0);
+    cache.begin_frame(1,2);
+    CHECK(cache.evicted()==0); // Preserve the previous frame's working set.
+    cache.begin_frame(1,3);
+    CHECK(cache.bytes()<=700);CHECK(cache.evicted()>0);
+    // A new renderer may restart frame numbering; it is still a new epoch.
+    for(int frame=4;frame<100;++frame) {
+        cache.begin_frame(1,frame);CHECK(cache.size()<=2);
+        ra2engine::VoxelSprite s;s.rgba.assign(1024,1);
+        cache.insert(std::to_string(frame),std::move(s));
+    }
+    cache.begin_frame(2,1);cache.begin_frame(2,2);CHECK(cache.bytes()<=700);
+}
+
+TEST_CASE("voxel animation cache: reuse retains a frequently drawn facing") {
+    ra2engine::VoxelAnimationCache cache(700);
+    cache.begin_frame(1,1);
+    for(const char* key:{"old","hot"}) {
+        ra2engine::VoxelSprite s;s.rgba.assign(200,1);cache.insert(key,std::move(s));
+    }
+    cache.begin_frame(1,2);REQUIRE(cache.find("hot")!=nullptr);
+    ra2engine::VoxelSprite s;s.rgba.assign(200,1);cache.insert("new",std::move(s));
+    cache.begin_frame(1,3);
+    CHECK(cache.find("old")==nullptr);CHECK(cache.find("hot")!=nullptr);
+}
+
+TEST_CASE("voxel animation cache: a busy working set above budget does not churn") {
+    ra2engine::VoxelAnimationCache cache(100);
+    cache.begin_frame(1,1);
+    for(int i=0;i<10;++i) {
+        ra2engine::VoxelSprite s;s.rgba.assign(256,1);cache.insert(std::to_string(i),std::move(s));
+    }
+    for(int frame=2;frame<12;++frame) {
+        cache.begin_frame(1,frame);
+        for(int i=0;i<10;++i) REQUIRE(cache.find(std::to_string(i))!=nullptr);
+        CHECK(cache.evicted()==0);
+    }
+    cache.begin_frame(1,12);cache.begin_frame(1,13);
+    CHECK(cache.bytes()<=100);CHECK(cache.evicted()==10);
+}
 
 TEST_CASE("terrain tilt: ramp axes preserve length and invert without changing flat ground") {
     for(int ramp=0;ramp<=20;++ramp) {
@@ -90,6 +142,20 @@ int opaque_count(const ra2engine::VoxelSprite& s) {
     return n;
 }
 }  // namespace
+
+TEST_CASE("voxel_raster: HVA animation changes the drawn anchor and wraps exactly") {
+    const auto model=single_voxel_model(100,0);auto hva=identity_hva();
+    hva.frames.push_back(hva.frames[0]);hva.frames[1][0].transform[0][3]=8;
+    hva.frame_count=2;
+    const auto vpl=identity_vpl();const auto pal=gray_pal();
+    const auto first=ra2engine::rasterize_model(model,hva,0,vpl,pal,0);
+    const auto second=ra2engine::rasterize_model(model,hva,0,vpl,pal,1);
+    const auto wrapped=ra2engine::rasterize_model(model,hva,0,vpl,pal,2);
+    REQUIRE(opaque_count(first)>0);REQUIRE(opaque_count(second)>0);
+    CHECK((first.anchor_x!=second.anchor_x || first.anchor_y!=second.anchor_y));
+    CHECK(wrapped.anchor_x==first.anchor_x);CHECK(wrapped.anchor_y==first.anchor_y);
+    CHECK(wrapped.rgba==first.rgba);
+}
 
 TEST_CASE("voxel_raster: single voxel lands on the anchor") {
     auto spr = ra2engine::rasterize_model(single_voxel_model(100, 0), identity_hva(),

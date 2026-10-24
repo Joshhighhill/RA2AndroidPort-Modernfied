@@ -12,6 +12,17 @@ using ra2engine::ScreenPt;
 using ra2engine::cell_to_screen;
 using ra2engine::screen_to_cell;
 
+TEST_CASE("vehicle animation: unequal part lengths cycle independently without lost frames") {
+    const int hull[]={0,1,2,0,1,2};
+    const int turret[]={0,1,0,1,0,1};
+    for(std::uint64_t stage=0;stage<6;++stage) {
+        CHECK(ra2engine::hva_animation_frame(stage,3)==hull[stage]);
+        CHECK(ra2engine::hva_animation_frame(stage,2)==turret[stage]);
+    }
+    CHECK(ra2engine::hva_animation_frame(100,0)==0);
+    CHECK(ra2engine::hva_animation_frame(100,1)==0);
+}
+
 TEST_CASE("Yuri shell: sidebar and dialog hit targets match their large-shell positions") {
     using namespace ra2engine;
     const auto exit=yuri_shell_rect({484,409,156,42});

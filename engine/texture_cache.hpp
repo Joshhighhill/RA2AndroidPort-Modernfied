@@ -67,6 +67,7 @@ public:
     // Unique per TextureCache instance (never reused, unlike the address), so
     // a cache of texture pointers can tell it is talking to the same cache.
     std::uint64_t instance_id() const { return id_; }
+    std::uint64_t frame_id() const { return frame_; }
     void* renderer() const { return renderer_; }
 
 private:

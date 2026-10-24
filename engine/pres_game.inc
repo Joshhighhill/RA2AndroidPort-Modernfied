@@ -15,6 +15,10 @@ public:
         g_pres_crushed.clear();  // W7-04-25
         g_pres_sinkers.clear();  // W7-12-11
         g_pres_tick = 0;        // W3-B: the logic-tick anim clock restarts per game
+        g_walk_stage.clear();
+        g_walk_rates.clear();
+        g_walk_rules = &rules_ini;
+        ++g_pres_epoch;
         // G-83: the effects layer (muzzle / impact / death anims, projectile art).
         fx_.init(dir, ra2, rules_ini, art_ini);
         for (const auto* list : defs)

@@ -116,6 +116,8 @@ inline int pres_jumpjet_wobble_px(int idx, const ra2engine::Unit& u) {
     if (!g_walk_rules || !u.is_aircraft || u.an.t.fixed_wing || u.altitude <= 0.0 || u.an.crashing) return 0;
     struct Wob { double per_sec = 0.15; double dev = 40.0; bool off = false; };
     static std::map<std::string, Wob> cache;
+    static std::uint64_t cache_epoch=0;
+    if(cache_epoch!=g_pres_epoch) { cache.clear();cache_epoch=g_pres_epoch; }
     // W7-05-08: the keys live in the RULES id's section ([JUMPJET], not [ROCK]).
     auto it = cache.find(pres_type_id(u));
     if (it == cache.end()) {

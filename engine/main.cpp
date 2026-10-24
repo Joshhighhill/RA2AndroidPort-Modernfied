@@ -126,6 +126,7 @@ static char* ra2_cli_pref_path() {
 #include "campaign.hpp"    // P10 campaign core [RE: campaign.md]
 #include "ra2assets/csf.hpp" // P10 briefing/objective text
 #include "voxel_raster.hpp"
+#include "voxel_animation_cache.hpp"
 #include "terrain_tilt.hpp"
 #include "weapon_resolve.hpp"  // Gap fix C: TechnoType weapon slots
 #include "gamespeed.hpp"       // Gap fix C: RE-T1 logic rate per GameSpeed
@@ -599,7 +600,7 @@ struct VehicleAssets {
     int shadow_index = 0;   // W7-12-44 art ShadowIndex= (+0x7FC): the one section the shadow uses
     std::shared_ptr<const VoxelSrc> vsrc;
     mutable std::map<int, std::shared_ptr<std::array<ra2engine::FacingSet, 3>>> color_sets;
-    mutable std::map<std::string, ra2engine::VoxelSprite> animation_sprites;
+    mutable ra2engine::VoxelAnimationCache animation_sprites;
     // W2-GA-12: hull ground-shadow masks per facing (colour-independent).
     mutable std::shared_ptr<std::vector<ra2engine::VoxelSprite>> shadow;
 };
@@ -3740,8 +3741,7 @@ const ra2engine::VoxelSprite& vxl_frame_sprite(const VehicleAssets& va, int part
                             std::to_string(ra2engine::house_draw_key(house)) + ":" + std::to_string(fi) + ":" +
                             std::to_string(hf) + ":r" + std::to_string(ramp);
     std::lock_guard<std::mutex> lk(g_vxl_mu);
-    auto it = cache.find(key);
-    if (it != cache.end()) return it->second;
+    if (const auto* hit = cache.find(key)) return *hit;
     const VehicleAssets::VoxelSrc& s = *va.vsrc;
     const ra2assets::VxlModel& m = part == 0 ? s.hull : part == 1 ? s.tur : s.barl;
     const ra2assets::HvaModel& h = part == 0 ? s.hull_h : part == 1 ? s.tur_h : s.barl_h;
@@ -3750,26 +3750,26 @@ const ra2engine::VoxelSprite& vxl_frame_sprite(const VehicleAssets& va, int part
     if(ramp && tilt_notes++<32)
         ra2engine::diag::note("TERRAIN_TILT image=%s part=%d ramp=%d facing=%d frame=%d",
             va.combat.image.c_str(),part,ramp,fi,hf);
-    return cache.emplace(key, ra2engine::rasterize_model(m, h, ra2engine::index_to_yaw(fi, ra2engine::kVehicleFacings),
-                                                         s.vpl, hp, hf,0.0,ramp)).first->second;
+    return cache.insert(key, ra2engine::rasterize_model(m, h, ra2engine::index_to_yaw(fi, ra2engine::kVehicleFacings),
+                                                         s.vpl, hp, hf,0.0,ramp));
 }
 // W7-03-05/07: turret model `n` >= 1 at facing `fi` (rasterised on first use).
 const ra2engine::VoxelSprite* vxl_alt_turret(const VehicleAssets& va, int n, int house, int fi, int hf, int ramp=0) {
     if (!va.vsrc || n < 1 || n > static_cast<int>(va.vsrc->alt_tur.size())) return nullptr;
+    const auto& t = va.vsrc->alt_tur[static_cast<std::size_t>(n - 1)];
+    hf = ra2engine::hva_animation_frame(hf,t.second.frames.size());
     auto& cache = va.animation_sprites;
     const std::string key = va.combat.image + ":t" + std::to_string(n) + ":" +
                             std::to_string(ra2engine::house_draw_key(house)) + ":" + std::to_string(fi) + ":" +
                             std::to_string(hf) + ":r" + std::to_string(ramp);
     std::lock_guard<std::mutex> lk(g_vxl_mu);
-    auto it = cache.find(key);
-    if (it != cache.end()) return &it->second;
+    if (const auto* hit = cache.find(key)) return hit;
     const VehicleAssets::VoxelSrc& s = *va.vsrc;
-    const auto& t = s.alt_tur[static_cast<std::size_t>(n - 1)];
     const ra2assets::Palette hp = ra2engine::house_draw_palette(s.pal, house);
     const int f = t.second.frames.empty() ? 0 : hf % static_cast<int>(t.second.frames.size());
-    return &cache.emplace(key, ra2engine::rasterize_model(t.first, t.second,
+    return &cache.insert(key, ra2engine::rasterize_model(t.first, t.second,
                                                           ra2engine::index_to_yaw(fi, ra2engine::kVehicleFacings),
-                                                          s.vpl, hp, f,0.0,ramp)).first->second;
+                                                          s.vpl, hp, f,0.0,ramp));
 }
 // The current turret model index of `u`:
 //  * W7-03-07 [RE: TechnoClass::AI 0x6F9380 -- IsChargeTurret (+0x810) and
@@ -3782,6 +3782,8 @@ int pres_turret_index(const ra2engine::Unit& u, const VehicleAssets& va) {
     const std::string id = pres_type_id(u);
     struct TI { bool charge = false; int count = 1; std::map<int, int> by_weapon; };
     static std::map<std::string, TI> cache;
+    static std::uint64_t cache_epoch=0;
+    if(cache_epoch!=g_pres_epoch) { cache.clear();cache_epoch=g_pres_epoch; }
     auto it = cache.find(id);
     if (it == cache.end()) {
         TI t;
@@ -3812,6 +3814,10 @@ int pres_turret_index(const ra2engine::Unit& u, const VehicleAssets& va) {
 }
 void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Unit& u,
                        const VehicleAssets& va, const ra2engine::Camera& cam, int W, int H) {
+    {
+        std::lock_guard<std::mutex> lk(g_vxl_mu);
+        va.animation_sprites.begin_frame(tc.instance_id(),tc.frame_id());
+    }
     // W2-AN-07/25: a crashing flier keeps its hull until impact; a sinking
     // ship (ShipSinkingWeight) slides under instead of exploding.
     // W7-12-11: in the live game the sinking hull is the presentation's
@@ -3867,14 +3873,21 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
     // W3-B: a multi-frame HVA (Night Hawk / Spy Plane rotors, Kirov
     // propellers) shows frame WalkedFramesSoFar % frames [RE: voxel draw
     // FUN_0073a3a0 reads the walk stage +0x538 modulo the HVA frame count].
-    const int hf = va.hva_frames > 1 ? pres_walk_stage(g_draw_unit_idx) % va.hva_frames : 0;
+    const int walk_stage = pres_walk_stage(g_draw_unit_idx);
+    auto part_frame = [&](int part) {
+        if (!va.vsrc) return 0;
+        const auto& h = part == 0 ? va.vsrc->hull_h : part == 1 ? va.vsrc->tur_h : va.vsrc->barl_h;
+        return ra2engine::hva_animation_frame(walk_stage,h.frames.size());
+    };
+    const int hf = part_frame(0), tf = part_frame(1), bf = part_frame(2);
     const int ramp=pres_unit_ramp(u);
     auto part_sprite = [&](int part, int fi) -> const ra2engine::VoxelSprite& {
-        if (hf == 0 && ramp==0) return vxl_set(va, part, u.house).sprites[fi];
-        return vxl_frame_sprite(va, part, u.house, fi, hf,ramp);
+        const int frame=part_frame(part);
+        if (frame == 0 && ramp==0) return vxl_set(va, part, u.house).sprites[fi];
+        return vxl_frame_sprite(va, part, u.house, fi, frame,ramp);
     };
-    const std::string fkey = (hf ? ":f" + std::to_string(hf) : std::string()) +
-        (ramp ? ":r"+std::to_string(ramp) : std::string());
+    auto fkey = [&](int frame) { return (frame ? ":f" + std::to_string(frame) : std::string()) +
+        (ramp ? ":r"+std::to_string(ramp) : std::string()); };
     // W4: a RocketLocomotion rocket draws its hull at its pitch (the tilt on
     // the launcher, the climb, the arc, the dive) [FUN_00661D00 +0x50].
     if (u.an.t.missile && va.vsrc && std::fabs(u.an.rocket.pitch) > 1e-3) {
@@ -3882,15 +3895,19 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
         const std::string key = "vxlp:" + img + ":" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" +
                                 std::to_string(bi) + ":" + std::to_string(pq);
         auto& pitched=va.animation_sprites;
-        auto it = pitched.find(key);
-        if (it == pitched.end()) {
-            const VehicleAssets::VoxelSrc& s = *va.vsrc;
-            it = pitched.emplace(key, ra2engine::rasterize_model(
+        const ra2engine::VoxelSprite* sprite = nullptr;
+        {
+            std::lock_guard<std::mutex> lk(g_vxl_mu);
+            sprite=pitched.find(key);
+            if (!sprite) {
+                const VehicleAssets::VoxelSrc& s = *va.vsrc;
+                sprite = &pitched.insert(key, ra2engine::rasterize_model(
                                           s.hull, s.hull_h, ra2engine::index_to_yaw(bi, ra2engine::kVehicleFacings),
                                           s.vpl, ra2engine::house_draw_palette(s.pal, u.house), 0,
-                                          pq * 5.0 * 3.14159265358979 / 180.0)).first;
+                                          pq * 5.0 * 3.14159265358979 / 180.0));
+            }
         }
-        ra2engine::draw_voxel_sprite(ren, tc, key, it->second, u.fx, u.fy, u.level, cam, W, H, extra_dy);
+        ra2engine::draw_voxel_sprite(ren, tc, key, *sprite, u.fx, u.fy, u.level, cam, W, H, extra_dy);
         return;
     }
     // W7-06-12 / W7-04-27: out of spawns -> the xxxxWO hull [RE-FALLBACK: the
@@ -3898,22 +3915,21 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
     if (va.vsrc && va.vsrc->has_wo && u.an.t.spawns_number > 0 && u.an.spawn_ready == 0) {
         auto& wo_cache=va.animation_sprites;
         const std::string key = "vxl:" + img + ":wo:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" +
-                                std::to_string(bi) + fkey;
+                                std::to_string(bi) + fkey(0);
         const ra2engine::VoxelSprite* spr = nullptr;
         {
             std::lock_guard<std::mutex> lk(g_vxl_mu);
-            auto it = wo_cache.find(key);
-            if (it == wo_cache.end())
-                it = wo_cache.emplace(key, ra2engine::rasterize_model(
+            spr = wo_cache.find(key);
+            if (!spr)
+                spr = &wo_cache.insert(key, ra2engine::rasterize_model(
                                                va.vsrc->wo, va.vsrc->wo_h,
                                                ra2engine::index_to_yaw(bi, ra2engine::kVehicleFacings), va.vsrc->vpl,
-                                               ra2engine::house_draw_palette(va.vsrc->pal, u.house), 0,0.0,ramp)).first;
-            spr = &it->second;
+                                               ra2engine::house_draw_palette(va.vsrc->pal, u.house), 0,0.0,ramp));
         }
         ra2engine::draw_voxel_sprite(ren, tc, key, *spr, u.fx, u.fy, u.level, cam, W, H, extra_dy);
     } else
     ra2engine::draw_voxel_sprite(
-        ren, tc, "vxl:" + img + ":h:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(bi) + fkey,
+        ren, tc, "vxl:" + img + ":h:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(bi) + fkey(hf),
         part_sprite(0, bi), u.fx, u.fy, u.level, cam, W, H, extra_dy);
     if (va.has_turret) {
         const double visual_facing=ra2engine::spinning_turret_facing(u.turret_facing,g_pres_tick,u.rot_u16_per_sec,va.turret_spins && !u.frozen);
@@ -3930,23 +3946,24 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
             turret_dy+=static_cast<int>(std::lround(offset[2]*36.74));
         }
         const int tn = pres_turret_index(u, va);   // W7-03-05/07
-        const ra2engine::VoxelSprite* alt = tn > 0 ? vxl_alt_turret(va, tn, u.house, ti, hf,ramp) : nullptr;
+        const ra2engine::VoxelSprite* alt = tn > 0 ? vxl_alt_turret(va, tn, u.house, ti, walk_stage,ramp) : nullptr;
+        const int turret_frame=alt ? ra2engine::hva_animation_frame(walk_stage,va.vsrc->alt_tur[tn-1].second.frames.size()) : tf;
         auto draw_turret = [&]() {
             if (alt)
                 ra2engine::draw_voxel_sprite(ren, tc,
                                              "vxl:" + img + ":t" + std::to_string(tn) + ":" +
                                                  std::to_string(ra2engine::house_draw_key(u.house)) + ":" +
-                                                 std::to_string(ti) + fkey,
+                                                 std::to_string(ti) + fkey(turret_frame),
                                              *alt, tfx, tfy, u.level, cam, W, H, turret_dy);
             else
                 ra2engine::draw_voxel_sprite(
-                    ren, tc, "vxl:" + img + ":t:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti) + fkey,
+                    ren, tc, "vxl:" + img + ":t:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti) + fkey(tf),
                     part_sprite(1, ti), tfx, tfy, u.level, cam, W, H, turret_dy);
         };
         auto draw_barrel = [&]() {
             if (va.has_barrel)
                 ra2engine::draw_voxel_sprite(
-                    ren, tc, "vxl:" + img + ":b:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti) + fkey,
+                    ren, tc, "vxl:" + img + ":b:" + std::to_string(ra2engine::house_draw_key(u.house)) + ":" + std::to_string(ti) + fkey(bf),
                     part_sprite(2, ti), tfx, tfy, u.level, cam, W, H, turret_dy);
         };
         // W7-12-41 [RE: 0x73A3A0 @0x73ACBB-0x73ADD4 -- q = ((turret facing
@@ -4327,7 +4344,7 @@ int shp_vehicle_frame(const ShpVehicleArt& s, const ra2engine::Unit& u, int coun
     int f;
     if (u.fire_flash > 0 && s.fire > 0)
         f = s.fire * fg + s.start_fire + static_cast<int>((t / 2) % s.fire);
-    else if (u.moving() || pres_idle_rate(u.image) > 0)
+    else if (u.moving() || pres_idle_rate(pres_type_id(u)) > 0)
         f = stage % std::max(1, s.walk) + s.walk * fg + s.start_walk;
     else if (s.stand)
         f = s.stand * fg + s.start_stand;
@@ -4349,6 +4366,20 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     ra2engine::set_color_world(&world);   // G-16: house colours for every sprite draw
     g_pres_assets = &a;                   // W5-PRES: ramp lookups (ore slopes)
     tc.next_frame();                      // W2-GA-P5: LRU clock (evicts only over budget)
+    if(vlist && ra2engine::diag::state().enabled.load()) {
+        static long cache_tick=-150;
+        if(g_pres_tick<cache_tick || g_pres_tick-cache_tick>=150) {
+            std::size_t bytes=0,variants=0,evicted=0;
+            for(const auto* asset:*vlist) if(asset) {
+                bytes+=asset->animation_sprites.bytes();variants+=asset->animation_sprites.size();
+                evicted+=asset->animation_sprites.evicted();
+            }
+            ra2engine::diag::note("VOXEL_CACHE cpu_estimated_bytes=%llu variants=%llu evicted=%llu assets=%llu",
+                static_cast<unsigned long long>(bytes),static_cast<unsigned long long>(variants),
+                static_cast<unsigned long long>(evicted),static_cast<unsigned long long>(vlist->size()));
+            cache_tick=g_pres_tick;
+        }
+    }
     // W2-GA-02: never-explored cells are not drawn at all (their cliff/slope
     // extras no longer leak through the shroud); the SHROUD.SHP post-pass
     // (draw_shroud_pass below) softens the edges over every object.

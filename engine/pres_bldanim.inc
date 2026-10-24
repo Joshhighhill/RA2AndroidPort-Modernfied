@@ -26,6 +26,7 @@
 //    rubble frame 3, DestroyAnim ruins.
 
 long g_pres_tick = 0;          // W3-B: LOGIC-tick anim clock (Presentation::logic_tick)
+std::uint64_t g_pres_epoch = 0; // Invalidates rules-dependent visual caches per match.
 // W2-GA-14: the building draw_building is drawing (its overlay pass reads the
 // per-building event state below), its rules id, and that state, keyed by the
 // building's identity (origin cell + type, stable for its life).
@@ -411,7 +412,9 @@ void pres_building_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, const
         // the offset converted pixel->lepton (FUN_006d15e0), flags 0x600.
         // [RE-FALLBACK: the type pick -- the original starts at a random
         // DamageFireTypes index and cycles; the clone cycles from 0.]
-        static std::vector<std::string> fires = g_fx->damage_fires();
+        static std::vector<std::string> fires;
+        static std::uint64_t fire_epoch=~std::uint64_t(0);
+        if(fire_epoch!=g_pres_epoch) { fires=g_fx->damage_fires();fire_epoch=g_pres_epoch; }
         if (fires.empty()) return;
         for (std::size_t i = 0; i < a.fire_offsets.size(); ++i) {
             const FxAnimType* t = g_fx->type(fires[i % fires.size()]);
@@ -490,21 +493,21 @@ bool pres_building_leaves_rubble(const ra2engine::Building& b, const BuildingAss
 // its locomotor moves, every IdleRate frames (+0x298, default 0 = never)
 // standing. Drives SHP-vehicle walk frames and voxel HVA frames.
 std::vector<int> g_walk_stage;
-std::map<std::string, std::pair<int, int>> g_walk_rates;   // image -> {WalkRate, IdleRate}
+std::map<std::string, std::pair<int, int>> g_walk_rates;   // rules id -> {WalkRate, IdleRate}
 const Ini* g_walk_rules = nullptr;
-const std::pair<int, int>& pres_walk_rates(const std::string& image) {
-    auto it = g_walk_rates.find(image);
+const std::pair<int, int>& pres_walk_rates(const std::string& rules_id) {
+    auto it = g_walk_rates.find(rules_id);
     if (it != g_walk_rates.end()) return it->second;
     int walk = 1, idle = 0;
     if (g_walk_rules) {
-        const std::string w = pres_clean(g_walk_rules->get(image, "WalkRate"));
-        const std::string i = pres_clean(g_walk_rules->get(image, "IdleRate"));
+        const std::string w = pres_clean(g_walk_rules->get(rules_id, "WalkRate"));
+        const std::string i = pres_clean(g_walk_rules->get(rules_id, "IdleRate"));
         if (!w.empty()) walk = std::max(1, std::atoi(w.c_str()));
         if (!i.empty()) idle = std::max(0, std::atoi(i.c_str()));
     }
-    return g_walk_rates.emplace(image, std::make_pair(walk, idle)).first->second;
+    return g_walk_rates.emplace(rules_id, std::make_pair(walk, idle)).first->second;
 }
-int pres_idle_rate(const std::string& image) { return pres_walk_rates(image).second; }
+int pres_idle_rate(const std::string& rules_id) { return pres_walk_rates(rules_id).second; }
 int pres_walk_stage(int idx) {
     return idx >= 0 && idx < static_cast<int>(g_walk_stage.size()) ? g_walk_stage[static_cast<std::size_t>(idx)] : 0;
 }
@@ -514,8 +517,9 @@ void pres_walk_tick(const ra2engine::World& w, long now) {
     for (std::size_t i = 0; i < us.size(); ++i) {
         const ra2engine::Unit& u = us[i];
         if (!u.alive || !(u.is_vehicle || u.is_aircraft || u.is_naval) || u.die_time >= 0.0) continue;
-        const std::pair<int, int>& r = pres_walk_rates(u.image);
+        const std::pair<int, int>& r = pres_walk_rates(pres_type_id(u));
         const bool moving = u.moving() || (u.is_aircraft && u.altitude > 0.0);
-        if (moving ? (now % r.first == 0) : (r.second > 0 && now % r.second == 0)) ++g_walk_stage[i];
+        if (!u.frozen && (moving ? (now % r.first == 0) : (r.second > 0 && now % r.second == 0)))
+            ++g_walk_stage[i];
     }
 }
