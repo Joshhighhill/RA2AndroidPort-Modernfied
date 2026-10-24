@@ -215,6 +215,8 @@ gradle.taskGraph.whenReady { graph ->
 tasks.register('ra2CopyNotices', Copy) {
     from(rootProject.file('../LICENSE'))
     from(rootProject.file('../THIRD_PARTY_NOTICES.md'))
+    from(rootProject.file('../CREDITS.md'))
+    from(rootProject.file('../licenses/LIBCXX-LICENSE.txt'))
     into("$buildDir/generated/ra2-notices")
 }
 // Every lint task reads the generated assets folder (the release "vital"

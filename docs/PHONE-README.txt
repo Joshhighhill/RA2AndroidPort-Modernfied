@@ -1,12 +1,20 @@
 RA2 Engine - phone install
 ==========================
 
+Android fork modifications: Bryle13. Original engine: Omar El Arab (0BSD).
+EA has not endorsed and does not support this product.
+On first launcher use, read Terms & game files and explicitly confirm your
+rights to use your own game files. Decline exits. Terms and full licenses can
+be reopened in the launcher. Confirmation is not proof of purchase or legal
+clearance. Diagnostics remain local until you choose Share game report.
+Current test builds use Google Drive delivery; do not redistribute retail assets.
+
 1. Copy RA2-Engine.apk to the phone and open it to install
    (allow "Install unknown apps" when asked). To update, install the new
    APK over the old one - your game files and settings are kept. NOTE:
-   saved games do not carry over between engine versions yet; after an
-   update the old saves are listed as "Older version" and cannot be
-   loaded. Finish a mission before you update.
+   saved games require a compatible engine save format. Builds 900027,
+   900028 and 900029 use format 53. Earlier format 52 saves cannot load in
+   these builds. Keep backups and finish older-format matches before updating.
 
 2. Copy the whole RA2 folder (every .mix and .csf file from your Red Alert 2
    install, about 1 GB) into the phone's Download folder, so you have

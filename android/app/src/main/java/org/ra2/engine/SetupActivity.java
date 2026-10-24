@@ -132,6 +132,7 @@ public class SetupActivity extends Activity {
         // Keep the launcher reachable after a crash so reports can be shared.
         buildUi();
         refresh();
+        if (!LegalNotice.accepted(this)) LegalNotice.show(this,this::refresh);
     }
 
     private int dp(int v) {
@@ -217,6 +218,11 @@ public class SetupActivity extends Activity {
         footer.addView(button("Refresh file status", v -> { if (!copying) refresh(); }));
         footer.addView(exitButton);
         root.addView(footer);
+        LinearLayout legal=new LinearLayout(this);
+        legal.addView(button("Terms & game files",v->LegalNotice.show(this,this::refresh)));
+        legal.addView(button("Credits & licenses",v->LegalNotice.credits(this)));
+        root.addView(legal);
+        root.addView(label("Android fork by Bryle13. Original engine by Omar El Arab. EA has not endorsed and does not support this product.",12,Color.rgb(135,163,181)));
         root.addView(label("Uses your own PC game files. Display and touch options are available in the game's Options menu.", 12, Color.rgb(135, 163, 181)));
         setContentView(page);
     }
@@ -271,6 +277,7 @@ public class SetupActivity extends Activity {
     }
 
     private void pickFolder() {
+        if (!LegalNotice.accepted(this)) { LegalNotice.show(this,this::pickFolder); return; }
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         // R-160: open the picker at Download/RA2 (where the instructions say
@@ -403,6 +410,7 @@ public class SetupActivity extends Activity {
     }
 
     private void startGame() {
+        if (!LegalNotice.accepted(this)) { LegalNotice.show(this,this::startGame); return; }
         // NEW_TASK only: RA2Activity is singleInstance, so a running game
         // (backgrounded with Home) is brought back as it was, not restarted.
         Intent i = new Intent(this, RA2Activity.class);

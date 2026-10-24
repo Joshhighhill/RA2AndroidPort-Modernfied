@@ -1,0 +1,51 @@
+RA2AndroidPort — Terms of Use and game-file confirmation
+Version 1 — 25 October 2026
+
+UNOFFICIAL PROJECT
+EA has not endorsed and does not support this product.
+This project is not affiliated with Electronic Arts or Westwood. Game names
+are used only to identify compatibility. Their trademarks and game content
+remain the property of their respective owners.
+
+YOUR GAME FILES
+This app contains an independently maintained engine fork and Android launcher,
+not the retail Red Alert 2 or Yuri's Revenge game assets. You must obtain game
+files lawfully and have the rights to use the files you import. Follow the
+terms applicable to your copy and your local law. The app does not provide game
+downloads, cracks or a copy-protection bypass. Do not use it to distribute
+unauthorized game files. The confirmation is your statement, not a verification
+of purchase or a grant of rights from EA.
+
+SOFTWARE LICENSES AND CREDITS
+Original engine: Omar El Arab, https://github.com/omarelarab/ra2-engine, 0BSD.
+Android fork modifications: Bryle13 (shietgrupe-cpu13), with Codex assistance.
+The original LICENSE and THIRD_PARTY_NOTICES.md remain applicable. See the
+launcher's Credits & licenses button for their full text and dependency notices.
+These terms do not restrict rights granted by the software's open-source
+licenses. Retail content is not covered by the engine's 0BSD license.
+Gagarin is a GPLv3 research reference; no Gagarin source is bundled in this APK.
+
+LOCAL DATA AND DIAGNOSTICS
+The app stores imported files, settings, saves and diagnostic logs on your
+device. Android backup settings may back up internal app data; imported game
+archives in external app storage are excluded by the app's backup rules.
+Diagnostics may include device/OS/build details, file paths, map/session names,
+unit state and error information. Reports are shared only when you request
+sharing and choose a destination in Android's share sheet. Check the report and
+your description before sharing; do not include passwords or purchase details.
+The app does not request proof-of-purchase or upload your game archives.
+Multiplayer uses network connections when you choose to play online or on LAN;
+this is separate from diagnostic sharing.
+Acceptance version and time are saved locally. Material terms changes require
+another confirmation. Terms and credits can be reopened from the launcher.
+
+TEST BUILD AND SUPPORT
+This is experimental software. Keep backups of saves; engine updates can change
+save compatibility. Software is provided as-is under its applicable licenses,
+subject to rights and remedies that local law does not permit excluding.
+No disclaimer or confirmation guarantees legal protection or EA permission.
+For support and source: https://github.com/shietgrupe-cpu13/RA2AndroidPort/issues
+Do not post retail archives, signing keys or private information in public issues.
+
+Continue only if you agree to these terms and confirm that you have the rights
+to use the game files you select. Decline exits the launcher.
