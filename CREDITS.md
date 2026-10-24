@@ -16,7 +16,7 @@ original implementation of the engine by this fork's maintainer.
 
 ## Changes in this fork
 
-Maintained by **shietgrupe-cpu13**, with OpenAI Codex assistance for source
+Android fork modifications maintained by **Bryle13 (shietgrupe-cpu13)**, with OpenAI Codex assistance for source
 inspection, implementation, testing and APK packaging.
 
 The native changes add a separate 250 ms hold-before-drag selection threshold,
@@ -47,6 +47,16 @@ those changes. Most controls and all game-engine systems remain upstream work.
   **No code from that repository is included in this native APK or source
   fork.** A separate local web experiment is discussed in the comparison
   report; it is not part of this native release.
+
+## Behavioral research — Gagarin
+
+- Reference: https://github.com/r-melvin/gagarin
+- Research snapshot: `03f19f62e61c731ff804cfbd0471d2d11c931aa5`.
+- Its reconstruction is GPLv3 with its stated additional terms. It remains a
+  behavioral research reference, not a source-code dependency. No function
+  bodies, headers or reconstructed code from Gagarin were incorporated into
+  this fork in this release. This does not certify all upstream code provenance.
+- Its matching statistics do not prove full gameplay or rendering parity.
 
 ## Bundled and development components
 

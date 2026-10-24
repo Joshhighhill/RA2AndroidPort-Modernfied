@@ -1,5 +1,8 @@
 # RA2 Engine
 
+EA has not endorsed and does not support this product.
+Android fork modifications: **Bryle13 (shietgrupe-cpu13)**.
+
 > **Android touch-control test fork.** The original engine is by
 > **[Omar El Arab](https://github.com/omarelarab/ra2-engine)**. This fork adds
 > focused touch improvements and test APK packaging. See [CREDITS.md](CREDITS.md)
@@ -9,7 +12,8 @@
 
 ## This fork's Android test build
 
-- [Download the ARM64 test APK](../../releases) and follow
+- New APK deliveries are supplied through the maintainer's Google Drive;
+  historical GitHub releases are older builds. Follow
   [the phone test instructions](docs/ANDROID_TOUCH_TESTING.md).
 - One-finger drag pans; hold for 250 ms, then drag to box-select. Adding a
   finger during a pan no longer turns the release into an accidental cancel.

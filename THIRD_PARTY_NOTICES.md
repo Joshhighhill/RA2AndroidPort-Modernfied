@@ -7,7 +7,7 @@ Source: https://github.com/omarelarab/ra2-engine
 Starting revision: a8cfdccfef8592c13a6517c3fb76d834b1534027.
 The upstream engine is licensed under 0BSD; its LICENSE is retained.
 
-This Android touch-control fork is maintained by shietgrupe-cpu13 with OpenAI
+This Android touch-control fork is maintained by Bryle13 (shietgrupe-cpu13) with OpenAI
 Codex assistance. Its gesture changes and tests are modifications to Omar's
 engine, not a new engine written by this fork.
 
@@ -112,3 +112,14 @@ DEALINGS IN THE SOFTWARE.
 
 The APK ships `libc++_shared.so` from the Android NDK (LLVM libc++,
 Apache License 2.0 with LLVM Exceptions).
+The full LLVM libc++ license and exception notices are supplied in
+`licenses/LIBCXX-LICENSE.txt` (APK asset `LIBCXX-LICENSE.txt`).
+
+## Unofficial project and research boundary
+
+EA has not endorsed and does not support this product.
+Red Alert 2 and Yuri's Revenge names and retail content belong to their
+respective rights holders. The engine license does not license retail assets.
+Gagarin (r-melvin/gagarin) is consulted for behavioral research only; its GPLv3
+source has not been incorporated into this release. Disclaimers and local
+game-file confirmation do not establish legal clearance or proof of ownership.
