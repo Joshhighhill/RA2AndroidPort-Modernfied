@@ -1049,6 +1049,7 @@ template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
     io(ar, v.mind_control);
     io(ar,v.tank_bunker); io(ar,v.bunker_damage); io(ar,v.bunker_rof); io(ar,v.bunker_range);
     io(ar, v.slave_combat); io(ar, v.slave_count); io(ar, v.slave_regen_rate); io(ar, v.slave_storage);
+    io(ar,v.slave_harvest_rate);io(ar,v.slave_reload_rate);
     io(ar, v.id);
     io(ar, v.fw); io(ar, v.fh);
     io(ar, v.strength);

@@ -2760,12 +2760,9 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
     (void)get_mix;
 
     std::vector<std::string> building_ids(std::begin(kRoster),std::end(kRoster));
-    // Append the rules-defined Yuri structures; retain all existing indices.
+    // Append supported vanilla Yuri structures; retain all existing indices.
     for(const auto& id : rules.listed_types("BuildingTypes")) {
-        std::string owners=rules.section_string(id,"Owner","");
-        owners.erase(std::remove_if(owners.begin(),owners.end(),[](unsigned char c){return std::isspace(c);}),owners.end());
-        for(char& c:owners)c=static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        if((","+owners+",").find(",YURICOUNTRY,")!=std::string::npos &&
+        if(ra2engine::vanilla_yuri_building(id) &&
            std::find(building_ids.begin(),building_ids.end(),id)==building_ids.end()) building_ids.push_back(id);
     }
     ba.roster.reserve(building_ids.size());
@@ -2788,6 +2785,8 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
             d.slave_count = std::clamp(static_cast<int>(rules.section_double(id, "SlavesNumber", 5)), 0, 32);
             d.slave_regen_rate = std::max(1, static_cast<int>(rules.section_double(id, "SlaveRegenRate", 500)));
             d.slave_storage = std::max(1, rules.storage(slave));
+            d.slave_harvest_rate=std::max(1,static_cast<int>(rules.section_double(slave,"HarvestRate",150)));
+            d.slave_reload_rate=std::max(1,static_cast<int>(rules.section_double(id,"SlaveReloadRate",25)));
         }
         d.fw = d.fh = 1;
         art.foundation(art_id, d.fw, d.fh);

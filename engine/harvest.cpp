@@ -294,11 +294,17 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
             u.is_aircraft)
             continue;  // carried harvester: mission FSM parks (CB-1); CB-2: an
                        // aircraft is never a harvester (data-unreachable, guarded)
+        double gulp_secs=kGulpSecs,unload_secs=kUnloadSecsPerBale;
         if (u.w7.slave_manager >= 0) {
             const int manager = u.w7.slave_manager;
             if (manager >= static_cast<int>(buildings.size()) || !buildings[manager].alive ||
                 buildings[manager].state != Building::State::Idle || buildings[manager].house != u.house) continue;
             u.dock_refinery = manager;
+            const int type=buildings[manager].type;
+            if(type>=0 && type<static_cast<int>(types.size())) {
+                gulp_secs=std::max(1,types[type].slave_harvest_rate)/15.0;
+                unload_secs=std::max(1,types[type].slave_reload_rate)/15.0;
+            }
         }
 
         // Auto-resume after a manual move order [RE-GATE APPLIED §1 PROBABLE:
@@ -425,8 +431,8 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                 // OWN cell before the ring -- the doc confirms only the
                 // 8-neighbour ring walk, not an own-cell-first step.]
                 u.harv_timer += dt;
-                while (u.harv_timer >= kGulpSecs && u.harv == HarvState::Harvesting) {
-                    u.harv_timer -= kGulpSecs;
+                while (u.harv_timer >= gulp_secs && u.harv == HarvState::Harvesting) {
+                    u.harv_timer -= gulp_secs;
                     int tx = u.cell_x, ty = u.cell_y;
                     OreKind k = OreKind::None;
                     if (ore.has_ore(tx, ty)) {
@@ -674,9 +680,9 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                 // matching the rig's fixed 2-slot ore/gems store); income =
                 // bales * Value; no PurifierBonus this phase.]
                 u.harv_timer += dt;
-                while (u.harv_timer >= kUnloadSecsPerBale &&
+                while (u.harv_timer >= unload_secs &&
                        (u.bales_ore > 0.0 || u.bales_gems > 0.0)) {
-                    u.harv_timer -= kUnloadSecsPerBale;
+                    u.harv_timer -= unload_secs;
                     int house = (u.house >= 0 && u.house < n_houses) ? u.house : 0;
                     double v;
                     if (u.bales_ore > 0.0) {

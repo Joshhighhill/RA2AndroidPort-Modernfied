@@ -62,6 +62,20 @@ int count_events(const std::vector<HarvestEvent>& evs, HarvestEvent::Kind k, int
 // Dock cell for the Rig's default NAREFN (cx=8, cy=8, fw=4, fh=3) is
 // (cx + fw/2, cy + fh) = (10, 11) [dock_cell_x/y, harvest.hpp].
 
+TEST_CASE("harvest: slave pickup and reload respect manager-resolved game-frame rates") {
+    for(int pickup:{30,150}) {
+        Rig r;r.types[0].slave_count=5;r.types[0].slave_harvest_rate=pickup;
+        r.types[0].slave_reload_rate=25;
+        auto& u=r.harv(2,2,false,4);u.w7.slave_manager=0;u.harv=HarvState::Harvesting;
+        r.ore.set(2,2,OreKind::Ore,10,0);
+        r.step((pickup-1)/15.0);CHECK(u.bales_ore==0);
+        r.step(2.0/15.0);CHECK(u.bales_ore==1);
+        u.harv=HarvState::Unloading;u.harv_timer=0;u.bales_ore=2;
+        r.step(24.0/15.0);CHECK(r.credits[0]==0);CHECK(u.bales_ore==2);
+        r.step(2.0/15.0);CHECK(r.credits[0]==r.values.ore);CHECK(u.bales_ore==1);
+    }
+}
+
 TEST_CASE("harvest: seek picks the nearest ore cell and requests a move") {
     Rig r;
     r.ore.set(3, 3, OreKind::Ore, 5, 0);
@@ -103,7 +117,7 @@ TEST_CASE("slave harvest: different manager edges unload without the truck dock 
     r.step(0.1);
     CHECK(r.units[0].harv==HarvState::Unloading);
     CHECK(r.units[1].harv==HarvState::Unloading);
-    r.step(1.0);
+    r.step(r.types[0].slave_reload_rate/15.0);
     CHECK(r.credits[0]==50);
     CHECK(r.units[0].bales_ore==0);CHECK(r.units[1].bales_ore==0);
 }

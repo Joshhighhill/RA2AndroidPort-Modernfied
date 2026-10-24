@@ -9,9 +9,18 @@
 #include "report_probe.hpp"
 #include "psychic_links.hpp"
 #include "psychic_sensor.hpp"
+#include "faction_support.hpp"
+#include "command.hpp"
+#include "selection.hpp"
 #include <fstream>
 #include <iterator>
 using namespace ra2engine;
+TEST_CASE("Yuri roster: real structures exclude shared scenery and dormant prototypes") {
+    for(const char* id:{"YACNST","YAREFN","NAPSIS","NACLON","GAFWLL","NATBNK"})
+        CHECK(vanilla_yuri_building(id));
+    for(const char* id:{"GASAND","CAFNCB","CAFNCP","GALAMP","GAWALL","NAWALL","YACOMD","YAROCK","YADEPT"})
+        CHECK_FALSE(vanilla_yuri_building(id));
+}
 namespace {
 struct Rig {
     ra2assets::MapFile map = ra2assets::MapFile::parse("[Map]\nSize=0,0,20,20\nTheater=TEMPERATE\n");
@@ -25,6 +34,32 @@ struct Rig {
 UnitCombat unit(const char* image) {
     UnitCombat c; c.image = image; c.strength = 100; c.speed_cps = 2;
     c.verses.assign(11,100); c.tg.rules_id = image; return c;
+}
+TEST_CASE("missile launchers: explicit V3 and Boomer land orders launch spawned rockets") {
+    for(bool boomer : {false,true}) {
+        Rig r;World w(r.map);
+        auto rocket=unit(boomer ? "CMISL" : "V3ROCKET");
+        rocket.is_aircraft=true;rocket.is_vehicle=true;rocket.an.spawned=true;
+        rocket.an.missile=true;rocket.an.rocket_kind=boomer ? 2 : 0;rocket.an.rocket_speed=38;
+        w.register_an_type(rocket.image,rocket);
+        auto launcher=unit(boomer ? "BSUB" : "V3");launcher.is_vehicle=true;
+        launcher.damage=1;launcher.range=18;launcher.rof=150;launcher.omni_fire=true;
+        launcher.an.spawner_slot=boomer ? 1 : 0;launcher.an.spawns=rocket.image;
+        launcher.an.spawns_number=boomer ? 2 : 1;launcher.an.spawner_range=20;
+        launcher.an.spawn_regen_frames=400;
+        if(boomer) {
+            launcher.an.naval_targeting=7;launcher.an.land_targeting=2;
+            launcher.secondary.valid=true;launcher.secondary.damage=25;
+            launcher.secondary.range=20;launcher.secondary.rof=50;
+            launcher.secondary.verses.assign(11,100);launcher.secondary.omni_fire=true;
+        }
+        w.add_combat_unit(2,2,0,launcher);w.add_combat_unit(14,2,1,unit("TARGET"));
+        w.group_attack(0,{0},1);
+        for(int f=0;f<180 && w.units().size()<3;++f)w.step(1.0/15.0);
+        REQUIRE(w.units().size()>=3);
+        CHECK(w.units()[0].w_active==(boomer ? 1 : 0));
+        CHECK(w.units()[2].an.t.missile);CHECK(w.units()[2].an.owner==0);
+    }
 }
 TEST_CASE("diagnostics: unit probes preserve saved state and catch broken references") {
     Rig r; World w(r.map);
@@ -100,7 +135,7 @@ TEST_CASE("Yuri core: presentation collects unit and building mind-control links
     CHECK(save::save_world(w)==before);
     w.units()[0].alive=false;CHECK(skirmish_control_links(w).size()==1);
 }
-TEST_CASE("Yuri core: infantry caps never auto-swap and deploy releases ownership") {
+TEST_CASE("Yuri core: infantry caps never auto-swap and deploy preserves ownership") {
     for (const char* id : {"YURI","YURIPR"}) {
         Rig r;World w(r.map);auto c=unit(id);c.w7.mind_control=true;
         c.deploy_fire=true;c.deploy_fire_slot=1;c.w7.deploy_area_fire=true;
@@ -109,9 +144,57 @@ TEST_CASE("Yuri core: infantry caps never auto-swap and deploy releases ownershi
         w.units()[0].w7.mc_shot=1;w.resolve_skirmish_mind_control();
         for(int n=0;n<20;++n){w.units()[0].w7.mc_shot=2;w.resolve_skirmish_mind_control();}
         CHECK(w.units()[0].w7.mc_victims.size()==1);CHECK(w.units()[1].house==0);CHECK(w.units()[2].house==1);
-        REQUIRE(w.order_deploy(0));CHECK(w.units()[1].house==1);CHECK(w.units()[0].w7.mc_victims.empty());
+        REQUIRE(w.order_deploy(0));CHECK(w.units()[1].house==0);
+        REQUIRE(w.units()[0].w7.mc_victims.size()==1);
+        CHECK(w.units()[0].w7.mc_victims[0]==1);
+        CHECK(w.units()[1].w7.mc_controller==0);
+        const auto saved=save::save_world(w);World loaded(r.map);REQUIRE(save::load_world(loaded,saved));
+        CHECK(loaded.units()[1].house==0);CHECK(loaded.units()[1].w7.mc_controller==0);
         w.units()[0].w7.mc_shot=2;w.resolve_skirmish_mind_control();CHECK(w.units()[2].house==1);
     }
+}
+TEST_CASE("Yuri core: enslaved workers reject player commands but retain internal movement") {
+    Rig r;World w(r.map);auto slave=unit("SLAV");slave.is_infantry=true;
+    w.add_combat_unit(2,2,0,slave);w.set_order_issuer(0);
+    for(int manager:{0,-2}) {
+        auto& u=w.units()[0];u.w7.slave_manager=manager;
+        CHECK(Selection::unselectable(u));
+        w.order_unit_move(0,6,2);REQUIRE(u.moving());
+        const auto path=u.path;
+        apply_command(w,make_whom(w,EventType::Idle,{0}));
+        CHECK(u.path.size()==path.size());CHECK(u.moving());
+        apply_command(w,make_mega(w,{0},Mission::Move,Target{},Target::cell(2,8)));
+        CHECK(u.path.back().x==6);CHECK(u.path.back().y==2);
+        apply_command(w,make_whom(w,EventType::Scatter,{0}));
+        CHECK(u.path.back().x==6);CHECK(u.path.back().y==2);
+    }
+    w.units()[0].w7.slave_manager=-1;
+    CHECK_FALSE(Selection::unselectable(w.units()[0]));
+    apply_command(w,make_whom(w,EventType::Idle,{0}));
+    CHECK_FALSE(w.units()[0].moving());
+}
+TEST_CASE("Yuri core: surviving slaves become controllable by their miner's killer") {
+    Rig r;World w(r.map);BuildingTypeDef d;d.id="YAREFN";d.fw=d.fh=2;
+    d.slave_count=2;d.slave_combat=unit("SLAV");d.slave_combat.is_infantry=true;
+    w.set_economy({d},{0},OreValues{},1000,0,0);
+    w.add_building(0,8,8,2,2,0,100,0,0,true);w.step_yuri_workers(false);
+    REQUIRE(w.units().size()==2);
+    auto killer=unit("LTNK");w.add_combat_unit(2,2,1,killer);
+    w.units()[1].alive=false;w.units()[1].die_time=0;
+    w.buildings()[0].alive=false;w.buildings()[0].state=Building::State::Dead;
+    w.buildings()[0].killed_by=2;w.step_yuri_workers(false);
+    CHECK(w.units()[0].house==1);CHECK(w.units()[0].w7.slave_manager==-1);
+    CHECK_FALSE(w.units()[0].is_harvester);CHECK_FALSE(Selection::unselectable(w.units()[0]));
+    w.set_order_issuer(0);
+    apply_command(w,make_mega(w,{0},Mission::Move,Target{},Target::cell(3,3)));
+    CHECK_FALSE(w.units()[0].moving());
+    w.set_order_issuer(1);
+    auto order=make_mega(w,{0},Mission::Move,Target{},Target::cell(3,3));order.house=1;
+    apply_command(w,order);
+    REQUIRE(w.units()[0].moving());CHECK(w.units()[0].path.back().x==3);
+    CHECK_FALSE(w.units()[1].alive); // dead workers are not resurrected/transferred
+    const auto state=save::save_world(w);World loaded(r.map);REQUIRE(save::load_world(loaded,state));
+    CHECK(loaded.units()[0].house==1);CHECK(loaded.units()[0].w7.slave_manager==-1);
 }
 TEST_CASE("Yuri core: Mastermind overload uses configured damage and releases on death") {
     Rig r;World w(r.map);auto c=unit("MIND");c.strength=500;c.w7.mind_control=true;

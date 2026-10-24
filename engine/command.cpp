@@ -187,10 +187,11 @@ bool bld_live(const World& w, int b) {
 }
 
 // Whom ids restricted to unit references (ascending, as the UI built them).
-std::vector<int> unit_whom(const Command& c) {
+std::vector<int> unit_whom(const World& w,const Command& c) {
     std::vector<int> v;
     for (const Target& t : c.whom)
-        if (t.is_unit()) v.push_back(t.id);
+        if (t.is_unit() && unit_ok(w,t.id) &&
+            (c.house==kAnyHouse || w.units()[t.id].w7.slave_manager==-1)) v.push_back(t.id);
     return v;
 }
 
@@ -202,7 +203,7 @@ const OrderRules& rules_of(CommandHost* host) {
 
 void apply_mega(World& w, const Command& c, CommandHost* host) {
     const int H = c.house;
-    const std::vector<int> ids = unit_whom(c);
+    const std::vector<int> ids = unit_whom(w,c);
     // W4-SQ: a player order takes the units out of their script team.
     w.mark_player_orders(ids);
     switch (c.mission) {
@@ -304,7 +305,7 @@ void apply_deploy(World& w, const Command& c) {
                 else (void)w.order_pack_slave_miner(t.id, H);
             }
         }
-    const std::vector<int> ids = unit_whom(c);
+    const std::vector<int> ids = unit_whom(w,c);
     w.group_unload(H, ids);
     for (int i : ids)
         if (unit_ok(w, i) && w.can_command(H, w.units()[static_cast<std::size_t>(i)].house)) (void)w.order_deploy(i);
@@ -362,13 +363,13 @@ void apply_command(World& w, const Command& c, CommandHost* host) {
             apply_mega(w, c, host);
             return;
         case EventType::Idle: {
-            const std::vector<int> ids = unit_whom(c);
+            const std::vector<int> ids = unit_whom(w,c);
             w.mark_player_orders(ids);
             w.group_stop(H, ids);
             return;
         }
         case EventType::Scatter: {
-            const std::vector<int> ids = unit_whom(c);
+            const std::vector<int> ids = unit_whom(w,c);
             w.mark_player_orders(ids);
             w.group_scatter(H, ids);
             return;

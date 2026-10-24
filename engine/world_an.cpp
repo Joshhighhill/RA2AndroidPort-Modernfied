@@ -44,6 +44,8 @@ int an_naval_slot(const AnType& a, int want, bool has_secondary, bool victim_in_
         // LandTargeting=1 (+0x604) -> ILLEGAL.
         if (a.land_targeting == 1) return -1;                 // LAND_NOT_OKAY
         if (a.naval_targeting == kNavUnderwaterOnly) return -1;
+        // YR LAND_SECONDARY: BSUB's CruiseLauncher, not its torpedo.
+        if (a.land_targeting == 2) return has_secondary ? 1 : -1;
         return want;
     }
     // W7-06-02 [RE: NavalTargeting switch FUN_006F2D80 (vtbl+0x2E8)]: a FIXED

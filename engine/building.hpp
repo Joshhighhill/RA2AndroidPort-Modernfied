@@ -30,6 +30,8 @@ struct BuildingTypeDef {
     int slave_count = 0;
     int slave_regen_rate = 500;
     int slave_storage = 4;
+    int slave_harvest_rate = 150; // SLAV HarvestRate, game frames per bale
+    int slave_reload_rate = 25;  // manager SlaveReloadRate, game frames per bale
     std::string id;                  // "GAPOWR"
     int fw = 1, fh = 1;              // Art Foundation=WxH
     int strength = 1;

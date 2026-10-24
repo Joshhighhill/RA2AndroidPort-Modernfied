@@ -53,7 +53,7 @@ public:
     }
     // Whether the sim removed unit u from what a player can hold selected.
     static bool unselectable(const Unit& u) {
-        return u.cargo_of >= 0 || (!u.alive && u.die_time < 0.0) || u.an.t.spawned;
+        return u.cargo_of >= 0 || (!u.alive && u.die_time < 0.0) || u.an.t.spawned || u.w7.slave_manager!=-1;
     }
     void prune(const World& w) {
         const std::vector<Unit>& us = w.units();
