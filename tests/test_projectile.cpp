@@ -1,4 +1,28 @@
 #include "doctest.h"
+#include "iso_project.hpp"
+#include "building_transition.hpp"
+
+TEST_CASE("presentation: projectiles keep their terrain anchor and relative flight height") {
+    CHECK(ra2engine::projectile_screen_y(300,0)==300);
+    CHECK(ra2engine::projectile_screen_y(300,104)==285);
+    CHECK(ra2engine::projectile_screen_y(240,104)==225);
+    CHECK(ra2engine::projectile_screen_y(240,416)==180);
+}
+TEST_CASE("presentation: bunker motion follows authored opening and reverse closing durations") {
+    CHECK(ra2engine::bunker_motion_ticks(0,10,4,false)==40);
+    CHECK(ra2engine::bunker_motion_ticks(10,20,4,false)==40);
+    CHECK(ra2engine::bunker_motion_ticks(0,10,4,true)==40);
+    CHECK(ra2engine::bunker_motion_ticks(0,0,0,false)==1);
+    CHECK(ra2engine::transition_blend(0,40,0)==0);
+    CHECK(ra2engine::transition_blend(40,40,0)==1);
+    CHECK(ra2engine::transition_blend(20,40,0)==doctest::Approx(0.5));
+    CHECK(ra2engine::transition_blend(20,40,0.5)>0.5);
+    double last=0;
+    for(int render=0;render<=160;++render) {
+        const double value=ra2engine::transition_blend(render/4,40,(render%4)/4.0);
+        CHECK(value>=last);CHECK(value<=1);last=value;
+    }
+}
 
 #include <algorithm>
 #include <cmath>

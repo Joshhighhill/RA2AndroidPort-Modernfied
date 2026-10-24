@@ -1,6 +1,10 @@
 #pragma once
+#include <cmath>
 
 namespace ra2engine {
+inline int projectile_screen_y(int ground_y,int terrain_relative_z) {
+    return ground_y-static_cast<int>(std::lround(terrain_relative_z*15.0/104.0));
+}
 
 // Screen-space pixel coordinate (window/render-target pixels, camera-local:
 // callers add a camera pan/scroll offset on top of this).

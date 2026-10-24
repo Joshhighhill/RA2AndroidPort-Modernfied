@@ -4283,9 +4283,9 @@ void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
         const int level = mc ? mc->level : 0;
         const int gx = static_cast<int>(std::lround((x - y) * 30.0)) + cam.x + 30;
         const int gy = static_cast<int>(std::lround((x + y) * 15.0 - level * 15)) + cam.y + 15;
-        // Projectile z is absolute world height, including terrain. Subtract
-        // it from the flat projection; gy already contains terrain height.
-        const int sy = gy + level*15 - static_cast<int>(std::lround(p.z * 15.0 / 104.0));
+        // World's bullet Z is relative to local terrain (unit_lz and the
+        // detonation pass use the same convention). Keep the ground anchor.
+        const int sy = ra2engine::projectile_screen_y(gy,p.z);
         if (gx < -8 || gx > W + 8 || sy > H + 8 || gy < -8) continue;
         // W4: the FIRING weapon's art (slot / base defence / voxel bullet).
         if (tc && g_fx3 && g_fx3->draw_projectile(ren, *tc, world, p, gx, sy, gy, W, H)) continue;
@@ -4443,7 +4443,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     auto draw_one_unit = [&](int idx, const ra2engine::Building* bunker = nullptr) {
         const auto exiting=g_bunker_motion.find(idx);
         if (!bunker && exiting!=g_bunker_motion.end() && !exiting->second.entering &&
-            ra2engine::transition_active(exiting->second.start,15,g_pres_tick)) {
+            ra2engine::transition_active(exiting->second.start,exiting->second.duration,g_pres_tick)) {
             const int bi=exiting->second.building;
             if (bi>=0 && bi<static_cast<int>(world.buildings().size()) && world.buildings()[bi].alive &&
                 world.buildings()[bi].state==ra2engine::Building::State::Idle) return;
@@ -4477,11 +4477,10 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         auto motion=g_bunker_motion.find(idx);
         if(motion!=g_bunker_motion.end()) {
             const long age=g_pres_tick-motion->second.start;
-            if(age<0 || age>=15 || !up->alive) g_bunker_motion.erase(motion);
+            if(age<0 || age>=motion->second.duration || !up->alive) g_bunker_motion.erase(motion);
             else {
                 if(!lifted) lifted.emplace(*up);
-                const double t=std::clamp((age+g_pres_render_fraction)/15.0,0.0,1.0);
-                const double f=t*t*(3.0-2.0*t);
+                const double f=ra2engine::transition_blend(age,motion->second.duration,g_pres_render_fraction);
                 // Exiting units may already be following a new command. Blend
                 // toward their current position, not a stale ejection cell.
                 const double tx=motion->second.entering?motion->second.to_x:us[idx].fx;
@@ -4515,7 +4514,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         // is pixel-identical. Own units (u.house == 0) are always drawn.
         if (u.house != g_local_house && !world.object_visible_at(g_local_house, u.cell_x, u.cell_y)) return;
         // W2-AN-13: a submerged enemy sub without our sonar contact is unseen.
-        if (world.unit_hidden_from(0, u)) return;
+        if (world.unit_hidden_from(g_local_house, u)) return;
         if (u.ia.vanish) return;   // W3-B: a death anim replaced the body
         if (u.die_time >= 0.0 && pres_crushed(idx)) return;   // W7-04-25: crushed -> removed at once
         // W5-PRES R-047 [RE: abilities-w5.md §9]: an enemy viewer sees a still
@@ -4718,7 +4717,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                 std::vector<int> exiting_units;
                 for (const auto& motion:g_bunker_motion)
                     if (!motion.second.entering && motion.second.building==d.idx &&
-                        ra2engine::transition_active(motion.second.start,15,g_pres_tick))
+                        ra2engine::transition_active(motion.second.start,motion.second.duration,g_pres_tick))
                         exiting_units.push_back(motion.first);
                 for (int ui:exiting_units)
                     if(ui>=0 && ui<static_cast<int>(us.size()) && us[ui].alive && us[ui].garrison_of<0)

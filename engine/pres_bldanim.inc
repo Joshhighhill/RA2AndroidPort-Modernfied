@@ -65,7 +65,7 @@ struct SlaveMinerPackFx {
     long start = 0, duration = 0;
 };
 std::map<int, SlaveMinerPackFx> g_slave_miner_pack_fx;
-struct BunkerMotion { double from_x=0,from_y=0,to_x=0,to_y=0; long start=0; bool entering=true; int building=-1; };
+struct BunkerMotion { double from_x=0,from_y=0,to_x=0,to_y=0; long start=0; bool entering=true; int building=-1; long duration=15; };
 std::map<int,BunkerMotion> g_bunker_motion;
 double g_pres_render_fraction = 0; // sub-tick movement only; never simulation input
 
@@ -221,6 +221,18 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
                     const double cx=b.cx+(b.fw-1)/2.0, cy=b.cy+(b.fh-1)/2.0;
                     g_bunker_motion[ui] = occupied ? BunkerMotion{u.fx,u.fy,cx,cy,now,true,static_cast<int>(bi)}
                                                    : BunkerMotion{cx,cy,u.fx,u.fy,now,false,static_cast<int>(bi)};
+                    long duration=1;
+                    for(int slot: {occupied?kBsSpecial:kBsSpecial3,occupied?kBsSpecial2:kBsSpecial4}) {
+                        const auto& art=a.slot[slot];
+                        const bool damaged=b.max_hp>0 && b.hp<=ba.condition_yellow*b.max_hp;
+                        const auto* anim=damaged && art.dmg?art.dmg:art.t;
+                        if(anim)duration=std::max(duration,ra2engine::bunker_motion_ticks(
+                            anim->start,anim->loop_end,anim->delay,anim->reverse));
+                    }
+                    g_bunker_motion[ui].duration=duration>1?duration:15;
+                    ra2engine::diag::note("BUNKER_VISUAL building=%zu unit=%d entering=%d duration=%ld from=%.3f,%.3f to=%.3f,%.3f",
+                        bi,ui,occupied,g_bunker_motion[ui].duration,g_bunker_motion[ui].from_x,
+                        g_bunker_motion[ui].from_y,g_bunker_motion[ui].to_x,g_bunker_motion[ui].to_y);
                 }
                 st.bunker_occupied = occupied;
                 st.bunker_transition = occupied ? 1 : -1;
