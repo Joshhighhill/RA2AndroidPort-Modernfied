@@ -1,0 +1,64 @@
+Build 900032 — bunker drive lifecycle, nuclear presentation and speech policy
+25 October 2026
+
+Instruction source: user's Drive RA2YRINST.txt, ID
+15qMKgfRVsUaSIEDPKjyqUZuBepn7oaw5. R-031–R-043 in the existing tracker
+were read. Generic vehicle projectiles are user-confirmed working and their
+existing flight/rendering path was preserved.
+
+Starting fork e1d1cb1e637fa08fcb163c291971d84ea64ac7d6; Gagarin research
+reference cbe6261d2fee4306ab8e79ef622d5686bd9eb0b3. No GPL code copied.
+Gagarin's UnloadBunker reference reactivates/repositions its locomotor and
+clears attachment links; the port's own drive state and tests were inspected.
+The port's existing original-PC air_naval.hpp/world_sw.cpp notes establish
+the separate NukeCarrier ascent and 20,000-lepton / 200-frame descent.
+No dedicated complete Gagarin nuclear renderer was verified in this pass.
+
+Changes:
+- Tank Bunker attachment/ejection resets transient drive tracks, carried
+  movement progress and blockage delays, preserving locomotor type settings.
+  Interrupted entry/exit visual transitions restart at the current displayed
+  position instead of the bunker center. Full PC heading/trajectory parity
+  still needs a capture; this is not a complete locomotor reconstruction.
+- Nuclear strikes are outside the ordinary projectile vector. Their live
+  strike phase now draws original NukeCarrier/NukePayload missile art using
+  the existing strike timer. It does not create a damaging projectile or alter
+  blast timing. No generic substitute missile is drawn if original art fails.
+- NUKE_FX diagnostics record availability of the existing takeoff and impact
+  animations; NUKE_VISUAL reports unavailable missile art once per weapon.
+  Missing ready/impact visuals are NOT declared fixed without a phone report.
+- Building/training queue announcements and rally acknowledgments use
+  independent three-second speech cooldowns. This is the user's intentional
+  UX policy, not a verified original-PC exact cooldown. Commands still execute.
+  Distinct critical warnings, completion, ready and combat voices are unchanged.
+
+Audit status R-031–R-043:
+031 Flying Disc exact ring/drain parity: open.
+032 Chaos Drone: original CAOS uses ChaosAttack/PsychGasCreate; current generic
+    deploy slot defaults to secondary VirtualScanner and the engine lacks a
+    complete Psychedelic/berserk status path. A weapon-slot swap alone would
+    risk applying its duration-like Damage as lethal damage. No unsafe shortcut.
+033 Magnetron full lift/beam: open, existing behavior retained.
+034 MCV: existing UndeploysInto registration and MCVRedeploys/scenario/human
+    guards exist. Sell path releases its footprint before the redeploy check;
+    no blanket 'blocked by own footprint' patch was justified.
+035 AI retargeting/strategy and 036 conditional Kirov production: open.
+037 Three-second speech policy implemented and pure-policy tested.
+038 Gatling animation/audio parity: open; previous stages retained.
+039 Nuclear carrier/payload presentation added; ready/impact full visual
+    validation and trail details remain open.
+040 Slopes and 041 Psychic Reveal original effect: open.
+042 Factory physical door/roof exits: open. Existing ring spawning is verified
+    in the fork but no safe full collision/door reconstruction was established.
+043 Architecture: bounded typed strike observation and cosmetic interpolation
+    retained; no claim of a complete engine-wide animation overhaul.
+
+No engine save fields were added: save format 53 is retained. Same-build peers
+are required for corrected deterministic bunker state. Existing portrait
+launcher, touch controls, terms/credits, app ID and configured signer retained.
+Tests and source commits are recorded in the existing Drive tracker. No device
+or emulator testing was performed. No APK is published to GitHub Releases.
+
+Windows shutdown was explicitly scheduled by user for 03:30 on 25 October 2026,
+Asia/Irkutsk (UTC+8); the earlier PM timer was canceled. This build is saved
+and delivered before that timer. Further fixes require a new evidence pass.
