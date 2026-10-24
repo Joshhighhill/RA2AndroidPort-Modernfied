@@ -14,7 +14,7 @@ TEST_CASE("unit panel fits landscape viewports with separate header and group ro
             CHECK(a.y >= top+L::header_height);
             CHECK(a.y+a.h <= h-L::margin);
             CHECK(a.w >= 48);
-            CHECK(a.h >= 44);
+            CHECK(a.h >= 56);
             for (int j=0;j<i;++j) {
                 const auto b=L::button(width,h,count,j);
                 CHECK_FALSE((a.x<b.x+b.w && b.x<a.x+a.w && a.y<b.y+b.h && b.y<a.y+a.h));
@@ -22,7 +22,7 @@ TEST_CASE("unit panel fits landscape viewports with separate header and group ro
         }
         CHECK(L::button(width,h,count,0).x == L::margin);
         if(count==13) {
-            CHECK(L::button(width,h,count,8).y+44 < L::button(width,h,count,0).y);
+            CHECK(L::button(width,h,count,8).y+56 < L::button(width,h,count,0).y);
             CHECK(L::button(width,h,count,12).x < 308);
         }
     }
@@ -34,8 +34,8 @@ TEST_CASE("panel arrow fits both states and clears the expanded action buttons")
         const auto folded=L::toggle(width,548,count,true);
         CHECK(folded.x==L::margin);
         CHECK(folded.y+folded.h==548-L::margin);
-        CHECK(folded.w==44);
-        CHECK(folded.h==44);
+        CHECK(folded.w==56);
+        CHECK(folded.h==56);
         const auto open=L::toggle(width,548,count,false);
         CHECK(open.y>=L::top(548,count));
         CHECK(open.x+open.w<=width-L::margin);

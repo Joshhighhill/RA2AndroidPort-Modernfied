@@ -40,14 +40,15 @@ struct FakeInput {
  int selected_building()const{return building;}
  void type_select(){} void stop_selected(){++stops;} void guard_selected(){} void scatter_selected(){}
  void group_create(int n){created=n;} void group_select(int n,uint32_t){group=n;}
- bool placement_active()const{return false;} void placement_cell(int&,int&){} void handle(const InputEvent&){}
+ bool placing=false;
+ bool placement_active()const{return placing;} void placement_cell(int& x,int& y){x=5;y=5;} void handle(const InputEvent&){}
 };
 struct Scene {
  FakeWorld world_; FakeInput input_; int local_house_=0;
  struct Menu{bool open_=false;} menu_;
  struct Dialog{bool is_open()const{return false;}}sld_;
  struct Abort{bool open()const{return false;}}gf_abort_;
- bool input_locked_=false,campaign_=false,show_briefing_=false,sidebar_up_=false;
+ bool input_locked_=false,campaign_=false,show_briefing_=false,sidebar_up_=false,net_chat_open_=false;
  struct Layout{bool contains(int,int)const{return false;}}lay_;
  struct Cam{double x=0,y=0;}cam_;
  double view_cam_[3][2]{}; bool view_set_[3]{};
@@ -61,6 +62,20 @@ struct Scene {
 InputEvent event(InputEvent::Kind kind,int x,int y){InputEvent e;e.kind=kind;e.touch=true;e.x=x;e.y=y;return e;}
 int main(){
  Scene s;s.touch_ui_=true;
+ assert(s.touch_panel_collapsed_);s.touch_panel_collapsed_=false;
+ assert(s.touch_bar_visible());s.net_chat_open_=true;assert(!s.touch_bar_visible());
+ s.net_chat_open_=false;assert(s.touch_bar_visible());
+ s.touch_command(s.TB_MOVE,false,0);
+ for(auto kind:{InputEvent::PointerDown,InputEvent::PointerMove,InputEvent::PointerUp}) {
+  auto e=event(kind,500,200);assert(!s.touch_bar_handle(e));
+  assert(e.ctrl && e.shift && !e.alt);
+ }
+ assert(!s.touch_move_);
+ s.input_.placing=true;
+ auto preview=event(InputEvent::PointerDown,500,200);assert(s.touch_bar_handle(preview));
+ auto cancel=event(InputEvent::PointerUp,500,200);cancel.button=InputEvent::Right;
+ assert(!s.touch_bar_handle(cancel));assert(!s.touch_place_swallow_up_);
+ s.input_.placing=false;
  s.touch_add_=true;s.touch_box_=true;s.touch_command(s.TB_FIRE,false,0);
  assert(s.touch_fire_);assert(!s.touch_add_);assert(!s.touch_box_);
  auto fireDown=event(InputEvent::PointerDown,500,200);

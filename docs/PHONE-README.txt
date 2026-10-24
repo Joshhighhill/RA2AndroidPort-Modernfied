@@ -31,7 +31,7 @@ Touch controls
 - With two or more units selected, tapping one of them moves the group
   there; tap a unit that is not selected to select it.
 - Double tap a unit: select every unit of that type on screen (never deploys).
-- Tap the only selected unit, then wait: deploy / unload it (or DPLY).
+- Tap the only selected unit, then wait: deploy / unload it (or DEPLOY).
 - Drag with one or two fingers: scroll the map.
 - Hold (a ring fills), then drag: draw a selection box. Or turn on BOX in
   the command column: then a one-finger drag draws the box at once.
@@ -41,13 +41,15 @@ Touch controls
   going. While it builds, a small menu opens: PAUSE / RESUME, CANCEL, ALL.
 - Sell / repair: tap a building to mark it, tap it again to do it.
 - Superweapon: tap to see the target area, tap the same spot again to fire.
-- Tap the radar: look there (arm MOVE first to send the units there).
+- Tap the radar: look there. Use an ordinary ground tap for movement.
 - Two-finger tap: cancel a mode, else deselect everything.
 - Three-finger tap: show / hide the frame-rate overlay.
-- CMD (left edge): the command column - +SEL, FIRE, MOVE, STOP, GRD, SCAT,
-  DPLY, BOX, BRF (mission briefing), teams 1-5 (tap = select, hold =
-  create), MORE: TYPE, HOME, EVT, NEXT, PREV, FOLW, teams 6-0,
-  V1-V3 (hold = save the view, tap = jump back).
+- Arrow (bottom left): expand or collapse the command panel. STOP, GUARD,
+  DEPLOY, SCATTER, FIRE, ATK MOVE, +SELECT and teams 1-5 are on the first
+  page. MORE opens TYPE, HOME, EVT, NEXT, PREV, FOLW, teams 6-0,
+  V1-V3 (hold = save the view, tap = jump back), BOX and BRF (briefing).
+  Team taps select; holds assign. ATK MOVE arms the next ground tap to
+  engage enemies along the route. The panel hides while chat is open.
 - Sell / repair / placement modes show a banner with an X to cancel.
 - Back button (or the Options button on the sidebar): in-game options
   menu. On the mission results page Back =

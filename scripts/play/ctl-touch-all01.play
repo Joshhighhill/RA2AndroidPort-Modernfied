@@ -4,6 +4,8 @@
 # Scheme (W4-AM-01): drag = scroll, tap = select / order, double tap = all of
 # type, hold + drag = box select, hold = cancel a mode (never deselects),
 # two-finger drag = scroll, two-finger tap = deselect.
+# The command panel starts collapsed; expand touch:panel-toggle before panel shortcuts.
+# ATK MOVE arms attack-move; ordinary ground taps remain normal movement.
 set render_every 0
 set on_quit continue
 
@@ -23,7 +25,7 @@ touch drag xy 500 300 500 500
 wait 2
 assert cam_y == $cy0                          @W4-MC-02
 assert touch_ui == 1
-assert touch_bar_open == 0                    @W4-AM-05
+assert touch_bar_open == 1                    @W4-AM-05
 
 # --- unlocked: one-finger drag scrolls, the selection survives -------------------
 until 1200 input_locked == 0
@@ -98,9 +100,10 @@ assert base_mode == none                      @W4-AM-07
 assert selected == $nsel                      @W4-AM-07
 
 # --- the command column: closed, opens, briefing, closes itself ------------------
-touch tap touch:CMD                           @W4-AM-05
+touch tap touch:panel-toggle                           @W4-AM-05
 wait 2
 assert touch_bar_open == 1
+touch tap touch:MORE
 touch tap touch:BRF                           @W4-AM-11
 wait 2
 assert briefing_open == 1                     @W4-AM-11
@@ -108,7 +111,7 @@ assert touch_bar_open == 0                    @W4-AM-05
 touch tap xy 560 360
 wait 2
 assert briefing_open == 0                     @W4-AM-11
-touch tap touch:CMD
+touch tap touch:panel-toggle
 wait 120
 assert touch_bar_open == 0                    @W4-AM-05
 shot end

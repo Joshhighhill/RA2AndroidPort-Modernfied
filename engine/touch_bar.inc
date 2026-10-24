@@ -29,7 +29,7 @@ const char* touch_deploy_label() const {
         if (!u.alive || u.die_time >= 0 || u.cargo_of >= 0 || !world_.controllable(u.house)) continue;
         if (!u.cargo.empty()) add("UNLOAD");
         else if (u.deploys_into >= 0 || u.deploy_fire || (u.abil.deployer && u.abil.deploy.valid))
-            add(u.w7.t.mind_control && !u.w7.mc_victims.empty() ? "RELEASE" : u.deployed ? "UNDEPLOY" : "DEPLOY");
+            add(u.deployed ? "UNDEPLOY" : "DEPLOY");
     }
     const int sb = input_.selected_building();
     if (sb >= 0 && sb < static_cast<int>(world_.buildings().size())) {
@@ -166,7 +166,7 @@ int touch_bar_top() const {
 const std::vector<TouchBtn>& touch_buttons() const {
     static const std::vector<TouchBtn> all = {
         {"STOP", TB_STOP}, {"GUARD", TB_GUARD}, {"DEPLOY", TB_DEPLOY}, {"SCATTER", TB_SCATTER},
-        {"FIRE", TB_FIRE}, {"MOVE", TB_MOVE}, {"+SELECT", TB_ADD}, {"MORE", TB_MORE},
+        {"FIRE", TB_FIRE}, {"ATK MOVE", TB_MOVE}, {"+SELECT", TB_ADD}, {"MORE", TB_MORE},
         {"1", TB_GROUP1}, {"2", TB_GROUP1+1}, {"3", TB_GROUP1+2}, {"4", TB_GROUP1+3}, {"5", TB_GROUP1+4}};
     // W6-01-09: page 2 -- the KeyboardMD.ini commands with no other touch path.
     static const std::vector<TouchBtn> more = {
@@ -178,7 +178,7 @@ const std::vector<TouchBtn>& touch_buttons() const {
     return all;
 }
 bool touch_bar_visible() const {
-    return touch_ui_ && !menu_.open_ && !sld_.is_open() && !gf_abort_.open() && !input_locked_;
+    return touch_ui_ && !menu_.open_ && !sld_.is_open() && !gf_abort_.open() && !input_locked_ && !net_chat_open_;
 }
 // Primary row sits at the bottom; extra shortcuts expand upwards.
 SDL_Rect touch_btn_rect(int i) const {
@@ -263,7 +263,8 @@ bool touch_bar_handle(ra2engine::InputEvent& ev) {
     }
     if (ev.kind == ra2engine::InputEvent::PointerDown) touch_panel_capture_ = touch_panel_contains(ev.x,ev.y);
     // A map-origin selection drag must still receive its release over the panel.
-    if (ev.kind == ra2engine::InputEvent::PointerUp && !touch_panel_capture_ && touch_down_btn_ < 0) {
+    if (ev.kind == ra2engine::InputEvent::PointerUp && !touch_panel_capture_ && touch_down_btn_ < 0 &&
+        !input_.placement_active()) {
         touch_apply_modifiers(ev);
         return false;
     }
@@ -300,6 +301,12 @@ bool touch_bar_handle(ra2engine::InputEvent& ev) {
     // W2-AR-16c: placing a building by touch -- the first tap shows the
     // footprint there, a second tap on the same cell places it.
     if (input_.placement_active() && !(sidebar_up_ && lay_.contains(ev.x, ev.y))) {
+        if(ev.button==ra2engine::InputEvent::Right) {
+            // A cancel must reach Input even after a preview-only placement tap.
+            touch_place_swallow_up_=false;
+            touch_place_cx_=touch_place_cy_=INT_MIN;
+            return false;
+        }
         ra2engine::InputEvent mv = ev;
         mv.kind = ra2engine::InputEvent::PointerMove;
         input_.handle(mv);
@@ -327,10 +334,10 @@ void touch_apply_modifiers(ra2engine::InputEvent& ev) {
     // Apply on move AND release: Input refreshes Ctrl on every pointer
     // event and commits the command on release, not on press.
     if (!(sidebar_up_ && lay_.contains(ev.x, ev.y))) {
-        ev.shift = ev.shift || touch_add_;
-        ev.ctrl = ev.ctrl || touch_fire_;
-        ev.alt = ev.alt || touch_move_;
-        // FIRE / MOVE are one-shot: spent by the order (a left PointerUp).
+        ev.shift = ev.shift || touch_add_ || touch_move_;
+        ev.ctrl = ev.ctrl || touch_fire_ || touch_move_;
+        // ATK MOVE uses the existing Ctrl+Shift attack-move command, not Alt move.
+        // FIRE / ATK MOVE are one-shot: spent by a left PointerUp.
         if (ev.kind == ra2engine::InputEvent::PointerUp && ev.button == ra2engine::InputEvent::Left &&
             (touch_fire_ || touch_move_)) {
             touch_fire_ = touch_move_ = false;
@@ -370,7 +377,7 @@ void draw_touch_bar(SDL_Renderer* ren, ra2engine::TextureCache& tc) {
         }
         std::string label = id == TB_DEPLOY ? touch_deploy_label() : bs[static_cast<size_t>(i)].label;
         if (id == TB_TOGGLE && !touch_bar_open_ && armed_mod)   // closed: show what is armed
-            label = touch_add_ ? "+SEL" : touch_fire_ ? "FIRE" : touch_move_ ? "MOVE" : "BOX";
+            label = touch_add_ ? "+SEL" : touch_fire_ ? "FIRE" : touch_move_ ? "ATK MOVE" : "BOX";
         const bool has_icon = id < TB_VIEW1 && id != TB_BRIEF;
         if (has_icon) draw_touch_icon(ren, id, r, enabled);
         const int scale = label.size() <= 2 ? 2 : 1;
@@ -395,4 +402,4 @@ bool touch_place_swallow_up_ = false;
 
 bool touch_panel_capture_ = false;
 
-bool touch_panel_collapsed_ = false; // Hide only the GUI; keep gesture/modifier state.
+bool touch_panel_collapsed_ = true; // Start unobtrusively; the arrow expands it.

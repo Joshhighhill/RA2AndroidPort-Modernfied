@@ -318,7 +318,7 @@
             p.set("input_locked", input_locked_ ? 1 : 0);
             if (campaign_) p.set("view_resized", campaign_->local_version());   // P3: ResizeView (40) count
             p.set("touch_ui", touch_ui_ ? 1 : 0);              // W4-AM touch keys
-            p.set("touch_bar_open", touch_bar_open_ ? 1 : 0);
+            p.set("touch_bar_open", !touch_panel_collapsed_ ? 1 : 0);
             p.set("touch_banner", touch_banner_visible() ? 1 : 0);
             p.set("touch_mode", touch_mode());
             p.set("touch_aim", touch_aim_bld_);                 // W6-01-02 aimed building (-1 none)
