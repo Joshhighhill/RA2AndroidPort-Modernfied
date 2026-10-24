@@ -2,6 +2,7 @@
 #include "iso_project.hpp"
 #include "viewport_bounds.hpp"
 #include "vehicle_animation.hpp"
+#include "building_transition.hpp"
 #include "power_cameo.hpp"
 #include "civilian_frames.hpp"
 #include "shell_layout.hpp"
@@ -11,6 +12,23 @@
 using ra2engine::ScreenPt;
 using ra2engine::cell_to_screen;
 using ra2engine::screen_to_cell;
+
+TEST_CASE("building transitions: packing covers each reverse frame and releases the vehicle at the end") {
+    for(long tick=0;tick<30;++tick)
+        CHECK(ra2engine::packing_frame(10,100,30,100+tick)==9-tick/3);
+    CHECK(ra2engine::packing_frame(10,100,30,99)==-1);
+    CHECK(ra2engine::packing_frame(10,100,30,130)==-1);
+    CHECK_FALSE(ra2engine::transition_active(100,30,130));
+    CHECK(ra2engine::packing_frame(0,0,10,0)==-1);
+    CHECK(ra2engine::packing_frame(10,0,0,0)==-1);
+}
+TEST_CASE("building transitions: bunker opening and closing choose distinct front and back art") {
+    CHECK(ra2engine::bunker_animation_slot(true,1)==10);
+    CHECK(ra2engine::bunker_animation_slot(false,1)==11);
+    CHECK(ra2engine::bunker_animation_slot(true,0)==10);
+    CHECK(ra2engine::bunker_animation_slot(true,-1)==12);
+    CHECK(ra2engine::bunker_animation_slot(false,-1)==13);
+}
 
 TEST_CASE("vehicle animation: unequal part lengths cycle independently without lost frames") {
     const int hull[]={0,1,2,0,1,2};

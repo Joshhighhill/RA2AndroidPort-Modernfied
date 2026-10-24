@@ -46,6 +46,7 @@ static char* ra2_cli_pref_path() {
 #include "diagnostics.hpp"
 #include "report_probe.hpp"
 #include "vehicle_animation.hpp"
+#include "building_transition.hpp"
 #include "power_cameo.hpp"
 #include "psychic_links.hpp"
 #include "psychic_sensor.hpp"
@@ -3576,8 +3577,7 @@ void draw_slave_miner_pack_fx(SDL_Renderer* ren, ra2engine::TextureCache& tc, co
     const ra2assets::ShpFile& shp = art.buildup;
     const int image_frames = shp.count() / 2;
     if (image_frames <= 0) return;
-    const int frame = image_frames - 1 -
-        std::min(image_frames - 1, static_cast<int>(elapsed * image_frames / fx.duration));
+    const int frame = ra2engine::packing_frame(image_frames,fx.start,fx.duration,g_pres_tick);
     const ra2engine::ScreenPt dp = ra2engine::building_draw_point(fx.cx, fx.cy, fx.level);
     const int cx = dp.x + cam.x, cy = dp.y + cam.y;
     if (shp.count() >= image_frames * 2) {
@@ -4423,6 +4423,9 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // image is logged and skipped (not thrown) so one bad unit can't take
     // down the whole frame.
     auto draw_one_unit = [&](int idx, const ra2engine::Building* bunker = nullptr) {
+        const auto packing=g_slave_miner_pack_fx.find(idx);
+        if(!bunker && packing!=g_slave_miner_pack_fx.end() &&
+            ra2engine::transition_active(packing->second.start,packing->second.duration,g_pres_tick)) return;
         // W5-PRES R-100: a unit on a high-bridge deck draws BridgeHeight up.
         std::optional<ra2engine::Unit> lifted;
         const ra2engine::Unit* up = &us[idx];
@@ -4616,7 +4619,12 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             if (!(g_map_dressing && pres_airborne(us[i]))) B.push_back({pres_unit_key(world, us[i]), 1, i});
         for (auto it = g_slave_miner_pack_fx.begin(); it != g_slave_miner_pack_fx.end();) {
             const SlaveMinerPackFx& fx = it->second;
-            if (g_pres_tick < fx.start || g_pres_tick - fx.start >= fx.duration) {
+            // A move/deploy/death supersedes this visual-only transition. Do
+            // not hide a moving live unit behind a ghost at its old foundation.
+            const bool present=it->first>=0 && it->first<static_cast<int>(us.size()) &&
+                us[it->first].alive && us[it->first].die_time<0 && !us[it->first].moving() &&
+                us[it->first].cell_x==fx.cx && us[it->first].cell_y==fx.cy;
+            if (!present || g_pres_tick < fx.start || g_pres_tick - fx.start >= fx.duration) {
                 it = g_slave_miner_pack_fx.erase(it);
                 continue;
             }

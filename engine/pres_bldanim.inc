@@ -182,7 +182,7 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
             if (!run.on || !a.slot[s].t) continue;
             const FxAnimType& t = *a.slot[s].t;
             const long len = r.tank_bunker && (s == kBsSpecial3 || s == kBsSpecial4)
-                                 ? std::max<long>(1, static_cast<long>(t.end - t.start) * t.delay)
+                                 ? std::max<long>(1, static_cast<long>(t.reverse ? t.loop_end : t.end-t.start) * t.delay)
                                  : t.length_ticks(t.delay);
             if (len < 0 || now < run.start + len) continue;
             const long end = run.start + len;
@@ -212,10 +212,15 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
                 st.bunker_occupied = occupied;
                 st.bunker_transition = occupied ? 1 : -1;
                 for (int s = kBsSpecial; s <= kBsSpecial4; ++s) stop(st, s);
-                start(st, a, kBsSpecial3, now);
-                start(st, a, kBsSpecial4, now);
+                start(st, a, occupied ? kBsSpecial : kBsSpecial3, now);
+                start(st, a, occupied ? kBsSpecial2 : kBsSpecial4, now);
             }
-            if (st.bunker_transition != 0 && !st.run[kBsSpecial3].on && !st.run[kBsSpecial4].on) {
+            if (st.bunker_transition > 0) {
+                // Opening animations settle in their declared LoopStart/LoopEnd
+                // rather than being restarted after a synthetic finite run.
+                st.bunker_transition=0;
+            }
+            if (st.bunker_transition < 0 && !st.run[kBsSpecial3].on && !st.run[kBsSpecial4].on) {
                 st.bunker_transition = 0;
                 if (occupied) {
                     start(st, a, kBsSpecial, now);
@@ -436,20 +441,16 @@ void pres_tank_bunker_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, co
     const PresFx::BldAnims& a = g_fx->building(pres_upper(image));
     const bool damaged = b.max_hp > 0 && b.hp <= condition_yellow * b.max_hp;
     const bool garrisoned = !b.occupants.empty();
-    const int steady_slot = front ? kBsSpecial : kBsSpecial2;
-    const int transition_slot = front ? kBsSpecial3 : kBsSpecial4;
-    const int slot = ev->second.bunker_transition != 0 ? transition_slot : steady_slot;
+    const int slot = ra2engine::bunker_animation_slot(front,ev->second.bunker_transition);
     const PresFx::BldAnims::Slot& sl = a.slot[slot];
     const FxAnimType* t = damaged && sl.dmg ? sl.dmg : garrisoned && sl.garr ? sl.garr : sl.t;
     if (!t) return;
     const BldSlotRun& run = ev->second.run[slot];
     if (!run.on) return;
-    int frame = ev->second.bunker_transition != 0
-                    ? oneshot_frame(*t, run.start, g_pres_tick)
+    int frame = ev->second.bunker_transition < 0
+                    ? t->frame_at(g_pres_tick-run.start)
                     : bld_run_frame(*t, run.start, g_pres_tick);
     if (frame < 0) return;
-    if (ev->second.bunker_transition < 0)
-        frame = t->start + (t->end - t->start - 1 - (frame - t->start));
     if (t->shadow)
         g_fx->blit_shadow(ren, tc, *t->shp, "bsh:" + t->name, frame + t->shp->count() / 2,
                           fcx + sl.x, fcy + sl.y + t->ydraw, W, H);
