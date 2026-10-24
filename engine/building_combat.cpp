@@ -19,6 +19,10 @@ constexpr double kFireFlashSecs = 0.4;    // renderer cue, same as units
 
 double bcenter_x(const Building& b) { return b.cx + (b.fw - 1) / 2.0; }
 double bcenter_y(const Building& b) { return b.cy + (b.fh - 1) / 2.0; }
+const WeaponSlot& defense_weapon(const BuildingTypeDef& t, const Building& b, int slot) {
+    return t.gattling.enabled() ? t.gattling.weapon(slot, false, b.gattling_charge) : t.weapon[slot];
+}
+
 }  // namespace
 
 std::vector<World::FireEvent> World::take_fire_events() {
@@ -37,7 +41,7 @@ bool World::defense_power_ok(int house) const {
 Unit World::defense_shooter(int b_idx, int slot) const {
     const Building& b = buildings_[b_idx];
     const BuildingTypeDef& t = btypes()[b.type];
-    const WeaponSlot& w = t.weapon[slot];
+    const WeaponSlot& w = defense_weapon(t, b, slot);
     Unit s;
     s.house = b.house;
     s.fx = bcenter_x(b);
@@ -63,7 +67,7 @@ Unit World::defense_shooter(int b_idx, int slot) const {
 
 void World::launch_defense_projectile(int b_idx, int target_unit, int slot, int target_building) {
     const Building& b = buildings_[b_idx];
-    const ProjectileSpec& spec = btypes()[b.type].weapon[slot].proj;
+    const ProjectileSpec& spec = defense_weapon(btypes()[b.type], b, slot).proj;
     if (target_unit < 0) {   // W6-04-13: a structure target -- aim at its centre
         if (target_building < 0 || target_building >= static_cast<int>(buildings_.size())) return;
         const Building& o = buildings_[static_cast<std::size_t>(target_building)];
@@ -85,6 +89,7 @@ void World::launch_defense_projectile(int b_idx, int target_unit, int slot, int 
         if (!lr0.ok) return;
         Projectile p;
         p.kind = spec.kind;
+    p.weapon_id = spec.weapon_id;
         p.attacker = -1;
         p.attacker_building = b_idx;
         p.weapon_slot = slot;
@@ -130,6 +135,7 @@ void World::launch_defense_projectile(int b_idx, int target_unit, int slot, int 
     proj_events_.push_back(ev);
     Projectile p;
     p.kind = spec.kind;
+    p.weapon_id = spec.weapon_id;
     p.attacker = -1;
     p.attacker_building = b_idx;
     p.weapon_slot = slot;
@@ -166,6 +172,7 @@ void World::step_building_combat(double dt) {
         if (!t.armed) continue;
 
         b.def_fire_flash = std::max(0.0, b.def_fire_flash - dt);
+
         // Wave-5 (R-043) [RE: abilities-w5.md §2, BuildingClass::PrismUpdate
         // FUN_004503E0, every frame from BuildingClass::AI]: a charging prism
         // (master or slave) counts DelayBeforeFiring down; at zero a slave
@@ -173,7 +180,7 @@ void World::step_building_combat(double dt) {
         // boosted shot. Nothing else fires while charging (GetFireError
         // REARM).
         if (w5_.armed && b.w5.prism_stage != 0) {
-            if (b.def_rearm_frames > 0) --b.def_rearm_frames;   // Net L0: whole frames
+        if (b.def_rearm_frames > 0) --b.def_rearm_frames;   // Net L0: whole frames
             if (--b.w5.delay > 0) continue;
             b.w5.delay = 0;
             const int stage = b.w5.prism_stage;
@@ -235,14 +242,14 @@ void World::step_building_combat(double dt) {
             // airships down.
             const bool air = unit_airborne(v);
             if (w5_.armed && t.w5.prism)   // PrismSupport is the beam, not a gun
-                return slot_can_target(t.weapon[0], air, v.armor_ix) ? 0 : -1;
+                return slot_can_target(defense_weapon(t, b, 0), air, v.armor_ix) ? 0 : -1;
             // Wave-5 (R-045) [TechnoClass::SelectWeapon FUN_006F2890]: an
             // overpowered building fires its Secondary (OPCoilBolt).
             if (w5_.armed && t.w5.overpowerable) {
                 const int s = b.w5.overpowered ? 1 : 0;
-                return slot_can_target(t.weapon[s], air, v.armor_ix) ? s : -1;
+                return slot_can_target(defense_weapon(t, b, s), air, v.armor_ix) ? s : -1;
             }
-            return choose_weapon(t.weapon[0], t.weapon[1], air, v.armor_ix);
+            return choose_weapon(defense_weapon(t, b, 0), defense_weapon(t, b, 1), air, v.armor_ix);
         };
         // W6-04-22 [RE: TechnoClass in-range test FUN_006F6750, combat.md §9]:
         // 3-D distance from the building's centre (z = its level), the
@@ -253,7 +260,7 @@ void World::step_building_combat(double dt) {
         int bx = 0, by = 0, bz = 0;
         building_aim_lept(b, cell_level(b.cx, b.cy), bx, by, bz);
         auto in_range = [&](const Unit& v, int slot) {
-            const WeaponSlot& ws = t.weapon[slot];
+            const WeaponSlot& ws = defense_weapon(t, b, slot);
             // W9-02-07: ONE scratch shooter, reused (a default Unit was
             // constructed + destroyed per candidate unit per defence per
             // frame); only w_range / w_proj are ever set on it, the rest stays
@@ -274,7 +281,7 @@ void World::step_building_combat(double dt) {
             if (!v.alive || v.die_time >= 0.0 || !unit_combat_exposed(v)) return false;
             if (t.mind_control && (playfield_.campaign || !psionic_target_ok(j) ||
                 v.an.iron_left_frames > 0 || v.w7.mc_controller >= 0 || v.w7.mc_building >= 0 ||
-                static_cast<int>(b.w7.mc_victims.size()) >= std::max(1,t.weapon[0].damage))) return false;
+                static_cast<int>(b.w7.mc_victims.size()) >= std::max(1,defense_weapon(t, b, 0).damage))) return false;
             if (!is_enemy(b.house, v.house) || disguise_fools(b.house, v)) return false;   // W7-01-02
             // W2-AN-13/14: base defenses are NavalTargeting=0 (UNDERWATER_NEVER).
             if (v.an.submerged) return false;
@@ -283,6 +290,11 @@ void World::step_building_combat(double dt) {
             const int s = slot_for(v);
             return s >= 0 && in_range(v, s);
         };
+        if (t.gattling.enabled()) {
+            const bool firing = engageable(b.def_target);
+            b.gattling_charge = firing ? std::min(t.gattling.thresholds.back(), b.gattling_charge+t.gattling.rate_up)
+                                       : (t.gattling.rate_down<=0 ? 0 : std::max(0,b.gattling_charge-t.gattling.rate_down));
+        }
         // Target validation, then acquire the nearest engageable enemy (ties:
         // lowest index) -- a defense never moves, so out of range = dropped.
         if (!engageable(b.def_target)) {
@@ -310,7 +322,7 @@ void World::step_building_combat(double dt) {
         if (b.def_target < 0 && !t.mind_control && !(w5_.armed && t.w5.delayed_fire_delay > 0)) {
             auto bld_slot = [&](const Building& o) {
                 if (w5_.armed && t.w5.overpowerable) return b.w5.overpowered ? 1 : 0;
-                return choose_weapon(t.weapon[0], t.weapon[1], false, o.armor_ix);
+                return choose_weapon(defense_weapon(t, b, 0), defense_weapon(t, b, 1), false, o.armor_ix);
             };
             auto bld_ok = [&](int j) -> bool {
                 if (j < 0 || j >= nb || j == bi) return false;
@@ -323,8 +335,8 @@ void World::step_building_combat(double dt) {
                 if (!armed && !(house_is_computer(b.house) && ai_threat_any_building())) return false;
                 if (!object_visible_at(b.house, o.cx, o.cy)) return false;
                 const int s = bld_slot(o);
-                if (s < 0 || !t.weapon[s].valid || !t.weapon[s].ag) return false;
-                const WeaponSlot& ws = t.weapon[s];
+                if (s < 0 || !defense_weapon(t, b, s).valid || !defense_weapon(t, b, s).ag) return false;
+                const WeaponSlot& ws = defense_weapon(t, b, s);
                 static thread_local Unit sh;   // W9-02-07 (see in_range)
                 sh.w_range = t.guard_range > 0.0 ? std::max(t.guard_range, ws.range) : ws.range;
                 sh.w_proj = ws.proj;
@@ -358,7 +370,7 @@ void World::step_building_combat(double dt) {
                 if (b.def_turret_facing != want) continue;
             }
             if (b.def_rearm_frames > 0.0) continue;
-            const WeaponSlot& bw = t.weapon[bslot];
+            const WeaponSlot& bw = defense_weapon(t, b, bslot);
             b.def_rearm_frames = burst_rearm_frames(b.w6.burst_index, bw.burst, house_rof_frames(b.house, bw.rof), &combat_rng_);   // W6-02-03
             b.def_fire_flash = kFireFlashSecs;
             b.def_slot = bslot;
@@ -415,7 +427,7 @@ void World::step_building_combat(double dt) {
             if (t.w5.prism && b.w5.supporting < w5_.rules.prism_support_max) {
                 int best = -1;
                 double bestd = 0.0;
-                const double reach = t.weapon[1].range;
+                const double reach = defense_weapon(t, b, 1).range;
                 for (int ci = 0; ci < nb; ++ci) {
                     if (ci == bi) continue;
                     const Building& c = buildings_[ci];
@@ -442,7 +454,7 @@ void World::step_building_combat(double dt) {
             b.w5.prism_stage = 1;
             continue;
         }
-        const WeaponSlot& w = t.weapon[slot];
+        const WeaponSlot& w = defense_weapon(t, b, slot);
         // W6-02-03 [RE: Building vtbl 0x7E2EBC +0x318 = GetROF FUN_006FC460]: the owner's
         // handicap ROF multiplies a defence rearm too.
         b.def_rearm_frames = burst_rearm_frames(b.w6.burst_index, w.burst, house_rof_frames(b.house, w.rof), &combat_rng_);   // G-50 jitter, W6-04-01 Burst
@@ -472,7 +484,7 @@ void World::step_building_combat(double dt) {
 bool World::w5_prism_fire(int bi, int target_unit, int slot) {
     Building& b = buildings_[bi];
     const BuildingTypeDef& t = btypes()[b.type];
-    const WeaponSlot& w = t.weapon[slot];
+    const WeaponSlot& w = defense_weapon(t, b, slot);
     const int n = b.w5.supporting;
     const unsigned mult = n > 0 ? static_cast<unsigned>(w5_.rules.prism_support_modifier * n + 100) * 256u / 100u
                                 : 256u;

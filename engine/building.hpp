@@ -1,4 +1,5 @@
 #pragma once
+#include "gattling.hpp"
 #include "civilian_frames.hpp"
 // Pure building core: type defs resolved from Rules/Art by the caller,
 // foundation cell math, placement validity, damage/frame selection, and
@@ -116,6 +117,7 @@ struct BuildingTypeDef {
     bool insignificant = false;     // Insignificant=
     BldTypeW5 w5;                   // wave-5 abilities (abil_w5.hpp)
     BldTypeW6 w6;                   // wave-6 #4 (unit_w6.hpp): wall damage levels
+    Gattling gattling;
 };
 
 // A placed building instance.
@@ -216,6 +218,7 @@ struct Building {
     BldW6 w6;                        // wave-6 #4 units/weapons (unit_w6.hpp)
     BldTgt tg;                       // W6 fix #2: IsInPlayfield + Insignificant/LegalTarget (save v29)
     BldW7 w7;                        // wave-7 fix (units): unit_w7.hpp (save v35)
+    int gattling_charge = 0;
 };
 
 // Foundation origin convention [RE: building-render.md §2, pre-hunt]: the

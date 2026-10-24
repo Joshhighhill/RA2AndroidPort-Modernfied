@@ -418,6 +418,26 @@ TEST_CASE("projectile world: firewall CLOSED -> the instant hit lands the same s
     CHECK(r.world.projectiles().empty());
 }
 
+TEST_CASE("projectile muzzle: lateral art offset and hull turret origin agree at launch") {
+    Rig r;
+    r.world.enable_projectiles(ProjectileRules{});
+    auto gun=cannon_stats();gun.is_vehicle=true;gun.w6.omni_fire=true;
+    gun.proj.flh[0]=160;gun.proj.flh[1]=30;gun.proj.turret_offset=50;
+    gun.proj.weapon_id="TEST_CANNON";
+    r.world.add_combat_unit(2,8,0,gun);
+    r.world.add_combat_unit(2,3,1,soft_target_stats());
+    r.world.units()[0].body_facing=16384; // hull east
+    r.world.units()[0].turret_facing=0;   // gun north
+    r.world.step(1.0/15.0);
+    const auto events=r.world.take_projectile_events();
+    REQUIRE(!events.empty());
+    CHECK(events.front().kind==ProjectileEvent::Launch);
+    CHECK(events.front().x==2*256-30+50);
+    CHECK(events.front().y==8*256-160);
+    REQUIRE(!r.world.projectiles().empty());
+    CHECK(r.world.projectiles().front().weapon_id=="TEST_CANNON");
+}
+
 TEST_CASE("projectile world: firewall OPEN -> damage arrives at detonation, ~15 frames later") {
     Rig r;
     r.world.enable_projectiles(ProjectileRules{});

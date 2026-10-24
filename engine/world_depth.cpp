@@ -412,13 +412,18 @@ void World::step_garrison_combat(double dt) {
             b.firing_occupant = 0;
         // BuildingClass::GetWeapon (FUN_004526E0): the FiringOccupantIndex
         // occupant's OccupyWeapon (EliteOccupyWeapon when that occupant is elite).
-        const Unit& occ = units_[b.occupants[b.firing_occupant]];
+        Unit& occ = units_[b.occupants[b.firing_occupant]];
         const bool elite = occ.vet.recv ? is_elite(occ.vet.veterancy) : occ.veteran_rank >= 2;
         WeaponSlot w = (elite && occ.occupy_w_elite.valid) ? occ.occupy_w_elite : occ.occupy_w;
         const BuildingTypeDef& type=btypes()[b.type];
         if (type.tank_bunker && occ.house!=b.house) continue;
+        if(type.tank_bunker && occ.gattling.enabled()) {
+            occ.gattling.step(b.garrison_target>=0 || b.w7.garrison_target_building>=0,elite);
+            w=occ.gattling.weapon(0,elite);
+        }
         auto bunker_slot = [&](const Unit& target) {
             const int slot=unit_weapon_for_unit(occ,target);
+            if(occ.gattling.enabled() && slot>=0) return occ.gattling.weapon(slot,elite);
             return slot==1 ? secondary_view(occ) : slot==0 ?
                 ((elite && occ.occupy_w_elite.valid) ? occ.occupy_w_elite : occ.occupy_w) : WeaponSlot{};
         };
@@ -428,7 +433,7 @@ void World::step_garrison_combat(double dt) {
         auto engageable = [&](int j) {
             if (j < 0 || j >= nu) return false;
             const Unit& v = units_[j];
-            if (!v.alive || v.die_time >= 0.0 || v.cargo_of >= 0) return false;
+            if (!v.alive || v.die_time >= 0.0 || !unit_combat_exposed(v)) return false;
             if (!is_enemy(b.house, v.house) || disguise_fools(b.house, v)) return false;   // W7-01-02
             if (!v.seen_by_house(b.house)) return false;   // fv7c: 32-bit house mask
             if (!slot_can_target(type.tank_bunker ? bunker_slot(v) : w, unit_airborne(v), v.armor_ix)) return false;

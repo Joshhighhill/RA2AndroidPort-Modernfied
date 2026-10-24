@@ -610,6 +610,7 @@ public:
     // section says Rotates=yes (BulletTypeClass reads Rotates from ArtINI,
     // 0x46C180 / 0x886100). Returns false -> the caller's placeholder.
     std::string projectile_weapon(const ra2engine::World& w, const ra2engine::Projectile& p) {
+        if(!p.weapon_id.empty()) return p.weapon_id;
         if (p.attacker >= 0 && p.attacker < static_cast<int>(w.units().size())) {
             const ra2engine::Unit& u = w.units()[static_cast<std::size_t>(p.attacker)];
             return weapon_of(pres_type_id(u), p.weapon_slot);

@@ -1,0 +1,110 @@
+ANDROID TOUCH TEST 27 - YURI FIRING / ANIMATIONS / LAUNCHER
+
+IMPORTANT SAVE COMPATIBILITY
+This build uses save format 53 for Gatling configuration/charge and launch
+weapon identity/offsets. Format-52 saves from 900021-900026 are not loadable
+in this build. Existing save files are not deleted. Keep 900026 available if
+you need to finish an older saved match. Start a fresh skirmish for this test.
+
+CHANGES
+1. Gatling Tank and Gatling Cannon resolve all three original numbered
+   ground/air weapon pairs, normal and elite thresholds, RateUp and RateDown.
+   Sustained engagement advances stages; idle time reduces charge. RateDown=0
+   resets immediately, as documented in the stock rules. Stage changes select
+   actual damage, ROF, projectile and firing-effect weapon data together.
+   Available multi-frame vehicle/turret/barrel HVA art animates while firing
+   with a stage-dependent cadence. This does not invent frames missing from
+   the supplied assets. Building HVA variants use the existing bounded cache.
+
+2. Chronosphere/superweapon shell animation now uses the original art order:
+   idle -> opening -> ready loop -> closing -> idle. Opening and closing are
+   played once. Readiness is checked for the building's own SuperWeapon type,
+   rather than whichever power a house's legacy single-power accessor returns.
+   Reverse one-shot animation and stable-loop phase handling were corrected.
+
+3. Physical projectile launch now agrees with the visual lateral muzzle
+   offset, alternating burst barrels and turret origin along body direction.
+   Building projectile slots receive art muzzle offsets. Building firing
+   effects use art FLH instead of a fixed 20-pixel centre offset. Bunker
+   occupant firing effects use the occupant's muzzle geometry.
+   Projectiles retain the weapon identity captured at launch so their rendered
+   sprite/voxel does not change if the shooter changes stage or is removed.
+
+4. Slave Miners seek closer deployment positions (two cells instead of eight).
+   Deployed miners check nearby reachable ore rather than any ore in a broad
+   square. Loaded worker cargo still prevents packing until it is returned.
+   Workers following a packed miner retry a blocked route on a staggered
+   cadence. Explicit Stop/manual hold is preserved.
+
+5. Tank Bunker entry/exit receives a short presentation-only interpolation
+   between the approach/exit position and bunker centre. Occupant remains
+   layered between rear and front bunker art. Gatling occupants advance their
+   weapon stages while engaging. This is a visual correction, not a claim of
+   pixel-perfect original timing; test different vehicle sizes and facings.
+
+6. AI economic recovery: a house with zero living harvesters may spend its
+   credit reserve to buy a replacement instead of holding that money while
+   its income is gone. Applies to Allied and Soviet houses. This is a targeted
+   recovery fix, not proof of original-game AI strength or complete naval AI.
+
+7. Launcher: prominent full-width Play action, readiness banner, grouped
+   file/report controls, dark cards, 56dp minimum button height and full-page
+   scrolling. Import/launch/report implementations stay in the existing app.
+   Inspired by the Generals X launcher's separation of setup and diagnostics;
+   no Generals artwork or source was copied. Display/touch options remain in
+   the game Options menu; no nonfunctional renderer settings were added.
+
+8. Sampled reports now include Gatling charge, stage and active weapon IDs.
+   Existing 900026 parachute AA and turretless muzzle fixes are retained.
+
+9. All shared shell text now prefers the original Unicode game.fnt UI face
+   from the user's files, with yellow text and a dark drop shadow. The classic
+   12metfnt face remains a fallback. UTF-8 labels are decoded as codepoints
+   rather than individual bytes. This applies through the shared painter to
+   main-menu headings, campaign, skirmish, options and dialogs; the original
+   animated button artwork keeps its already-baked labels without overdraw.
+   The original-font glyph shapes were previewed locally. Full phone visual
+   comparison against the user's YouTube reference remains a device test.
+
+PHONE TEST PLAN
+- Start a fresh Yuri skirmish. Fire one Gatling Tank continuously at a durable
+  ground target, then an aircraft. Observe sound/effect/ROF stage changes.
+  Repeat with a powered Gatling Cannon; check cooldown after target loss.
+- Charge a Chronosphere and another Allied superweapon. Leave them idle and
+  confirm the shell opens once and remains ready; fire and confirm one close.
+- Fire Rhino/Lasher/Prism tanks at several headings. Check barrel exit, burst
+  side, turret/body offset and projectile flight, including on high terrain.
+- Place a Slave Miner away from ore and with a distant ore field in range.
+  Check packing, movement, closer deployment, loaded worker return and Stop.
+- Enter/evacuate different tanks through a bunker. Check interpolation,
+  occupant visibility/layers and firing. Check a Gatling Tank inside as well.
+- Run Soviet vs Allied AI at equal difficulty and starting money; share the
+  game report with the observed economy/attack issue and faction named.
+- Test launcher in portrait/landscape and with larger Android font scaling.
+- Save/load during Gatling fire; compare the stage before and after loading.
+
+LIMITATIONS
+Device visual/performance testing requires a connected phone. Automated
+simulation/compile tests do not establish visual parity or GPU frame pacing.
+SpyPlane, ForceShield, GeneticConverter and PsychicDominator were still logged
+as unsupported in 900026; their gameplay is not implemented by this patch.
+Terrain deformation, full slope smoothing, all particles and all faction AI
+are not comprehensively implemented or verified by these targeted changes.
+Some firing weapons are instant-hit by their original projectile definition;
+do not add visible cannonballs to lasers or invisible bullets arbitrarily.
+
+RESEARCH / LOCAL EVIDENCE
+Latest Drive report: RA2 game diagnostics 0.9.0+gv0.9.0-31-gbee40ed (900026).
+The report's written description is blank; user observations came from chat.
+Original user's rulesmd/artmd are read-only references, never bundled.
+Gatling stage and mod-cycle distinction:
+https://ares-developers.github.io/Ares-docs/new/gattlingcycle.html
+Launcher architectural reference:
+https://github.com/MYSOREZ/GeneralsZH-Android-Port/blob/main/docs/port/ANDROID_PORT.md
+
+LOCAL VALIDATION
+1,207 native cases / 266,872 assertions passed. One optional real-install
+ecache01.mix fixture excluded because that file is absent from this install.
+Android engine syntax check passed (existing waypoint_cell override warning).
+Launcher Java compilation passed. No Android device connected through ADB;
+phone visual, touch-flow and thermal comparison were not run locally.

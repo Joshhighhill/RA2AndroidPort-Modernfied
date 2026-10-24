@@ -6,6 +6,19 @@
 
 using namespace ra2assets;
 
+TEST_CASE("menu Unicode font preserves original glyph pixels and advances") {
+    if(!ra2fixture::ra2_available())return;
+    auto local=ra2fixture::mix_by_name("ra2.mix").open_nested("local.mix");
+    const auto* entry=local.find("game.fnt");REQUIRE(entry!=nullptr);
+    const auto f=Font::load_unicode(local.read(*entry));
+    CHECK(f.height()==16);CHECK(f.width('A')==7);CHECK(f.width(' ')==4);
+    CHECK(f.glyph('A').pixels[4*7+3]==1);
+    CHECK(f.glyph('A').pixels[4*7]==0);
+    CHECK(f.width('a')>0);CHECK(f.last()==65535);
+    const auto& glyph=f.glyph('A');
+    for(auto value:glyph.pixels)CHECK(value<=1);
+}
+
 // Structural self-consistency of the real Westwood variable-width bitmap font.
 //
 // CALIBRATE-FIRST note (T3 Step 1): the brief nominated `local.mix/metal12.fnt`,

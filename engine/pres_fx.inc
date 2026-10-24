@@ -1009,7 +1009,22 @@ PresFx* g_fx = nullptr;   // the live game's effects (GameScene); null in gates
 bool pres_draw_projectile(SDL_Renderer* ren, ra2engine::TextureCache& tc,
                           const ra2engine::World& world, const ra2engine::Projectile& p, int gx,
                           int sy, int W, int H) {
-    if (!g_fx || p.attacker < 0 || p.attacker >= static_cast<int>(world.units().size())) return false;
+    if (!g_fx) return false;
+    if (!p.weapon_id.empty()) {
+        const auto& fired=g_fx->weapon_fx(p.weapon_id);
+        if(fired.proj_image.empty()) return false;
+        auto shp=g_fx->projectile_shp(fired.proj_image);
+        if(!shp || shp->count()<=0) return false;
+        int frame=0;
+        if(fired.proj_rotates && shp->count()>1) {
+            const double ang=std::atan2((p.vx-p.vy)*30.0,-((p.vx+p.vy)*15.0-p.vz*36.74));
+            const double tau=2*3.14159265358979;
+            frame=static_cast<int>(std::lround((ang<0?ang+tau:ang)/tau*shp->count()))%shp->count();
+        }
+        g_fx->blit(ren,tc,*shp,"proj:"+fired.proj_image,frame,gx,sy,255,W,H);
+        return true;
+    }
+    if (p.attacker < 0 || p.attacker >= static_cast<int>(world.units().size())) return false;
     // W7-12-30: the projectile art of the weapon in the slot that fired it
     // (GGI deployed AAHeatSeeker2, APOC's AA missiles), elite when the
     // firer is elite and the type has the Elite* weapon.

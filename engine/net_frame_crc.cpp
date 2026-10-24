@@ -39,6 +39,7 @@ struct NetCrcAccess {
             c.add_i(u.infiltrate_target);
             c.add_i(u.enter_target);
             c.add_i(u.rearm_frames);
+            c.add_i(u.gattling.charge);
             c.add_d(u.die_time);
             c.add_i(static_cast<int>(u.harv));
             c.add_d(u.bales_ore);
@@ -55,6 +56,7 @@ struct NetCrcAccess {
                   static_cast<std::uint32_t>(b.type & 0xFF));
             c.add_i(b.house);
             c.add_i(b.hp);
+            c.add_i(b.gattling_charge);
             c.add_i(static_cast<int>(b.state));
             c.add_d(b.buildup_time);
             c.add_d(b.die_time);

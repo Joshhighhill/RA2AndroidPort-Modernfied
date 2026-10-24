@@ -146,7 +146,9 @@ void World::step_yuri_workers(bool relocate) {
             if (mobile >= 0 && mobile < static_cast<int>(units_.size()) &&
                 active(units_[mobile]) && units_[mobile].house == u.house) {
                 const Unit& miner = units_[mobile];
-                if (active(u) && !u.moving() && std::max(std::abs(u.cell_x-miner.cell_x),std::abs(u.cell_y-miner.cell_y)) > 2)
+                if (active(u) && (!u.moving() || u.wait_time>=3.0) &&
+                    std::max(std::abs(u.cell_x-miner.cell_x),std::abs(u.cell_y-miner.cell_y)) > 2 &&
+                    (ability_frame()+static_cast<unsigned>(i))%30==0)
                     order_unit_move(i,miner.cell_x,miner.cell_y);
                 continue;
             }
@@ -200,10 +202,10 @@ void World::step_yuri_workers(bool relocate) {
     if (relocate) for (int bi=0;bi<static_cast<int>(buildings_.size());++bi) {
         if ((ability_frame()+static_cast<unsigned>(bi))%150!=0 || !can_pack_slave_miner(bi)) continue;
         const auto& b=buildings_[bi];
-        bool local=false,loaded=false;
-        for (int y=std::max(0,b.cy-8);y<std::min(grid_h_,b.cy+b.fh+8) && !local;++y)
-            for (int x=std::max(0,b.cx-8);x<std::min(grid_w_,b.cx+b.fw+8);++x)
-                if (ore_.has_ore(x,y)) {local=true;break;}
+        bool loaded=false;
+        int near_x=0,near_y=0;
+        const bool local=find_reachable_ore(ore_,passable_,grid_w_,grid_h_,occ_,-1,b.cx,b.cy,6,-1,-1,near_x,near_y) &&
+            near_x>=b.cx-2 && near_x<=b.cx+b.fw+1 && near_y>=b.cy-2 && near_y<=b.cy+b.fh+1;
         if (local) continue;
         for (const auto& worker:units_)
             if (active(worker) && worker.w7.slave_manager==bi && worker.bales_ore+worker.bales_gems>0) {loaded=true;break;}
@@ -230,7 +232,7 @@ void World::step_yuri_workers(bool relocate) {
         int x=0,y=0;
         if (!find_reachable_ore(ore_,passable_,grid_w_,grid_h_,occ_,i,miner.cell_x,miner.cell_y,
             48,miner.harv_skip_x,miner.harv_skip_y,x,y)) continue;
-        if (std::max(std::abs(x-miner.cell_x),std::abs(y-miner.cell_y))<=8) {
+        if (std::max(std::abs(x-miner.cell_x),std::abs(y-miner.cell_y))<=2) {
             const bool deployed=order_deploy_mcv(i);
             diag::note("MINER auto-deploy unit=%d ore=%d,%d accepted=%d",i,x,y,deployed);
         } else {

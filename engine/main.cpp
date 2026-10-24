@@ -1944,7 +1944,16 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
             va.combat.elite_proj.flh[k] = va.flh[k];
             va.combat.secondary.proj.flh[k] = va.flh[k];
             va.combat.elite_secondary.proj.flh[k] = va.flh[k];
+            for (auto& slot : va.combat.gattling.weapons) slot.proj.flh[k] = va.flh[k];
+            for (auto& slot : va.combat.gattling.elite_weapons) slot.proj.flh[k] = va.flh[k];
         }
+
+        va.combat.proj.turret_offset=va.turret_offset;
+        va.combat.elite_proj.turret_offset=va.turret_offset;
+        va.combat.secondary.proj.turret_offset=va.turret_offset;
+        va.combat.elite_secondary.proj.turret_offset=va.turret_offset;
+        for(auto& slot:va.combat.gattling.weapons) slot.proj.turret_offset=va.turret_offset;
+        for(auto& slot:va.combat.gattling.elite_weapons) slot.proj.turret_offset=va.turret_offset;
 
         {   // G-16: keep the sources for per-colour sets.
             auto src = std::make_shared<VehicleAssets::VoxelSrc>();
@@ -2898,6 +2907,12 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
             std::cerr << (k ? "," : "") << d.prerequisite[k];
         std::cerr << "]\n";
         ra2engine::fill_building_weapons(rules, id, d);   // Gap fix C (G-40): defenses
+        int flh[3]={0,0,0};
+        if(art.fire_flh(art_id,flh)) for(int k=0;k<3;++k) {
+            d.weapon[0].proj.flh[k]=d.weapon[1].proj.flh[k]=flh[k];
+            for(auto& slot:d.gattling.weapons) slot.proj.flh[k]=flh[k];
+            for(auto& slot:d.gattling.elite_weapons) slot.proj.flh[k]=flh[k];
+        }
         // W6-04-04: a Wall=yes building takes damage stages (art DamageLevels=).
         d.w6.wall_levels = d.wall ? art.damage_levels(art_id) : 0;   // reuses W6-03-01 BuildingTypeDef::wall
         d.w6.powers_unit = rules.image(rules.section_string(id, "PowersUnit", ""));   // W6-04-18
@@ -3878,7 +3893,9 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
     auto part_frame = [&](int part) {
         if (!va.vsrc) return 0;
         const auto& h = part == 0 ? va.vsrc->hull_h : part == 1 ? va.vsrc->tur_h : va.vsrc->barl_h;
-        return ra2engine::hva_animation_frame(walk_stage,h.frames.size());
+        const int clock = part > 0 && u.gattling.enabled() && u.fire_flash > 0.0 ?
+            static_cast<int>(g_pres_tick / std::max(1,4-u.gattling.stage(ra2engine::is_elite(u.vet.veterancy)))) : walk_stage;
+        return ra2engine::hva_animation_frame(clock,h.frames.size());
     };
     const int hf = part_frame(0), tf = part_frame(1), bf = part_frame(2);
     const int ramp=pres_unit_ramp(u);
@@ -4449,6 +4466,20 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             lifted->target=bunker->garrison_target;
             lifted->target_building=bunker->w7.garrison_target_building;
             up=&*lifted;
+        }
+        auto motion=g_bunker_motion.find(idx);
+        if(motion!=g_bunker_motion.end()) {
+            const long age=g_pres_tick-motion->second.start;
+            if(age<0 || age>=15 || !up->alive) g_bunker_motion.erase(motion);
+            else {
+                if(!lifted) lifted.emplace(*up);
+                const double t=std::clamp(age/15.0,0.0,1.0);
+                const double f=t*t*(3.0-2.0*t);
+                lifted->fx=motion->second.from_x+(motion->second.to_x-motion->second.from_x)*f;
+                lifted->fy=motion->second.from_y+(motion->second.to_y-motion->second.from_y)*f;
+                lifted->sub_x=lifted->sub_y=0;
+                up=&*lifted;
+            }
         }
         const ra2engine::Unit& u = *up;
         // W5-PRES R-120: Iron Curtain / elite flash / chrono warp draw tint.
@@ -5323,7 +5354,7 @@ ra2assets::Palette make_font_palette() {
                                static_cast<uint8_t>(lvl * 55 / 100), 255};
     }
     // Metallic glyphs use 1 for the face, 2 for the upper bevel, 3 for shadow.
-    p[1] = ra2assets::Rgba{255, 218, 72, 255};
+    p[1] = ra2assets::Rgba{255, 255, 0, 255};
     p[2] = ra2assets::Rgba{255, 245, 170, 255};
     p[3] = ra2assets::Rgba{70, 35, 0, 255};
     p[0] = ra2assets::Rgba{0, 0, 0, 0};
@@ -5351,7 +5382,7 @@ ra2assets::Palette make_font_palette_tinted(int r, int g, int b) {
 // [Task 5] Pixel width of a string in the shell font (for centering labels).
 int fnt_text_width(const ra2assets::Font& font, const std::string& s) {
     int w = 0;
-    for (unsigned char ch : s) {
+    for (uint32_t ch : ra2assets::UFont::decode_utf8(s)) {
         const int cw = font.width(ch);
         w += (cw > 0 ? cw : font.height() / 2);
     }
@@ -5367,7 +5398,7 @@ void draw_fnt_text(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2asse
                    const ra2assets::Palette& pal, const std::string& s, int x, int y,
                    const std::string& keypfx, int scale = 1) {
     int cx = x;
-    for (unsigned char ch : s) {
+    for (uint32_t ch : ra2assets::UFont::decode_utf8(s)) {
         const int w = font.width(ch);
         if (ch != ' ' && ch >= font.first() && ch <= font.last() && w > 0) {
             const ra2assets::FntGlyph& g = font.glyph(ch);
@@ -5377,6 +5408,13 @@ void draw_fnt_text(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2asse
                 if (!tex)
                     tex = static_cast<SDL_Texture*>(tc.get(key, g.pixels.data(), g.w, g.h, pal));
                 SDL_Rect dst{cx, y, g.w * scale, g.h * scale};
+                SDL_SetTextureScaleMode(tex,SDL_ScaleModeNearest);
+                if(font.last()>255) {
+                    SDL_SetTextureColorMod(tex,0,0,0);
+                    SDL_Rect shadow=dst;shadow.x+=1;shadow.y+=1;
+                    SDL_RenderCopy(ren,tex,nullptr,&shadow);
+                    SDL_SetTextureColorMod(tex,255,255,255);
+                }
                 SDL_RenderCopy(ren, tex, nullptr, &dst);
             }
         }
@@ -5391,7 +5429,7 @@ void draw_fnt_text_f(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2as
                      const ra2assets::Palette& pal, const std::string& s, double x, double y,
                      const std::string& keypfx, double scale) {
     double cx = x;
-    for (unsigned char ch : s) {
+    for (uint32_t ch : ra2assets::UFont::decode_utf8(s)) {
         const int w = font.width(ch);
         if (ch != ' ' && ch >= font.first() && ch <= font.last() && w > 0) {
             const ra2assets::FntGlyph& g = font.glyph(ch);
@@ -5404,6 +5442,13 @@ void draw_fnt_text_f(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2as
                 const int x1 = static_cast<int>(std::lround(cx + g.w * scale));
                 SDL_Rect dst{x0, static_cast<int>(std::lround(y)), x1 - x0,
                              static_cast<int>(std::lround(g.h * scale))};
+                SDL_SetTextureScaleMode(tex,SDL_ScaleModeNearest);
+                if(font.last()>255) {
+                    SDL_SetTextureColorMod(tex,0,0,0);
+                    SDL_Rect shadow=dst;shadow.x+=1;shadow.y+=1;
+                    SDL_RenderCopy(ren,tex,nullptr,&shadow);
+                    SDL_SetTextureColorMod(tex,255,255,255);
+                }
                 SDL_RenderCopy(ren, tex, nullptr, &dst);
             }
         }
@@ -6837,6 +6882,7 @@ public:
           cam_(centered_camera(a_.map, playfield_w_, kWinH)),
           input_(world_, cam_, playfield_w_, kWinH) {
         g_bld_events.clear();
+        g_bunker_motion.clear();
         g_slave_miner_pack_fx.clear();
         // Projectile phase (P2) [RE: projectile.md]: the interactive game flies
         // real projectiles (tank arcs, Kirov bombs, flak scatter). This is one of
@@ -8937,6 +8983,17 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     store.art.logo     = store.logo.get();
     store.art.title    = store.title.get();
     store.art.font     = store.font.get();
+    // Prefer the game's own Unicode UI face across every shell page. Keep
+    // the classic font above only as a fallback for incomplete installations.
+    try {
+        auto top=MixFile::open_path(dir+"ra2.mix");
+        auto local=top.open_nested("local.mix");
+        if(const auto* e=local.find(std::string("game.fnt"))) {
+            store.font=std::make_unique<ra2assets::Font>(ra2assets::Font::load_unicode(local.read(*e)));
+            std::cerr<<"[menu-art] Unicode game.fnt selected for all shell text\n";
+        }
+    } catch(const std::exception& ex) { std::cerr<<"[menu-art] UI font fallback: "<<ex.what()<<"\n"; }
+    store.art.font=store.font.get();
     store.art.font_pal = &store.font_pal;
     // [P8] Options-page skins + control text ramps.
     store.font_pal_text     = make_font_palette_tinted(255, 255, 0);   // 0x00FFFF yellow

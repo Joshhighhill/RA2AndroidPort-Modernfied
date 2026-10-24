@@ -519,6 +519,8 @@ template <class Ar> void fields(Ar& ar, CargoEvent& v) {
 
 // --- projectiles ---
 template <class Ar> void fields(Ar& ar, ProjectileSpec& v) {
+    io(ar,v.turret_offset);
+    io(ar, v.weapon_id);
     io(ar, v.kind);
     io(ar, v.arcing);
     io(ar, v.inaccurate);
@@ -537,6 +539,7 @@ template <class Ar> void fields(Ar& ar, ProjectileSpec& v) {
     io(ar, v.subject_to_walls);
 }
 template <class Ar> void fields(Ar& ar, Projectile& v) {
+    io(ar, v.weapon_id);
     io(ar, v.kind);
     io(ar, v.attacker);
     io(ar, v.target_unit);
@@ -932,7 +935,13 @@ template <class Ar> void fields(Ar& ar, WorldW5& v) {
 }
 
 // --- unit / building types ---
+template <class Ar> void fields(Ar& ar, Gattling& v) {
+    io(ar, v.weapons); io(ar, v.elite_weapons);
+    io(ar, v.thresholds); io(ar, v.elite_thresholds);
+    io(ar, v.rate_up); io(ar, v.rate_down); io(ar, v.charge);
+}
 template <class Ar> void fields(Ar& ar, UnitCombat& v) {
+    io(ar, v.gattling);
     io(ar, v.strength);
     io(ar, v.inf_death); io(ar, v.prone_damage);   // W3-B
     io(ar, v.armor);
@@ -1046,6 +1055,7 @@ template <class Ar> void fields(Ar& ar, PlayerEconRules& v) {
     io(ar, v.wall_rules);
 }
 template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
+    io(ar, v.gattling);
     io(ar, v.mind_control);
     io(ar,v.tank_bunker); io(ar,v.bunker_damage); io(ar,v.bunker_rof); io(ar,v.bunker_range);
     io(ar, v.slave_combat); io(ar, v.slave_count); io(ar, v.slave_regen_rate); io(ar, v.slave_storage);
@@ -1099,6 +1109,7 @@ template <class Ar> void fields(Ar& ar, BuildingTypeDef& v) {
 
 // --- the live objects ---
 template <class Ar> void fields(Ar& ar, Unit& v) {
+    io(ar, v.gattling);
     io(ar, v.cell_x); io(ar, v.cell_y); io(ar, v.level); io(ar, v.frame); io(ar, v.image);
     io(ar, v.path);
     io(ar, v.path_idx);
@@ -1261,6 +1272,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.ai);        // W7-01-08 AI guard clock (save v35)
 }
 template <class Ar> void fields(Ar& ar, Building& v) {
+    io(ar, v.gattling_charge);
     io(ar, v.ai_repairable); io(ar, v.has_been_captured);   // fv7c (save v40)
     io(ar, v.type);
     io(ar, v.cx); io(ar, v.cy);

@@ -44,6 +44,7 @@ struct BldEventState {
     long door_start = -1;          // tick a unit left the factory
     bool door_roof = false;        // ... an aircraft (roof pair)
     long super_start = -1;         // tick of the last SW state change
+    int super_previous = 0;       // readiness of this building's own power
     int super_phase = -1;          // -1 none, 0 opening (ready), 2 closing (fired)
     BldSlotRun run[PresFx::kBldSlots];
     bool init = false;
@@ -51,6 +52,7 @@ struct BldEventState {
     int level = -1;                // refinery storage level shown
     int depot = 0;                 // 0 idle, 1 Special, 2 SpecialTwo, 3 SpecialThree
     bool unloading = false;        // a harvester was dumping here last tick
+    int bunker_unit = -1;
     bool bunker_known = false, bunker_occupied = false;
     int bunker_transition = 0;     // 0 none, 1 entering, -1 exiting
     int gate_stage = 0;            // 0 closed .. GateStages open
@@ -63,15 +65,18 @@ struct SlaveMinerPackFx {
     long start = 0, duration = 0;
 };
 std::map<int, SlaveMinerPackFx> g_slave_miner_pack_fx;
+struct BunkerMotion { double from_x=0,from_y=0,to_x=0,to_y=0; long start=0; };
+std::map<int,BunkerMotion> g_bunker_motion;
+
 inline long long bld_event_key(const ra2engine::Building& b) {
     return (static_cast<long long>(b.cx) << 32) ^ (static_cast<long long>(b.cy) << 16) ^ b.type;
 }
 // Frame of a one-shot anim started at `start`; -1 once it has run out.
 inline int oneshot_frame(const FxAnimType& t, long start, long now) {
-    if (start < 0) return -1;
+    if (start < 0 || now < start) return -1;
     const long step = t.delay <= 0 ? 0 : (now - start) / t.delay;
     const long f = t.start + step;
-    return f >= t.end ? -1 : static_cast<int>(f);
+    return f >= t.end ? -1 : static_cast<int>(t.reverse ? t.end - 1 - step : f);
 }
 // Frame of a slot run started at `start` (the anim's own LoopCount: -1 loops
 // for ever, else the finite passes then End); -1 before start / once ended.
@@ -209,12 +214,20 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
                     start(st, a, kBsSpecial2, now);
                 }
             } else if (occupied != st.bunker_occupied) {
+                const int ui = occupied ? b.occupants.front() : st.bunker_unit;
+                if(ui>=0 && ui<static_cast<int>(w.units().size())) {
+                    const auto& u=w.units()[ui];
+                    const double cx=b.cx+(b.fw-1)/2.0, cy=b.cy+(b.fh-1)/2.0;
+                    g_bunker_motion[ui] = occupied ? BunkerMotion{u.fx,u.fy,cx,cy,now}
+                                                   : BunkerMotion{cx,cy,u.fx,u.fy,now};
+                }
                 st.bunker_occupied = occupied;
                 st.bunker_transition = occupied ? 1 : -1;
                 for (int s = kBsSpecial; s <= kBsSpecial4; ++s) stop(st, s);
                 start(st, a, occupied ? kBsSpecial : kBsSpecial3, now);
                 start(st, a, occupied ? kBsSpecial2 : kBsSpecial4, now);
             }
+            st.bunker_unit = occupied ? b.occupants.front() : -1;
             if (st.bunker_transition > 0) {
                 // Opening animations settle in their declared LoopStart/LoopEnd
                 // rather than being restarted after a synthetic finite run.
@@ -385,14 +398,23 @@ void pres_building_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, const
     if (ev && ev->door_start >= 0)
         if (const FxAnimType* d = slot_t(door)) draw_t(d, oneshot_frame(*d, ev->door_start, now), door.x, door.y);
     if (ev && ev->super_phase >= 0) {
-        const int open = ev->super_phase;          // 0 (ready) or 2 (fired)
-        const PresFx::BldAnims::Slot& s1 = a.slot[kBsSuper + open];
-        const PresFx::BldAnims::Slot& s2 = a.slot[kBsSuper + open + 1];
-        const FxAnimType* t1 = slot_t(s1);
-        const int fr = t1 ? oneshot_frame(*t1, ev->super_start, now) : -1;
-        if (t1 && fr >= 0) draw_t(t1, fr, s1.x, s1.y);
-        else if (const FxAnimType* t2 = slot_t(s2)) draw_t(t2, PresFx::loop_frame(*t2, now), s2.x, s2.y);
+        // Original art order: idle, opening, ready loop, closing.
+        const auto& idle = a.slot[kBsSuper];
+        const auto& opening = a.slot[kBsSuper+1];
+        const auto& ready = a.slot[kBsSuper+2];
+        const auto& closing = a.slot[kBsSuper+3];
+        const bool charged = ev->super_phase == 0;
+        const auto& transition = charged ? opening : closing;
+        const auto* t = slot_t(transition);
+        const int frame = t ? oneshot_frame(*t,ev->super_start,now) : -1;
+        if (t && frame >= 0) draw_t(t,frame,transition.x,transition.y);
+        else {
+            const auto& stable = charged ? ready : idle;
+            if (const auto* loop = slot_t(stable))
+                draw_t(loop, PresFx::loop_frame(*loop,ev->super_start < 0 ? 0 : now-ev->super_start),stable.x,stable.y);
+        }
     }
+
     if (ev) {
         const bool tank_bunker = g_fx->building_rules(g_overlay_id).tank_bunker;
         for (int s = 0; s < PresFx::kBldSlots; ++s) {

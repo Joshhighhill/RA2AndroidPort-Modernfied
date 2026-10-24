@@ -80,6 +80,7 @@ bool valid_target(const std::vector<Unit>& units, const World& world, const Unit
 // active slot's live w_range (it may carry vet/IFV adjustments), else the
 // type data of the other slot.
 double slot_range(const Unit& u, int slot) {
+    if (u.gattling.enabled()) return u.gattling.weapon(slot, is_elite(u.vet.veterancy)).range;
     if (slot == u.w_active) return u.w_range;
     if (slot == 1) return secondary_view(u).range;
     if (u.vet.recv && is_elite(u.vet.veterancy) && u.vet.has_elite) return u.vet.elite.range;
@@ -1189,6 +1190,16 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         // (c) ROF cooldown + fire-flash decay -- every living, non-dying
         // unit, every call, regardless of target state. docs/re/combat.md
         // §5: deterministic frame countdown, no jitter.
+        if (u.gattling.enabled()) {
+            bool engaging = valid_target(units, world, u, u.target) &&
+                unit_in_weapon_range(world, u, units[u.target]);
+            if (!engaging && u.target_building >= 0 && u.target_building < static_cast<int>(buildings.size())) {
+                const auto& b = buildings[u.target_building];
+                engaging = b.alive && world.is_enemy(u.house,b.house) &&
+                    om::hypot(u.fx-b.cx,u.fy-b.cy) <= u.gattling.weapon(0,is_elite(u.vet.veterancy)).range;
+            }
+            u.gattling.step(engaging, is_elite(u.vet.veterancy));
+        }
         if (u.rearm_frames > 0) --u.rearm_frames;   // Net L0: one whole frame per tick
         u.fire_flash -= dt;
         if (u.fire_flash < 0.0) u.fire_flash = 0.0;

@@ -71,7 +71,8 @@ struct ShellPainter {
         // nearest-neighbour scaling visibly mangles the 1-px bevel strokes).
         double sc = ra2engine::menu_font_scale(xf.s,logical_px,kReadableTouchMenus);
         const SDL_Rect box = dev(lx, ly, lw, lh);
-        if(kReadableTouchMenus) sc=std::min(sc,box.h/static_cast<double>(std::max(1,f.height())));
+        if(kReadableTouchMenus) sc=std::max(1.0,std::min(sc,
+            std::floor(box.h/static_cast<double>(std::max(1,f.height())))));
         const double tw = fnt_text_width(f, s) * sc;
         const double th = f.height() * sc;
         double tx = box.x;

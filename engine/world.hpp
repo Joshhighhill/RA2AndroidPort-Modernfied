@@ -1,4 +1,5 @@
 #pragma once
+#include "gattling.hpp"
 #include <array>
 #include <cstdint>
 #include <map>
@@ -414,6 +415,7 @@ struct Unit {
     // percentage, Drive/Ship track, hover ramp, blocked-move timers (save v35).
     UnitLoco loco;
     UnitW7 w7;                       // wave-7 fix (units): unit_w7.hpp (save v35)
+    Gattling gattling;
 };
 // G16: the cargo_of sentinel of a garrisoned infantry (never a unit index).
 constexpr int kGarrisonCargo = 0x3FFFFFFF;

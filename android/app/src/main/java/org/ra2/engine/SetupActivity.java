@@ -5,6 +5,8 @@ import android.content.ContentResolver;
 import android.content.Intent;
 import android.database.Cursor;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -82,7 +84,7 @@ public class SetupActivity extends Activity {
         return null;
     }
 
-    private TextView status, title;
+    private TextView status, title, readiness;
     private ProgressBar progress;
     private Button importButton, startButton, exitButton;
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -140,6 +142,10 @@ public class SetupActivity extends Activity {
         Button b = new Button(this);
         b.setText(label);
         b.setMinHeight(dp(56));   // >= 48 dp touch target
+        b.setTextColor(Color.rgb(225, 234, 240));
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        b.setAllCaps(false);
+        b.setBackground(panel(Color.rgb(28, 42, 52), Color.rgb(61, 80, 92)));
         b.setOnClickListener(l);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         lp.setMargins(dp(6), dp(6), dp(6), dp(6));
@@ -147,25 +153,53 @@ public class SetupActivity extends Activity {
         return b;
     }
 
+    private GradientDrawable panel(int fill, int edge) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(fill);
+        d.setCornerRadius(dp(12));
+        d.setStroke(dp(1), edge);
+        return d;
+    }
+
+    private TextView label(String text, int size, int color) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, size);
+        t.setTextColor(color);
+        t.setPadding(dp(8), dp(6), dp(8), dp(6));
+        return t;
+    }
+
     private void buildUi() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.BLACK);
-        root.setPadding(dp(24), dp(16), dp(24), dp(16));
+        root.setBackgroundColor(Color.rgb(12, 20, 27));
+        root.setPadding(dp(16), dp(12), dp(16), dp(12));
+        ScrollView page = new ScrollView(this);
+        page.setFillViewport(true);
+        page.addView(root);
 
-        title = new TextView(this);
-        title.setText(R.string.setup_title);
-        title.setTextColor(Color.rgb(255, 200, 90));
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+        title = label(getString(R.string.setup_title), 25, Color.rgb(255, 200, 90));
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         root.addView(title);
+        root.addView(label("COMMAND & CONQUER  /  ANDROID", 11, Color.rgb(135, 163, 181)));
+        readiness = label("Checking game files...", 15, Color.rgb(140, 225, 185));
+        readiness.setBackground(panel(Color.rgb(20, 39, 43), Color.rgb(45, 92, 86)));
+        readiness.setPadding(dp(16), dp(12), dp(16), dp(12));
+        root.addView(readiness);
 
-        ScrollView scroll = new ScrollView(this);
-        status = new TextView(this);
-        status.setTextColor(Color.rgb(220, 220, 220));
-        status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        status.setPadding(0, dp(8), 0, dp(8));
-        scroll.addView(status);
-        root.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        startButton = button(getString(R.string.setup_start), v -> startGame());
+        startButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 19);
+        startButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        startButton.setBackground(panel(Color.rgb(36, 106, 99), Color.rgb(73, 169, 148)));
+        LinearLayout launch = new LinearLayout(this);
+        launch.addView(startButton);
+        root.addView(launch);
+        root.addView(label("GAME FILES & DIAGNOSTICS", 12, Color.rgb(135, 163, 181)));
+        status = label("", 14, Color.rgb(220, 230, 237));
+        status.setPadding(dp(16), dp(12), dp(16), dp(12));
+        status.setBackground(panel(Color.rgb(20, 31, 41), Color.rgb(44, 61, 73)));
+        root.addView(status);
 
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progress.setMax(1000);
@@ -173,17 +207,18 @@ public class SetupActivity extends Activity {
         root.addView(progress);
 
         LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER);
         importButton = button(getString(R.string.setup_import), v -> pickFolder());
-        startButton = button(getString(R.string.setup_start), v -> startGame());
         exitButton = button(getString(R.string.setup_exit), v -> finish());
         row.addView(importButton);
-        row.addView(startButton);
         row.addView(button("Share game report", v -> Diagnostics.share(this)));
-        row.addView(exitButton);
         root.addView(row);
-        setContentView(root);
+        LinearLayout footer = new LinearLayout(this);
+        footer.addView(button("Refresh file status", v -> { if (!copying) refresh(); }));
+        footer.addView(exitButton);
+        root.addView(footer);
+        root.addView(label("Uses your own PC game files. Display and touch options are available in the game's Options menu.", 12, Color.rgb(135, 163, 181)));
+        setContentView(page);
     }
 
     private void refresh() {
@@ -196,6 +231,9 @@ public class SetupActivity extends Activity {
         sb.append(getString(R.string.setup_folder)).append("\n  ").append(dir.getAbsolutePath()).append("\n\n");
         // W6-06-05: opened to add / replace files with everything present.
         title.setText(req.isEmpty() ? R.string.setup_title_ready : R.string.setup_title);
+        readiness.setText(copying ? "IMPORTING GAME FILES..." :
+                (req.isEmpty() ? "READY TO PLAY - Yuri's Revenge" :
+                 "SETUP REQUIRED - " + req.size() + " required files missing"));
         if (req.isEmpty()) {
             sb.append(getString(R.string.setup_ready)).append("\n");
         } else {

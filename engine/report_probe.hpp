@@ -34,6 +34,11 @@ inline void probe_world(const World& w) {
                 u.bales_ore, u.bales_gems, u.w7.slave_manager, u.cargo_of, u.target, u.target_building);
             note("COMBAT unit=%zu house=%d damage=%d range=%.3f slot=%d explicit=%d opportunity=%d frame=%d sequence=%d stage=%d",
                 i,u.house,u.w_damage,u.w_range,u.w_active,u.attack_order,u.tg.opportunity,u.frame,u.ia.seq,u.ia.stage);
+            if(u.gattling.enabled()) {
+                const bool elite=is_elite(u.vet.veterancy);
+                note("GATTLING unit=%zu charge=%d stage=%d weapon=%s rof=%d",i,u.gattling.charge,
+                    u.gattling.stage(elite),u.gattling.weapon(u.w_active,elite).id.c_str(),u.w_rof);
+            }
             if (u.moving()) {
                 const auto& p = u.path[u.path_idx];
                 const auto* current = w.map().at(u.cell_x,u.cell_y);
@@ -59,6 +64,9 @@ inline void probe_world(const World& w) {
                 (type.weapon[0].valid && type.weapon[0].ag) || (type.weapon[1].valid && type.weapon[1].ag),
                 (type.weapon[0].valid && type.weapon[0].aa) || (type.weapon[1].valid && type.weapon[1].aa));
         unsigned occupant_samples = 0;
+        if(type.gattling.enabled()) note("GATTLING building=%zu charge=%d stage=%d weapon=%s",i,
+            b.gattling_charge,type.gattling.stage(false,b.gattling_charge),
+            type.gattling.weapon(b.def_slot,false,b.gattling_charge).id.c_str());
         for (int id : b.occupants) {
             if (occupant_samples++ >= 8) break;
             if (id < 0 || static_cast<std::size_t>(id) >= units.size()) { ++invalid; note("CHECK building=%zu invalid_occupant=%d", i, id); }

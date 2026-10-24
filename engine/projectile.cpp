@@ -367,6 +367,7 @@ bool ini_bool_value(const std::string& raw, bool fallback) {
 
 ProjectileSpec resolve_projectile_spec(const ra2assets::Rules& rules, const std::string& weapon) {
     ProjectileSpec spec;  // Instant (inert) unless proven otherwise
+    spec.weapon_id=weapon;
     if (weapon.empty()) return spec;
     const std::string proj = strip_comment_trim(rules.weapon_projectile(weapon));
     if (proj.empty()) return spec;

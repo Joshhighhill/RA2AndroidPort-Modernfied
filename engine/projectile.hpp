@@ -60,6 +60,8 @@ struct ProjectileSpec {
     bool subject_to_cliffs = false;
     bool subject_to_elevation = false;
     bool subject_to_walls = false;
+    int turret_offset = 0;     // art turret origin along body facing, in leptons
+    std::string weapon_id;     // immutable launch weapon identity for rendering
     bool flies() const { return kind != ProjKind::Instant; }
 };
 
@@ -120,6 +122,7 @@ struct Projectile {
     double giveup_acc = 0.0;    // +0x120: closing-rate accumulator
     int prev_dist = -1;         // last returned distance
     bool lost = false;          // target gone: climb to MissileSafetyAltitude (air) / last point (ground)
+    std::string weapon_id;     // copied at launch; never inferred from current shooter stage
     bool target_air = false;    // the target is an airborne aircraft (direct pitch mode)
 };
 

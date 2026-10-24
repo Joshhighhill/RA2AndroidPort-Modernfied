@@ -1,4 +1,5 @@
 #pragma once
+#include "gattling.hpp"
 #include <string>
 #include <vector>
 
@@ -190,6 +191,7 @@ struct UnitCombat {
     UnitTypeW6 w6;                    // wave-6 #4 type data (unit_w6.hpp)
     UnitTypeTgt tg;                   // W6 fix #2: rules id + targeting type data (target_w6.hpp)
     UnitTypeW7 w7;                    // wave-7 fix (units): unit_w7.hpp (save v35)
+    Gattling gattling;
 };
 
 }  // namespace ra2engine

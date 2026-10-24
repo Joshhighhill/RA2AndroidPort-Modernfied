@@ -27,6 +27,8 @@ struct FntGlyph {
 class Font {
 public:
     static Font load(std::vector<uint8_t> bytes);
+    // Adapt the original game's Unicode UI face to the shared menu painter.
+    static Font load_unicode(std::vector<uint8_t> bytes);
     int first() const { return first_; }
     int last()  const { return last_; }
     int count() const { return last_ - first_ + 1; }

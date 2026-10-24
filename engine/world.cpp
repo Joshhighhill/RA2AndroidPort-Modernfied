@@ -1143,6 +1143,7 @@ Unit& World::add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat
     u.tg.t = c.tg;
     u.tg.in_playfield = cell_in_playfield(cell_x, cell_y);
     // Wave-7 fix (units): the type data (unit_w7.hpp).
+    u.gattling = c.gattling;
     u.w7.t = c.w7;
     u.detect_disguise = u.detect_disguise || c.w7.detect_disguise;   // W7-01-02
     // Projectile phase (P2) [RE: projectile.md]: the primary weapon's projectile
@@ -5566,11 +5567,14 @@ void World::step_ai_teams(double dt) {
                     ++refineries;
             for (const Unit& u : units_)
                 if (u.alive && u.die_time < 0.0 && u.house == h && u.is_harvester) ++miners;
+            // Economic recovery must not reserve spending money while there
+            // is no income source. Applies equally to Allied/Soviet houses.
+            const double miner_reserve = miners == 0 ? 0.0 : tc.rules.credit_reserve;
             if (miners < refineries * tc.harvesters_per_refinery)
                 for (int t = 0; t < (int)tc.unit_roster.size(); ++t)
                     if (tc.unit_roster[t].harvester &&
                         ai_econ(rec).credits >= tc.unit_roster[t].cost * rec.cfg.mods.cost_mul +
-                                           tc.rules.credit_reserve &&
+                                           miner_reserve &&
                         prerequisites_met(tc.unit_roster[t].prerequisite, buildings_,
                                           rec.cfg.roster, h, rec.cfg.groups)) {
                         want = t;
@@ -6569,8 +6573,18 @@ void World::launch_projectile(int attacker, int target_unit, int target_building
         if (len > 0.0) { fwx = dx / len; fwy = dy / len; }
     }
     Vec3i src;
-    src.x = ftol(ux + spec.flh[0] * fwx - spec.flh[1] * fwy);
-    src.y = ftol(uy + spec.flh[0] * fwy + spec.flh[1] * fwx);
+    const int burst=std::max(1,u.w6.burst);
+    const int shot=(u.w6.burst_index+burst-1)%burst;
+    const double lateral=spec.flh[1]*(shot&1 ? -1.0 : 1.0);
+    double mx=spec.flh[0]*fwx+lateral*fwy;
+    double my=spec.flh[0]*fwy-lateral*fwx;
+    if(u.is_vehicle && !u.is_aircraft && u.w7.t.has_turret && spec.turret_offset) {
+        const double a=u.body_facing*(2.0*kProjPi/65536.0);
+        mx+=spec.turret_offset*om::sin(a);
+        my-=spec.turret_offset*om::cos(a);
+    }
+    src.x = ftol(ux+mx);
+    src.y = ftol(uy+my);
     src.z = unit_lz(u) + spec.flh[2];
 
     const LaunchResult lr = compute_launch(spec, proj_rules_, src, tgt, proj_rng_);
@@ -6593,6 +6607,7 @@ void World::launch_projectile(int attacker, int target_unit, int target_building
 
     Projectile p;
     p.kind = spec.kind;
+    p.weapon_id = spec.weapon_id;
     p.attacker = attacker;
     p.target_unit = target_unit;
     p.target_building = target_building;

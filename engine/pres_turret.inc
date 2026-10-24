@@ -16,6 +16,7 @@ public:
         int x = 0, y = 0;
         std::shared_ptr<VehicleAssets::VoxelSrc> src;
         bool has_barrel = false;
+        mutable ra2engine::VoxelAnimationCache animation_sprites{2u << 20};
         mutable std::map<int, std::shared_ptr<std::array<ra2engine::FacingSet, 2>>> sets;   // colour key
     };
 
@@ -102,11 +103,28 @@ public:
         c2.x += t.x;
         c2.y += t.y;
         const std::string k = "turret:" + id + ":" + std::to_string(key) + ":" + std::to_string(fi);
-        ra2engine::draw_voxel_sprite(ren, tc, k, (*slot)[0].sprites[static_cast<std::size_t>(fi)], dx, dy, level,
-                                     c2, W, H, 0);
-        if (t.has_barrel)
-            ra2engine::draw_voxel_sprite(ren, tc, k + ":b", (*slot)[1].sprites[static_cast<std::size_t>(fi)], dx,
-                                         dy, level, c2, W, H, 0);
+        t.animation_sprites.begin_frame(tc.instance_id(),tc.frame_id());
+        const bool gatling = b.type>=0 && b.type<static_cast<int>(w.btypes().size()) && w.btypes()[b.type].gattling.enabled();
+        const int stage = gatling ? w.btypes()[b.type].gattling.stage(false,b.gattling_charge) : 0;
+        const long clock = gatling && b.def_fire_flash>0 ? g_pres_tick/std::max(1,4-stage) : 0;
+        auto draw_part = [&](int part) {
+            const auto& model=part==0?t.src->hull:t.src->tur;
+            const auto& hva=part==0?t.src->hull_h:t.src->tur_h;
+            const int frame=ra2engine::hva_animation_frame(static_cast<int>(clock),hva.frames.size());
+            const std::string name=k+(part?":b":"")+":f"+std::to_string(frame);
+            const ra2engine::VoxelSprite* sprite=&(*slot)[part].sprites[static_cast<std::size_t>(fi)];
+            if(frame) {
+                sprite=t.animation_sprites.find(name);
+                if(!sprite) {
+                    const auto pal=key>=10?ra2engine::pal_for_color(t.src->pal,key-10):ra2engine::house_draw_palette(t.src->pal,b.house);
+                    sprite=&t.animation_sprites.insert(name,ra2engine::rasterize_model(model,hva,
+                        ra2engine::index_to_yaw(fi,ra2engine::kVehicleFacings),t.src->vpl,pal,frame));
+                }
+            }
+            ra2engine::draw_voxel_sprite(ren,tc,name,*sprite,dx,dy,level,c2,W,H,0);
+        };
+        draw_part(0);
+        if(t.has_barrel)draw_part(1);
     }
     std::size_t count() const { return types_.size(); }
 

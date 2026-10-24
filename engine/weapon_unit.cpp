@@ -10,6 +10,7 @@ bool unit_is_elite(const Unit& u) { return is_elite(u.vet.veterancy); }
 }  // namespace
 
 WeaponSlot primary_view(const Unit& u) {
+    if (u.gattling.enabled()) return u.gattling.weapon(0, unit_is_elite(u));
     WeaponSlot s;
     s.valid = true;   // legacy: the primary is always "present" (range 0 = inert)
     // The live w_verses while the primary is active (an IFV's passenger swap
@@ -23,6 +24,7 @@ WeaponSlot primary_view(const Unit& u) {
 }
 
 const WeaponSlot& secondary_view(const Unit& u) {
+    if (u.gattling.enabled()) return u.gattling.weapon(1, unit_is_elite(u));
     if (u.vet.recv && unit_is_elite(u) && u.w2_elite.valid) return u.w2_elite;
     return u.w2;
 }
@@ -98,7 +100,7 @@ int unit_weapon_for_building(const Unit& u, int armor_ix, bool target_bombed, bo
 }
 
 void activate_weapon_slot(Unit& u, int slot, const VeterancyRules* vr) {
-    if (slot == u.w_active) return;
+    if (slot == u.w_active && !u.gattling.enabled()) return;
     // w7r3: -1 is "no weapon can engage" (GetFireError ILLEGAL); it used to
     // fall into the secondary branch and load the Secondary's stats. A YR dog
     // (BadTeeth/ParasiteDog 0% vs vehicles, NeverUse VirtualScanner secondary)
@@ -106,7 +108,7 @@ void activate_weapon_slot(Unit& u, int slot, const VeterancyRules* vr) {
     // passed the W7-01-01 infect gate and rode tanks forever (ALL06: the last
     // BadGuy1 dog kept the house alive). Keep the current slot.
     if (slot < 0) return;
-    if (slot == 1 && !u.w2.valid) return;
+    if (slot == 1 && !u.w2.valid && !u.gattling.enabled()) return;
     const bool vet = vr && u.vet.recv;
     const UnitVet& v = u.vet;
     auto has = [&](Ability a) {
@@ -123,7 +125,7 @@ void activate_weapon_slot(Unit& u, int slot, const VeterancyRules* vr) {
         if (u.tg.w7_rof) u.tg.rof_raw = r;   // W7-07-14: the active slot's raw ROF
         return vet ? rof_frames(r, has(Ability::Rof), vr->rof, hrof) : r;
     };
-    if (slot == 0) {
+    if (slot == 0 && !u.gattling.enabled()) {
         const bool el = vet && unit_is_elite(u) && v.has_elite;
         const WeaponStats& w = el ? v.elite : v.base;
         u.w_damage = dmg(w.damage);
@@ -147,7 +149,7 @@ void activate_weapon_slot(Unit& u, int slot, const VeterancyRules* vr) {
         u.w_aa = u.p_aa;
         u.w_ag = u.p_ag;
     } else {
-        const WeaponSlot& s = secondary_view(u);
+        const WeaponSlot& s = u.gattling.enabled() ? u.gattling.weapon(slot, unit_is_elite(u)) : secondary_view(u);
         u.w_damage = dmg(s.damage);
         u.w_rof = rof(s.rof);
         u.w6.burst = s.burst;                 // W6-04-01

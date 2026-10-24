@@ -11,7 +11,8 @@ public:
               const Rules& rules, const Ini& rules_ini, const Ini& art_ini,
               const std::vector<const std::vector<ra2engine::UnitTypeDef>*>& defs, int side_ix) {
         audio_ = &audio;
-        g_bld_events.clear();   // W2-GA-14 per-building anim state is per game
+        g_bld_events.clear();
+        g_bunker_motion.clear();   // W2-GA-14 per-building anim state is per game
         g_pres_crushed.clear();  // W7-04-25
         g_pres_sinkers.clear();  // W7-12-11
         g_pres_tick = 0;        // W3-B: the logic-tick anim clock restarts per game
@@ -720,7 +721,7 @@ private:
         const bool gunner = u.abil.gunner && !u.abil.ifv_weapons.empty();
         char key[64];
         const bool gatling = combat_rules_ && combat_rules_->section_flag(id,"IsGattling",false);
-        const int slot = gunner ? std::max(0, u.ifv_current) : (wc > 0 && !gatling ? 0 : (u.w_active == 1 ? 1 : 0));
+        const int slot = gunner ? std::max(0, u.ifv_current) : (wc > 0 && !gatling ? 0 : (u.w_active == 1 ? 1 : 0) + (gatling ? 2*u.gattling.stage(ra2engine::is_elite(u.vet.veterancy)) : 0));
         std::snprintf(key, sizeof key, "%s|%d|%d|%d", id.c_str(), slot, elite ? 1 : 0, (gunner || wc > 0) ? 1 : 0);
         auto it = fired_cache_.find(key);
         if (it != fired_cache_.end()) return it->second;
@@ -754,7 +755,7 @@ private:
         const int wc = std::atoi(pres_clean(rules_ini_->get(id, "WeaponCount")).c_str());
         const bool gunner = u.abil.gunner && !u.abil.ifv_weapons.empty();
         const bool gatling = combat_rules_ && combat_rules_->section_flag(id,"IsGattling",false);
-        const int slot = gunner ? std::max(0, u.ifv_current) : (wc > 0 && !gatling ? 0 : (u.w_active == 1 ? 1 : 0));
+        const int slot = gunner ? std::max(0, u.ifv_current) : (wc > 0 && !gatling ? 0 : (u.w_active == 1 ? 1 : 0) + (gatling ? 2*u.gattling.stage(ra2engine::is_elite(u.vet.veterancy)) : 0));
         char key[80];
         std::snprintf(key, sizeof key, "%s|%d|%d|%d", img.c_str(), slot, elite ? 1 : 0, (gunner || wc > 0) ? 1 : 0);
         auto it = flh_cache_.find(key);
@@ -1225,7 +1226,33 @@ public:
             if (!m.empty()) {
                 const int k=((((static_cast<int>(b.def_turret_facing)&0xFFFF)>>12)+1)>>1)&7;
                 const std::size_t ix=m.size()>=8 ? static_cast<std::size_t>((k+1)&7) : 0;
-                fx_.spawn(m[ix], fx, fy, building_level(w, b), 20.0);   // building FireFLH still pending
+                // Building art FLH uses the same turret-space transform as units.
+                ra2engine::Unit muzzle;
+                muzzle.fx=fx; muzzle.fy=fy; muzzle.is_vehicle=true;
+                muzzle.image = combat_rules_ && b.type >= 0 && b.type < static_cast<int>(w.btypes().size()) ?
+                    w.btypes()[b.type].image : std::string();
+                if (muzzle.image.empty() && b.type >= 0 && b.type < static_cast<int>(w.btypes().size()))
+                    muzzle.image=w.btypes()[b.type].id;
+                muzzle.tg.t.rules_id = b.type >= 0 && b.type < static_cast<int>(w.btypes().size()) ? w.btypes()[b.type].id : muzzle.image;
+                muzzle.w7.t.has_turret = b.type >= 0 && b.type < static_cast<int>(w.btypes().size()) && w.btypes()[b.type].turret;
+                muzzle.body_facing=muzzle.turret_facing=b.def_turret_facing;
+                muzzle.w_active=e.slot;
+                muzzle.w6.burst_index=b.w6.burst_index;
+                if(b.type>=0 && b.type<static_cast<int>(w.btypes().size())) {
+                    muzzle.gattling=w.btypes()[b.type].gattling;
+                    muzzle.gattling.charge=b.gattling_charge;
+                }
+                if(b.type>=0 && b.type<static_cast<int>(w.btypes().size()) &&
+                    w.btypes()[b.type].tank_bunker && !b.occupants.empty() &&
+                    b.occupants.front()>=0 && b.occupants.front()<static_cast<int>(w.units().size())) {
+                    muzzle=w.units()[b.occupants.front()];
+                    muzzle.fx=fx;muzzle.fy=fy;
+                    if(e.target_unit>=0 && e.target_unit<static_cast<int>(w.units().size()))
+                        muzzle.w_active=std::max(0,ra2engine::unit_weapon_for_unit(muzzle,w.units()[e.target_unit]));
+                }
+                double ox=0,lift=0;
+                muzzle_point(w,muzzle,ox,lift);
+                fx_.spawn(m[ix], fx, fy, building_level(w, b), lift, ox);
             }
         }
         for (std::size_t i=0;i<bs.size();++i) {
@@ -1738,26 +1765,30 @@ private:
             const ra2engine::BuildingTypeDef& d = ba.roster[static_cast<std::size_t>(b.type)];
             return pres_upper(d.image.empty() ? d.id : d.image);
         };
-        const int n = w.house_count();
-        if (static_cast<int>(sw_anim_prev_.size()) < n) sw_anim_prev_.resize(static_cast<std::size_t>(n), 0);
-        for (int h = 0; h < n; ++h) {
-            const ra2engine::Superweapon* sw = w.sw_state(h);
-            const int st = !sw || sw->type == ra2engine::SuperweaponType::None ? 0 : (sw->ready ? 2 : 1);
-            int& prev = sw_anim_prev_[static_cast<std::size_t>(h)];
-            if (st != prev && st != 0) {
-                for (const ra2engine::Building& b : bs) {
-                    if (!b.alive || b.house != h) continue;
-                    const std::string img = image_of(b);
-                    if (img.empty() || !fx_.building(img).slot[kBsSuper].t) continue;
-                    BldEventState& e = g_bld_events[bld_event_key(b)];
-                    if (st == 2) { e.super_phase = 0; e.super_start = g_pres_tick; }                    // ready: open
-                    else if (prev == 2) { e.super_phase = 2; e.super_start = g_pres_tick; }             // fired: close
-                    else if (e.super_phase < 0) { e.super_phase = 2; e.super_start = -1; }          // charging
-                }
+        for (const auto& b : bs) {
+            if (!b.alive || b.state != ra2engine::Building::State::Idle ||
+                b.type < 0 || b.type >= static_cast<int>(ba.roster.size())) continue;
+            const std::string img = image_of(b);
+            if (img.empty() || !fx_.building(img).slot[kBsSuper].t || !combat_rules_) continue;
+            const std::string power = combat_rules_->section_string(ba.roster[b.type].id,"SuperWeapon", "");
+            const std::string kind = pres_upper(combat_rules_->section_string(power,"Type", ""));
+            ra2engine::SuperweaponType type = ra2engine::SuperweaponType::None;
+            for (int i=1;i<=12;++i) {
+                const auto candidate = ra2engine::superweapon_type_from_id(i);
+                if (pres_upper(ra2engine::superweapon_type_name(candidate)) == kind) { type=candidate; break; }
             }
-            prev = st;
+            const auto* sw = type == ra2engine::SuperweaponType::None ? nullptr : w.sw_state(b.house,type);
+            const int st = !sw ? 0 : (sw->ready ? 2 : 1);
+            auto& e = g_bld_events[bld_event_key(b)];
+            if (st != e.super_previous) {
+                if (st == 2) { e.super_phase=0; e.super_start=g_pres_tick; }
+                else if (e.super_previous == 2) { e.super_phase=2; e.super_start=g_pres_tick; }
+                else { e.super_phase=2; e.super_start=-1; }
+                e.super_previous=st;
+            } else if (e.super_phase < 0) { e.super_phase=2; e.super_start=-1; }
         }
     }
+
     // W3-FX AmbientSound: one looping positional voice per live object whose
     // type has AmbientSound= (units, buildings, map terrain objects such as
     // the ore mines' OreMineExtract), restarted when it ends, stopped when the

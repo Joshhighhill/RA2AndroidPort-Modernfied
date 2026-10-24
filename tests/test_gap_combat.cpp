@@ -11,8 +11,85 @@
 #include "weapon_resolve.hpp"
 #include "weapon_unit.hpp"
 #include "world.hpp"
+#include "savegame.hpp"
 
 using namespace ra2engine;
+
+TEST_CASE("Gattling: stock tank and turret resolve all stage pairs and elite thresholds") {
+    if (!ra2fixture::assets_available()) return;
+    const auto& rules = ra2fixture::rulesmd();
+    UnitCombat c;
+    fill_unit_combat_extras(rules,"YTNK",resolve_type_weapons(rules,"YTNK"),c);
+    REQUIRE(c.gattling.enabled());
+    REQUIRE(c.gattling.weapons.size()==6);
+    CHECK(c.gattling.stage(false)==0);
+    c.gattling.charge=c.gattling.thresholds[0];
+    CHECK(c.gattling.stage(false)==1);
+    c.gattling.charge=c.gattling.thresholds[1];
+    CHECK(c.gattling.stage(false)==2);
+    CHECK(c.gattling.weapon(0,false).id==type_weapon_id(rules,"YTNK",4,false));
+    CHECK(c.gattling.weapon(1,false).aa);
+    const int charge=c.gattling.charge;
+    c.gattling.step(false,false);
+    CHECK(c.gattling.charge==std::max(0,charge-c.gattling.rate_down));
+    BuildingTypeDef d;
+    fill_building_weapons(rules,"YAGGUN",d);
+    REQUIRE(d.gattling.enabled());
+    CHECK(d.gattling.weapons.size()==6);
+    CHECK(d.gattling.weapon(1,false,d.gattling.thresholds.back()).aa);
+    CHECK(d.gattling.weapon(0,false,d.gattling.thresholds.back()).id==type_weapon_id(rules,"YAGGUN",4,false));
+}
+
+TEST_CASE("Gattling: charge clamps, spins down, and stage activation updates the firing attributes") {
+    Gattling g;
+    g.thresholds={3,6,9}; g.elite_thresholds={1,2,3};
+    g.rate_up=1;g.rate_down=2;
+    for(int i=0;i<6;++i) {
+        WeaponSlot w;w.valid=true;w.damage=10+i;w.rof=20-i;w.range=8;
+        w.aa=(i%2)==1;w.ag=!w.aa;
+        g.weapons.push_back(w);g.elite_weapons.push_back(w);
+    }
+    for(int i=0;i<30;++i)g.step(true,false);
+    CHECK(g.charge==9); CHECK(g.stage(false)==2);
+    Unit u;u.gattling=g;
+    activate_weapon_slot(u,0,nullptr);
+    CHECK(u.w_damage==14);CHECK(u.w_rof==16);CHECK_FALSE(u.w_aa);
+    activate_weapon_slot(u,1,nullptr);
+    CHECK(u.w_damage==15);CHECK(u.w_aa);
+    for(int i=0;i<10;++i)u.gattling.step(false,false);
+    CHECK(u.gattling.charge==0);
+    activate_weapon_slot(u,0,nullptr);
+    CHECK(u.w_damage==10); CHECK(u.w_rof==20);
+    u.gattling.charge=2;
+    CHECK(u.gattling.stage(false)==0);CHECK(u.gattling.stage(true)==2);
+    u.gattling.rate_down=0;u.gattling.step(false,false);
+    CHECK(u.gattling.charge==0);
+}
+
+TEST_CASE("Gattling: defensive turret reaches later stages through long reload intervals") {
+    ra2assets::MapFile map; World w(map);
+    BuildingTypeDef d; d.id="TESTGAT"; d.strength=100; d.armed=true;
+    d.gattling.thresholds={5,10,15}; d.gattling.elite_thresholds={3,6,9};
+    for(int i=0;i<6;++i) {
+        WeaponSlot s;s.valid=true;s.damage=10+i;s.rof=30;s.range=10;s.ag=(i%2==0);s.aa=!s.ag;
+        s.id="stage"+std::to_string(i);d.gattling.weapons.push_back(s);
+    }
+    d.weapon[0]=d.gattling.weapons[0];d.weapon[1]=d.gattling.weapons[1];
+    w.set_building_types({d});w.add_building(0,2,2,1,1,0,100,0,0,true);
+    UnitCombat target;target.strength=10000;w.add_combat_unit(4,2,1,target);
+    for(int i=0;i<100;++i)w.step(1.0/15.0);
+    CHECK(w.buildings()[0].gattling_charge==15);
+    bool last_stage=false;
+    for(const auto& e:w.take_fire_events()) if(e.weapon=="stage4")last_stage=true;
+    CHECK(last_stage);
+    CHECK(w.units()[0].hp<10000);
+    World restored(map);
+    REQUIRE(save::load_world(restored,save::save_world(w)));
+    CHECK(restored.buildings()[0].gattling_charge==15);
+    CHECK(restored.btypes()[0].gattling.weapons[4].id=="stage4");
+    for(int i=0;i<40;++i) {w.step(1.0/15.0);restored.step(1.0/15.0);}
+    CHECK(save::save_world(w)==save::save_world(restored));
+}
 
 TEST_CASE("parachute combat: exposed air target until touchdown, passengers remain hidden") {
     Unit p;

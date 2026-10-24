@@ -1,4 +1,6 @@
 #include "ra2assets/fnt.hpp"
+#include "ra2assets/ufnt.hpp"
+#include <algorithm>
 #include <stdexcept>
 
 namespace ra2assets {
@@ -112,6 +114,24 @@ Font Font::load(std::vector<uint8_t> b) {
             uint8_t* drow = &g.pixels[static_cast<size_t>(yoff + ry) * g.w];
             for (int rx = 0; rx < w; ++rx) drow[rx] = srow[rx] & 0x0F;
         }
+    }
+    return f;
+}
+
+Font Font::load_unicode(std::vector<uint8_t> bytes) {
+    const auto source=UFont::load(std::move(bytes));
+    Font f;
+    f.first_=0;f.last_=65535;f.height_=source.rows();
+    f.glyphs_.resize(65536);f.widths_.resize(65536);
+    for(int cp=0;cp<=65535;++cp) {
+        if(!source.has(cp)) continue;
+        const int width=source.width(cp);
+        f.widths_[cp]=width;
+        f.max_width_=std::max(f.max_width_,width);
+        auto& g=f.glyphs_[cp];g.w=width;g.h=f.height_;
+        g.pixels.resize(static_cast<size_t>(width)*g.h);
+        for(int y=0;y<g.h;++y) for(int x=0;x<width;++x)
+            g.pixels[static_cast<size_t>(y)*width+x]=source.pixel(cp,x,y)?1:0;
     }
     return f;
 }

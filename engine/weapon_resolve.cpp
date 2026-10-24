@@ -86,6 +86,7 @@ std::string type_weapon_id(const ra2assets::Rules& rules, const std::string& typ
     const bool numbered_gatling=rules.section_flag(type_id,"IsGattling",false) && i<weapon_count &&
         !rules.section_string(type_id,"Weapon"+std::to_string(i+1),"").empty();
     if (turret_count < 1 && !numbered_gatling) {
+        if (i < 0 || i >= 2) return "";
         if (rules.section_flag(type_id, "ClearAllWeapons", false)) return "";
         static const char* kNormal[2] = {"Primary", "Secondary"};
         static const char* kElite[2] = {"ElitePrimary", "EliteSecondary"};
@@ -117,8 +118,30 @@ TypeWeapons resolve_type_weapons(const ra2assets::Rules& rules, const std::strin
     return t;
 }
 
+static Gattling resolve_gattling(const ra2assets::Rules& rules, const std::string& id) {
+    Gattling g;
+    if (!rules.section_flag(id, "IsGattling", false)) return g;
+    const int stages = std::clamp(om::ftol(rules.section_double(id, "WeaponStages", 0)), 0, 16);
+    int last = 0, elite_last = 0;
+    for (int i = 0; i < stages; ++i) {
+        const std::string n = std::to_string(i+1);
+        const int limit = std::clamp(om::ftol(rules.section_double(id, "Stage"+n, last+1)), last+1, 1000000);
+        const int elimit = std::clamp(om::ftol(rules.section_double(id, "EliteStage"+n, limit)), elite_last+1, 1000000);
+        g.thresholds.push_back(limit); g.elite_thresholds.push_back(elimit);
+        last = limit; elite_last = elimit;
+        for (int slot = 0; slot < 2; ++slot) {
+            g.weapons.push_back(resolve_weapon_slot(rules, type_weapon_id(rules,id,2*i+slot,false)));
+            g.elite_weapons.push_back(resolve_weapon_slot(rules, type_weapon_id(rules,id,2*i+slot,true)));
+        }
+    }
+    g.rate_up = std::clamp(om::ftol(rules.section_double(id,"RateUp",1)),0,1000000);
+    g.rate_down = std::clamp(om::ftol(rules.section_double(id,"RateDown",50)),0,1000000);
+    return g;
+}
+
 void fill_unit_combat_extras(const ra2assets::Rules& rules, const std::string& type_id,
                              const TypeWeapons& tw, UnitCombat& c) {
+    c.gattling = resolve_gattling(rules, type_id);
     c.primary_aa = tw.slot[0].aa;
     c.primary_ag = tw.slot[0].ag;
     c.secondary = tw.slot[1];
@@ -236,6 +259,7 @@ void fill_unit_w7(const ra2assets::Rules& rules, const std::string& type_id, con
 
 void fill_building_weapons(const ra2assets::Rules& rules, const std::string& type_id,
                            BuildingTypeDef& d) {
+    d.gattling = resolve_gattling(rules, type_id);
     const TypeWeapons tw = resolve_type_weapons(rules, type_id);
     d.weapon[0] = tw.slot[0];
     d.weapon[1] = tw.slot[1];
