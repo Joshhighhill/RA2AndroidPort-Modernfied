@@ -13,6 +13,7 @@ public:
         audio_ = &audio;
         g_bld_events.clear();
         g_bunker_motion.clear();   // W2-GA-14 per-building anim state is per game
+        speech_cooldown_.clear();
         g_pres_crushed.clear();  // W7-04-25
         g_pres_sinkers.clear();  // W7-12-11
         g_pres_tick = 0;        // W3-B: the logic-tick anim clock restarts per game
@@ -569,7 +570,8 @@ private:
                     else if (t == T::ParaDrop || t == T::AmerParaDrop) snd_.eva("EVA_ReinforcementsReady");
                     break;
                 case E::Launched:
-                    fx_.spawn(gen_s("NukeTakeOff"), e.x2, e.y2, level_at(w, e.x2, e.y2), 20.0);
+                    ra2engine::diag::note("NUKE_FX launch=%s available=%d",gen_s("NukeTakeOff").c_str(),
+                        fx_.spawn(gen_s("NukeTakeOff"),e.x2,e.y2,level_at(w,e.x2,e.y2),20.0)!=nullptr);
                     snd_.eva("EVA_NuclearMissileLaunched");
                     pres_log(frame_, "fx superweapon launch");
                     break;
@@ -579,7 +581,9 @@ private:
                     std::string list = pres_clean(rules_ini_->get(pres_upper(wh), "AnimList"));
                     const std::size_t comma = list.find(',');
                     if (comma != std::string::npos) list = pres_clean(list.substr(0, comma));
-                    if (const FxAnimType* ft = fx_.spawn(list, e.x, e.y, level_at(w, e.x, e.y), 0.0))
+                    const FxAnimType* ft=fx_.spawn(list,e.x,e.y,level_at(w,e.x,e.y),0.0);
+                    ra2engine::diag::note("NUKE_FX impact=%s available=%d",list.c_str(),ft!=nullptr);
+                    if (ft)
                         snd_.play_at(ft->report, e.x, e.y, "nuke detonation");
                     pres_log(frame_, "fx superweapon " + list);
                     break;
@@ -1084,7 +1088,7 @@ private:
             const ra2engine::QueueSlot& s = q.state(cat).slot;
             Slot& p = slots_[c];
             const bool structure = c < 2;
-            if (p.type < 0 && s.type >= 0) snd_.eva(structure ? "EVA_Building" : "EVA_Training");
+            if (p.type < 0 && s.type >= 0) note_eva(structure ? "EVA_Building" : "EVA_Training");
             if (!p.ready && s.ready && structure) snd_.eva("EVA_ConstructionComplete");
             if (s.type >= 0 && !s.ready) producing = true;
             p.type = s.type;
@@ -1910,6 +1914,7 @@ private:
     long frame_ = 0;
     long logic_ = 0;   // W3-B: logic ticks since init (g_pres_tick)
     double clock_ = 0.0;
+    ra2engine::SpeechCooldown speech_cooldown_;
     ra2engine::Camera cam_;
     int vw_ = 1280, vh_ = 720;
     Slot slots_[ra2engine::kQueueCats];

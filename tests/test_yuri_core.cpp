@@ -9,12 +9,50 @@
 #include "report_probe.hpp"
 #include "psychic_links.hpp"
 #include "psychic_sensor.hpp"
+#include "presentation_policy.hpp"
+#include "building_transition.hpp"
 #include "faction_support.hpp"
 #include "command.hpp"
 #include "selection.hpp"
 #include <fstream>
 #include <iterator>
 using namespace ra2engine;
+TEST_CASE("presentation policy: repeated queue and rally speech has independent three-second windows") {
+    SpeechCooldown gate;
+    CHECK(gate.allow("building",0));CHECK_FALSE(gate.allow("building",1000));
+    CHECK_FALSE(gate.allow("building",2999));CHECK(gate.allow("building",3000));
+    CHECK(gate.allow("rally",3001));CHECK_FALSE(gate.allow("rally",4000));
+    CHECK(gate.allow("training",4000));gate.clear();CHECK(gate.allow("rally",4000));
+}
+TEST_CASE("presentation policy: nuclear visual follows existing up and down strike phases") {
+    CHECK(nuke_visual_height(0,200,200)==0);
+    CHECK(nuke_visual_height(10,200,200)==55);
+    CHECK(nuke_visual_height(200,200,200)==20000);
+    CHECK(nuke_visual_height(300,200,200)==10000);
+    CHECK(nuke_visual_height(400,200,200)==0);
+    CHECK(nuke_visual_height(500,200,200)==0);
+}
+TEST_CASE("Tank Bunker: drive state is reset on attachment and ejection without changing type settings") {
+    // Fixture is declared below; standalone minimal terrain keeps this test isolated.
+    ra2assets::MapFile map;
+    auto& cells=const_cast<std::vector<ra2assets::MapCell>&>(map.cells());
+    for(int y=0;y<20;++y)for(int x=0;x<20;++x)cells.push_back({x,y,0,0,0});
+    World w(map);BuildingTypeDef d;d.id="NATBNK";d.tank_bunker=true;
+    d.can_be_occupied=true;d.max_occupants=1;d.strength=1000;d.fw=d.fh=2;
+    w.set_building_types({d});w.add_building(0,8,8,2,2,0,1000,0,0,true);
+    UnitCombat tank;tank.strength=200;tank.is_vehicle=true;tank.w7.bunkerable=true;
+    w.add_combat_unit(7,8,0,tank);
+    auto poison=[&](){auto& u=w.units()[0];u.loco.trk=5;u.loco.accum=20;u.loco.path_delay=80;u.wait_time=5;u.loco.t.accel_factor=0.07;};
+    poison();REQUIRE(w.campaign_occupy_now(0,0));
+    CHECK(w.units()[0].loco.trk==-1);CHECK(w.units()[0].loco.accum==0);
+    CHECK(w.units()[0].wait_time==0);CHECK(w.units()[0].loco.t.accel_factor==doctest::Approx(0.07));
+    poison();w.unload_occupants(0);
+    CHECK(w.units()[0].garrison_of==-1);CHECK(w.units()[0].loco.trk==-1);
+    CHECK(w.units()[0].loco.path_delay==0);CHECK(w.units()[0].wait_time==0);
+    World restored(map);REQUIRE(save::load_world(restored,save::save_world(w)));
+    for(int i=0;i<120;++i){w.step(1.0/15.0);restored.step(1.0/15.0);}
+    CHECK(save::save_world(w)==save::save_world(restored));
+}
 TEST_CASE("Yuri roster: real structures exclude shared scenery and dormant prototypes") {
     for(const char* id:{"YACNST","YAREFN","NAPSIS","NACLON","GAFWLL","NATBNK"})
         CHECK(vanilla_yuri_building(id));

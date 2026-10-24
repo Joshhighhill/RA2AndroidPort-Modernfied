@@ -99,7 +99,11 @@ public:
 
     // ---- GameScene notes -----------------------------------------------------
     // A UI-originated EVA line (cameo click / hotkey / mode), logged + queued.
-    void note_eva(const std::string& name) { snd_.eva(name); }
+    void note_eva(const std::string& name) {
+        const bool repeated=name=="EVA_Building" || name=="EVA_Training" || name=="EVA_NewRallyPointEstablished";
+        if(repeated && !speech_cooldown_.allow(name,static_cast<std::uint64_t>(std::max(0.0,clock_)*1000.0)))return;
+        snd_.eva(name);
+    }
     // DeployObject on the selection: Mission_Unload (16) -> VoiceDeploy
     // [RE: FUN_006FF0A0 / FUN_00708280].
     void note_deploy_order(const ra2engine::World& w, int unit) {
@@ -354,7 +358,7 @@ private:
         (void)ba;
         // [RE: @448171 IsPlayerControl] / [@4439D4 from a player click].
         if (act.primary_set) snd_.eva("EVA_PrimaryBuildingSelected");
-        if (act.rally_set) snd_.eva("EVA_NewRallyPointEstablished");
+        if (act.rally_set) note_eva("EVA_NewRallyPointEstablished");
     }
 
     // Per logic tick: the state-edge sounds.

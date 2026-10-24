@@ -46,6 +46,7 @@ static char* ra2_cli_pref_path() {
 #include "diagnostics.hpp"
 #include "report_probe.hpp"
 #include "vehicle_animation.hpp"
+#include "presentation_policy.hpp"
 #include "building_transition.hpp"
 #include "power_cameo.hpp"
 #include "psychic_links.hpp"
@@ -4305,6 +4306,31 @@ void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
         else
             SDL_SetRenderDrawColor(ren, 255, 240, 170, 255);
         SDL_RenderFillRect(ren, &shell);
+    }
+    // Nuclear strikes live outside World::projectiles(). Render their actual
+    // carrier/payload art from the authoritative strike clock; no new damage.
+    if(tc && g_fx3) for(const auto& strike:world.sw_strikes()) {
+        if(strike.kind!=1 || strike.done)continue;
+        const auto& timing=world.sw_params();
+        const double tick=strike.frame+g_pres_render_fraction;
+        const bool falling=tick>=timing.nuke_up_frames;
+        const int x=falling?strike.x:strike.ox,y=falling?strike.y:strike.oy;
+        if(!world.object_visible_at(g_local_house,x,y))continue;
+        ra2engine::Projectile missile;
+        missile.weapon_id=falling?"NukePayload":"NukeCarrier";
+        missile.kind=ra2engine::ProjKind::Vertical;
+        missile.x=x*256;missile.y=y*256;
+        missile.z=static_cast<int>(std::lround(ra2engine::nuke_visual_height(tick,
+            timing.nuke_up_frames,timing.nuke_down_frames)));
+        missile.vz=falling?-100.0:std::max(1.0,tick+1.0);
+        const int ground=(x+y)*15-world.cell_level(x,y)*15+cam.y+15;
+        const int sx=(x-y)*30+cam.x+30;
+        const int sy=ra2engine::projectile_screen_y(ground,missile.z);
+        if(!g_fx3->draw_projectile(ren,*tc,world,missile,sx,sy,ground,W,H)) {
+            static std::set<std::string> missing;
+            if(missing.insert(missile.weapon_id).second)
+                ra2engine::diag::note("NUKE_VISUAL missing weapon=%s",missile.weapon_id.c_str());
+        }
     }
 }
 
