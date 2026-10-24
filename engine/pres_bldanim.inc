@@ -219,8 +219,19 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
                 if(ui>=0 && ui<static_cast<int>(w.units().size())) {
                     const auto& u=w.units()[ui];
                     const double cx=b.cx+(b.fw-1)/2.0, cy=b.cy+(b.fh-1)/2.0;
+                    double from_x=occupied?u.fx:cx,from_y=occupied?u.fy:cy;
+                    const auto previous=g_bunker_motion.find(ui);
+                    if(previous!=g_bunker_motion.end() &&
+                       ra2engine::transition_active(previous->second.start,previous->second.duration,now)) {
+                        const auto& old=previous->second;
+                        const double blend=ra2engine::transition_blend(now-old.start,old.duration,0);
+                        const double tx=old.entering?old.to_x:u.fx,ty=old.entering?old.to_y:u.fy;
+                        from_x=old.from_x+(tx-old.from_x)*blend;
+                        from_y=old.from_y+(ty-old.from_y)*blend;
+                    }
                     g_bunker_motion[ui] = occupied ? BunkerMotion{u.fx,u.fy,cx,cy,now,true,static_cast<int>(bi)}
                                                    : BunkerMotion{cx,cy,u.fx,u.fy,now,false,static_cast<int>(bi)};
+                    g_bunker_motion[ui].from_x=from_x;g_bunker_motion[ui].from_y=from_y;
                     long duration=1;
                     for(int slot: {occupied?kBsSpecial:kBsSpecial3,occupied?kBsSpecial2:kBsSpecial4}) {
                         const auto& art=a.slot[slot];

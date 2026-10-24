@@ -44,6 +44,11 @@ bool collapse_candidate(const Unit& u) {
 bool jumpjet_type(const Unit& u) {
     return u.loco.t.kind == static_cast<int>(LocoKind::Jumpjet) || (u.is_aircraft && !u.an.t.fixed_wing);
 }
+void reset_bunker_drive(Unit& u) {
+    const auto type=u.loco.t;
+    u.loco=UnitLoco{};u.loco.t=type;
+    u.wait_time=0;
+}
 }  // namespace
 
 int World::neutral_house() const {
@@ -168,6 +173,7 @@ int World::group_occupy(int issuer, const std::vector<int>& ids, int bi) {
 void World::occupy_now(int ui, int bi) {
     Unit& u = units_[ui];
     Building& b = buildings_[bi];
+    if(btypes()[b.type].tank_bunker)reset_bunker_drive(u);
     occ_.release_all_of(ui, -1, -1);
     u.path.clear();
     u.path_idx = 0;
@@ -281,6 +287,7 @@ void World::unload_occupants(int bi, bool place_inside) {
     if (inside) exit = Cellxy{x0 + w - 1, y0 + h - 1};
     auto put = [&](int ui, Cellxy c, int layer) {
         Unit& u = units_[static_cast<std::size_t>(ui)];
+        if(btypes()[b.type].tank_bunker)reset_bunker_drive(u);
         u.cell_x = c.x;
         u.cell_y = c.y;
         u.fx = c.x;
