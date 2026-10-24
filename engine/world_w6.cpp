@@ -3,6 +3,7 @@
 // declared in world.hpp ("W6 fix #2"). Everything is inert until a campaign
 // host calls set_playfield / set_house_handicap / set_building_target_flags.
 #include "world.hpp"
+#include "weapon_unit.hpp"
 #include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 #include "campaign.hpp"   // within_usable_area (IsWithinUsableArea FUN_00577E90)
 #include "veterancy.hpp"  // rof_frames (the GetROF ftol)
@@ -20,7 +21,7 @@ bool World::legal_threat_building(int scanner_house, int bi) const {
 }
 
 bool World::legal_threat_unit(int /*scanner_house*/, const Unit& v) const {
-    if (!v.alive || v.die_time >= 0.0 || v.cargo_of >= 0) return false;
+    if (!v.alive || v.die_time >= 0.0 || !unit_combat_exposed(v)) return false;
     // [RE: Evaluate_Object FUN_006F71D0 @0x6F7A5C: type +0x231 LegalTarget]
     if (!v.tg.t.legal_target) return false;
     // [@0x6F735E: +0x3D5 IsInPlayfield]
