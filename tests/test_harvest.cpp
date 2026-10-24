@@ -792,11 +792,16 @@ TEST_CASE("diagnostics: bounded rotation, named asset trace, snapshots and miner
     diag::write(std::string(100,'a').data(),100);
     diag::write(std::string(100,'b').data(),100);
     CHECK(read("engine-previous.log")==std::string(100,'a'));
-    CHECK(read("engine-current.log")==std::string(100,'b')); // flushed before close
+    diag::flush();
+    CHECK(read("engine-current.log")==std::string(100,'b'));
     diag::snapshot("skirmish.txt",std::string(70000,'s'));
     CHECK(fs::file_size(root/"skirmish.txt")==65536);
     diag::snapshot("../not-allowed.txt","no");CHECK_FALSE(fs::exists(root.parent_path()/"not-allowed.txt"));
     REQUIRE(diag::start(root.u8string()));
+    diag::state().trace_assets=false;
+    diag::asset("test","disabled","synthetic",1);
+    CHECK(diag::state().seen.empty());
+    diag::state().trace_assets=true;
     ra2assets::asset_trace_callback().store(diag::asset);
     std::vector<uint8_t> buf;
     auto put32=[&](uint32_t v){for(int i=0;i<4;++i)buf.push_back(static_cast<uint8_t>(v>>(8*i)));};
@@ -804,6 +809,7 @@ TEST_CASE("diagnostics: bounded rotation, named asset trace, snapshots and miner
     put32(ra2assets::mix_id("probe.ini"));put32(0);put32(1);buf.push_back('x');
     auto mix=ra2assets::MixFile::open(std::move(buf));
     REQUIRE(mix.find("probe.ini")!=nullptr);REQUIRE(mix.find("probe.ini")!=nullptr);
+    diag::flush();
     auto assets=read("assets-current.log");
     CHECK(assets.find("file-hit probe.ini")!=std::string::npos);
     CHECK(assets.find("file-hit probe.ini",assets.find("file-hit probe.ini")+1)==std::string::npos);
@@ -813,6 +819,7 @@ TEST_CASE("diagnostics: bounded rotation, named asset trace, snapshots and miner
     Rig logged,plain;
     for(auto* r:{&logged,&plain}){r->harv(1,1,true,20);r->units[0].harv=HarvState::ReturnToRef;r->units[0].bales_ore=20;}
     logged.step(kChronoWarpSecs);
+    diag::flush();
     const auto log=read("engine-current.log");
     CHECK(log.find("WARP begin")!=std::string::npos);CHECK(log.find("WARP complete")!=std::string::npos);
     diag::stop();plain.step(kChronoWarpSecs);

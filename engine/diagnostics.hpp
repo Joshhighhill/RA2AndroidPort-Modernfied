@@ -13,6 +13,7 @@
 namespace ra2engine::diag {
 struct State {
     std::atomic<bool> enabled{false};
+    std::atomic<bool> trace_assets{false};
     std::mutex mutex;
     std::string dir;
     std::FILE* log=nullptr;
@@ -20,6 +21,7 @@ struct State {
     std::size_t bytes=0, asset_bytes=0, limit=1024*1024;
     std::atomic<std::uint32_t> frame{0};
     std::set<std::string> seen;
+    std::chrono::steady_clock::time_point last_flush{};
 };
 // Process lifetime: stream buffers may still log during static destruction.
 inline State& state(){static State* s=new State;return *s;}
@@ -33,7 +35,7 @@ inline void rotate(const char* name) {
 inline bool start(const std::string& dir,std::size_t limit=1024*1024) {
     auto& s=state();std::lock_guard<std::mutex> lock(s.mutex);
     s.enabled=false;if(s.log)std::fclose(s.log);if(s.assets)std::fclose(s.assets);
-    s.log=s.assets=nullptr;s.dir=dir;s.limit=limit;s.bytes=0;s.asset_bytes=0;s.frame=0;s.seen.clear();
+    s.log=s.assets=nullptr;s.dir=dir;s.limit=limit;s.bytes=0;s.asset_bytes=0;s.frame=0;s.seen.clear();s.last_flush=std::chrono::steady_clock::now();
     std::error_code ec;std::filesystem::create_directories(std::filesystem::u8path(dir),ec);
     if(ec)return false;rotate("engine");rotate("assets");
     s.log=std::fopen((dir+"/engine-current.log").c_str(),"wb");
@@ -46,7 +48,11 @@ inline void write(const char* text,std::size_t n) noexcept { try {
     if(s.bytes+n>s.limit){std::fclose(s.log);s.log=nullptr;rotate("engine");
         s.log=std::fopen((s.dir+"/engine-current.log").c_str(),"wb");s.bytes=0;}
     if(!s.log)return;
-    n=std::min(n,s.limit);std::fwrite(text,1,n,s.log);std::fflush(s.log);s.bytes+=n;
+    n=std::min(n,s.limit);std::fwrite(text,1,n,s.log);s.bytes+=n;
+    const auto now=std::chrono::steady_clock::now();
+    if(now-s.last_flush>=std::chrono::seconds(1)) {
+        std::fflush(s.log);if(s.assets)std::fflush(s.assets);s.last_flush=now;
+    }
     } catch (...) { /* Logging must never terminate the simulation. */ }
 }
 inline void note(const char* fmt,...) {
@@ -67,13 +73,19 @@ inline void snapshot(const char* name,const std::string& text) noexcept { try {
     } catch (...) { /* Logging must never terminate the simulation. */ }
 }
 inline void asset(const char* kind,const std::string& name,const std::string& source,std::uint64_t size) noexcept { try {
-    auto& s=state();if(!s.enabled.load())return;std::lock_guard<std::mutex> lock(s.mutex);
+    auto& s=state();if(!s.enabled.load() || !s.trace_assets.load())return;std::lock_guard<std::mutex> lock(s.mutex);
     if(!s.assets || s.seen.size()>=8192)return;
     const std::string key=std::string(kind)+" "+name.substr(0,400)+" <- "+source.substr(0,500);
     if(s.asset_bytes+key.size()+40>1024*1024)return;
     if(!s.seen.insert(key).second)return;
-    std::fprintf(s.assets,"%s bytes=%llu\n",key.c_str(),static_cast<unsigned long long>(size));std::fflush(s.assets);s.asset_bytes+=key.size()+40;
+    std::fprintf(s.assets,"%s bytes=%llu\n",key.c_str(),static_cast<unsigned long long>(size));s.asset_bytes+=key.size()+40;
     } catch (...) { /* Logging must never terminate the simulation. */ }
+}
+// Explicit report/checkpoint flush; ordinary stream writes stay buffered.
+inline void flush() noexcept { try {
+    auto& s=state();std::lock_guard<std::mutex> lock(s.mutex);
+    if(s.log)std::fflush(s.log);if(s.assets)std::fflush(s.assets);
+    } catch (...) {}
 }
 inline void stop() {
     auto& s=state();std::lock_guard<std::mutex> lock(s.mutex);s.enabled=false;

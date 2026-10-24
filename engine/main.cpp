@@ -7999,6 +7999,7 @@ private:
                 case InGameMenu::ShareReport:
                     ra2engine::diag::probe_world(world_);
                     ra2engine::diag::note("REPORT requested from pause menu");
+                    ra2engine::diag::flush();
                     ra2engine::os_android_share_report();
                     break;
                 default: break;
@@ -19075,7 +19076,12 @@ int main(int argc, char** argv) {
                 ra2engine::diag::note("SDL %s",msg);
                 auto* saved=static_cast<Relay*>(data);if(saved->previous)saved->previous(saved->context,category,priority,msg);
             },&relay);
-            ra2assets::asset_trace_callback().store(ra2engine::diag::asset);
+            // Archive lookup tracing is opt-in; ordinary reports keep engine events.
+            if(const char* trace=std::getenv("RA2_TRACE_ASSETS"))
+                ra2engine::diag::state().trace_assets=std::string(trace)=="1";
+            if(ra2engine::diag::state().trace_assets.load())
+                ra2assets::asset_trace_callback().store(ra2engine::diag::asset);
+            std::atexit(ra2engine::diag::stop);
             ra2engine::diag::note("ENGINE START version=%s",RA2_VERSION);
         }
     }

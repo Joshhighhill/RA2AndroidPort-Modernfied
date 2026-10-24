@@ -39,6 +39,7 @@ TEST_CASE("diagnostics: unit probes preserve saved state and catch broken refere
     REQUIRE(diag::start(root.u8string()));
     diag::probe_world(w);
     CHECK(save::save_world(w)==before);
+    diag::flush();
     std::ifstream stream(root/"engine-current.log",std::ios::binary);
     const std::string log{std::istreambuf_iterator<char>(stream),{}};
     CHECK(log.find("invalid_slave_manager=999")!=std::string::npos);
