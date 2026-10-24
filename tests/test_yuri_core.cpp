@@ -377,6 +377,50 @@ TEST_CASE("garrison: other passive owners transfer control and infantry evacuate
     CHECK(w.units()[0].house==0);CHECK(w.buildings()[bi].house==2);
 }
 
+TEST_CASE("Battle Bunker: empty and manually evacuated structure keeps its owner and repair access") {
+    Rig r;World w(r.map);
+    w.set_house(0,{World::Side::Soviet,0,"Player",0,true});
+    w.set_house(2,{World::Side::Neutral,2,"Neutral",2,false});
+    BuildingTypeDef d;d.id="NABNKR";d.strength=600;d.can_be_occupied=true;
+    d.max_occupants=5;d.click_repairable=true;
+    w.set_building_types({d});
+    const int bi=w.add_building(0,8,8,1,1,0,600,0,0,true);
+    auto c=unit("CONS");c.is_infantry=true;c.occupier=true;
+    w.add_combat_unit(7,8,0,c);
+    REQUIRE(w.campaign_occupy_now(0,bi));
+    w.unload_occupants(bi);w.step(1.0/15.0);
+    CHECK(w.buildings()[bi].occupants.empty());
+    CHECK(w.buildings()[bi].house==0);
+    w.buildings()[bi].hp=1;
+    CHECK(w.set_repair(bi,0,1));
+    CHECK(w.buildings()[bi].being_repaired);
+    CHECK_FALSE(w.set_repair(bi,2,1));
+}
+
+TEST_CASE("Battle Bunker: red damage retains infantry while civilian garrisons evacuate") {
+    for(bool military:{false,true}) {
+        Rig r;World w(r.map);
+        w.set_house(0,{World::Side::Soviet,0,"Player",0,true});
+        w.set_house(2,{World::Side::Neutral,2,"Neutral",2,false});
+        BuildingTypeDef d;d.id=military?"NABNKR":"CIVILIAN";d.strength=600;
+        d.can_be_occupied=true;d.max_occupants=5;
+        w.set_building_types({d});const int bi=w.add_building(0,8,8,1,1,0,600,0,0,true);
+        auto c=unit("CONS");c.is_infantry=true;c.occupier=true;
+        w.add_combat_unit(7,8,0,c);REQUIRE(w.campaign_occupy_now(0,bi));
+        w.buildings()[bi].hp=100;w.step(1.0/15.0);
+        CHECK(w.buildings()[bi].occupants.empty()==!military);
+        CHECK(w.units()[0].alive);
+        CHECK((w.units()[0].garrison_of==bi)==military);
+        CHECK(w.buildings()[bi].house==(military?0:2));
+        World restored(r.map);
+        REQUIRE(save::load_world(restored,save::save_world(w)));
+        for(int frame=0;frame<120;++frame) {
+            w.step(1.0/15.0);restored.step(1.0/15.0);
+        }
+        CHECK(save::save_world(restored)==save::save_world(w));
+    }
+}
+
 TEST_CASE("Yuri core: Psychic Reveal maps only its area and fog sight is temporary") {
     Rig r;World w(r.map);w.enable_shroud(true);w.set_fog_of_war(true);
     std::array<int,11> verses{};verses.fill(100);

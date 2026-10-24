@@ -189,7 +189,12 @@ void World::occupy_now(int ui, int bi) {
 // EVA for the old owner); occupied and neutral -> the FIRST occupant's house.
 void World::sync_garrison_owner(int bi) {
     Building& b = buildings_[bi];
-    if (b.type >= 0 && b.type < static_cast<int>(btypes().size()) && btypes()[b.type].tank_bunker) return;
+    if (b.type >= 0 && b.type < static_cast<int>(btypes().size())) {
+        const auto& type=btypes()[b.type];
+        // Constructed bunkers retain their owner when empty. Only civilian
+        // urban-combat garrisons adopt/abandon ownership with their occupants.
+        if (type.tank_bunker || type.id=="NABNKR") return;
+    }
     const int neutral = neutral_house();
     if (neutral < 0) return;
     if (b.occupants.empty() && b.house != neutral) {
@@ -1031,8 +1036,9 @@ void World::step_depth(double dt) {
         }
         // W7-08-09 [RE: the damage-state update FUN_0043FAA0 @0x44012F ->
         // FUN_004581F0 -> UnloadOccupants FUN_00457DD0]: at health ratio <=
-        // ConditionRed every occupant walks out alive.
-        if (!b.occupants.empty() && garrison_red(b)) {
+        // ConditionRed civilian occupants walk out alive. The Soviet Battle
+        // Bunker retains its defenders; damage alone is not an unload order.
+        if (!b.occupants.empty() && btypes()[b.type].id!="NABNKR" && garrison_red(b)) {
             unload_occupants(bi);
             continue;
         }
