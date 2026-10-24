@@ -41,7 +41,6 @@
             for(int ui=0;ui<static_cast<int>(world_.units().size());++ui) {
                 int x=0,y=0;if(!ra2engine::psychic_sensor_target(world_,bi,ui,x,y)) continue;
                 const auto& u=world_.units()[ui];
-                if(!world_.object_visible_at(local_house_,u.cell_x,u.cell_y)) continue;
                 const auto from=point(u.fx,u.fy),to=point(x,y);
                 SDL_SetRenderDrawColor(ren,210,100,245,210);
                 SDL_RenderDrawLine(ren,from.x,from.y,to.x,to.y);

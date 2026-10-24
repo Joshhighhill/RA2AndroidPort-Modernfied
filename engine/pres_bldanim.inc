@@ -65,8 +65,9 @@ struct SlaveMinerPackFx {
     long start = 0, duration = 0;
 };
 std::map<int, SlaveMinerPackFx> g_slave_miner_pack_fx;
-struct BunkerMotion { double from_x=0,from_y=0,to_x=0,to_y=0; long start=0; };
+struct BunkerMotion { double from_x=0,from_y=0,to_x=0,to_y=0; long start=0; bool entering=true; int building=-1; };
 std::map<int,BunkerMotion> g_bunker_motion;
+double g_pres_render_fraction = 0; // sub-tick movement only; never simulation input
 
 inline long long bld_event_key(const ra2engine::Building& b) {
     return (static_cast<long long>(b.cx) << 32) ^ (static_cast<long long>(b.cy) << 16) ^ b.type;
@@ -218,8 +219,8 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
                 if(ui>=0 && ui<static_cast<int>(w.units().size())) {
                     const auto& u=w.units()[ui];
                     const double cx=b.cx+(b.fw-1)/2.0, cy=b.cy+(b.fh-1)/2.0;
-                    g_bunker_motion[ui] = occupied ? BunkerMotion{u.fx,u.fy,cx,cy,now}
-                                                   : BunkerMotion{cx,cy,u.fx,u.fy,now};
+                    g_bunker_motion[ui] = occupied ? BunkerMotion{u.fx,u.fy,cx,cy,now,true,static_cast<int>(bi)}
+                                                   : BunkerMotion{cx,cy,u.fx,u.fy,now,false,static_cast<int>(bi)};
                 }
                 st.bunker_occupied = occupied;
                 st.bunker_transition = occupied ? 1 : -1;

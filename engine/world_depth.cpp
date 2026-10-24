@@ -966,14 +966,17 @@ int World::group_attack_cell(int issuer, const std::vector<int>& ids, int cx, in
 // ------------------------------------------------------------------ the pass
 
 void World::step_depth(double dt) {
-    // Ground shots fired by step_combat this step: the explosion lands on the
-    // cell (unit / building there + the bridge roll) [RE-FALLBACK: a ground
-    // target is hit at the ROF tick, no projectile flight].
+    // Ground force-fire uses the same flight solver and muzzle as object fire.
+    // Only instant weapons retain the immediate cell-hit path.
     for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
         Unit& u = units_[i];
         if (!u.cell_shot) continue;
         u.cell_shot = false;
         const int x = u.attack_cell_x, y = u.attack_cell_y;
+        if (projectiles_enabled_ && u.w_proj.flies()) {
+            launch_projectile(i,-1,-1,x,y);
+            continue;
+        }
         const bool wall = u.w_active == 1 ? u.w2.wall : u.p_wall;
         // [RE-FALLBACK: a ground-fire shell at a bridge cell bursts at the
         // cell's bridge coordinates (GetCoordsWithBridge): the deck height]

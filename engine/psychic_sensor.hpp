@@ -10,8 +10,8 @@ inline bool psychic_sensor_active(const World& w,int bi,int viewer) {
     const auto& t=w.btypes()[b.type];
     return t.w5.psychic_radius>0 && (!t.powered || !w.house_low_power(b.house));
 }
-// Return the commanded destination, never the enemy's full route. Visibility
-// of the source is checked by the renderer, so this cannot reveal hidden units.
+// Return only the commanded destination inside the sensor radius. The intent
+// line is detectable through fog; this does not reveal the unit or map cells.
 inline bool psychic_sensor_target(const World& w,int bi,int ui,int& x,int& y) {
     if(bi<0 || bi>=static_cast<int>(w.buildings().size())) return false;
     if(ui<0 || ui>=static_cast<int>(w.units().size())) return false;

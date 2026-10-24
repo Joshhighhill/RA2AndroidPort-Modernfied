@@ -6533,7 +6533,7 @@ void World::step_projectiles(double dt) {
     }
 }
 
-void World::launch_projectile(int attacker, int target_unit, int target_building) {
+void World::launch_projectile(int attacker, int target_unit, int target_building, int cell_x, int cell_y) {
     if (attacker < 0 || attacker >= static_cast<int>(units_.size())) return;
     const Unit& u = units_[attacker];
     const ProjectileSpec& spec = u.w_proj;
@@ -6554,6 +6554,8 @@ void World::launch_projectile(int attacker, int target_unit, int target_building
             if (best < 0.0 || d < best) { best = d; nx = c.x; ny = c.y; }
         }
         tgt = Vec3i{nx * 256, ny * 256, 0};
+    } else if (cell_x >= 0 && cell_y >= 0) {
+        tgt = Vec3i{cell_x * 256, cell_y * 256, deck_z(cell_x,cell_y)-cell_level(cell_x,cell_y)*104};
     } else {
         return;
     }
@@ -6674,6 +6676,10 @@ bool World::homing_target(Projectile& p, Vec3i& out) const {
         const Building& b = buildings_[p.target_building];
         if (!b.alive || b.state == Building::State::Dead) return false;
         out = Vec3i{p.tx, p.ty, 0};   // the foundation cell aimed at launch
+        return true;
+    }
+    if (p.target_unit < 0 && p.target_building < 0 && !p.target_air) {
+        out=Vec3i{p.tx,p.ty,p.tz}; // explicit ground cell stays a valid target
         return true;
     }
     return false;

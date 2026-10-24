@@ -106,7 +106,7 @@ public:
         t.animation_sprites.begin_frame(tc.instance_id(),tc.frame_id());
         const bool gatling = b.type>=0 && b.type<static_cast<int>(w.btypes().size()) && w.btypes()[b.type].gattling.enabled();
         const int stage = gatling ? w.btypes()[b.type].gattling.stage(false,b.gattling_charge) : 0;
-        const long clock = gatling && b.def_fire_flash>0 ? g_pres_tick/std::max(1,4-stage) : 0;
+        const long clock = gatling && b.gattling_charge>0 ? g_pres_tick/std::max(1,4-stage) : 0;
         auto draw_part = [&](int part) {
             const auto& model=part==0?t.src->hull:t.src->tur;
             const auto& hva=part==0?t.src->hull_h:t.src->tur_h;

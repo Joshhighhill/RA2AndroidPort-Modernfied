@@ -3893,7 +3893,7 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
     auto part_frame = [&](int part) {
         if (!va.vsrc) return 0;
         const auto& h = part == 0 ? va.vsrc->hull_h : part == 1 ? va.vsrc->tur_h : va.vsrc->barl_h;
-        const int clock = part > 0 && u.gattling.enabled() && u.fire_flash > 0.0 ?
+        const int clock = part > 0 && u.gattling.enabled() && u.gattling.charge > 0 ?
             static_cast<int>(g_pres_tick / std::max(1,4-u.gattling.stage(ra2engine::is_elite(u.vet.veterancy)))) : walk_stage;
         return ra2engine::hva_animation_frame(clock,h.frames.size());
     };
@@ -4441,6 +4441,13 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // image is logged and skipped (not thrown) so one bad unit can't take
     // down the whole frame.
     auto draw_one_unit = [&](int idx, const ra2engine::Building* bunker = nullptr) {
+        const auto exiting=g_bunker_motion.find(idx);
+        if (!bunker && exiting!=g_bunker_motion.end() && !exiting->second.entering &&
+            ra2engine::transition_active(exiting->second.start,15,g_pres_tick)) {
+            const int bi=exiting->second.building;
+            if (bi>=0 && bi<static_cast<int>(world.buildings().size()) && world.buildings()[bi].alive &&
+                world.buildings()[bi].state==ra2engine::Building::State::Idle) return;
+        }
         const auto packing=g_slave_miner_pack_fx.find(idx);
         if(!bunker && packing!=g_slave_miner_pack_fx.end() &&
             ra2engine::transition_active(packing->second.start,packing->second.duration,g_pres_tick)) return;
@@ -4452,7 +4459,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             lifted->level += lv;
             up = &*lifted;
         }
-        if (bunker) {
+        if (bunker && us[idx].garrison_of>=0) {
             if (!lifted) lifted.emplace(*up);
             lifted->fx=bunker->cx+(bunker->fw-1)/2.0;
             lifted->fy=bunker->cy+(bunker->fh-1)/2.0;
@@ -4473,10 +4480,14 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             if(age<0 || age>=15 || !up->alive) g_bunker_motion.erase(motion);
             else {
                 if(!lifted) lifted.emplace(*up);
-                const double t=std::clamp(age/15.0,0.0,1.0);
+                const double t=std::clamp((age+g_pres_render_fraction)/15.0,0.0,1.0);
                 const double f=t*t*(3.0-2.0*t);
-                lifted->fx=motion->second.from_x+(motion->second.to_x-motion->second.from_x)*f;
-                lifted->fy=motion->second.from_y+(motion->second.to_y-motion->second.from_y)*f;
+                // Exiting units may already be following a new command. Blend
+                // toward their current position, not a stale ejection cell.
+                const double tx=motion->second.entering?motion->second.to_x:us[idx].fx;
+                const double ty=motion->second.entering?motion->second.to_y:us[idx].fy;
+                lifted->fx=motion->second.from_x+(tx-motion->second.from_x)*f;
+                lifted->fy=motion->second.from_y+(ty-motion->second.from_y)*f;
                 lifted->sub_x=lifted->sub_y=0;
                 up=&*lifted;
             }
@@ -4701,6 +4712,16 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                                          pal, ckey, W, H, false);
                 for (int ui : b.occupants)
                     if (ui>=0 && ui<static_cast<int>(us.size()) && us[ui].alive)
+                        draw_one_unit(ui,&b);
+                // Keep an exiting tank in the same rear/tank/front layering
+                // until it clears the bunker instead of popping in front.
+                std::vector<int> exiting_units;
+                for (const auto& motion:g_bunker_motion)
+                    if (!motion.second.entering && motion.second.building==d.idx &&
+                        ra2engine::transition_active(motion.second.start,15,g_pres_tick))
+                        exiting_units.push_back(motion.first);
+                for (int ui:exiting_units)
+                    if(ui>=0 && ui<static_cast<int>(us.size()) && us[ui].alive && us[ui].garrison_of<0)
                         draw_one_unit(ui,&b);
                 pres_tank_bunker_overlay(ren, tc, b, image, cx, cy, ba->condition_yellow,
                                          pal, ckey, W, H, true);
@@ -7682,6 +7703,7 @@ public:
     // begin_frame/present are the driver's responsibility.
     void render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override {
         NetRenderClock net_rclock_(net_render_ms_);   // W9-01-03: render CPU time for PROCESS_TIME
+        g_pres_render_fraction=std::clamp(logic_acc_/kLogicDt,0.0,1.0);
         static ra2engine::diag::StageStats render_stats;
         ra2engine::diag::StageTimer report_timer(render_stats,"scene-render");
         SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());

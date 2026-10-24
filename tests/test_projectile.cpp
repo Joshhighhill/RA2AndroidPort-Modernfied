@@ -438,6 +438,27 @@ TEST_CASE("projectile muzzle: lateral art offset and hull turret origin agree at
     CHECK(r.world.projectiles().front().weapon_id=="TEST_CANNON");
 }
 
+TEST_CASE("projectile world: ground force-fire launches from FLH and damages only at impact") {
+    ra2assets::MapFile map;
+    auto& cells=const_cast<std::vector<ra2assets::MapCell>&>(map.cells());
+    for(int y=0;y<12;++y)for(int x=0;x<12;++x)cells.push_back({x,y,0,0,0});
+    World w(map);w.enable_projectiles(ProjectileRules{});
+    auto gun=cannon_stats();gun.proj.weapon_id="GROUND_CANNON";
+    w.add_combat_unit(2,2,0,gun);
+    w.add_combat_unit(6,2,0,soft_target_stats());
+    w.order_attack_cell(0,6,2);
+    w.step(1.0/15.0);
+    CHECK(w.units()[1].hp==1000);
+    REQUIRE(w.projectiles().size()==1);
+    CHECK(w.projectiles()[0].weapon_id=="GROUND_CANNON");
+    CHECK(w.projectiles()[0].tx==6*256);
+    CHECK(w.projectiles()[0].ty==2*256);
+    CHECK(w.projectiles()[0].z==100);
+    CHECK(count_kind(w.take_projectile_events(),ProjectileEvent::Launch)==1);
+    for(int i=0;i<45 && w.units()[1].hp==1000;++i)w.step(1.0/15.0);
+    CHECK(w.units()[1].hp<1000);
+}
+
 TEST_CASE("projectile world: firewall OPEN -> damage arrives at detonation, ~15 frames later") {
     Rig r;
     r.world.enable_projectiles(ProjectileRules{});

@@ -66,6 +66,27 @@ TEST_CASE("Gattling: charge clamps, spins down, and stage activation updates the
     CHECK(u.gattling.charge==0);
 }
 
+TEST_CASE("Gattling: ground force-fire spins up through every stage and stops on cancel") {
+    ra2assets::MapFile map;
+    auto& cells=const_cast<std::vector<ra2assets::MapCell>&>(map.cells());
+    for(int y=0;y<12;++y)for(int x=0;x<12;++x)cells.push_back({x,y,0,0,0});
+    World w(map);UnitCombat c;
+    c.strength=400;c.damage=10;c.range=10;c.rof=20;
+    c.gattling.thresholds={5,10,15};
+    for(int i=0;i<6;++i) {
+        WeaponSlot s;s.valid=true;s.damage=10+i;s.rof=20-i;s.range=10;s.ag=(i%2==0);s.aa=!s.ag;
+        c.gattling.weapons.push_back(s);
+    }
+    w.add_combat_unit(2,2,0,c);w.order_attack_cell(0,6,2);
+    for(int i=0;i<30;++i)w.step(1.0/15.0);
+    CHECK(w.units()[0].gattling.charge==15);
+    CHECK(w.units()[0].gattling.stage(false)==2);
+    CHECK(w.units()[0].w_damage==14);
+    w.order_stop(0);
+    for(int i=0;i<3;++i)w.step(1.0/15.0);
+    CHECK(w.units()[0].gattling.charge==0);
+}
+
 TEST_CASE("Gattling: defensive turret reaches later stages through long reload intervals") {
     ra2assets::MapFile map; World w(map);
     BuildingTypeDef d; d.id="TESTGAT"; d.strength=100; d.armed=true;

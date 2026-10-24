@@ -1193,9 +1193,14 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         if (u.gattling.enabled()) {
             bool engaging = valid_target(units, world, u, u.target) &&
                 unit_in_weapon_range(world, u, units[u.target]);
+            if (!engaging && u.attack_order && u.target >= 0 && u.target < static_cast<int>(units.size()))
+                engaging = forced_target_ok(units,world,u,i,u.target) && unit_in_weapon_range(world,u,units[u.target]);
+            if (!engaging && u.attack_cell_x >= 0)
+                engaging = weapon_in_range(world,u,u.attack_cell_x*256,u.attack_cell_y*256,
+                    world.cell_level(u.attack_cell_x,u.attack_cell_y)*104);
             if (!engaging && u.target_building >= 0 && u.target_building < static_cast<int>(buildings.size())) {
                 const auto& b = buildings[u.target_building];
-                engaging = b.alive && world.is_enemy(u.house,b.house) &&
+                engaging = b.alive && (u.attack_order || world.is_enemy(u.house,b.house)) &&
                     om::hypot(u.fx-b.cx,u.fy-b.cy) <= u.gattling.weapon(0,is_elite(u.vet.veterancy)).range;
             }
             u.gattling.step(engaging, is_elite(u.vet.veterancy));
@@ -1468,6 +1473,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
         // is resolved by World::step_depth (explosion on the cell + the bridge
         // roll); here: range, aim, ROF, and the approach request.
         if (u.attack_cell_x >= 0) {
+            if (u.gattling.enabled()) activate_weapon_slot(u,0,vet_rules_of(world));
             if (u.w7.t.magnetic && u.w_active==0) continue;
             const double d = dist_leptons(u.fx, u.fy, static_cast<double>(u.attack_cell_x),
                                           static_cast<double>(u.attack_cell_y));

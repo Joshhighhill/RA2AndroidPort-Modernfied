@@ -825,6 +825,13 @@ private:
         if (!wp) return;
         double ox = 0, lift = 0;
         muzzle_point(w, u, ox, lift);
+        auto shot_target = [&](double& x,double& y,int& level,double& target_lift) {
+            if (target_point(w,u.target,u.target_building,x,y,level,target_lift)) return true;
+            if (u.attack_cell_x < 0 || u.attack_cell_y < 0) return false;
+            x=u.attack_cell_x;y=u.attack_cell_y;
+            level=w.cell_level(u.attack_cell_x,u.attack_cell_y);target_lift=0;
+            return true;
+        };
         if (!wp->muzzle.empty()) {
             std::string name = wp->muzzle.front();
             if (wp->muzzle.size() >= 8) {
@@ -848,10 +855,10 @@ private:
         }
         // W6-04-24: a slot-1 shot draws the Secondary's beam (Boris's Flare);
         // W7-12-30: the fired weapon's own beam flags.
-        if (wp->bolt || wp->laser || wp->rad_beam || wp->line) {   // W2-GA-15 Tesla / Prism beams
+        if (wp->bolt || wp->laser || wp->disk || wp->rad_beam || wp->line) {
             double tx = 0, ty = 0, tl = 0;
             int tlev = 0;
-            if (target_point(w, u.target, u.target_building, tx, ty, tlev, tl)) {
+            if (shot_target(tx,ty,tlev,tl)) {
                 fx_.add_beam(u.fx, u.fy, pres_unit_fx_level(w, u), std::max(lift, u.is_vehicle ? 18.0 : 15.0), tx, ty, tlev, tl, *wp,
                              house_color(w, u.house), ox);
                 // W7-12-31 [RE: EBolt::Fire 0x4c2980 -- ParticleSystem([General]
@@ -869,7 +876,7 @@ private:
             {
                 double tx = 0, ty = 0, tl = 0;
                 int tlev = 0;
-                if (target_point(w, u.target, u.target_building, tx, ty, tlev, tl))
+                if (shot_target(tx,ty,tlev,tl))
                     effects_.instant_line(wp->id.empty() ? effects_.unit_weapon(u.image, 0) : wp->id, u.fx * 256.0,
                                           u.fy * 256.0, pres_unit_fx_level(w, u) * 104.0 + 60.0, tx * 256.0, ty * 256.0, tlev * 104.0 + 40.0);
             }
@@ -881,6 +888,9 @@ private:
                        u.target_building < static_cast<int>(w.buildings().size())) {
                 const ra2engine::Building& b = w.buildings()[u.target_building];
                 impact(u, u.w_damage, b.cx + (b.fw - 1) / 2.0, b.cy + (b.fh - 1) / 2.0, building_level(w, b), 20.0);
+            } else if (u.attack_cell_x >= 0 && u.attack_cell_y >= 0) {
+                impact(u,u.w_damage,u.attack_cell_x,u.attack_cell_y,
+                    w.cell_level(u.attack_cell_x,u.attack_cell_y),0);
             }
         }
     }

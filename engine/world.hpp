@@ -1947,7 +1947,7 @@ public:
     void step_projectiles_frame();
     // Turn one step_combat launch into a Projectile (muzzle via FLH, target
     // coords, compute_launch incl. scatter draws). Refused shots log an event.
-    void launch_projectile(int attacker, int target_unit, int target_building);
+    void launch_projectile(int attacker, int target_unit, int target_building, int cell_x = -1, int cell_y = -1);
     // Detonate `p` at its position: Explode snap, then the EXISTING damage layer
     // (apply_spread_damage / deliver_unit_hit / deliver_building_hit).
     void detonate_projectile(Projectile& p, int victim);

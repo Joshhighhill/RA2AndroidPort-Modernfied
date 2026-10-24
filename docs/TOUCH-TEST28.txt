@@ -1,0 +1,40 @@
+Android touch test 28 — sensor intentions and Yuri firing effects
+
+Requires your own Red Alert 2 / Yuri's Revenge game files. No retail assets
+are included. Based on Omar El Arab's 0BSD RA2 Engine.
+
+Changes since test 27:
+- Psychic Sensor intent lines can cross fog when the commanded destination
+  is inside a powered allied sensor's radius. Units/map cells are not revealed.
+- Ground force-fire uses the normal projectile flight and muzzle solver for
+  weapons with flying projectiles; damage arrives on impact. Instant weapons
+  remain instant. Ground missiles retain a stationary cell target.
+- Gatling tanks charge while force-firing at ground or explicitly targeted
+  friendly units/buildings; ground fire activates the correct stage weapon.
+  Tank and defense HVA barrel frames continue while charge remains positive,
+  instead of freezing whenever the short muzzle-flash timer ends.
+- DiskLaser=yes now produces a weapon-coloured ring attack effect. This is
+  a renderer approximation, not a verified pixel-perfect original recreation.
+- Ground-target beam, tracer and impact effects resolve the selected cell.
+- Bunker movement blends between simulation ticks, keeps exiting tanks between
+  bunker layers and blends toward their current position after new orders.
+
+Save format remains 53, compatible with test 27. Older format 52 saves remain
+incompatible, as before. Existing saved files are not deleted.
+
+Phone checks needed:
+1. Put an enemy outside sight and order it toward a powered sensor's radius;
+   check the intent line. Cut power and confirm the line disappears.
+2. Force-fire a Lasher/Rhino at empty ground: shell leaves its muzzle, travels
+   toward the selected cell and explodes on arrival, without an early hit.
+3. Sustain Gatling Tank fire on ground and a durable target. Compare barrel
+   motion, muzzle flash and spin-up stages with the reference video. Repeat
+   automatic combat with the Gatling Cannon against ground/air targets.
+4. Fire a Flying Disc at ground, infantry, vehicles and aircraft. Check the
+   coloured ring starts at the airborne disc and connects to the target.
+5. Enter/exit a Tank Bunker repeatedly, then order movement immediately after
+   evacuation. Check layering, smooth movement and absence of position snaps.
+
+No phone was attached for on-device visual verification. Automated tests and
+Android build results accompany this release; they do not establish original
+game visual parity. New report/video files remain private local references.

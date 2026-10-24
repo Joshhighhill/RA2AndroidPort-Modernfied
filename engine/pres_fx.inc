@@ -101,7 +101,7 @@ struct FxWeapon {
     // W2-GA-15 [RE: rulesmd weapon IsElectricBolt (Tesla coil / trooper /
     // tank), IsLaser + LaserDuration + IsHouseColor (Prism)]: drawn as a beam
     // from the muzzle to the target instead of only an impact.
-    bool bolt = false, laser = false, laser_house = false;
+    bool bolt = false, laser = false, laser_house = false, disk = false;
     // W6-04-24 [rules IsRadBeam= (Desolator RadBeamWeapon), IsLine= (Boris's
     // Flare)]: two more beam kinds. [RE-FALLBACK: colours / life -- the rad
     // beam in [Radiation] RadColor, the flare line red, LaserDuration-like life.]
@@ -207,6 +207,7 @@ public:
         };
         fw.bolt = yes("IsElectricBolt");
         fw.laser = yes("IsLaser");
+        fw.disk = yes("DiskLaser");
         fw.laser_house = yes("IsHouseColor");
         fw.rad_beam = yes("IsRadBeam");   // W6-04-24
         fw.line = yes("IsLine");
@@ -296,7 +297,7 @@ public:
             b.inner = SDL_Color{255, 40, 40, 255};
             b.life = 8;
         }
-        if (fw.laser) {
+        if (fw.laser || fw.disk) {
             if (fw.laser_house) {
                 // W7-12-32 [RE: 0x6fc6d0 / 0x550680]: inner = LaserColor,
                 // outer = inner >> 1, thickness 2, house-colour draw path.
@@ -312,6 +313,7 @@ public:
                 b.inner = SDL_Color{255, 255, 255, 255};
             }
         }
+        if (fw.disk) b.kind = 4;
         beams_.push_back(b);
     }
     std::size_t beams_live() const { return beams_.size(); }
@@ -389,6 +391,25 @@ public:
             pt(b.x1, b.y1, b.l1, b.lift1, bx, by);
             const double fade = 1.0 - static_cast<double>(b.age) / std::max(1, b.life);
             const Uint8 a = static_cast<Uint8>(std::clamp(fade, 0.0, 1.0) * 255.0);
+            if (b.kind == 4) {
+                // Presentation fallback for DiskLaser's ring emitter. Keep it
+                // separate from straight lasers and read the weapon colours.
+                constexpr int segments=32;
+                for (int k=0;k<segments;++k) {
+                    const double t=k*6.283185307179586/segments;
+                    const double n=(k+1)*6.283185307179586/segments;
+                    const int x=ax+static_cast<int>(std::lround(22*std::cos(t)));
+                    const int y=ay+static_cast<int>(std::lround(11*std::sin(t)));
+                    SDL_SetRenderDrawColor(ren,b.inner.r,b.inner.g,b.inner.b,a);
+                    SDL_RenderDrawLine(ren,x,y,ax+static_cast<int>(std::lround(22*std::cos(n))),
+                        ay+static_cast<int>(std::lround(11*std::sin(n))));
+                    if ((k+b.age)%8==0) {
+                        SDL_SetRenderDrawColor(ren,b.outer.r,b.outer.g,b.outer.b,a);
+                        SDL_RenderDrawLine(ren,x,y,bx,by);
+                    }
+                }
+                continue;
+            }
             if (b.kind == 2) {
                 // W7-12-06 [RE: RadBeam draw 0x659090 / 0x659500]: n segments of
                 // seg leptons; point k displaced (screen z) by sin(k/n * len*2
