@@ -1,0 +1,31 @@
+Build 900030 — portrait launcher refresh
+25 October 2026
+
+The launcher now requests portrait orientation. The SDL game remains in
+sensorLandscape. Large screens may override orientation requests according to
+Android windowing policy; the launcher still scrolls and centers its content.
+
+Original native layout: dark teal gradient, gold Play button, faction-themed
+text card, file readiness, full-width actions and collapsible setup details.
+Controls are at least 56 dp high; Play is 72 dp. Content is width-limited on
+large screens and vertically scrollable. No MYSOREZ code or retail art copied.
+
+Imports, reports, file refresh, terms, ownership confirmation and credits remain
+available. Setup details expand automatically when required files are missing
+or after an import result. Disabled Play is dimmed. Display/touch preferences
+are still in the game's Options menu; no new graphics settings are implied.
+
+Application ID, signing, engine gameplay and save format 53 are unchanged.
+This is a launcher-only update to 900029. The 1211-case / 266904-assertion native
+baseline from that release applies to unchanged engine sources; it is not a
+new full-suite run for this UI update. Android release compilation/package and
+signature checks are recorded in the delivery report.
+
+Phone checks: open launcher upright, inspect scrolling and larger font sizes,
+expand/collapse setup details, import/refresh files, reopen terms and licenses,
+share a report, then launch and confirm the game rotates to landscape. Check
+return to launcher after quitting. No emulator or physical-device visual test
+was performed during packaging.
+
+APK delivery remains Google Drive only. EA has not endorsed and does not
+support this product. Engine: Omar El Arab; Android fork: Bryle13.

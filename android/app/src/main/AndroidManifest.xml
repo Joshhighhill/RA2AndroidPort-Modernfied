@@ -60,7 +60,7 @@
         <activity android:name="org.ra2.engine.SetupActivity"
             android:label="@string/app_name"
             android:process=":setup"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="portrait"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
