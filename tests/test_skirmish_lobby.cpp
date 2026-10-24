@@ -249,3 +249,24 @@ TEST_CASE("lobby: unsupported preview countries never enter AI or random picks")
         for(const auto& row:resolved) CHECK(row.country!=9);
     }
 }
+
+TEST_CASE("lobby: teams persist, survive inactive row gaps, and require an enemy") {
+    LobbyState st=lobby_first_run({});
+    st.rows[0].team=1;st.rows[1].team=1;
+    st.rows[2].ai=kLobbyAiMedium;st.rows[2].team=2;
+    CHECK(lobby_validate(st,8)==LobbyCheck::Ok);
+    IniDoc doc=IniDoc::parse("[Other]\nKeep=yes\n");lobby_store(st,doc,kCountries);
+    const auto loaded=lobby_load(doc,lobby_first_run({}),{},kCountries);
+    CHECK(loaded.rows[0].team==1);CHECK(loaded.rows[1].team==1);CHECK(loaded.rows[2].team==2);
+    auto cfg=lobby_to_config(loaded,ctx());REQUIRE(cfg.slots.size()==4);
+    CHECK(cfg.slots[0].alliance_team==1);CHECK(cfg.slots[1].alliance_team==1);
+    CHECK(cfg.slots[2].alliance_team==2);CHECK(cfg.slots[3].alliance_team==-1);
+    st.rows[2].team=1;CHECK(lobby_validate(st,8)==LobbyCheck::NeedEnemy);
+    st.rows[2].team=-1;CHECK(lobby_validate(st,8)==LobbyCheck::Ok);
+    lobby_set_ai(st,1,kLobbyAiNone);CHECK(st.rows[1].team==-1);
+    cfg=lobby_to_config(st,ctx());REQUIRE(cfg.slots.size()==3);
+    CHECK(cfg.slots[1].alliance_team==-1);
+    doc.set("Skirmish","Team0","999");doc.set("Skirmish","Team1","2");
+    const auto sanitized=lobby_load(doc,st,{},kCountries);CHECK(sanitized.rows[0].team==-1);
+    CHECK(sanitized.rows[1].team==2); // stored active row is restored before its team
+}

@@ -24,6 +24,12 @@ RA2 Engine - phone install
    icon -> "Import game files", or in the game Options -> Game Files.
    Saves and settings are kept; there is no need to clear the app data.
 
+Skirmish teams
+--------------
+Each active player row has a Team selector: matching numbers 1-4 are
+allies; - means no team. Choose at least one enemy. Team choices are
+saved with launcher settings. Yuri AI remains unavailable in this preview.
+
 Touch controls
 --------------
 - Tap: select, or give an order to the selected units.

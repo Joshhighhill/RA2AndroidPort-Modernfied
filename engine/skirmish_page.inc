@@ -246,7 +246,7 @@ public:
 
 private:
     enum Mode { MODE_SETUP, MODE_CUSTOMIZE };
-    enum Combo { CB_NONE, CB_AI, CB_COUNTRY, CB_COLOR };
+    enum Combo { CB_NONE, CB_AI, CB_COUNTRY, CB_COLOR, CB_TEAM };
     enum Check { CK_SHORT, CK_MCV, CK_CRATES, CK_SW, CK_BOA, CK_COUNT };
     enum Slider { SL_SPEED, SL_CREDITS, SL_UNITS, SL_COUNT };
     enum Act { A_NONE, A_START, A_CHOOSE, A_BACK, A_USEMAP, A_RANDMAP, A_CANCEL };
@@ -263,8 +263,9 @@ private:
     static ra2engine::SbRect name_rect() { return {52, 17, 150, 19}; }
     static ra2engine::SbRect ai_rect(int k) { return {52, rowY(k), 150, 19}; }
     static ra2engine::SbRect flag_rect(int k) { return {214, rowY(k), 48, 19}; }
-    static ra2engine::SbRect country_rect(int k) { return {270, rowY(k), 117, 19}; }
-    static ra2engine::SbRect color_rect(int k) { return {396, rowY(k), 52, 19}; }
+    static ra2engine::SbRect country_rect(int k) { return {270, rowY(k), 104, 19}; }
+    static ra2engine::SbRect color_rect(int k) { return {381, rowY(k), 45, 19}; }
+    static ra2engine::SbRect team_rect(int k) { return {433, rowY(k), 34, 19}; }
     static ra2engine::SbRect check_rect(int c) {
         static const ra2engine::SbRect k[CK_COUNT] = {
             {52, 235, 150, 16}, {52, 263, 150, 16}, {52, 290, 150, 16}, {52, 320, 154, 16},
@@ -369,7 +370,8 @@ private:
         }
     }
     std::string country_label(int c) const {
-        if(c>=0 && c<static_cast<int>(countries_.size()) && countries_[c]=="YuriCountry") return "Yuri (preview)";
+        if(c>=0 && c<static_cast<int>(countries_.size()) && countries_[c]=="YuriCountry")
+            return c<static_cast<int>(text_.country.size()) && text_.country[c]!="YuriCountry" ? text_.country[c] : "Yuri";
         return (c >= 0 && c < static_cast<int>(text_.country.size())) ? text_.country[(size_t)c]
                                                                         : text_.random_country;
     }
@@ -389,7 +391,7 @@ private:
         combo_row_ = row;
         list_ = ShellList{};
         ra2engine::SbRect face = kind == CB_AI ? ai_rect(row) : kind == CB_COUNTRY ? country_rect(row)
-                                                                                 : color_rect(row);
+                                                                                 : kind == CB_TEAM ? team_rect(row) : color_rect(row);
         int cur = 0;
         if (kind == CB_AI) {
             const int order[4] = {ra2engine::kLobbyAiNone, ra2engine::kLobbyAiEasy,
@@ -410,6 +412,13 @@ private:
                 if (c == st_.rows[row].country) cur = static_cast<int>(list_.data.size()) - 1;
             }
             list_.visible = 7;                 // msg 0x4DE, 7
+        } else if(kind==CB_TEAM) {
+            for(int team=-1;team<4;++team) {
+                list_.items.push_back(team<0 ? "-" : std::to_string(team+1));
+                list_.data.push_back(team);
+                if(team==st_.rows[row].team) cur=static_cast<int>(list_.data.size())-1;
+            }
+            list_.visible=5;
         } else {
             for (int c : ra2engine::lobby_color_choices(st_, row)) {
                 list_.items.push_back(color_label(c));
@@ -434,6 +443,7 @@ private:
             const int v = list_.data[(size_t)list_.sel];
             if (combo_ == CB_AI) ra2engine::lobby_set_ai(st_, combo_row_, v);
             else if (combo_ == CB_COUNTRY) ra2engine::lobby_set_country(st_, combo_row_, v);
+            else if(combo_==CB_TEAM) st_.rows[combo_row_].team=v;
             else ra2engine::lobby_set_color(st_, combo_row_, v);
         }
         combo_ = CB_NONE;
@@ -531,6 +541,10 @@ private:
                 }
                 if (chk == ra2engine::LobbyCheck::NeedTwoPlayers) {
                     confirm_.ask(text_.need_two, {text_.ok});
+                    return;
+                }
+                if(chk==ra2engine::LobbyCheck::NeedEnemy) {
+                    confirm_.ask("Choose at least one enemy team or a player with no team (-).",{text_.ok});
                     return;
                 }
                 commit_and_save();
@@ -631,6 +645,7 @@ std::string SkirmishSetupScene::tooltip_at(int lx, int ly) const {
         if (flag_rect(k).contains(lx, ly)) return tip("STT:SkirmishPictureFlag");
         if (country_rect(k).contains(lx, ly)) return tip("STT:SkirmishComboCountry");
         if (color_rect(k).contains(lx, ly)) return tip("STT:SkirmishComboColor");
+        if (team_rect(k).contains(lx,ly)) return "Same team number = allies. - = no team.";
     }
     static const char* kChk[CK_COUNT] = {"STT:SkirmishCBoxShortGame", "STT:SkirmishCBoxRedeploys",
                                          "STT:SkirmishCBoxCrates", "STT:SkirmishCBoxSWAllowed",
@@ -680,6 +695,7 @@ std::map<std::string, ra2engine::SbRect> SkirmishSetupScene::targets() const {
         if (ra2engine::lobby_row_active(st_, k)) {
             t["combo:country" + n] = country_rect(k);
             t["combo:color" + n] = color_rect(k);
+            t["combo:team" + n] = team_rect(k);
         }
     }
     for (int c = 0; c < CK_COUNT; ++c)
@@ -719,6 +735,7 @@ void SkirmishSetupScene::play_probe(ra2play::Probe& p) {
                             : gf_side_of_country(rules_, countries_[(size_t)r.country]) ==
                                       ra2engine::World::Side::Soviet ? "SOVIET" : gf_side_of_country(rules_,countries_[(size_t)r.country])==ra2engine::World::Side::Yuri ? "YURI" : "ALLIED");
         p.set("color" + n, r.color);
+        p.set("team" + n,r.team);
         p.set("row_active" + n, ra2engine::lobby_row_active(st_, k) ? 1 : 0);
     }
     p.set_s("name", st_.name);
@@ -797,6 +814,7 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
     }
 
     if (mode_ == MODE_SETUP) {
+        p.label("Team",433,0,34,16,1);
         // --- 8 player rows (hidden past the map's max) ---
         for (int k = 0; k < visible_rows(); ++k) {
             const bool active = ra2engine::lobby_row_active(st_, k);
@@ -819,6 +837,8 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
             const SDL_Color sw = swatch_of(active ? r.color : -1);
             p.combo(color_rect(k), active ? color_label(r.color) : text_.random_color, active,
                     combo_ == CB_COLOR && combo_row_ == k, sw.a ? &sw : nullptr);
+            p.combo(team_rect(k),r.team<0 ? "-" : std::to_string(r.team+1),active,
+                    combo_==CB_TEAM && combo_row_==k);
         }
         // --- options: checkboxes (left), labelled sliders (right) ---
         for (int c = 0; c < CK_COUNT; ++c)
@@ -949,6 +969,7 @@ void SkirmishSetupScene::handle(const ra2engine::InputEvent& ev) {
         if (!ra2engine::lobby_row_active(st_, k)) continue;   // EnableWindow(0) on None rows
         if (country_rect(k).contains(lx, ly)) { open_combo(CB_COUNTRY, k); return; }
         if (color_rect(k).contains(lx, ly)) { open_combo(CB_COLOR, k); return; }
+        if (team_rect(k).contains(lx, ly)) { open_combo(CB_TEAM,k); return; }
     }
     // --- checkboxes (BS_AUTOCHECKBOX; Build Off Ally disabled) ---
     for (int c = 0; c < CK_COUNT; ++c)

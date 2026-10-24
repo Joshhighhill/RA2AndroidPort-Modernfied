@@ -6695,6 +6695,9 @@ void draw_shell(SDL_Renderer* ren, ra2engine::TextureCache& tc, const MenuArt& a
             const ShellButton& b = buttons[i];
             const int brow = (b.rect.y - 199) / 42;
 #ifdef __ANDROID__
+            // Original animated buttons already contain their localized label.
+            // Painting another font on top produces doubled, unreadable text.
+            if (row_frames && brow >= 0 && brow < 6 && row_frames[brow] >= 0) continue;
             // Cover baked small lettering before painting larger native labels.
             if(!large) {
                 SDL_Rect face=dev(b.rect.x+3,b.rect.y+3,b.rect.w-6,b.rect.h-6);

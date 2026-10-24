@@ -57,6 +57,7 @@ struct LobbyRow {
     int ai = kLobbyAiNone;          // rows 1..7 only; row 0 is always the human
     int country = kLobbyRandom;     // index into the country list, or -2
     int color = kLobbyRandom;       // lobby colour 0..7, or -2
+    int team = -1;                  // -1 free-for-all; 0..3 teams (launcher extension)
 };
 
 struct LobbyState {
@@ -127,7 +128,7 @@ void lobby_apply_max_players(LobbyState& st, int map_max_players);
 
 // Start validation (0x6829F0): map max < AI+1 -> TXT_SCENARIO_TOO_SMALL;
 // AI+1 < 2 -> TXT_NEED_AT_LEAST_TWO_PLAYERS.
-enum class LobbyCheck { Ok, ScenarioTooSmall, NeedTwoPlayers };
+enum class LobbyCheck { Ok, ScenarioTooSmall, NeedTwoPlayers, NeedEnemy };
 LobbyCheck lobby_validate(const LobbyState& st, int map_max_players);
 
 // The converter's environment.
@@ -154,8 +155,8 @@ std::vector<LobbyResolved> lobby_resolve(const LobbyState& st, const LobbyConver
 
 // LobbyState -> SkirmishConfig: slot 0 = the human, then one AI slot per
 // active row (row order), then the hidden Neutral civilian slot the game
-// depends on (default_skirmish_config's third house). Free-for-all
-// (alliance_team = -1: RA2-classic has no Team column), use_map_starts,
+// depends on (default_skirmish_config's third house). Team assignments are
+// a launcher extension; -1 retains free-for-all. use_map_starts,
 // tech_level from the rules, game_speed / mcv_redeploys from the page.
 SkirmishConfig lobby_to_config(const LobbyState& st, const LobbyConvertCtx& ctx);
 

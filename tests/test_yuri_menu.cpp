@@ -15,10 +15,12 @@ TEST_CASE("Yuri country remains a distinct side with its own default") {
  CHECK(std::find(types.begin(),types.end(),"YACNST")!=types.end());
  CHECK(rules.listed_types("missing").empty());
 }
-TEST_CASE("touch menu text avoids integer rounding that shrinks control labels") {
+TEST_CASE("touch menu bitmap text uses whole pixels instead of uneven fractional strokes") {
  using namespace ra2engine;
  const double touch=menu_font_scale(1.5,12,true);
- CHECK(touch>menu_font_scale(1.5,12,false));
+ CHECK(touch==1);
+ CHECK(menu_font_scale(2.5,12,true)==2);
+ CHECK(menu_font_scale(0.75,12,true)==1);
  CHECK(touch*16<=1.5*19); // Fits the 19-logical-pixel country combobox.
  CHECK(menu_font_scale(1.5,14,true)==touch); // fit() and drawing agree.
 }
