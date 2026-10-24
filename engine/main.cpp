@@ -130,6 +130,7 @@ static char* ra2_cli_pref_path() {
 #include "voxel_animation_cache.hpp"
 #include "terrain_tilt.hpp"
 #include "weapon_resolve.hpp"  // Gap fix C: TechnoType weapon slots
+#include "weapon_unit.hpp"     // Shared combat/presentation weapon facing
 #include "gamespeed.hpp"       // Gap fix C: RE-T1 logic rate per GameSpeed
 #include "world.hpp"
 #include "abil_w5_rules.hpp"   // wave-5 (agent C): requires_stolen_bits

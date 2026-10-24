@@ -14,6 +14,37 @@
 
 using namespace ra2engine;
 
+TEST_CASE("parachute combat: exposed air target until touchdown, passengers remain hidden") {
+    Unit p;
+    p.cargo_of = kParachuteCargo;
+    p.an.para_alt = 300.0;
+    p.level = 2;
+    CHECK(unit_airborne(p));
+    CHECK(unit_combat_exposed(p));
+    CHECK(unit_lept_z(p) == 508);
+    p.on_deck = 1;
+    CHECK(unit_lept_z(p) == 924);
+    p.cargo_of = 0;
+    CHECK_FALSE(unit_combat_exposed(p));
+    CHECK_FALSE(unit_airborne(p));
+    p.cargo_of = -1;
+    p.an.para_alt = 0.0;
+    CHECK(unit_combat_exposed(p));
+    CHECK_FALSE(unit_airborne(p));
+}
+
+TEST_CASE("weapon muzzle: turretless vehicles and aircraft use hull direction") {
+    Unit u;
+    u.body_facing = 1000;
+    u.turret_facing = 30000;
+    CHECK(unit_weapon_facing(u) == 30000);
+    u.w7.t.has_turret = false;
+    CHECK(unit_weapon_facing(u) == 1000);
+    u.w7.t.has_turret = true;
+    u.is_aircraft = true;
+    CHECK(unit_weapon_facing(u) == 1000);
+}
+
 namespace {
 WeaponSlot slot(bool aa, bool ag, std::vector<int> verses = {}) {
     WeaponSlot s;
@@ -141,6 +172,54 @@ TEST_CASE("gapC deploy: a GI deploys into a firing post with Para, not a frozen 
     w.order_unit_move(0, 2, 4);
     CHECK(w.units()[0].deployed);
     CHECK_FALSE(w.units()[0].moving());
+}
+
+TEST_CASE("parachute combat: AA defense damages descending infantry while ground gun ignores it") {
+    ra2assets::MapFile map;
+    for (bool aa : {false, true}) {
+        World w(map);
+        BuildingTypeDef gun;
+        gun.id = "PARATEST";
+        gun.strength = 400;
+        gun.armed = true;
+        gun.weapon[0] = slot(aa, !aa);
+        gun.weapon[0].damage = 20;
+        gun.weapon[0].rof = 10;
+        gun.weapon[0].range = 10.0;
+        w.set_building_types({gun});
+        w.add_building(0, 2, 2, 1, 1, 0, 400, 0, 0.0, true);
+        UnitCombat infantry;
+        infantry.strength = 125;
+        auto& target = w.add_combat_unit(4, 2, 1, infantry);
+        target.cargo_of = kParachuteCargo;
+        target.an.para_alt = 300.0;
+        for (int f = 0; f < 3; ++f) w.step(1.0 / 15.0);
+        if (aa) CHECK(w.units()[0].hp < 125);
+        else CHECK(w.units()[0].hp == 125);
+    }
+}
+
+TEST_CASE("parachute combat: mobile AA acquires parachutist but not transport passenger") {
+    ra2assets::MapFile map;
+    for (bool parachute : {false, true}) {
+        World w(map);
+        UnitCombat gun;
+        gun.strength = 300;
+        gun.damage = 25;
+        gun.range = 8.0;
+        gun.rof = 10;
+        gun.primary_aa = true;
+        gun.primary_ag = false;
+        w.add_combat_unit(2, 2, 0, gun);
+        UnitCombat infantry;
+        infantry.strength = 125;
+        auto& target = w.add_combat_unit(4, 2, 1, infantry);
+        target.cargo_of = parachute ? kParachuteCargo : 0;
+        target.an.para_alt = 300.0;
+        for (int f = 0; f < 3; ++f) w.step(1.0 / 15.0);
+        if (parachute) CHECK(w.units()[1].hp < 125);
+        else CHECK(w.units()[1].hp == 125);
+    }
 }
 
 TEST_CASE("gapC defenses: a pillbox acquires, turns and kills; Powered goes offline at low power (G-40)") {

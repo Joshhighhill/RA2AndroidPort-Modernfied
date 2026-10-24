@@ -111,7 +111,8 @@ void World::launch_defense_projectile(int b_idx, int target_unit, int slot, int 
     const int muzzle_z = spec.flh[2] > 0 ? spec.flh[2] : (spec.kind == ProjKind::Homing ? 100 : 0);
     const Vec3i src{ftol(bcenter_x(b) * kLept), ftol(bcenter_y(b) * kLept), muzzle_z};
     const Vec3i tgt{ftol(v.fx * kLept), ftol(v.fy * kLept),
-                    v.is_aircraft ? ftol(v.altitude) : 0};
+                    unit_parachuting(v) ? (v.on_deck ? 416 : 0) + ftol(v.an.para_alt) :
+                    (v.is_aircraft ? ftol(v.altitude) : (v.on_deck ? 416 : 0))};
     const LaunchResult lr = compute_launch(spec, proj_rules_, src, tgt, proj_rng_);
     ProjectileEvent ev;
     ev.frame = proj_frame_;
@@ -270,7 +271,7 @@ void World::step_building_combat(double dt) {
         auto engageable = [&](int j) {
             if (j < 0 || j >= nu) return false;
             const Unit& v = units_[j];
-            if (!v.alive || v.die_time >= 0.0 || v.cargo_of >= 0) return false;
+            if (!v.alive || v.die_time >= 0.0 || !unit_combat_exposed(v)) return false;
             if (t.mind_control && (playfield_.campaign || !psionic_target_ok(j) ||
                 v.an.iron_left_frames > 0 || v.w7.mc_controller >= 0 || v.w7.mc_building >= 0 ||
                 static_cast<int>(b.w7.mc_victims.size()) >= std::max(1,t.weapon[0].damage))) return false;

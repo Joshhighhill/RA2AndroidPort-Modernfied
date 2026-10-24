@@ -64,7 +64,7 @@ bool valid_target(const std::vector<Unit>& units, const World& world, const Unit
     const Unit& v = units[idx];
     // W2-AN-13: a submerged sub no sonar of self's house has found is not a
     // target (its cell is not "seen" in the water layer).
-    return v.alive && v.die_time < 0.0 && v.cargo_of < 0 && world.is_enemy(self.house, v.house) &&
+    return v.alive && v.die_time < 0.0 && unit_combat_exposed(v) && world.is_enemy(self.house, v.house) &&
            !world.unit_hidden_from(self.house, v) && unit_weapon_for_unit(self, v) >= 0;
     // Multi-house/Alliances [RE: multihouse.md §3/§4]: hostility routes through
     // World::is_enemy. carried: untargetable (CB-1).
@@ -119,7 +119,7 @@ bool forced_target_ok(const std::vector<Unit>& units, const World& world, const 
     // here (its slot data may not pass the AA/AG test), but not against an
     // armor its warhead does 0 % to -- the dog's ParasiteDog jaw vs a vehicle
     // (SOV09: a patrol team ordered at the IFV rode it to death as parasites).
-    return v.alive && v.die_time < 0.0 && v.cargo_of < 0 && !world.unit_hidden_from(self.house, v) &&
+    return v.alive && v.die_time < 0.0 && unit_combat_exposed(v) && !world.unit_hidden_from(self.house, v) &&
            (unit_weapon_for_unit(self, v) >= 0 ||
             (self.abil.fire_kind != AbilityKind::None && verses_allows(primary_view(self).verses, v.armor_ix)));
 }
@@ -589,7 +589,7 @@ void apply_spread_damage(std::vector<Unit>& units, Occupancy& occ, const Unit& a
     for (int j = 0; j < static_cast<int>(units.size()); ++j) {
         Unit& w = units[j];
         if (!w.alive || w.die_time >= 0.0) continue;                  // dead/dying: skip
-        if (w.cargo_of >= 0) continue;                               // carried: off-map
+        if (!unit_combat_exposed(w)) continue;                     // carried: off-map
         // Gap fix C (G-44): the blast stays in its own layer -- an AA burst at
         // an airborne target hits airborne units, a ground blast ground units
         // (the original's 3-D distance; the clone has no shared Z scale).
@@ -741,6 +741,8 @@ int unit_lept_z(const Unit& u) {
     // @0x54C5A9 lands at floor + BridgeHeight)]: a ground unit on a deck
     // stands 4 levels (416 leptons) up. A flier's altitude already counts the
     // deck (step_flight's floor, FUN_0054D4B0).
+    if (unit_parachuting(u))
+        return (u.level + (u.on_deck ? 4 : 0)) * kLevelLept + ftol_i(u.an.para_alt);
     if (unit_airborne(u)) return u.level * kLevelLept + ftol_i(u.altitude);
     return (u.level + (u.on_deck ? 4 : 0)) * kLevelLept;
 }
@@ -955,7 +957,7 @@ AreaResult damage_area(const World& world, std::vector<Unit>& units,
     std::vector<Hit> hits;
     for (int j = 0; j < static_cast<int>(units.size()); ++j) {
         const Unit& w = units[static_cast<std::size_t>(j)];
-        if (!w.alive || w.die_time >= 0.0 || w.cargo_of >= 0) continue;
+        if (!w.alive || w.die_time >= 0.0 || !unit_combat_exposed(w)) continue;
         if (j == src_unit) continue;                                 // the source itself
         const bool air = unit_airborne(w);
         if (air && iz <= ground_z) continue;     // ground burst: the air layer is not scanned
@@ -1149,7 +1151,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
     };
     for (int j = 0; j < n; ++j) {
         const Unit& v = units[j];
-        if (!v.alive || v.die_time >= 0.0 || v.cargo_of >= 0) continue;
+        if (!v.alive || v.die_time >= 0.0 || !unit_combat_exposed(v)) continue;
         buckets[static_cast<std::size_t>(bucket_of(v.fy, bgh)) * bgw + bucket_of(v.fx, bgw)].push_back(j);
     }
 

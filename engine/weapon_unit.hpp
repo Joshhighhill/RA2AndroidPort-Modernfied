@@ -7,9 +7,19 @@
 
 namespace ra2engine {
 
-// True iff `v` is in the air (an aircraft above ground). A landed aircraft is
-// a ground target.
-inline bool unit_airborne(const Unit& v) { return v.is_aircraft && v.altitude > 0.0; }
+// A parachutist is exposed in the air, unlike passengers inside a transport.
+inline bool unit_parachuting(const Unit& v) {
+    return v.cargo_of == kParachuteCargo && v.an.para_alt > 0.0;
+}
+inline bool unit_combat_exposed(const Unit& v) {
+    return v.cargo_of < 0 || unit_parachuting(v);
+}
+inline bool unit_airborne(const Unit& v) {
+    return (v.is_aircraft && v.altitude > 0.0) || unit_parachuting(v);
+}
+inline double unit_weapon_facing(const Unit& u) {
+    return u.is_aircraft || !u.w7.t.has_turret ? u.body_facing : u.turret_facing;
+}
 
 // fv7c (13a #2) [RE: FUN_006F6750 head `if (weapon->Range == -0x200) return
 // true`]: Range=-2 (ASWLauncher, MakeupKit) is "always in range".

@@ -6497,7 +6497,10 @@ int unit_ly(const Unit& u) { return ftol(u.fy * 256.0 + u.sub_y); }
 // w8fix-layer W8-05-03 / W8-04-02 [RE: an OnBridge object's coords carry
 // BridgeHeight (0x51F810)]: a ground unit on a deck is aimed at (and fires
 // from) the deck, 416 leptons over its cell's ground.
-int unit_lz(const Unit& u) { return u.is_aircraft ? ftol(u.altitude) : (u.on_deck ? 416 : 0); }
+int unit_lz(const Unit& u) {
+    if (unit_parachuting(u)) return (u.on_deck ? 416 : 0) + ftol(u.an.para_alt);
+    return u.is_aircraft ? ftol(u.altitude) : (u.on_deck ? 416 : 0);
+}
 int dist3(int ax, int ay, int az, int bx, int by, int bz) {
     const double dx = ax - bx, dy = ay - by, dz = az - bz;
     return ftol(om::sqrt(dx * dx + dy * dy + dz * dz));
@@ -6558,7 +6561,7 @@ void World::launch_projectile(int attacker, int target_unit, int target_building
     const double ux = u.fx * 256.0, uy = u.fy * 256.0;
     double fwx = 0.0, fwy = 1.0;
     if (u.is_vehicle) {
-        const double a = u.turret_facing * (2.0 * kProjPi / 65536.0);
+        const double a = unit_weapon_facing(u) * (2.0 * kProjPi / 65536.0);
         fwx = om::sin(a);
         fwy = -om::cos(a);
     } else {
@@ -6648,7 +6651,7 @@ void World::init_homing(Projectile& p, const ProjectileSpec& spec, double launch
 bool World::homing_target(Projectile& p, Vec3i& out) const {
     if (p.target_unit >= 0 && p.target_unit < static_cast<int>(units_.size())) {
         const Unit& t = units_[p.target_unit];
-        if (!t.alive || t.die_time >= 0.0 || t.cargo_of >= 0) return false;
+        if (!t.alive || t.die_time >= 0.0 || !unit_combat_exposed(t)) return false;
         out = Vec3i{unit_lx(t), unit_ly(t), unit_lz(t)};
         return true;
     }

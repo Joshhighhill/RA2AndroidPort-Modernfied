@@ -1,0 +1,29 @@
+Android touch test 26 - report 900024 combat corrections
+
+Changes
+- Descending paratroopers are exposed air targets for mobile AA and base
+  defenses, rather than hidden transport passengers. Ground-only weapons
+  cannot engage them until landing. Passengers inside transports stay hidden.
+- Parachute height is included in combat range, defense projectile launch,
+  missile tracking and damage calculations, including bridge deck offset.
+- Turretless vehicle muzzle effects and projectile launch direction follow
+  the hull. Aircraft use their body heading. Turreted vehicles retain turret
+  heading and art TurretOffset; turretless effects no longer add that offset.
+- Save format remains 52. Existing format-52 saves remain compatible.
+
+Scope / remaining report items
+This is a targeted combat and muzzle correction, not a complete Yuri release.
+Gatling three-stage spin-up, unsupported superweapons, superweapon visual
+timing, and Slave Miner relocation remain open. Do not describe these as fixed.
+No renderer replacement or thermal tuning is included. Phone visual parity
+requires device testing; CPU log samples are not GPU frame timing.
+
+Phone checks
+1. Drop enemy paratroopers near Flak Cannons and mobile AA. Confirm firing
+   during descent, and ground-only guns engaging after touchdown.
+2. Confirm infantry inside a transport cannot be attacked as passengers.
+3. Fire a turretless vehicle in different headings and compare muzzle effect
+   and projectile direction. Compare a turreted tank and aircraft as controls.
+4. Share a game report naming the specific unit/action for remaining effects.
+
+No retail assets are bundled. Only the Omar-based ra2-engine is changed.

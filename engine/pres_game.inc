@@ -786,8 +786,8 @@ private:
         const int burst = std::max(1, u.w6.burst);
         const int shot = (u.w6.burst_index + burst - 1) % burst;
         if (shot & 1) flh[1] = -flh[1];
-        const bool turret = u.is_vehicle && !u.is_aircraft;
-        double facing = u.is_vehicle ? (turret ? u.turret_facing : u.body_facing) : 0.0;
+        const bool turret = u.is_vehicle && !u.is_aircraft && u.w7.t.has_turret;
+        double facing = u.is_vehicle ? ra2engine::unit_weapon_facing(u) : 0.0;
         if (!u.is_vehicle) {
             // Infantry block k: screen direction 45k degrees counter-clockwise
             // from screen-up (infantry-anim.md §4) -> a cell delta -> the
@@ -800,7 +800,7 @@ private:
                                                    ra2engine::kVehicleFacings);
         double mx = (flh[0] * std::cos(yaw) - flh[1] * std::sin(yaw)) / 256.0;
         double my = (flh[0] * std::sin(yaw) + flh[1] * std::cos(yaw)) / 256.0;
-        if (u.is_vehicle) {
+        if (turret) {
             const std::string to = w5_art_ini_ ? pres_clean(w5_art_ini_->get(u.image, "TurretOffset")) : std::string();
             if (!to.empty()) {
                 const double byaw = ra2engine::index_to_yaw(
@@ -832,7 +832,7 @@ private:
                     // + 1 >> 1 & 7) + 1) & 7], d = the turret facing for a
                     // Turret=yes type, else the body (UnitClass 0x73fd90)]: the
                     // lists are named by screen compass, map-north = "NE".
-                    const double d = u.is_aircraft ? u.body_facing : u.turret_facing;
+                    const double d = ra2engine::unit_weapon_facing(u);
                     const int k = ((((static_cast<int>(d) & 0xFFFF) >> 12) + 1) >> 1 & 7);
                     name = wp->muzzle[static_cast<std::size_t>((k + 1) & 7)];
                 } else {
