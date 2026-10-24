@@ -68,6 +68,10 @@ TEST_CASE("diagnostics: unit probes preserve saved state and catch broken refere
     worker.w7.slave_manager=999;
     worker.path={{2,2},{3,2}}; worker.path_idx=1; worker.wait_time=4;
     worker.bales_ore=3;
+    BuildingTypeDef aa;aa.id="NASAM";aa.armed=true;
+    aa.weapon[0].valid=true;aa.weapon[0].ag=false;aa.weapon[0].aa=true;
+    w.set_economy({aa},{},OreValues{},1000,0,0);
+    w.add_building(0,10,10,1,1,0,100,0,0,true);
     const auto before=save::save_world(w);
     const auto root=std::filesystem::temp_directory_path()/"ra2-probe-stability";
     struct Stop { ~Stop(){diag::stop();} } stop;
@@ -80,6 +84,7 @@ TEST_CASE("diagnostics: unit probes preserve saved state and catch broken refere
     CHECK(log.find("invalid_slave_manager=999")!=std::string::npos);
     CHECK(log.find("blocked_over_3s=1")!=std::string::npos);
     CHECK(log.find("ROUTE unit=0 next=3,2")!=std::string::npos);
+    CHECK(log.find("ground=0 air=1")!=std::string::npos);
     worker.path_idx=900;
     diag::probe_world(w); // Invalid index must be reported without dereferencing it.
 }

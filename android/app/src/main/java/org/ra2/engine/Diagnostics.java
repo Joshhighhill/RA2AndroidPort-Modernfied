@@ -87,7 +87,7 @@ final class Diagnostics {
     }
     static void share(Activity a) {
         final EditText description=new EditText(a);
-        description.setHint("What happened? Which unit or map? What did you expect?");
+        description.setHint("Optional: what happened, which unit, and what did you expect? Logs are included automatically.");
         description.setMinLines(3);
         description.setMaxLines(6);
         description.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(2000)});
@@ -105,11 +105,14 @@ final class Diagnostics {
                 ((ActivityManager)a.getSystemService(Context.ACTIVITY_SERVICE)).getMemoryInfo(memory);
                 java.text.SimpleDateFormat utc=new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'",java.util.Locale.ROOT);
                 utc.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
-                text(new File(dir(a),"report.txt"),"schema=2\ncreated_utc="+
+                final String entered=description.trim();
+                text(new File(dir(a),"report.txt"),"schema=3\ncreated_utc="+
                     utc.format(new java.util.Date())+
                     "\nversion="+version+"\nversion_code="+a.getPackageManager().getPackageInfo(a.getPackageName(),0).versionCode+
                     "\npackage="+a.getPackageName()+"\navailable_memory_bytes="+memory.availMem+
-                    "\nlow_memory="+memory.lowMemory+"\nuser_description="+description+"\n");
+                    "\nlow_memory="+memory.lowMemory+
+                    "\ndescription_provided="+!entered.isEmpty()+
+                    "\nuser_description="+(entered.isEmpty()?"Not provided; see engine logs and skirmish.txt for automatic session context.":entered)+"\n");
                 File reports=new File(a.getCacheDir(),"reports");reports.mkdirs();
                 File[] old=reports.listFiles((d,n)->n.matches("ra2-report-[0-9]+\\.zip"));
                 if(old!=null){java.util.Arrays.sort(old,(a1,b)->Long.compare(b.lastModified(),a1.lastModified()));for(int i=2;i<old.length;++i)old[i].delete();}

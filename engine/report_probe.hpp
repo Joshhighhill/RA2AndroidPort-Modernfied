@@ -55,7 +55,9 @@ inline void probe_world(const World& w) {
         note("STRUCTURE building=%zu type=%d id=%s cell=%d,%d occupants=%zu slaves_initialized=%d regen_left=%d",
             i, b.type, type.id.c_str(), b.cx, b.cy, b.occupants.size(), b.w7.slaves_initialized, b.w7.slave_regen_left);
         if(type.armed) note("DEFENSE building=%zu id=%s target=%d offline=%d damage=%d range=%.3f ground=%d air=%d",
-            i,type.id.c_str(),b.def_target,b.def_offline,type.weapon[0].damage,type.weapon[0].range,type.weapon[0].ag,type.weapon[1].aa);
+                i,type.id.c_str(),b.def_target,b.def_offline,type.weapon[0].damage,type.weapon[0].range,
+                (type.weapon[0].valid && type.weapon[0].ag) || (type.weapon[1].valid && type.weapon[1].ag),
+                (type.weapon[0].valid && type.weapon[0].aa) || (type.weapon[1].valid && type.weapon[1].aa));
         unsigned occupant_samples = 0;
         for (int id : b.occupants) {
             if (occupant_samples++ >= 8) break;
