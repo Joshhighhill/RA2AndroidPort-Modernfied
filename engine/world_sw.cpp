@@ -252,6 +252,12 @@ bool World::fire_superweapon_at(int house, SuperweaponType type, int cx, int cy,
             an_paradrop(house, type, cx, cy);
             an_event(SwEvent::Activated, house, type, cx, cy);
             break;
+        case SuperweaponType::PsychicReveal:
+            // Explore the targeted area, not the whole map. Current sight is
+            // transient with FogOfWar; explored terrain remains mapped.
+            reveal_source(house,cx,cy,std::clamp(static_cast<int>(rec->eff_cell_spread),0,256));
+            an_event(SwEvent::Activated,house,type,cx,cy);
+            break;
         default:
             return false;   // YR-only types: never granted in a classic game
     }

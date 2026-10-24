@@ -132,6 +132,9 @@ android {
     // handler, W2-AR-30); release drops both.
     buildTypes {
         debug {
+            if (project.findProperty('ra2.debugUseConfiguredSigning') == 'true' && keystoreProps != null) {
+                signingConfig signingConfigs.release
+            }
             externalNativeBuild {
                 cmake {
                     // -Pra2.nativeBuildType=Debug gives the old -O0 native code

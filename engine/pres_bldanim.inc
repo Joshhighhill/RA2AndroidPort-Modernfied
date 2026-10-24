@@ -50,10 +50,18 @@ struct BldEventState {
     int level = -1;                // refinery storage level shown
     int depot = 0;                 // 0 idle, 1 Special, 2 SpecialTwo, 3 SpecialThree
     bool unloading = false;        // a harvester was dumping here last tick
+    bool bunker_known = false, bunker_occupied = false;
+    int bunker_transition = 0;     // 0 none, 1 entering, -1 exiting
     int gate_stage = 0;            // 0 closed .. GateStages open
     long gate_near = -100000;      // last tick a friendly unit stood at the gate
 };
 std::map<long long, BldEventState> g_bld_events;
+struct SlaveMinerPackFx {
+    int type = -1, cx = 0, cy = 0, house = 0, level = 0;
+    double sort_key = 0.0;
+    long start = 0, duration = 0;
+};
+std::map<int, SlaveMinerPackFx> g_slave_miner_pack_fx;
 inline long long bld_event_key(const ra2engine::Building& b) {
     return (static_cast<long long>(b.cx) << 32) ^ (static_cast<long long>(b.cy) << 16) ^ b.type;
 }
@@ -171,7 +179,10 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
         for (int s = 0; s < PresFx::kBldSlots; ++s) {
             BldSlotRun& run = st.run[s];
             if (!run.on || !a.slot[s].t) continue;
-            const long len = a.slot[s].t->length_ticks(a.slot[s].t->delay);
+            const FxAnimType& t = *a.slot[s].t;
+            const long len = r.tank_bunker && (s == kBsSpecial3 || s == kBsSpecial4)
+                                 ? std::max<long>(1, static_cast<long>(t.end - t.start) * t.delay)
+                                 : t.length_ticks(t.delay);
             if (len < 0 || now < run.start + len) continue;
             const long end = run.start + len;
             run.on = false;
@@ -185,6 +196,40 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
                 // [RE-FALLBACK: the Idle restart point after a Production run
                 // was not traced; it resumes when the run ends.]
                 start(st, a, kBsIdle, end);
+            }
+        }
+        if (r.tank_bunker) {
+            const bool occupied = !b.occupants.empty();
+            if (!st.bunker_known) {
+                st.bunker_known = true;
+                st.bunker_occupied = occupied;
+                if (occupied) {
+                    start(st, a, kBsSpecial, now);
+                    start(st, a, kBsSpecial2, now);
+                }
+            } else if (occupied != st.bunker_occupied) {
+                st.bunker_occupied = occupied;
+                st.bunker_transition = occupied ? 1 : -1;
+                for (int s = kBsSpecial; s <= kBsSpecial4; ++s) stop(st, s);
+                start(st, a, kBsSpecial3, now);
+                start(st, a, kBsSpecial4, now);
+            }
+            if (st.bunker_transition != 0 && !st.run[kBsSpecial3].on && !st.run[kBsSpecial4].on) {
+                st.bunker_transition = 0;
+                if (occupied) {
+                    start(st, a, kBsSpecial, now);
+                    start(st, a, kBsSpecial2, now);
+                }
+            }
+            if (occupied && st.bunker_transition == 0) {
+                if (!st.run[kBsSpecial].on) start(st, a, kBsSpecial, now);
+                if (!st.run[kBsSpecial2].on) start(st, a, kBsSpecial2, now);
+            }
+            if (!occupied && st.bunker_transition == 0) {
+                stop(st, kBsSpecial);
+                stop(st, kBsSpecial2);
+                stop(st, kBsSpecial3);
+                stop(st, kBsSpecial4);
             }
         }
         // Refinery storage level [RE: FUN_004509c0 Refinery=yes].
@@ -261,6 +306,8 @@ int pres_building_main_frame(const ra2engine::Building& b, const std::string& id
     const PresFx::BldRules& r = g_fx->building_rules(id);
     const int images = std::max(1, count / 2);
     const bool damaged = b.max_hp > 0 && b.hp <= yellow * b.max_hp;
+    if(r.occupiable && r.leave_rubble && images==4)
+        return ra2engine::civilian_main_frame(damaged,!b.occupants.empty());
     if (r.occupiable && images >= 4) {
         const int f = (b.occupants.empty() ? 0 : 2) + (damaged ? 1 : 0);
         return std::min(f, images - 1);
@@ -341,8 +388,10 @@ void pres_building_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, const
         else if (const FxAnimType* t2 = slot_t(s2)) draw_t(t2, PresFx::loop_frame(*t2, now), s2.x, s2.y);
     }
     if (ev) {
+        const bool tank_bunker = g_fx->building_rules(g_overlay_id).tank_bunker;
         for (int s = 0; s < PresFx::kBldSlots; ++s) {
             if (s == kBsTurret || (s >= kBsSuper && s <= kBsSuper4) || !ev->run[s].on) continue;
+            if (tank_bunker && s >= kBsSpecial && s <= kBsSpecial4) continue;
             const PresFx::BldAnims::Slot& sl = a.slot[s];
             const FxAnimType* t = slot_t(sl);
             if (!t) continue;
@@ -372,6 +421,37 @@ void pres_building_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, const
                        fcy + a.fire_offsets[i].second + t->ydraw, PresFx::alpha_for(*t, fr), W, H);
         }
     }
+}
+
+void pres_tank_bunker_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2engine::Building& b,
+                              const std::string& image, int fcx, int fcy, double condition_yellow,
+                              const ra2assets::Palette& pal, int ckey, int W, int H, bool front) {
+    if (!g_fx) return;
+    auto ev = g_bld_events.find(bld_event_key(b));
+    if (ev == g_bld_events.end()) return;
+    if (b.occupants.empty() && ev->second.bunker_transition == 0) return;
+    const PresFx::BldAnims& a = g_fx->building(pres_upper(image));
+    const bool damaged = b.max_hp > 0 && b.hp <= condition_yellow * b.max_hp;
+    const bool garrisoned = !b.occupants.empty();
+    const int steady_slot = front ? kBsSpecial : kBsSpecial2;
+    const int transition_slot = front ? kBsSpecial3 : kBsSpecial4;
+    const int slot = ev->second.bunker_transition != 0 ? transition_slot : steady_slot;
+    const PresFx::BldAnims::Slot& sl = a.slot[slot];
+    const FxAnimType* t = damaged && sl.dmg ? sl.dmg : garrisoned && sl.garr ? sl.garr : sl.t;
+    if (!t) return;
+    const BldSlotRun& run = ev->second.run[slot];
+    if (!run.on) return;
+    int frame = ev->second.bunker_transition != 0
+                    ? oneshot_frame(*t, run.start, g_pres_tick)
+                    : bld_run_frame(*t, run.start, g_pres_tick);
+    if (frame < 0) return;
+    if (ev->second.bunker_transition < 0)
+        frame = t->start + (t->end - t->start - 1 - (frame - t->start));
+    if (t->shadow)
+        g_fx->blit_shadow(ren, tc, *t->shp, "bsh:" + t->name, frame + t->shp->count() / 2,
+                          fcx + sl.x, fcy + sl.y + t->ydraw, W, H);
+    g_fx->blit(ren, tc, *t->shp, "banim:" + t->name + ":c" + std::to_string(ckey), frame,
+               fcx + sl.x, fcy + sl.y + t->ydraw, PresFx::alpha_for(*t, frame), W, H, &pal);
 }
 
 // W3-B: civilian buildings drawn as map dressing (skirmish) loop their

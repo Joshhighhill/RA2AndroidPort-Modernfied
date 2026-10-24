@@ -32,6 +32,7 @@ void game_logical_size(int& out_w, int& out_h) {
         out_h = g_play_canvas_h;
         return;
     }
+    if (user_canvas_size(out_w,out_h)) return;
     if (!g_platform) return;
     int w = 0, h = 0;
     g_platform->output_size(w, h);

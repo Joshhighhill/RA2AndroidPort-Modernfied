@@ -1,4 +1,5 @@
 #include "voxel_raster.hpp"
+#include "terrain_tilt.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -90,10 +91,17 @@ double index_to_yaw(int i, int n) {
 
 VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaModel& hva,
                             double yaw_rad, const ra2assets::Vpl& vpl,
-                            const ra2assets::Palette& pal, int hva_frame, double pitch_rad) {
+                            const ra2assets::Palette& pal, int hva_frame, double pitch_rad, int ramp) {
     const double c = std::cos(yaw_rad), s = std::sin(yaw_rad);
     const double cp = pitch_rad == 0.0 ? 1.0 : std::cos(pitch_rad);
     const double sp = pitch_rad == 0.0 ? 0.0 : std::sin(pitch_rad);
+    const auto tilt=terrain_tilt(ramp);
+    auto oriented=[&](V3 p) {
+        p=yaw_rotate(pitch_rotate(p,cp,sp),c,s);
+        if(ramp==0) return p; // preserve flat-ground raster output exactly
+        const auto q=tilt.apply(p.x,p.y,p.z);
+        return V3{q[0],q[1],q[2]};
+    };
 
     VoxelSprite out;
     if (m.sections.empty() || hva.frames.empty() || hva.frames[0].empty()) return out;
@@ -112,7 +120,7 @@ VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaMo
             const V3 p = {(corner & 1) ? hi.x : lo.x, (corner & 2) ? hi.y : lo.y,
                           (corner & 4) ? hi.z : lo.z};
             double sx, sy, d;
-            project(yaw_rotate(pitch_rotate(apply_xform(xf.transform, sec.scale, p), cp, sp), c, s), sx, sy, d);
+            project(oriented(apply_xform(xf.transform, sec.scale, p)), sx, sy, d);
             mnx = std::min(mnx, sx); mxx = std::max(mxx, sx);
             mny = std::min(mny, sy); mxy = std::max(mxy, sy);
         }
@@ -130,8 +138,9 @@ VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaMo
 
     // Light dirs rotated into model space ONCE per call (world-fixed light):
     const double lc = std::cos(-yaw_rad), ls = std::sin(-yaw_rad);
-    const double L[3] = {kLightWorld[0] * lc - kLightWorld[1] * ls,
-                         kLightWorld[0] * ls + kLightWorld[1] * lc, kLightWorld[2]};
+    const auto light=tilt.inverse(kLightWorld[0],kLightWorld[1],kLightWorld[2]);
+    const double L[3] = {light[0] * lc - light[1] * ls,
+                         light[0] * ls + light[1] * lc, light[2]};
     double H[3] = {L[0], L[1], L[2] + 1.0};
     const double hn = std::sqrt(H[0] * H[0] + H[1] * H[1] + H[2] * H[2]);
     H[0] /= hn; H[1] /= hn; H[2] /= hn;
@@ -154,7 +163,7 @@ VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaMo
                                       sec.min_bounds[1] + y * stepy,
                                       sec.min_bounds[2] + z * stepz};
                     double sx, sy, depth;
-                    project(yaw_rotate(pitch_rotate(apply_xform(xf.transform, sec.scale, local), cp, sp), c, s),
+                    project(oriented(apply_xform(xf.transform, sec.scale, local)),
                             sx, sy, depth);
                     const int px = static_cast<int>(std::round(sx)) + out.anchor_x;
                     const int py = static_cast<int>(std::round(sy)) + out.anchor_y;

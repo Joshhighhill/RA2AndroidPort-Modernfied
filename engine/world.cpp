@@ -1482,6 +1482,8 @@ bool reaches(const Unit& u, Cellxy g) {
 void World::order_unit_move(int idx, int gx, int gy) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     Unit& u = units_[idx];
+    if (u.deploys_into>=0 && u.deploys_into<static_cast<int>(btypes().size()) && btypes()[u.deploys_into].slave_count>0)
+        u.manual_hold=false;
     u.tg.area_guard = false;   // W6-02-11: a move order leaves Area_Guard
     // w7fix-combat: a move order replaces the mission (Sleep / Harmless /
     // Sticky / Attack Move, a retaliation's saved order, the area-guard home).
@@ -6238,7 +6240,10 @@ void World::step(double dt) {
     for (Unit& u : units_) {
         if (!u.alive || u.die_time >= 0.0) continue;
         if (u.crushing) continue;   // W5-B R-050: driving onto a crush target, not holding at range
-        if (u.target < 0 || !u.attack_order || u.target >= (int)units_.size()) continue;   // only explicit attackers hold at range
+        if (u.target < 0 || u.target >= (int)units_.size()) continue;
+        // Automatic pursuit also owns a path. Opportunity fire during a
+        // player move must keep that move, but guard/hunt pursuit stops at range.
+        if (!u.attack_order && u.tg.opportunity) continue;
         const Unit& t = units_[u.target];
         if (!t.alive || t.die_time >= 0.0) continue;
         // W5-B R-063: the same 3-D / elevation / cliff test step_combat fires

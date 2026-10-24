@@ -80,6 +80,34 @@ TEST_CASE("harvest: seek picks the nearest ore cell and requests a move") {
     CHECK(r.units[0].harv == HarvState::MoveToOre);
 }
 
+TEST_CASE("slave harvest: workers reserve separate ore cells near their manager") {
+    Rig r;
+    r.types[0].slave_count=2;
+    r.ore.set(2,3,OreKind::Ore,5,0);
+    r.ore.set(7,7,OreKind::Ore,5,0);
+    r.ore.set(6,7,OreKind::Ore,5,0);
+    for(int i=0;i<2;++i){auto& worker=r.harv(2+i,2);worker.w7.slave_manager=0;}
+    r.step(0.1);
+    REQUIRE(r.moves.size()==2);
+    CHECK_FALSE((r.moves[0].gx==r.moves[1].gx && r.moves[0].gy==r.moves[1].gy));
+    CHECK(r.moves[0].gy==7);CHECK(r.moves[1].gy==7);
+    CHECK(r.units[0].bales_ore==0);
+}
+
+TEST_CASE("slave harvest: different manager edges unload without the truck dock queue") {
+    Rig r;r.types[0].slave_count=2;
+    for(auto c:{Cellxy{7,8},Cellxy{12,10}}){
+        auto& worker=r.harv(c.x,c.y);worker.w7.slave_manager=0;
+        worker.harv=HarvState::ReturnToRef;worker.bales_ore=1;
+    }
+    r.step(0.1);
+    CHECK(r.units[0].harv==HarvState::Unloading);
+    CHECK(r.units[1].harv==HarvState::Unloading);
+    r.step(1.0);
+    CHECK(r.credits[0]==50);
+    CHECK(r.units[0].bales_ore==0);CHECK(r.units[1].bales_ore==0);
+}
+
 TEST_CASE("harvest: gulps fill to exactly Storage then return") {
     Rig r;
     // Dense ore under the miner AND all 8 ring cells so 40 gulps are

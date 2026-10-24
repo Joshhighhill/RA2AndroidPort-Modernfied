@@ -21,8 +21,7 @@ inline ShellXform ui_xform() { return ShellXform::make(g_ui_w, g_ui_h); }
 inline ra2engine::SbRect ui_dev(const ra2engine::SbRect& r) { return ui_xform().hit(r); }
 inline void ui_to_logical(int dx, int dy, int& lx, int& ly) {
     const ShellXform xf = ui_xform();
-    lx = static_cast<int>(std::floor((dx - xf.ox) / xf.s));
-    ly = static_cast<int>(std::floor((dy - xf.oy) / xf.s));
+    const auto point=xf.logical(dx,dy);lx=point.first;ly=point.second;
 }
 inline ra2engine::SbRect shell_row(int k) { return {484, 199 + 42 * k, 156, 42}; }
 

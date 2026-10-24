@@ -525,11 +525,10 @@ public:
 
 protected:
     static constexpr int kWinW = 1280, kWinH = 720;
-    static ShellXform xform() { return ShellXform::make(kWinW, kWinH); }
+    static ShellXform xform() { return ShellXform::make(g_ui_w,g_ui_h); }
     static void to_logical(int dx, int dy, int& lx, int& ly) {
         const ShellXform xf = xform();
-        lx = static_cast<int>(std::floor((dx - xf.ox) / xf.s));
-        ly = static_cast<int>(std::floor((dy - xf.oy) / xf.s));
+        const auto point=xf.logical(dx,dy);lx=point.first;ly=point.second;
     }
     static ShellButton btn(int row, const std::string& s, bool en, int act) {
         return ShellButton{{484, 199 + 42 * row, 156, 42}, s, en, act, PAGE_MAIN};

@@ -286,6 +286,7 @@ private:
             std::stable_sort(v.begin(), v.end(), [&](int a, int b) {
                 return ba_.roster[a].tech_level < ba_.roster[b].tech_level;
             });
+            if(tab==1) for(auto type:world_.sw_types(local_house_)) v.push_back(ra2engine::power_cameo_id(type));
             return v;
         }
         for (int i = 0; i < static_cast<int>(ur_.defs.size()); ++i) {

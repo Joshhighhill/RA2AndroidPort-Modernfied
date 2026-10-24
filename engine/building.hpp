@@ -1,4 +1,5 @@
 #pragma once
+#include "civilian_frames.hpp"
 // Pure building core: type defs resolved from Rules/Art by the caller,
 // foundation cell math, placement validity, damage/frame selection, and
 // per-frame stepping (buildup progression, death anim timing). No SDL/OS.

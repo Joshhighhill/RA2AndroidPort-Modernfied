@@ -65,6 +65,18 @@ TEST_CASE("R-210 path_step_layer: same height, one level over a slope, never a c
     CHECK(path_step_layer(t, g.w, 1, 0, 0, 2, 0) == -1);
 }
 
+TEST_CASE("R-210 terrain movement rejects coordinates that alias another row") {
+    Terrain g(4,3);
+    const auto t=g.t();
+    CHECK(path_step_layer(t,4,3,0,0,4,0)==-1);
+    CHECK(path_step_layer(t,4,0,1,0,-1,1)==-1);
+    CHECK(path_step_layer(t,4,-1,1,0,0,1)==-1);
+    CHECK(path_step_layer(t,4,0,0,0,0,3)==-1);
+    CHECK(path_step_layer(t,0,0,0,0,0,0)==-1);
+    CHECK(path_step_layer(t,4,0,0,2,1,0)==-1);
+    CHECK(path_step_layer(t,4,0,0,0,1,0)==0);
+}
+
 TEST_CASE("R-210 cliff: an amphibious mover cannot drop from the plateau into the water") {
     // 8 x 5: a plateau (level 4) on x <= 3, water/low ground (level 0) on x >= 4.
     // An amphibious grid: everything passable.

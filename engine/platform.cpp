@@ -1,6 +1,7 @@
 #include "platform.hpp"
 #include <algorithm>
 #include "touch_gestures.hpp"
+#include "diagnostics.hpp"
 
 #include <SDL.h>
 #include <cstdio>
@@ -101,6 +102,13 @@ Platform Platform::create(const char* title, int w, int h, bool hidden) {
     //    drawn. Setting the logical size keeps rendering AND input in the
     //    same fixed coordinate space on both platforms.
     SDL_RenderSetLogicalSize(renderer, w, h);
+    SDL_RendererInfo renderer_info{};
+    int output_w=0,output_h=0;
+    SDL_GetRendererOutputSize(renderer,&output_w,&output_h);
+    if (SDL_GetRendererInfo(renderer,&renderer_info)==0)
+        diag::note("RENDERER backend=%s flags=%u output=%dx%d logical=%dx%d max_texture=%dx%d",
+            renderer_info.name ? renderer_info.name : "unknown",renderer_info.flags,output_w,output_h,w,h,
+            renderer_info.max_texture_width,renderer_info.max_texture_height);
 
     Platform p;
     p.p_ = new Impl{window, renderer, w, h, TouchGestures{}};

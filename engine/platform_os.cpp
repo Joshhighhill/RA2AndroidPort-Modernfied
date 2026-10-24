@@ -199,6 +199,24 @@ int os_android_bind_lan(bool) { return 1; }
 #endif
 
 // W6-01-10: see platform_os.hpp.
+bool os_android_share_report() {
+#ifdef __ANDROID__
+    auto* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
+    auto act = static_cast<jobject>(SDL_AndroidGetActivity());
+    if (!env || !act) return false;
+    jclass cls=env->GetObjectClass(act);
+    jmethodID method=cls ? env->GetMethodID(cls,"shareGameReport","()V") : nullptr;
+    if (method) env->CallVoidMethod(act,method);
+    const bool ok=method && !env->ExceptionCheck();
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    if (cls) env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(act);
+    return ok;
+#else
+    return false;
+#endif
+}
+
 static std::atomic<bool> g_keep_autosave{false};
 void os_set_keep_autosave(bool keep) { g_keep_autosave = keep; }
 bool os_keep_autosave() { return g_keep_autosave; }

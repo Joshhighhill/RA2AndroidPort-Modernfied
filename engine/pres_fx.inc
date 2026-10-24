@@ -340,9 +340,24 @@ public:
         };
         SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
         for (const Link& l : links_) {
-            if (l.from < 0 || l.to < 0 || l.from >= static_cast<int>(us.size()) || l.to >= static_cast<int>(us.size())) continue;
+            if (l.to<0 || l.to>=static_cast<int>(us.size())) continue;
+            const auto& victim=us[l.to];
+            if (!victim.alive || victim.die_time>=0 || !world_for_pal_->object_visible_at(g_local_house,victim.cell_x,victim.cell_y)) continue;
             int ax, ay, bx, by;
-            pt(us[static_cast<std::size_t>(l.from)], 20.0, ax, ay);
+            if(l.from>=0) {
+                if(l.from>=static_cast<int>(us.size())) continue;
+                const auto& source=us[l.from];
+                if(!world_for_pal_->object_visible_at(g_local_house,source.cell_x,source.cell_y)) continue;
+                pt(source,20.0,ax,ay);
+            } else {
+                const int bi=-1-l.from;
+                if(bi>=static_cast<int>(world_for_pal_->buildings().size())) continue;
+                const auto& source=world_for_pal_->buildings()[bi];
+                if(!world_for_pal_->object_visible_at(g_local_house,source.cx,source.cy)) continue;
+                const double x=source.cx+(source.fw-1)*0.5,y=source.cy+(source.fh-1)*0.5;
+                ax=static_cast<int>(std::lround((x-y)*30))+cam.x+30;
+                ay=static_cast<int>(std::lround((x+y)*15-world_for_pal_->cell_level(source.cx,source.cy)*15-30))+cam.y+15;
+            }
             pt(us[static_cast<std::size_t>(l.to)], 10.0, bx, by);
             SDL_SetRenderDrawColor(ren, l.c.r, l.c.g, l.c.b, 255);
             SDL_RenderDrawLine(ren, ax, ay, bx, by);
@@ -590,6 +605,7 @@ public:
     // GetRubbleImage FUN_0045f150].
     struct BldRules {
         bool refinery = false, unit_repair = false, cons_yard = false, occupiable = false, gate = false;
+        bool tank_bunker = false;
         bool leave_rubble = false, naval = false;
         int storage = 0;
         std::string destroy_anim;
@@ -607,6 +623,7 @@ public:
         r.cons_yard = yes("ConstructionYard");
         r.occupiable = yes("CanBeOccupied");
         r.gate = yes("Gate");
+        r.tank_bunker = yes("Bunker");
         r.leave_rubble = yes("LeaveRubble");
         r.naval = pres_lower(rget(id, "Factory")) == "unittype" && yes("Naval");
         r.storage = std::atoi(rget(id, "Storage").c_str());

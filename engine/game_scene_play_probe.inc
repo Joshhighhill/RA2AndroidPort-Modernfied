@@ -383,10 +383,10 @@
             p.targets["repair"] = rect(lay_.repair_btn);
             p.targets["sell"] = rect(lay_.sell_btn);
         }
-        if (world_.sw_state(0))
+        if (!rp_on_ && world_.sw_state(0))
             p.targets["sw"] = ra2play::Rect{lay_.bar.x + ra2engine::kCameoX, lay_.radar.y + 2,
                                             ra2engine::kCameoW, ra2engine::kCameoH};
-        {   // W2-AN-04: one target per granted SW, `sw:<TYPE>` (Nuke, IronCurtain, ...)
+        if (!rp_on_) {   // Demo powers use the legacy radar positions.
             const std::vector<ra2engine::SuperweaponType> swt = world_.sw_types(local_house_);
             for (int k = 0; k < static_cast<int>(swt.size()); ++k) {
                 const ra2engine::SbRect r = sw_slot_rect(lay_, k);
@@ -399,8 +399,12 @@
             const int h = ba_.sb_optbtn.height() > 0 ? ba_.sb_optbtn.height() : 16;
             p.targets["options"] = ra2play::Rect{lay_.opt_btn.x, lay_.opt_btn.y, w, h};
         }
-        for (std::size_t i = 0; i < lay_.cameos.size() && i < buildable_.size(); ++i)
-            p.targets["cameo:" + play_entry_id(active_tab_, buildable_[i])] = rect(lay_.cameos[i].rect);
+        for (const auto& cell : lay_.cameos) {
+            const auto power=ra2engine::power_cameo_type(cell.type);
+            if (power!=ra2engine::SuperweaponType::None)
+                p.targets[std::string("sw:")+ra2engine::superweapon_type_name(power)]=rect(cell.rect);
+            else p.targets["cameo:"+play_entry_id(active_tab_,cell.type)]=rect(cell.rect);
+        }
         if (touch_bar_visible()) {   // Includes the collapsed panel's restore arrow.
             const SDL_Rect arrow = touch_panel_toggle_rect();
             p.targets["touch:panel-toggle"] = ra2play::Rect{arrow.x,arrow.y,arrow.w,arrow.h};

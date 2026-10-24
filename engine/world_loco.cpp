@@ -35,6 +35,7 @@
 #include "combat.hpp"      // can_crush
 #include "locomotion.hpp"
 #include "pathfind.hpp"
+#include "diagnostics.hpp"
 
 namespace ra2engine {
 
@@ -431,10 +432,25 @@ bool repath(StepEnv& e, Unit& u, int self, int mode) {
     if (u.path.empty()) return false;
     const Cellxy goal = u.path.back();
     const bool crush = e.crush_passable && u.crusher && u.is_vehicle && u.movement_domain == MovementDomain::Land;
-    const std::vector<std::uint8_t>& g =
+    const std::vector<std::uint8_t>& base =
         u.movement_domain == MovementDomain::Water ? e.water_passable
         : (u.movement_domain == MovementDomain::Amphibious && e.amphib_passable) ? *e.amphib_passable
         : crush ? *e.crush_passable : e.passable;
+    std::vector<std::uint8_t> strict;
+    if (mode==3) {
+        strict=base;
+        // A cost of 8/20 can keep selecting an immovable blocker forever
+        // when the real detour costs more. After a sustained stall, test an
+        // actual route around stationary units on the mover's own layer.
+        for (int i=0;i<static_cast<int>(e.units.size());++i) {
+            const auto& v=e.units[i];
+            if (i==self || !live_on_map(v) || (under_way(v) && v.wait_time<3.0) || v.on_deck!=u.on_deck ||
+                (can_crush(u,v) && !e.allied(u.house,v.house))) continue;
+            if (v.cell_x>=0 && v.cell_y>=0 && v.cell_x<e.w && v.cell_y<e.h)
+                strict[static_cast<std::size_t>(v.cell_y)*e.w+v.cell_x]=0;
+        }
+    }
+    const auto& g=mode==3 ? strict : base;
     std::vector<std::uint16_t>& cost = occupancy_cost_scratch();   // W9-02-06: reused, reset incrementally
     if (mode > 0) build_occupancy_cost(e.units, e.occ, e.w, e.h, self, mode == 2, e.sc.world, cost);
     PathTerrain rt;
@@ -445,6 +461,7 @@ bool repath(StepEnv& e, Unit& u, int self, int mode) {
     if (np.size() > 1) {
         u.path = std::move(np);
         u.path_idx = 1;
+        if (mode==3) diag::note("TRAFFIC_RECOVERY unit=%d wait_s=%.2f goal=%d,%d path=%zu",self,u.wait_time,goal.x,goal.y,u.path.size());
         return true;
     }
     return mode == 0 && np.size() == 1;   // already at the goal: a route trivially exists
@@ -490,6 +507,10 @@ void on_blocked(StepEnv& e, Unit& u, int self, Cellxy bc, bool cliff, int layer)
         if (o >= static_cast<int>(e.units.size())) o = Occupancy::kEmpty;
     }
     const Cellxy goal = u.path.empty() ? Cellxy{u.cell_x, u.cell_y} : u.path.back();
+    if (o>=0 && u.wait_time>=3.0 && L.path_delay<=0.0 && repath(e,u,self,3)) {
+        L.path_delay=lr.path_delay_frames;
+        return;
+    }
     auto close_enough = [&]() {
         // [RE: FUN_004B2550 Move 6: dist(destination) < CloseEnough and the
         // height differs by under 2 levels -> stop, mission complete].

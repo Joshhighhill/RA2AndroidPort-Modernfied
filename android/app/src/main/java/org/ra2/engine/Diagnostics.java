@@ -1,6 +1,7 @@
 package org.ra2.engine;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.ActivityManager;
 import android.app.ApplicationExitInfo;
 import android.content.ClipData;
@@ -9,6 +10,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.widget.Toast;
+import android.widget.EditText;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -26,6 +28,7 @@ final class Diagnostics {
         try {
             String version=c.getPackageManager().getPackageInfo(c.getPackageName(),0).versionName;
             text(new File(d,"device.txt"),"version="+version+"\nmodel="+Build.MANUFACTURER+" "+Build.MODEL+
+                "\nversion_code="+c.getPackageManager().getPackageInfo(c.getPackageName(),0).versionCode+
                 "\nandroid="+Build.VERSION.RELEASE+" sdk="+Build.VERSION.SDK_INT+"\nabis="+java.util.Arrays.toString(Build.SUPPORTED_ABIS)+
                 "\nstarted_ms="+System.currentTimeMillis()+"\npid="+android.os.Process.myPid()+"\n");
             text(new File(d,"running.txt"),"Game started; clean shutdown not recorded yet.\n");
@@ -83,10 +86,30 @@ final class Diagnostics {
         while(total<limit && (n=in.read(buf,0,Math.min(buf.length,limit-total)))>0){out.write(buf,0,n);total+=n;}
     }
     static void share(Activity a) {
+        final EditText description=new EditText(a);
+        description.setHint("What happened? Which unit or map? What did you expect?");
+        description.setMinLines(3);
+        description.setMaxLines(6);
+        description.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(2000)});
+        new AlertDialog.Builder(a).setTitle("Share game report").setView(description)
+            .setNegativeButton("Cancel",null)
+            .setPositiveButton("Share",(dialog,which)->shareReport(a,description.getText().toString())).show();
+    }
+    private static void shareReport(Activity a,String description) {
         Toast.makeText(a,"Preparing game report…",Toast.LENGTH_SHORT).show();
         new Thread(()-> {
             try {
                 collectExits(a);
+                String version=a.getPackageManager().getPackageInfo(a.getPackageName(),0).versionName;
+                ActivityManager.MemoryInfo memory=new ActivityManager.MemoryInfo();
+                ((ActivityManager)a.getSystemService(Context.ACTIVITY_SERVICE)).getMemoryInfo(memory);
+                java.text.SimpleDateFormat utc=new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'",java.util.Locale.ROOT);
+                utc.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+                text(new File(dir(a),"report.txt"),"schema=2\ncreated_utc="+
+                    utc.format(new java.util.Date())+
+                    "\nversion="+version+"\nversion_code="+a.getPackageManager().getPackageInfo(a.getPackageName(),0).versionCode+
+                    "\npackage="+a.getPackageName()+"\navailable_memory_bytes="+memory.availMem+
+                    "\nlow_memory="+memory.lowMemory+"\nuser_description="+description+"\n");
                 File reports=new File(a.getCacheDir(),"reports");reports.mkdirs();
                 File[] old=reports.listFiles((d,n)->n.matches("ra2-report-[0-9]+\\.zip"));
                 if(old!=null){java.util.Arrays.sort(old,(a1,b)->Long.compare(b.lastModified(),a1.lastModified()));for(int i=2;i<old.length;++i)old[i].delete();}
@@ -94,7 +117,9 @@ final class Diagnostics {
                 try(ZipOutputStream out=new ZipOutputStream(new FileOutputStream(zip))) {
                     out.putNextEntry(new ZipEntry("README.txt"));
                     out.write(("RA2 local diagnostics. Includes recent actions, resolved asset names, skirmish settings and Android exit info when available.\n"+
-                        "Native .trace files can be Android tombstone protobufs, not plain text.\n"+
+                        "report.txt contains the description and report time. CHECK lines are nonfatal observations, not proof of a gameplay bug. UNIT/STRUCTURE samples are bounded.\n"+
+                        "PERFORMANCE records CPU stage durations and call rates, not GPU time or phone temperature.\n"+
+                        "Native .trace files can be Android tombstone protobufs, not plain text. Their timestamps may predate this session.\n"+
                         "No retail archives or saves are copied. Text logs may contain local file paths or match details. Logs/traces are capped in size and can be incomplete.\n").getBytes(StandardCharsets.UTF_8));out.closeEntry();
                     File[] files=dir(a).listFiles();if(files!=null)for(File f:files) {
                         if(!f.isFile() || !allowed(f.getName()))continue;
@@ -104,7 +129,7 @@ final class Diagnostics {
                 a.runOnUiThread(()-> {
                     Uri uri=Uri.parse("content://"+a.getPackageName()+".reports/"+zip.getName());
                     Intent send=new Intent(Intent.ACTION_SEND).setType("application/zip").putExtra(Intent.EXTRA_STREAM,uri)
-                        .putExtra(Intent.EXTRA_SUBJECT,"RA2 game diagnostics").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        .putExtra(Intent.EXTRA_SUBJECT,"RA2 game diagnostics "+version).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                     send.setClipData(ClipData.newRawUri("RA2 game report",uri));
                     a.startActivity(Intent.createChooser(send,"Share game report"));
                 });
@@ -113,6 +138,6 @@ final class Diagnostics {
     }
     private static boolean allowed(String name) {
         return name.matches("(?:engine|assets)-(?:current|previous)\\.log") || name.equals("device.txt") || name.equals("skirmish.txt") ||
-            name.equals("process-exits.txt") || name.equals("java-crash.txt") || name.equals("running.txt") || name.matches("exit-[0-9]+\\.trace");
+            name.equals("process-exits.txt") || name.equals("java-crash.txt") || name.equals("running.txt") || name.equals("report.txt") || name.matches("exit-[0-9]+\\.trace");
     }
 }

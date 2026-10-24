@@ -201,6 +201,7 @@ struct RpSwGrant {
     bool is_powered = false;
     double recharge_secs = 0.0;
     bool disableable = false;   // DisableableFromShell=yes (the lobby checkbox)
+    double radius = 15.0; // PsychicRevealRadius; passed through existing saved effect parameters
 };
 
 // W2-AN-04/19: the classic SW Type= names -> the engine enum.
@@ -212,6 +213,7 @@ ra2engine::SuperweaponType rp_sw_type_of(const std::string& type_upper) {
     if (type_upper == "CHRONOSPHERE") return T::ChronoSphere;
     if (type_upper == "PARADROP") return T::ParaDrop;
     if (type_upper == "AMERPARADROP") return T::AmerParaDrop;
+    if (type_upper == "PSYCHICREVEAL") return T::PsychicReveal;
     return T::None;
 }
 
@@ -222,9 +224,14 @@ ra2engine::SuperweaponType rp_sw_type_of(const std::string& type_upper) {
 std::vector<RpSwGrant> rp_superweapon_table(const BuildingAssets& ba, const Rules& rules) {
     std::vector<RpSwGrant> t(ba.roster.size());
     for (std::size_t i = 0; i < ba.roster.size(); ++i) {
-        const std::string sw = rp_building_classic_sw(rules, ba.roster[i].id);
+        const std::string sw = rules.section_string(ba.roster[i].id,"SuperWeapon","");
         if (sw.empty()) continue;
         t[i].type = rp_sw_type_of(rp_upper(rules.section_string(sw, "Type", "")));
+        if (t[i].type==ra2engine::SuperweaponType::None) {
+            ra2engine::diag::note("CAPABILITY_UNSUPPORTED building=%s superweapon=%s type=%s",ba.roster[i].id.c_str(),sw.c_str(),rules.section_string(sw,"Type","").c_str());
+            continue;
+        }
+        t[i].radius=std::clamp(rules.section_double("CombatDamage","PsychicRevealRadius",15.0),0.0,256.0);
         t[i].is_powered = rp_flag(rules, sw, "IsPowered");
         t[i].recharge_secs = rules.section_double(sw, "RechargeTime", 5.0) * 60.0;
         t[i].disableable = rp_flag(rules, sw, "DisableableFromShell");
@@ -258,7 +265,8 @@ void rp_sync_superweapons(ra2engine::World& w, const std::vector<RpSwGrant>& tab
         }
         for (const RpSwGrant* g : held)
             w.grant_superweapon_type(h, g->type, g->recharge_secs, g->is_powered, nuke.damage,
-                                     nuke.cell_spread, nuke.percent_at_max, nuke.verses);
+                                     g->type==ra2engine::SuperweaponType::PsychicReveal ? g->radius : nuke.cell_spread,
+                                     nuke.percent_at_max, nuke.verses);
     }
 }
 

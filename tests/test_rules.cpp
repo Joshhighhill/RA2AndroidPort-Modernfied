@@ -66,6 +66,8 @@ TEST_CASE("rules: locates real rulesmd.ini from the install and reads GI (unit i
     REQUIRE(ini.has("E1"));
     CHECK(rules.image("E1") == "GI");
     CHECK(rules.speed("E1") > 0);
+    CHECK(ini.get("HARV", "UnloadingClass") == "HORV");
+    CHECK(ini.get("CMIN", "UnloadingClass") == "CMON");
     MESSAGE("rulesmd.ini [E1] (GI) speed=" << rules.speed("E1"));
 }
 

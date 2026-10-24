@@ -175,7 +175,7 @@ sounds play at `stage % count == frame`. `WalkRate` / `IdleRate` are TechnoType 
 | SHP vehicles | `FUN_0073b520` frame rule (W2 RE-Q14) | Skirmish works; **campaign broken** (§1.2 C) | BROKEN | BLOCKER | §1.2 C | S |
 | HVA animation | Multi-frame HVA: SHAD, SPYP rotors/props (RA2), SCHP, YTNK (YR) | Frame 0 only (voxel_raster.cpp:83, 117, 165) | MISSING | MINOR | Cycle HVA frames per logic frame | S |
 | `TurretOffset` | art key (HARV 50, HTK -80, SHAD 50, …) | Not read; turrets drawn at hull origin | WRONG | MINOR | Offset turret along hull facing | S |
-| Harvester dump | `UnloadingClass=HORV` (HARV), `CMON` (CMIN) at the refinery; `HarvesterDumpRate` | Not read | MISSING | MINOR | Swap voxel while docked | S |
+| Harvester dump | `UnloadingClass=HORV` (HARV), `CMON` (CMIN) at the refinery; `HarvesterDumpRate` | Rules-driven render swap while unloading; unload assets are shared-owned across scene changes (`main.cpp`) | FIXED (device regression pending) | MINOR | Verify complete unload cycle on device | S |
 | Barrel recoil | No RA2 data (2 `Recoilless=yes` only) | — | N/A | — | — | — |
 | Death explosion | Random `Explosion=` pick (presentation.md §5, High) | First entry only (main.cpp:1371, pres_game.inc:821) | WRONG | MINOR | Random pick | S |
 | Debris | `DebrisAnims`/`MinDebris`/`MaxDebris`, `[General] MetallicDebris` (Bouncer=yes, 34 anims) | Not read | MISSING | MAJOR | Bouncer anim physics (Elasticity) | M |

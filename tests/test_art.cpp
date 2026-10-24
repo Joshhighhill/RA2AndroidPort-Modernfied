@@ -140,6 +140,7 @@ TEST_CASE("art: real artmd building pins") {
         return;
     }
     const Art& art = ra2fixture::artmd();
+    const Ini& ini = ra2fixture::artmd_ini();
 
     int fw = -1, fh = -1;
     REQUIRE(art.foundation("GACNST", fw, fh));
@@ -159,6 +160,16 @@ TEST_CASE("art: real artmd building pins") {
 
     CHECK(art.buildup("GACNST") == "GACNSTMK");
     CHECK(art.buildup("NAWEAP") == "NAWEAPMK");
+    CHECK(art.buildup("YAREFN") == "YAREFNMK");
+    CHECK(ini.get("YAREFN", "IdleAnim") == "YAREFN_A");
+    CHECK(art.foundation("NATBNK", fw, fh));
+    CHECK(fw == 2); CHECK(fh == 2);
+    CHECK(ini.get("NATBNK", "SpecialAnim") == "NATBNK_A");
+    CHECK(ini.get("NATBNK", "SpecialAnimTwo") == "NATBNK_B");
+    CHECK(ini.get("NATBNK", "SpecialAnimThree") == "NATBNK_A2");
+    CHECK(ini.get("NATBNK", "SpecialAnimFour") == "NATBNK_B2");
+    CHECK(ini.get("NATBNK", "SpecialAnimYSort") == "750");
+    CHECK(ini.get("NATBNK", "SpecialAnimThreeYSort") == "750");
 
     CHECK(art.cameo("GAPOWR") == "POWRICON");
     CHECK(art.cameo("GAWEAP") == "gwepicon");

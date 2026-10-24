@@ -159,7 +159,10 @@ CONFIRMED.
 TechnoType+0x6B8 to a unit-type index, `FUN_00711510`). It names the alternate
 art/type the miner morphs into while sitting on the dock (the "unloading" body).
 The swap is a display/type substitution during the unload phase and reverts on
-undock; exact swap trigger = **[RE-FALLBACK: cosmetic type swap while docked]**.
+undock; the clone selects that art while its harvester state is `Unloading`.
+The original's exact animation/state-edge timing remains **[RE-FALLBACK:
+cosmetic type swap while docked]**. The clone's render lookup is shared-owned
+and atomically replaced on scene changes to avoid dangling pointers.
 
 ## §3 CMIN chrono-return
 

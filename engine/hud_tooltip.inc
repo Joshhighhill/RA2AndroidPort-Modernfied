@@ -42,6 +42,8 @@
         if (!(sidebar_up_ && ba_.ok && ba_.sidebar_ok && lay_.contains(x, y))) return "";
         for (const ra2engine::CameoCell& c : lay_.cameos) {
             if (!c.rect.contains(x, y)) continue;
+            const auto power=ra2engine::power_cameo_type(c.type);
+            if(power!=ra2engine::SuperweaponType::None) return ra2engine::superweapon_type_name(power);
             std::string id;
             int cost = 0;
             if (active_tab_ >= 2) {

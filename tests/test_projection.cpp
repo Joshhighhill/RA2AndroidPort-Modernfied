@@ -1,10 +1,70 @@
 #include "doctest.h"
 #include "iso_project.hpp"
+#include "viewport_bounds.hpp"
+#include "vehicle_animation.hpp"
+#include "power_cameo.hpp"
+#include "civilian_frames.hpp"
+#include "shell_layout.hpp"
+#include <limits>
 #include <algorithm>
 
 using ra2engine::ScreenPt;
 using ra2engine::cell_to_screen;
 using ra2engine::screen_to_cell;
+
+TEST_CASE("Yuri shell: sidebar and dialog hit targets match their large-shell positions") {
+    using namespace ra2engine;
+    const auto exit=yuri_shell_rect({484,409,156,42});
+    CHECK(exit.x==644);CHECK(exit.y==535);CHECK(exit.w==156);CHECK(exit.h==42);
+    const auto back=yuri_shell_point(exit.x+78,exit.y+21);
+    CHECK(back.first==562);CHECK(back.second==430);
+    const SbRect field{200,80,170,20};const auto expanded=yuri_shell_rect(field);
+    const auto point=yuri_shell_point(expanded.x+expanded.w/2,expanded.y+expanded.h/2);
+    CHECK(std::abs(point.first-(field.x+field.w/2))<=1);
+    CHECK(std::abs(point.second-(field.y+field.h/2))<=1);
+    const auto footer=yuri_shell_rect({0,448,472,32});
+    CHECK(footer.x==0);CHECK(footer.y==568);CHECK(footer.w==632);CHECK(footer.h==32);
+}
+
+TEST_CASE("civilian frames: occupied damage never chooses the rubble image") {
+    CHECK(ra2engine::civilian_main_frame(false,false)==0);
+    CHECK(ra2engine::civilian_main_frame(true,false)==1);
+    CHECK(ra2engine::civilian_main_frame(false,true)==2);
+    CHECK(ra2engine::civilian_main_frame(true,true)==1);
+}
+
+TEST_CASE("sidebar: power identifiers cannot alias production entries") {
+    using namespace ra2engine;
+    for (int n=1;n<=12;++n) {
+        const auto type=static_cast<SuperweaponType>(n);
+        CHECK(power_cameo_type(power_cameo_id(type))==type);
+        CHECK(power_cameo_id(type)<-1);
+    }
+    CHECK(power_cameo_type(-1)==SuperweaponType::None);
+    CHECK(power_cameo_type(0)==SuperweaponType::None);
+    CHECK(power_cameo_type(-2000)==SuperweaponType::None);
+}
+
+TEST_CASE("presentation: spinning turret uses game ticks without changing combat facing") {
+    const double combat=1234;
+    CHECK(ra2engine::spinning_turret_facing(combat,1,65536,false)==combat);
+    CHECK(ra2engine::spinning_turret_facing(combat,1,0,true)==combat);
+    CHECK(ra2engine::spinning_turret_facing(combat,0,65536,true)==0);
+    CHECK(ra2engine::spinning_turret_facing(combat,1,65536,true)==doctest::Approx(65536.0/15));
+    CHECK(ra2engine::spinning_turret_facing(combat,15,65536,true)==0);
+    CHECK(combat==1234);
+}
+
+TEST_CASE("viewport: cliff extension remains visible when its base is outside") {
+    using ra2engine::viewport_intersects;
+    CHECK_FALSE(viewport_intersects(20, -40, 60, 30, 100, 100));
+    CHECK(viewport_intersects(20, -10, 60, 60, 100, 100));
+    CHECK_FALSE(viewport_intersects(-70, 20, 60, 30, 100, 100));
+    CHECK(viewport_intersects(-10, 20, 60, 30, 100, 100));
+    CHECK_FALSE(viewport_intersects(100, 0, 60, 30, 100, 100));
+    CHECK_FALSE(viewport_intersects(0, 0, 0, 30, 100, 100));
+    CHECK(viewport_intersects(-10, 0, std::numeric_limits<int>::max(), 30, 100, 100));
+}
 
 TEST_CASE("proj: diamond stagger sanity (tile 60x30)") {
     const int tw = 60, th = 30, lp = 10;

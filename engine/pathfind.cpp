@@ -467,6 +467,10 @@ bool cell_ok(const std::vector<uint8_t>& passable, const PathTerrain* t, int c) 
 }  // namespace
 
 int path_step_layer(const PathTerrain& t, int width, int sx, int sy, int sl, int dx, int dy) {
+    // Linear bounds alone let x == width alias x == 0 on the next row
+    // (and x == -1 alias the previous row). Reject malformed coordinates
+    // before testing the height/ramp, including the unarmed terrain path.
+    if (width <= 0 || sx < 0 || dx < 0 || sx >= width || dx >= width || sy < 0 || dy < 0 || sl < 0 || sl > 1) return -1;
     if (!t.level) return 0;
     const std::vector<std::int8_t>& lv = *t.level;
     const long long s = (long long)sy * width + sx, d = (long long)dy * width + dx;

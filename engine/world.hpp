@@ -1060,7 +1060,7 @@ public:
     // check walkable() and unit_at_cell() first; seeding two units onto one
     // cell silently breaks the one-unit-per-cell invariant.
     Unit& add_combat_unit(int cell_x, int cell_y, int house, const UnitCombat& c);
-    void step_yuri_workers();
+    void step_yuri_workers(bool relocate = true);
     void release_unit_mind_control(int controller);
     void prepare_skirmish_mind_control();
     void resolve_skirmish_mind_control();

@@ -186,7 +186,8 @@ bool parking_cell(const std::vector<Building>& buildings, const std::vector<int>
 
 bool find_reachable_ore(const OreField& ore, const std::vector<std::uint8_t>& passable, int gw,
                         int gh, const Occupancy& occ, int self, int cx, int cy, int radius,
-                        int skip_x, int skip_y, int& out_x, int& out_y) {
+                        int skip_x, int skip_y, int& out_x, int& out_y,
+                        const std::vector<Cellxy>* reserved, int prefer_x, int prefer_y) {
     const int x0 = std::max(0, cx - radius), x1 = std::min(std::min(ore.w(), gw) - 1, cx + radius);
     const int y0 = std::max(0, cy - radius), y1 = std::min(std::min(ore.h(), gh) - 1, cy + radius);
     if (x0 > x1 || y0 > y1) return false;
@@ -219,9 +220,11 @@ bool find_reachable_ore(const OreField& ore, const std::vector<std::uint8_t>& pa
         for (int x = x0; x <= x1; ++x) {
             if (!reach[(std::size_t)(y - y0) * bw + (x - x0)] || !ore.has_ore(x, y)) continue;
             if (x == skip_x && y == skip_y) continue;
+            if (reserved && std::any_of(reserved->begin(),reserved->end(),[&](const Cellxy& c){return c.x==x && c.y==y;})) continue;
             const int o = occ.at(x, y);
             if (o != Occupancy::kEmpty && o != self) continue;   // Cell_Techno() != NULL
-            const int dist = std::max(std::abs(x - cx), std::abs(y - cy));
+            const int dist = std::max(std::abs(x - (prefer_x>=0 ? prefer_x : cx)), std::abs(y - (prefer_y>=0 ? prefer_y : cy)));
+            if (prefer_x>=0 && prefer_y>=0 && dist>radius) continue;
             if (dist < best) {
                 best = dist;
                 out_x = x;
@@ -328,13 +331,32 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                 // W2-SK-02/04: TiberiumShortScan first, then TiberiumLongScan
                 // (RA1 Mission_Harvest FINDINGSPOT order); zone- and occupant-
                 // filtered; the last cell a move to failed is skipped once.
-                const bool got =
+                std::vector<Cellxy> reserved;
+                const bool slave=u.w7.slave_manager>=0;
+                int center_x=-1,center_y=-1;
+                if (slave) {
+                    const auto& manager=buildings[u.w7.slave_manager];
+                    center_x=manager.cx+(manager.fw-1)/2;
+                    center_y=manager.cy+(manager.fh-1)/2;
+                    for (int other=0;other<static_cast<int>(units.size());++other) {
+                        const auto& v=units[other];
+                        if (other!=idx && v.alive && v.die_time<0 && v.w7.slave_manager==u.w7.slave_manager &&
+                            (v.harv==HarvState::MoveToOre || v.harv==HarvState::Harvesting))
+                            reserved.push_back({v.harv_cell_x,v.harv_cell_y});
+                    }
+                }
+                // Vanilla SlaveMinerSlaveScan default (14). Ordinary miners
+                // retain their existing short/long scans and selection order.
+                const bool got = slave ? find_reachable_ore(ore,passable,gw,gh,occ,idx,u.cell_x,u.cell_y,
+                    14,u.harv_skip_x,u.harv_skip_y,ox,oy,&reserved,center_x,center_y) :
                     find_reachable_ore(ore, passable, gw, gh, occ, idx, u.cell_x, u.cell_y,
                                        scan.short_scan, u.harv_skip_x, u.harv_skip_y, ox, oy) ||
                     find_reachable_ore(ore, passable, gw, gh, occ, idx, u.cell_x, u.cell_y,
                                        scan.long_scan, u.harv_skip_x, u.harv_skip_y, ox, oy);
                 u.harv_skip_x = u.harv_skip_y = -1;
                 if (got) {
+                    if (u.w7.slave_manager >= 0)
+                        diag::note("SLAVE ore-target unit=%d manager=%d from=%d,%d target=%d,%d",idx,u.w7.slave_manager,u.cell_x,u.cell_y,ox,oy);
                     u.harv_cell_x = ox;
                     u.harv_cell_y = oy;
                     u.has_harv_cell = true;  // real stamp -- see world.hpp
@@ -446,6 +468,31 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                 int ref = u.dock_refinery;
                 bool fresh_pick = false;
                 if (u.w7.slave_manager >= 0) ref = u.w7.slave_manager;
+                if (u.w7.slave_manager>=0) {
+                    const auto& manager=buildings[ref]; // validated at function entry
+                    const int dx=std::max({manager.cx-u.cell_x,0,u.cell_x-(manager.cx+manager.fw-1)});
+                    const int dy=std::max({manager.cy-u.cell_y,0,u.cell_y-(manager.cy+manager.fh-1)});
+                    if (std::max(dx,dy)<=1 && !u.moving()) {
+                        u.harv=HarvState::Unloading;u.harv_timer=0;
+                        events.push_back({HarvestEvent::Kind::UnloadStart,idx});
+                    } else if (!u.moving()) {
+                        int bx=-1,by=-1,best=INT_MAX;
+                        for (int y=manager.cy-1;y<=manager.cy+manager.fh;++y)
+                            for(int x=manager.cx-1;x<=manager.cx+manager.fw;++x) {
+                                if (x>=manager.cx && x<manager.cx+manager.fw && y>=manager.cy && y<manager.cy+manager.fh) continue;
+                                if (!is_passable(passable,gw,gh,x,y) || (!occ.is_free(x,y) && occ.at(x,y)!=idx)) continue;
+                                const bool claimed=std::any_of(units.begin(),units.end(),[&](const Unit& v){
+                                    return &v!=&u && v.alive && v.w7.slave_manager==ref && v.moving() && v.path.back().x==x && v.path.back().y==y;
+                                });
+                                const bool requested=std::any_of(moves.begin(),moves.end(),[&](const HarvestMove& m){return m.gx==x && m.gy==y;});
+                                if (claimed || requested) continue;
+                                const int distance=std::max(std::abs(x-u.cell_x),std::abs(y-u.cell_y));
+                                if(distance<best){best=distance;bx=x;by=y;}
+                            }
+                        if(bx>=0)moves.push_back({idx,bx,by});
+                    }
+                    break; // slaves do not use the refinery's single truck dock
+                }
                 if (ref < 0 || ref >= (int)buildings.size() ||
                     !buildings[(size_t)ref].alive ||
                     buildings[(size_t)ref].state != Building::State::Idle) {

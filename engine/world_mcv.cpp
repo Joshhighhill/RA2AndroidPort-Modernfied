@@ -263,7 +263,7 @@ bool World::order_pack_slave_miner(int bi, int house) {
         worker.is_harvester = false; worker.harv = HarvState::None; worker.dock_refinery = -1;
     }
     deploy_events_.push_back({DeployEvent::Kind::Undeployed,mobile,bi,house});
-    step_yuri_workers();
+    step_yuri_workers(false); // packing updates followers without recursive relocation
     return true;
 }
 

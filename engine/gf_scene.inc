@@ -123,6 +123,28 @@ private:
     // Per frame, after world_.step: deploy feedback + (skirmish) game over.
     void gf_update(double dt) {
         for (const ra2engine::World::DeployEvent& e : world_.take_deploy_events()) {
+            if (e.kind == ra2engine::World::DeployEvent::Kind::Undeployed && e.building >= 0 &&
+                e.building < static_cast<int>(world_.buildings().size()) && e.unit >= 0 &&
+                e.unit < static_cast<int>(world_.units().size())) {
+                const ra2engine::Building& b = world_.buildings()[static_cast<std::size_t>(e.building)];
+                if (b.type >= 0 && b.type < static_cast<int>(ba_.roster.size()) &&
+                    b.type < static_cast<int>(ba_.art.size()) &&
+                    ba_.roster[static_cast<std::size_t>(b.type)].slave_count > 0) {
+                    const BuildingArt& art = ba_.art[static_cast<std::size_t>(b.type)];
+                    if (art.has_buildup) {
+                        const long duration =
+                            std::max<long>(1, static_cast<long>(std::lround(art.buildup_total * 15.0)));
+                        g_slave_miner_pack_fx[e.unit] = {b.type, b.cx, b.cy, b.house,
+                            world_.cell_level(b.cx, b.cy),
+                            b.cx + (b.fw - 1) * 0.5 + b.cy + (b.fh - 1) * 0.5,
+                            g_pres_tick, duration};
+                    } else {
+                        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                                     "[banim] no Buildup art for slave miner %s",
+                                     ba_.roster[static_cast<std::size_t>(b.type)].id.c_str());
+                    }
+                }
+            }
             if (e.house != local_house_) continue;
             if (e.kind == ra2engine::World::DeployEvent::Kind::CannotDeploy) {
                 gf_eva("EVA_CannotDeployHere");

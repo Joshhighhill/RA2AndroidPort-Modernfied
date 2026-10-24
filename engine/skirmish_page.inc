@@ -231,6 +231,8 @@ public:
     void render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) override;
     Scene* next() override { Scene* n = next_; next_ = nullptr; return n; }
     const char* name() const override { return "lobby"; }
+    int logical_width() const override {return menu_canvas_width();}
+    int logical_height() const override {return menu_canvas_height();}
     bool locate(const std::string& what, int& x, int& y) const override {
         const std::map<std::string, ra2engine::SbRect> t = targets();
         const auto it = t.find(what);
@@ -250,11 +252,10 @@ private:
     enum Act { A_NONE, A_START, A_CHOOSE, A_BACK, A_USEMAP, A_RANDMAP, A_CANCEL };
 
     static constexpr int kWinW = 1280, kWinH = 720;
-    static ShellXform xform() { return ShellXform::make(kWinW, kWinH); }
+    static ShellXform xform() { return ShellXform::make(g_ui_w, g_ui_h); }
     static void to_logical(int dx, int dy, int& lx, int& ly) {
         const ShellXform xf = xform();
-        lx = static_cast<int>(std::floor((dx - xf.ox) / xf.s));
-        ly = static_cast<int>(std::floor((dy - xf.oy) / xf.s));
+        const auto point=xf.logical(dx,dy);lx=point.first;ly=point.second;
     }
 
     // --- §1.2-§1.4 template rects (LOGICAL 640x480) ---

@@ -278,6 +278,19 @@ TEST_CASE("W7-11-10: a unit within CloseEnough of a friend-held goal stops there
     CHECK(units[0].cell_x == 4);      // ...one cell short (256 < 576 leptons)
 }
 
+TEST_CASE("traffic recovery: take the longer opening instead of retrying a cheap stationary blocker") {
+    auto p=open_grid(12,12);
+    for(int y=0;y<11;++y) if(y!=5) p[y*12+3]=0;
+    Occupancy occ(12,12);
+    std::vector<Unit> units{make_unit(2,5,occ,0),make_unit(3,5,occ,1)};
+    units[0].speed_cps=cps_of_lept(30);
+    give_path(units[0],find_path(p,12,12,{2,5},{8,5}));
+    const int frames=frames_to_arrive(units,p,12,12,occ,2000);
+    CHECK(frames>0);CHECK(units[0].cell_x==8);CHECK(units[0].cell_y==5);
+    CHECK(units[1].cell_x==3);CHECK(units[1].cell_y==5);
+    CHECK(occ.at(3,5)==1);
+}
+
 TEST_CASE("W7-11-08: uniform step cost -- a diagonal costs what an orthogonal does") {
     // (0,0) -> (4,2) on an open grid: 4 steps (Chebyshev), not 4+ octile.
     auto p = open_grid(8, 8);

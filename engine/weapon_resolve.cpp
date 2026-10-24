@@ -83,7 +83,9 @@ std::string type_weapon_id(const ra2assets::Rules& rules, const std::string& typ
                            bool elite) {
     const int turret_count = om::ftol(rules.section_double(type_id, "TurretCount", 0.0));
     const int weapon_count = om::ftol(rules.section_double(type_id, "WeaponCount", 0.0));
-    if (turret_count < 1) {
+    const bool numbered_gatling=rules.section_flag(type_id,"IsGattling",false) && i<weapon_count &&
+        !rules.section_string(type_id,"Weapon"+std::to_string(i+1),"").empty();
+    if (turret_count < 1 && !numbered_gatling) {
         if (rules.section_flag(type_id, "ClearAllWeapons", false)) return "";
         static const char* kNormal[2] = {"Primary", "Secondary"};
         static const char* kElite[2] = {"ElitePrimary", "EliteSecondary"};
@@ -105,7 +107,8 @@ TypeWeapons resolve_type_weapons(const ra2assets::Rules& rules, const std::strin
     // per-target Primary/Secondary pick -- slot 1 there is "Weapon2" (the FV's
     // RepairBullet), which must never be chosen as a secondary. The IFV swap is
     // P4's step_abilities (ifv_weapons); only slot 0 is the default turret.
-    if (om::ftol(rules.section_double(type_id, "TurretCount", 0.0)) >= 1) {
+    if (om::ftol(rules.section_double(type_id, "TurretCount", 0.0)) >= 1 &&
+        !rules.section_flag(type_id,"IsGattling",false)) {
         t.slot[1] = WeaponSlot{};
         t.elite[1] = WeaponSlot{};
     }

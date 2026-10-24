@@ -164,9 +164,18 @@ candidate selection uses an engine-local **seeded xorshift32** RNG in place
 of the original's lockstep-synchronised `Randomizer` — same rates
 (`GrowthRate`, `Growth`/`Spread`, `*Percentage`, cap 11), not bit-identical
 (the original's netgame-synchronised sequence is unreachable single-machine);
-the `UnloadingClass` art swap (e.g. `HARV`→`HORV`, `CMIN`→`CMON`) while docked
-is not implemented — miners keep their normal body during unload; the
-refinery dock cell is adjudicated as the foundation's south-center cell
+the `UnloadingClass` art swap (e.g. `HARV`→`HORV`, `CMIN`→`CMON`) is now drawn
+while the miner is unloading. Referenced voxel assets are shared-owned and the
+scene lookup is published atomically, so replacing a game scene cannot leave
+dangling asset pointers. The device crash reported after a Chrono Miner warp
+still needs an on-device regression run; the fix addresses the identified
+scene-lifetime failure mode but does not prove it is the only possible cause.
+Tank bunkers now draw their configured front/back `SpecialAnim` layers around
+the occupant and play the `SpecialAnimThree/Four` transition in reverse on exit.
+Slave Miner packing now shows the mirrored `YAREFNMK` buildup art as a
+render-only effect; simulation relocation remains immediate, so this does not
+claim the original game's full timed pack state machine.
+The refinery dock cell is adjudicated as the foundation's south-center cell
 (`dock_cell_x`/`dock_cell_y`, `engine/harvest.hpp`) since GAREFN/NAREFN define
 no `DockingOffset` in artmd — **[RE-FALLBACK]**; the per-gulp/unload/
 chrono-warp/ore-scan pacing constants (`kGulpSecs`, `kUnloadSecsPerBale`,

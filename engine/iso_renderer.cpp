@@ -15,6 +15,9 @@
 #include <utility>
 
 #include "iso_project.hpp"
+#include "viewport_bounds.hpp"
+#include "terrain_blit.hpp"
+#include "diagnostics.hpp"
 #include "texture_cache.hpp"
 
 namespace ra2engine {
@@ -376,6 +379,10 @@ TerrainDrawList& terrain_list(TextureCache& tc, const ra2assets::MapFile& map, T
             // (src/map.cpp) [RE-FALLBACK: the original's missing-image path
             // was not traced].
             ++L.fallbacks;
+            if (L.fallbacks <= 16)
+                diag::note("TERRAIN_FALLBACK cell=%d,%d level=%u tile=%u subtile=%u file=%s reason=%s",
+                    c.x,c.y,static_cast<unsigned>(c.level),static_cast<unsigned>(tile),static_cast<unsigned>(sub),
+                    theater.filename_for_tile(tile).c_str(),tmp ? "subtile-out-of-range" : "tile-not-found");
             tile = 0;
             sub = 0;
             tmp = theater.tmp_for_tile(tile);
@@ -461,24 +468,24 @@ int draw_terrain(void* sdl_renderer, TextureCache& tc,
             const TerrainItem& it = L.items[k];
             if (it.slot < 0) continue;
             SDL_Rect dst{it.px + cam.x, it.py + cam.y, it.w, it.h};
-            // Cull tiles fully off-screen (the base rect decides, as before).
-            if (dst.x + dst.w <= 0 || dst.y + dst.h <= 0 || dst.x >= view_w || dst.y >= view_h) continue;
+            const SDL_Rect edst{it.px + cam.x + it.ex, it.py + cam.y + it.ey, it.ew, it.eh};
+            const bool base_visible = viewport_intersects(dst.x, dst.y, dst.w, dst.h, view_w, view_h);
+            const bool extra_visible = viewport_intersects(edst.x, edst.y, edst.w, edst.h, view_w, view_h);
+            if (!base_visible && !extra_visible) continue;
             if (shroud && !vis->explored_at(viewer, it.cx, it.cy)) continue;
             TerrainSlot& s = L.slots[static_cast<size_t>(it.slot)];
             SDL_Texture* tex = slot_texture(tc, theater, pal, s);
             if (!tex) continue;
-            SDL_RenderCopy(renderer, tex, nullptr, &dst);
+            const bool dim = fog && !vis->visible_at(viewer, it.cx, it.cy);
+            // Modulate the tile's actual opaque pixels. Filling its bounding
+            // rectangle darkened transparent diamond corners and left cliff
+            // extensions undimmed, producing rectangular map artifacts.
+            if (base_visible) blit_terrain(renderer, tex, dst, dim);
             ++drawn;
             if (it.ew) {
-                const SDL_Rect edst{it.px + cam.x + it.ex, it.py + cam.y + it.ey, it.ew, it.eh};
-                if (!(edst.x + edst.w <= 0 || edst.y + edst.h <= 0 || edst.x >= view_w || edst.y >= view_h))
+                if (extra_visible)
                     if (SDL_Texture* et = extra_texture(tc, theater, pal, s))
-                        SDL_RenderCopy(renderer, et, nullptr, &edst);
-            }
-            if (fog && !vis->visible_at(viewer, it.cx, it.cy)) {
-                SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 128);
-                SDL_RenderFillRect(renderer, &dst);
+                        blit_terrain(renderer, et, edst, dim);
             }
         }
     return drawn;

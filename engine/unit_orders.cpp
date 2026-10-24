@@ -20,6 +20,8 @@ void World::order_stop(int idx) {
     if (idx < 0 || idx >= static_cast<int>(units_.size())) return;
     Unit& u = units_[idx];
     if (!orderable(u)) return;
+    if (u.deploys_into>=0 && u.deploys_into<static_cast<int>(btypes().size()) && btypes()[u.deploys_into].slave_count>0)
+        u.manual_hold=true;
     u.attack_cell_x = u.attack_cell_y = -1;   // G16: Stop ends a ground fire order
     u.occupy_target = -1;
     if (u.is_aircraft) {

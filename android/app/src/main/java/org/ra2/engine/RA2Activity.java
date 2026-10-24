@@ -294,4 +294,9 @@ public class RA2Activity extends SDLActivity implements AudioManager.OnAudioFocu
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(i);
     }
+
+    /** Called by the pause menu on SDL's thread; Android UI stays on its UI thread. */
+    public void shareGameReport() {
+        runOnUiThread(() -> { if (!isFinishing()) Diagnostics.share(this); });
+    }
 }

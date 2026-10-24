@@ -148,3 +148,11 @@ inline int pres_cell_ramp(const Assets& a, int x, int y) {
     const uint8_t* h = tmp->image_header(mc->subtile);
     return h ? h[42] : 0;
 }
+inline int pres_unit_ramp(const ra2engine::Unit& u) {
+    if(!g_pres_assets || !u.is_vehicle || u.is_aircraft || u.is_naval || u.on_deck || u.altitude>0 || u.an.t.missile)
+        return 0;
+    const auto kind=ra2engine::unit_loco_kind(u);
+    if(kind!=ra2engine::LocoKind::Drive && kind!=ra2engine::LocoKind::Teleport) return 0;
+    const int ramp=pres_cell_ramp(*g_pres_assets,u.cell_x,u.cell_y);
+    return ramp>=1 && ramp<=16 ? ramp : 0;
+}

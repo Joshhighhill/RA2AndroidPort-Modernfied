@@ -402,7 +402,7 @@ struct RestatePage {
 class InGameMenu {
 public:
     enum Choice { None, Resume, Load, Save, Delete, Abort, Restart, Settings, Committed, MusicPlay, MusicStop,
-                  Leave, Observe, DipAlly, DipListen };   // W9-05-06/03/07 (network game)
+                  Leave, Observe, DipAlly, DipListen, ShareReport };   // W9-05-06/03/07 (network game)
     enum Page { P_OPTIONS = 0, P_CONTROLS, P_SOUND, P_ABORT, P_DIPLOMACY };
     // W2-UI-29: one row of the Diplomacy page 0x73 (read-only in skirmish).
     // W9-05-03/07/11: `house`, the live Allies box (ally_enabled) and the
@@ -668,7 +668,7 @@ public:
 
 private:
     enum Act { A_NONE = 0, A_CONTROLS, A_LOAD, A_SAVE, A_DELETE, A_ABORTPAGE, A_RESUME, A_SOUND, A_KEYBOARD,
-               A_BACK, A_ABORT, A_RESTART, A_LEAVE, A_OBSERVE };
+               A_BACK, A_ABORT, A_RESTART, A_LEAVE, A_OBSERVE, A_REPORT };
     bool mp_net_ = false, mp_can_observe_ = false;   // W9-05-06
     int dip_pick_ = -1;                              // W9-05-03/07: the row's house
     enum { S_SPEED = 0, S_SCROLL, S_MUSIC, S_SOUND, S_VOICE, kSliders };
@@ -697,6 +697,9 @@ private:
             case P_CONTROLS:
                 return {b(0, gf_csf("GUI:Sound", "Sound"), true, A_SOUND),
                         b(1, gf_csf("GUI:Keyboard", "Keyboard"), true, A_KEYBOARD),
+#ifdef __ANDROID__
+                        b(2, "Share game report", true, A_REPORT),
+#endif
                         b(5, gf_csf("GUI:Back", "Back"), true, A_BACK)};
             case P_SOUND:
                 return {b(5, gf_csf("GUI:Back", "Back"), true, A_BACK)};
@@ -761,6 +764,7 @@ private:
             case A_RESUME: close(); return Resume;
             case A_SOUND: page_ = P_SOUND; return None;
             case A_KEYBOARD: kb_.open(); return None;
+            case A_REPORT: return ShareReport;
             case A_BACK: page_ = (page_ == P_SOUND) ? P_CONTROLS : P_OPTIONS; return Committed;
             case A_ABORT: close(); return Abort;
             case A_RESTART: close(); return Restart;

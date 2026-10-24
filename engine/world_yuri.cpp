@@ -1,4 +1,6 @@
 #include "world.hpp"
+#include "diagnostics.hpp"
+#include "harvest.hpp"
 #include <algorithm>
 
 namespace ra2engine {
@@ -133,7 +135,7 @@ bool World::try_building_mind_control(int bi,int vi,int slot) {
     return true;
 }
 
-void World::step_yuri_workers() {
+void World::step_yuri_workers(bool relocate) {
     // An undeployed/destroyed/captured manager releases its workers. A known
     // killer receives freed slaves; absent a killer they retain their house.
     for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
@@ -157,6 +159,7 @@ void World::step_yuri_workers() {
             if (b.killed_by >= 0 && b.killed_by < static_cast<int>(units_.size()) && active(u))
                 set_unit_owner(i, units_[b.killed_by].house);
         }
+        diag::note("SLAVE released unit=%d previous_manager=%d house=%d",i,manager,u.house);
         u.w7.slave_manager = -1; u.is_harvester = false;
         u.harv = HarvState::None; u.dock_refinery = -1;
         u.path.clear(); u.path_idx = 0;
@@ -176,15 +179,65 @@ void World::step_yuri_workers() {
         int spawned = 0;
         for (int n = 0; n < to_spawn; ++n) {
             const int id = launch_unit(bi, def, def.slave_combat);
-            if (id < 0) break; // blocked exits retry without deleting workers
+            if (id < 0) {
+                if (ability_frame()%150==0) diag::note("SLAVE spawn-blocked manager=%d live=%d wanted=%d",bi,count,def.slave_count);
+                break; // blocked exits retry without deleting workers
+            }
             make_harvester(id, false, std::max(1, def.slave_storage));
             units_[id].w7.slave_manager = bi;
             units_[id].dock_refinery = bi;
+            diag::note("SLAVE spawned manager=%d unit=%d cell=%d,%d replacement=%d regen_frames=%d",bi,id,units_[id].cell_x,units_[id].cell_y,b.w7.slaves_initialized,def.slave_regen_rate);
             ++spawned;
         }
         if (spawned > 0) {
             b.w7.slaves_initialized = true;
             b.w7.slave_regen_left = std::max(1, def.slave_regen_rate);
+        }
+    }
+    // A miner placed from the building strip starts deployed. If its local
+    // field is exhausted (or it was placed away from ore), pack and route it
+    // to a reachable field. Do not move a manager with unbanked worker cargo.
+    if (relocate) for (int bi=0;bi<static_cast<int>(buildings_.size());++bi) {
+        if ((ability_frame()+static_cast<unsigned>(bi))%150!=0 || !can_pack_slave_miner(bi)) continue;
+        const auto& b=buildings_[bi];
+        bool local=false,loaded=false;
+        for (int y=std::max(0,b.cy-8);y<std::min(grid_h_,b.cy+b.fh+8) && !local;++y)
+            for (int x=std::max(0,b.cx-8);x<std::min(grid_w_,b.cx+b.fw+8);++x)
+                if (ore_.has_ore(x,y)) {local=true;break;}
+        if (local) continue;
+        for (const auto& worker:units_)
+            if (active(worker) && worker.w7.slave_manager==bi && worker.bales_ore+worker.bales_gems>0) {loaded=true;break;}
+        if (loaded) continue;
+        int x=0,y=0;
+        if (!find_reachable_ore(ore_,passable_,grid_w_,grid_h_,occ_,-1,b.cx,b.cy,48,-1,-1,x,y)) continue;
+        const int house=b.house;
+        if (order_pack_slave_miner(bi,house)) {
+            const int mobile=static_cast<int>(units_.size())-1;
+            order_unit_move(mobile,x,y);
+            diag::note("MINER relocate building=%d mobile=%d ore=%d,%d moving=%d",bi,mobile,x,y,units_[mobile].moving());
+        }
+    }
+    // Initial/packed mobile miner wake-up, staggered by stable unit ID.
+    // Vanilla defaults: KickFrameDelay=150, ShortScan=8, LongScan=48.
+    // Explicit Stop/Guard uses the existing saved manual_hold flag.
+    for (int i=0;i<static_cast<int>(units_.size());++i) {
+        auto& miner=units_[i];
+        if ((ability_frame()+static_cast<unsigned>(i))%150!=0 || !active(miner) ||
+            miner.moving() || miner.frozen || miner.manual_hold || miner.deploy_mission!=0 ||
+            miner.target>=0 || miner.target_building>=0 || miner.attack_cell_x>=0 || miner.tg.area_guard ||
+            miner.deploys_into<0 || miner.deploys_into>=static_cast<int>(btypes().size()) ||
+            btypes()[miner.deploys_into].slave_count<=0) continue;
+        int x=0,y=0;
+        if (!find_reachable_ore(ore_,passable_,grid_w_,grid_h_,occ_,i,miner.cell_x,miner.cell_y,
+            48,miner.harv_skip_x,miner.harv_skip_y,x,y)) continue;
+        if (std::max(std::abs(x-miner.cell_x),std::abs(y-miner.cell_y))<=8) {
+            const bool deployed=order_deploy_mcv(i);
+            diag::note("MINER auto-deploy unit=%d ore=%d,%d accepted=%d",i,x,y,deployed);
+        } else {
+            order_unit_move(i,x,y);
+            if (!miner.moving()) {miner.harv_skip_x=x;miner.harv_skip_y=y;}
+            else {miner.harv_skip_x=miner.harv_skip_y=-1;}
+            diag::note("MINER ore-route unit=%d ore=%d,%d moving=%d",i,x,y,miner.moving());
         }
     }
 }

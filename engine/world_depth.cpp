@@ -11,6 +11,7 @@
 #include "group_move.hpp"   // nearest_free_cells
 #include "veterancy.hpp"    // is_elite
 #include "world.hpp"
+#include "diagnostics.hpp"
 #include "weapon_unit.hpp"
 
 namespace ra2engine {
@@ -180,6 +181,7 @@ void World::occupy_now(int ui, int bi) {
     note_entered(EnteredEvent::Occupy, ui, bi, u.house, false);   // W2-CA-01
     if (b.occupants.size() == 1) garrison_events_.push_back({GarrisonEvent::Garrisoned, bi, u.house});
     sync_garrison_owner(bi);
+    diag::note("GARRISON entered building=%d unit=%d house=%d owner=%d occupants=%zu",bi,ui,u.house,b.house,b.occupants.size());
 }
 
 // FUN_004581F0 (called each tick from FUN_0043FAA0 for CanBeOccupied types):
@@ -194,7 +196,7 @@ void World::sync_garrison_owner(int bi) {
         garrison_events_.push_back({GarrisonEvent::Abandoned, bi, b.house});
         b.house = neutral;
         b.garrison_target = -1;
-    } else if (!b.occupants.empty() && b.house == neutral) {
+    } else if (!b.occupants.empty() && (!house_combatant(b.house) || passive_house(b.house))) {
         b.house = units_[b.occupants.front()].house;
     }
 }
@@ -221,6 +223,7 @@ void World::unload_occupants(int bi, bool place_inside) {
     Building& b = buildings_[bi];
     b.firing_occupant = 0;
     if (b.occupants.empty()) return;
+    diag::note("GARRISON unload-request building=%d house=%d occupants=%zu inside=%d",bi,b.house,b.occupants.size(),place_inside);
     const int x0 = b.cx, y0 = b.cy, w = b.fw, h = b.fh;
     const int lead = b.occupants.front();
     PathTerrain pterr;
@@ -315,6 +318,7 @@ void World::unload_occupants(int bi, bool place_inside) {
     }
     garrison_events_.push_back({GarrisonEvent::Unloaded, bi, house});
     sync_garrison_owner(bi);
+    diag::note("GARRISON unloaded building=%d owner=%d count=%zu exit=%d,%d",bi,b.house,occ_list.size(),exit.x,exit.y);
 }
 
 Cellxy World::nearest_exit_from_host(const Unit& u, int hx, int hy, int hlayer, int* layer) const {

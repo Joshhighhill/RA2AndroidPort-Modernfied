@@ -19,6 +19,38 @@
     // agent E's art; this draws the same information with plain rects.]
     // Colour thresholds = [General] ConditionYellow / ConditionRed.
     mutable ra2engine::TextureCache* pip_tc_ = nullptr;   // W2-UI-11 (set by render)
+    void draw_psychic_sensors(SDL_Renderer* ren) const {
+        auto point=[&](double x,double y) {
+            return SDL_Point{static_cast<int>(std::lround((x-y)*30))+cam_.x+30,
+                static_cast<int>(std::lround((x+y)*15-world_.cell_level(static_cast<int>(x),static_cast<int>(y))*15))+cam_.y+15};
+        };
+        SDL_Rect clip{0,0,playfield_w_,kWinH};SDL_RenderSetClipRect(ren,&clip);
+        for(int bi=0;bi<static_cast<int>(world_.buildings().size());++bi) {
+            if(!ra2engine::psychic_sensor_active(world_,bi,local_house_)) continue;
+            const auto& b=world_.buildings()[bi];
+            if(input_.selected_building()==bi) {
+                const double radius=world_.btypes()[b.type].w5.psychic_radius;
+                SDL_SetRenderDrawColor(ren,190,110,240,180);
+                SDL_Point prev=point(b.cx+(b.fw-1)*0.5+radius,b.cy+(b.fh-1)*0.5);
+                for(int k=1;k<=64;++k) {
+                    const double a=k*6.283185307179586/64;
+                    const auto next=point(b.cx+(b.fw-1)*0.5+radius*std::cos(a),b.cy+(b.fh-1)*0.5+radius*std::sin(a));
+                    SDL_RenderDrawLine(ren,prev.x,prev.y,next.x,next.y);prev=next;
+                }
+            }
+            for(int ui=0;ui<static_cast<int>(world_.units().size());++ui) {
+                int x=0,y=0;if(!ra2engine::psychic_sensor_target(world_,bi,ui,x,y)) continue;
+                const auto& u=world_.units()[ui];
+                if(!world_.object_visible_at(local_house_,u.cell_x,u.cell_y)) continue;
+                const auto from=point(u.fx,u.fy),to=point(x,y);
+                SDL_SetRenderDrawColor(ren,210,100,245,210);
+                SDL_RenderDrawLine(ren,from.x,from.y,to.x,to.y);
+                SDL_RenderDrawLine(ren,to.x-4,to.y,to.x+4,to.y);
+                SDL_RenderDrawLine(ren,to.x,to.y-4,to.x,to.y+4);
+            }
+        }
+        SDL_RenderSetClipRect(ren,nullptr);
+    }
     void draw_selected_building(SDL_Renderer* ren) const {
         const int sb = input_.selected_building();
         if (sb < 0 || sb >= static_cast<int>(world_.buildings().size())) return;
@@ -411,6 +443,11 @@
     // cmd_produce / cmd_suspend / cmd_abandon), so a replay or a lockstep peer
     // runs the same code on the same tick.
     void cameo_click(int type, bool right, bool shift) {
+        const auto power=ra2engine::power_cameo_type(type);
+        if(power!=ra2engine::SuperweaponType::None) {
+            if(!right && active_tab_==1 && world_.sw_ready(local_house_,power)) w2_arm_sw(power);
+            return;
+        }
         using ET = ra2engine::EventType;
         const int lh = local_house_;
         if (active_tab_ >= 2) {   // ---- units ----
@@ -473,6 +510,7 @@
     void draw_queue_badges(SDL_Renderer* ren, ra2engine::TextureCache& tc) const {
         if (!(ba_.ok && ba_.sidebar_ok)) return;
         for (const ra2engine::CameoCell& cell : lay_.cameos) {
+            if (ra2engine::power_cameo_type(cell.type)!=ra2engine::SuperweaponType::None) continue;
             ra2engine::QueueCat cat;
             if (active_tab_ >= 2) cat = rp_cat_of_unit(cell.type);
             else cat = active_tab_ == 1 ? ra2engine::QueueCat::Defense : ra2engine::QueueCat::Structure;

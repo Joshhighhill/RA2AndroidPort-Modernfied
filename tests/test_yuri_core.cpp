@@ -6,6 +6,11 @@
 #include "ra2assets/rules.hpp"
 #include "weapon_sound_loop.hpp"
 #include "weapon_unit.hpp"
+#include "report_probe.hpp"
+#include "psychic_links.hpp"
+#include "psychic_sensor.hpp"
+#include <fstream>
+#include <iterator>
 using namespace ra2engine;
 namespace {
 struct Rig {
@@ -20,6 +25,79 @@ struct Rig {
 UnitCombat unit(const char* image) {
     UnitCombat c; c.image = image; c.strength = 100; c.speed_cps = 2;
     c.verses.assign(11,100); c.tg.rules_id = image; return c;
+}
+TEST_CASE("diagnostics: unit probes preserve saved state and catch broken references") {
+    Rig r; World w(r.map);
+    w.add_combat_unit(2,2,0,unit("SLAV"));
+    auto& worker=w.units()[0];
+    worker.w7.slave_manager=999;
+    worker.path={{2,2},{3,2}}; worker.path_idx=1; worker.wait_time=4;
+    worker.bales_ore=3;
+    const auto before=save::save_world(w);
+    const auto root=std::filesystem::temp_directory_path()/"ra2-probe-stability";
+    struct Stop { ~Stop(){diag::stop();} } stop;
+    REQUIRE(diag::start(root.u8string()));
+    diag::probe_world(w);
+    CHECK(save::save_world(w)==before);
+    std::ifstream stream(root/"engine-current.log",std::ios::binary);
+    const std::string log{std::istreambuf_iterator<char>(stream),{}};
+    CHECK(log.find("invalid_slave_manager=999")!=std::string::npos);
+    CHECK(log.find("blocked_over_3s=1")!=std::string::npos);
+    CHECK(log.find("ROUTE unit=0 next=3,2")!=std::string::npos);
+    worker.path_idx=900;
+    diag::probe_world(w); // Invalid index must be reported without dereferencing it.
+}
+
+TEST_CASE("Yuri core: numbered Gatling guns retain ground and air weapons and auto-acquire") {
+    const auto ini=ra2assets::Ini::parse(
+        "[YAGGUN]\nIsGattling=yes\nWeaponCount=6\nWeapon1=Ground\nWeapon2=Air\nTurret=yes\n"
+        "[YTNK]\nIsGattling=yes\nPrimary=Ground\nSecondary=Air\n"
+        "[Ground]\nDamage=5\nROF=15\nRange=5\nProjectile=Bullet\nWarhead=AP\n"
+        "[Air]\nDamage=5\nROF=15\nRange=5\nProjectile=AA\nWarhead=AP\n"
+        "[Bullet]\nAG=yes\nAA=no\n[AA]\nAG=no\nAA=yes\n[AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n");
+    const auto rules=ra2assets::Rules::load(ini);
+    auto tw=resolve_type_weapons(rules,"YAGGUN");
+    CHECK(tw.slot[0].id=="Ground");CHECK(tw.slot[1].id=="Air");
+    CHECK(tw.slot[1].aa);CHECK_FALSE(tw.slot[1].ag);
+    CHECK(resolve_type_weapons(rules,"YTNK").slot[0].id=="Ground");
+    Rig r;World w(r.map);BuildingTypeDef d;d.id="YAGGUN";d.strength=500;
+    fill_building_weapons(rules,"YAGGUN",d);REQUIRE(d.armed);
+    w.set_economy({d},{},OreValues{},1000,0,0);w.add_building(0,8,8,1,1,0,500,0,0,true);
+    auto enemy=unit("ENEMY");enemy.strength=1000;w.add_combat_unit(10,8,1,enemy);
+    for(int i=0;i<120;++i)w.step(1.0/15.0);
+    CHECK(w.units()[0].hp<1000);
+}
+
+TEST_CASE("Yuri core: automatic ranged pursuit stops before melee contact") {
+    Rig r;World w(r.map);auto tank=unit("LTNK");tank.range=5;tank.damage=5;tank.rof=15;tank.w6.omni_fire=true;
+    w.add_combat_unit(2,2,0,tank);auto enemy=unit("TARGET");enemy.strength=1000;
+    w.add_combat_unit(8,2,1,enemy);
+    w.order_unit_move(0,7,2);w.units()[0].target=1;w.units()[0].attack_order=false;
+    w.units()[0].guard_x=2;w.units()[0].guard_y=2;
+    for(int i=0;i<180;++i)w.step(1.0/15.0);
+    INFO("pursuer x="<<w.units()[0].fx<<" target="<<w.units()[0].target<<" range="<<w.units()[0].w_range<<" damage="<<w.units()[0].w_damage<<" flash="<<w.units()[0].fire_flash);
+    CHECK(w.units()[0].fx<=4);CHECK(w.units()[1].hp<1000);
+}
+
+TEST_CASE("Yuri core: psychic sensor uses powered allied radius and commanded destinations") {
+    Rig r;World w(r.map);BuildingTypeDef d;d.id="NAPSIS";d.strength=500;d.w5.psychic_radius=4;
+    w.set_building_types({d});w.add_building(0,8,8,1,1,0,500,0,0,true);
+    w.add_combat_unit(2,2,1,unit("ENEMY"));w.order_unit_move(0,9,9);
+    int x=0,y=0;CHECK(psychic_sensor_active(w,0,0));CHECK_FALSE(psychic_sensor_active(w,0,1));
+    CHECK(psychic_sensor_target(w,0,0,x,y));CHECK(x==9);CHECK(y==9);
+    w.order_unit_move(0,18,18);CHECK_FALSE(psychic_sensor_target(w,0,0,x,y));
+    w.buildings()[0].power_off=true;CHECK_FALSE(psychic_sensor_active(w,0,0));
+}
+
+TEST_CASE("Yuri core: presentation collects unit and building mind-control links") {
+    Rig r;World w(r.map);BuildingTypeDef d;d.id="YAPSYT";d.strength=500;
+    w.set_building_types({d});w.add_building(0,8,8,1,1,0,500,0,0,true);
+    for(int i=0;i<3;++i)w.add_combat_unit(2+i,2,0,unit("UNIT"));
+    w.units()[1].w7.mc_controller=0;w.units()[2].w7.mc_building=0;
+    const auto before=save::save_world(w);const auto links=skirmish_control_links(w);
+    REQUIRE(links.size()==2);CHECK(links[0]==std::make_pair(0,1));CHECK(links[1]==std::make_pair(-1,2));
+    CHECK(save::save_world(w)==before);
+    w.units()[0].alive=false;CHECK(skirmish_control_links(w).size()==1);
 }
 TEST_CASE("Yuri core: infantry caps never auto-swap and deploy releases ownership") {
     for (const char* id : {"YURI","YURIPR"}) {
@@ -157,6 +235,71 @@ TEST_CASE("Yuri core: mobile slave miner satisfies PROC but not other prerequisi
     CHECK_FALSE(w.econ_can_build(0,QueueCat::Structure,2));
     w.buildings()[1].alive=true;
     CHECK(w.econ_produce(0,QueueCat::Structure,2)==ProdResult::Started);
+}
+
+TEST_CASE("Yuri core: mobile miner seeks ore and explicit Stop persists through save") {
+    Rig r;World w(r.map);BuildingTypeDef d;d.id="YAREFN";d.fw=d.fh=2;d.slave_count=2;
+    d.slave_combat=unit("SLAV");
+    w.set_economy({d},{0},OreValues{},1000,0,0);
+    auto miner=unit("SMIN");miner.deploys_into="YAREFN";
+    w.set_undeploy_unit(0,miner);
+    w.add_combat_unit(2,2,0,miner);
+    w.ore().set(17,17,OreKind::Ore,5,0);
+    w.step_yuri_workers();
+    REQUIRE(w.units()[0].moving());CHECK(w.units()[0].path.back().x==17);
+    w.order_stop(0);CHECK(w.units()[0].manual_hold);
+    w.step_yuri_workers();CHECK_FALSE(w.units()[0].moving());
+    World restored(r.map);REQUIRE(save::load_world(restored,save::save_world(w)));
+    CHECK(restored.units()[0].manual_hold);
+    w.order_unit_move(0,3,3);CHECK_FALSE(w.units()[0].manual_hold);
+}
+
+TEST_CASE("Yuri core: building-strip miner relocates only after its local ore is gone") {
+    Rig r;World w(r.map);BuildingTypeDef d;d.id="YAREFN";d.fw=d.fh=2;d.strength=100;d.slave_count=2;
+    d.slave_combat=unit("SLAV");d.slave_combat.is_infantry=true;
+    w.set_economy({d},{0},OreValues{},1000,0,0);
+    auto miner=unit("SMIN");miner.deploys_into="YAREFN";
+    w.set_undeploy_unit(0,miner);
+    w.add_building(0,2,2,2,2,0,100,0,0,true);
+    w.ore().set(5,5,OreKind::Ore,5,0);
+    w.ore().set(18,18,OreKind::Ore,5,0);
+    w.step_yuri_workers();CHECK(w.buildings()[0].alive);REQUIRE(w.units().size()==2);
+    w.ore().set(5,5,OreKind::None,0,0);
+    w.step_yuri_workers();CHECK(w.buildings()[0].state==Building::State::Dead);REQUIRE(w.units().size()==3);
+    CHECK(w.units()[2].image=="SMIN");REQUIRE(w.units()[2].moving());
+    CHECK(w.units()[2].path.back().x==18);CHECK(w.units()[0].w7.slave_manager==-4);
+}
+
+TEST_CASE("garrison: other passive owners transfer control and infantry evacuate alive") {
+    Rig r;World w(r.map);
+    w.set_house(0,{World::Side::Allied,0,"Player",0,true});
+    w.set_house(2,{World::Side::Neutral,2,"Neutral",2,false});
+    w.set_house(3,{World::Side::Neutral,6,"Civilian",3,false});
+    BuildingTypeDef d;d.id="CIVILIAN";d.fw=d.fh=2;d.strength=100;
+    d.can_be_occupied=true;d.max_occupants=5;
+    w.set_building_types({d});
+    const int bi=w.add_building(0,8,8,2,2,3,100,0,0,true);
+    auto infantry=unit("GI");infantry.is_infantry=true;infantry.occupier=true;
+    w.add_combat_unit(7,8,0,infantry);
+    REQUIRE(w.campaign_occupy_now(0,bi));CHECK(w.buildings()[bi].house==0);
+    w.unload_occupants(bi);
+    CHECK(w.buildings()[bi].occupants.empty());CHECK(w.units()[0].alive);
+    CHECK(w.units()[0].garrison_of==-1);CHECK(w.units()[0].cargo_of==-1);
+    CHECK(w.units()[0].house==0);CHECK(w.buildings()[bi].house==2);
+}
+
+TEST_CASE("Yuri core: Psychic Reveal maps only its area and fog sight is temporary") {
+    Rig r;World w(r.map);w.enable_shroud(true);w.set_fog_of_war(true);
+    std::array<int,11> verses{};verses.fill(100);
+    w.grant_superweapon_type(0,SuperweaponType::PsychicReveal,0,false,0,2,0,verses);
+    w.step(1.0/15.0);
+    REQUIRE(w.sw_ready(0,SuperweaponType::PsychicReveal));
+    CHECK_FALSE(w.explored_at(0,10,10));
+    REQUIRE(w.fire_superweapon_at(0,SuperweaponType::PsychicReveal,10,10));
+    CHECK(w.explored_at(0,10,10));CHECK(w.visible_at(0,10,10));
+    CHECK_FALSE(w.explored_at(0,0,0));CHECK_FALSE(w.explored_at(1,10,10));
+    w.step(1.0/15.0);
+    CHECK(w.explored_at(0,10,10));CHECK_FALSE(w.visible_at(0,10,10));
 }
 
 TEST_CASE("Yuri core: miner packs without selling and reuses workers after redeploy") {

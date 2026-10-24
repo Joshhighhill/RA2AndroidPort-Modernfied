@@ -1,5 +1,6 @@
 #include "doctest.h"
 #include "voxel_raster.hpp"
+#include "terrain_tilt.hpp"
 #include "ra2assets/vxl.hpp"
 #include "ra2assets/hva.hpp"
 #include "ra2assets/vpl.hpp"
@@ -13,6 +14,23 @@
 #include <vector>
 
 namespace fs = std::filesystem;
+
+TEST_CASE("terrain tilt: ramp axes preserve length and invert without changing flat ground") {
+    for(int ramp=0;ramp<=20;++ramp) {
+        const auto t=ra2engine::terrain_tilt(ramp);
+        const auto p=t.apply(3,4,12);
+        CHECK(p[0]*p[0]+p[1]*p[1]+p[2]*p[2]==doctest::Approx(169));
+        const auto q=t.inverse(p[0],p[1],p[2]);
+        CHECK(q[0]==doctest::Approx(3));
+        CHECK(q[1]==doctest::Approx(4));
+        CHECK(q[2]==doctest::Approx(12));
+    }
+    CHECK(ra2engine::terrain_tilt(1).apply(1,0,0)[2]>0);
+    CHECK(ra2engine::terrain_tilt(3).apply(1,0,0)[2]<0);
+    CHECK(ra2engine::terrain_tilt(2).apply(0,1,0)[2]<0);
+    CHECK(ra2engine::terrain_tilt(4).apply(0,1,0)[2]>0);
+    CHECK(ra2engine::terrain_tilt(255).apply(3,4,12)==std::array<double,3>{3,4,12});
+}
 
 using ra2assets::VxlModel;
 using ra2assets::VxlSection;
@@ -89,6 +107,34 @@ TEST_CASE("voxel_raster: single voxel lands on the anchor") {
             if (spr.rgba[(static_cast<size_t>(y) * spr.w + x) * 4 + 3] != 0) anchor_covered = true;
         }
     CHECK(anchor_covered);
+}
+
+TEST_CASE("voxel_raster: terrain is applied after facing and flat sprites stay identical") {
+    auto model=single_voxel_model(100,0);
+    // An off-origin voxel makes the slope's height effect observable.
+    model.sections[0].min_bounds[0]=20;
+    model.sections[0].max_bounds[0]=21;
+    const auto h=identity_hva();const auto v=identity_vpl();const auto pal=gray_pal();
+    const auto flat=ra2engine::rasterize_model(model,h,0,v,pal);
+    const auto explicit_flat=ra2engine::rasterize_model(model,h,0,v,pal,0,0,0);
+    CHECK(flat.rgba==explicit_flat.rgba);
+    CHECK(flat.anchor_y==explicit_flat.anchor_y);
+    const auto uphill=ra2engine::rasterize_model(model,h,0,v,pal,0,0,1);
+    const auto downhill=ra2engine::rasterize_model(model,h,0,v,pal,0,0,3);
+    REQUIRE(opaque_count(uphill)>0);
+    REQUIRE(opaque_count(downhill)>0);
+    auto relative_y=[](const ra2engine::VoxelSprite& s) {
+        double sum=0;int n=0;
+        for(int y=0;y<s.h;++y) for(int x=0;x<s.w;++x)
+            if(s.rgba[(y*s.w+x)*4+3]) {sum+=y-s.anchor_y;++n;}
+        return sum/n;
+    };
+    CHECK(relative_y(uphill)<relative_y(flat));
+    CHECK(relative_y(downhill)>relative_y(flat));
+    // Turning perpendicular to the uphill axis removes that axis' rise.
+    const auto side=ra2engine::rasterize_model(model,h,3.14159265358979323846/2,v,pal,0,0,1);
+    const auto side_flat=ra2engine::rasterize_model(model,h,3.14159265358979323846/2,v,pal);
+    CHECK(std::abs(relative_y(side)-relative_y(side_flat))<=1.0);
 }
 
 TEST_CASE("voxel_raster: yaw rotation moves an off-axis voxel as hand-computed") {
