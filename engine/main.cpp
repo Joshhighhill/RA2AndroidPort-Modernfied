@@ -4481,7 +4481,17 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // pick the SHP by the unit's own image ("GI"/"CONS"). An unrecognized
     // image is logged and skipped (not thrown) so one bad unit can't take
     // down the whole frame.
+    auto bunker_render_host = [&](int idx) {
+        const auto& u=us[idx];
+        const int bi=u.garrison_of>=0?u.garrison_of:u.bunker_exit_host>=0?u.bunker_exit_host:u.occupy_target;
+        if(!ba || bi<0 || bi>=int(world.buildings().size()))return -1;
+        const auto& b=world.buildings()[bi];
+        if(!b.alive || b.state!=ra2engine::Building::State::Idle || b.type<0 || b.type>=int(ba->roster.size()) ||
+           !ba->roster[b.type].tank_bunker)return -1;
+        return u.garrison_of>=0 || ra2engine::bunker_contains_vehicle(u.fx,u.fy,b.cx,b.cy,b.fw,b.fh)?bi:-1;
+    };
     auto draw_one_unit = [&](int idx, const ra2engine::Building* bunker = nullptr) {
+        if(!bunker && bunker_render_host(idx)>=0)return;
         auto unit_cam=cam;
         const auto& cam=unit_cam;
         const auto exiting=g_bunker_motion.find(idx);
@@ -4497,7 +4507,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         // W5-PRES R-100: a unit on a high-bridge deck draws BridgeHeight up.
         std::optional<ra2engine::Unit> lifted;
         const ra2engine::Unit* up = &us[idx];
-        if(!bunker && g_unit_motion.moving(idx,*up)) {
+        if(up->garrison_of<0 && g_unit_motion.moving(idx,*up)) {
             lifted.emplace(*up);
             g_unit_motion.apply(idx,*lifted,g_pres_render_fraction);
             up=&*lifted;
@@ -4547,6 +4557,11 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                 lifted->sub_x=lifted->sub_y=0;
                 up=&*lifted;
             }
+        }
+        if(bunker) {
+            if(!lifted)lifted.emplace(*up);
+            const double offset=ra2engine::bunker_platform_offset(lifted->fx,lifted->fy,bunker->cx,bunker->cy,bunker->fw,bunker->fh);
+            lifted->fx+=offset;lifted->fy+=offset;up=&*lifted;
         }
         const ra2engine::Unit& u = *up;
         // W5-PRES R-120: Iron Curtain / elite flash / chrono warp draw tint.
@@ -4773,6 +4788,12 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                 for (int ui : b.occupants)
                     if (ui>=0 && ui<static_cast<int>(us.size()) && us[ui].alive)
                         draw_one_unit(ui,&b);
+                // Approaching and physically departing vehicles must use the
+                // same rear/vehicle/front pass while crossing the foundation.
+                for(int ui=0;ui<int(us.size());++ui)
+                    if(us[ui].alive && us[ui].garrison_of<0 && bunker_render_host(ui)==d.idx &&
+                       !ra2engine::bunker_vehicle_in_front(us[ui].fx,us[ui].fy,b.cx,b.cy,b.fw,b.fh))
+                        draw_one_unit(ui,&b);
                 // Keep an exiting tank in the same rear/tank/front layering
                 // until it clears the bunker instead of popping in front.
                 std::vector<int> exiting_units;
@@ -4785,6 +4806,12 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                         draw_one_unit(ui,&b);
                 pres_tank_bunker_overlay(ren, tc, b, image, cx, cy, ba->condition_yellow,
                                          pal, ckey, W, H, true);
+                // Once the moving body crosses the platform's front half it
+                // must occlude the lowered lip, rather than pass beneath it.
+                for(int ui=0;ui<int(us.size());++ui)
+                    if(us[ui].alive && us[ui].garrison_of<0 && bunker_render_host(ui)==d.idx &&
+                       ra2engine::bunker_vehicle_in_front(us[ui].fx,us[ui].fy,b.cx,b.cy,b.fw,b.fh))
+                        draw_one_unit(ui,&b);
             }
         } else if (d.kind == 4) {
             const auto fx = g_slave_miner_pack_fx.find(d.idx);

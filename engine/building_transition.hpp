@@ -9,6 +9,20 @@ inline std::array<int,2> bunker_docking_cell(int cx,int cy,int fw,int fh) {
     // Share this socket between approach, attachment, ejection and drawing.
     return {cx+fw/2-1,cy+fh/2-1};
 }
+// The path grid socket is integral; the artwork's platform centre lies half
+// a cell southeast of that socket. Blend only over the last cell of travel,
+// so crossing between live locomotion and an attached occupant cannot snap.
+inline double bunker_platform_offset(double x,double y,int cx,int cy,int fw,int fh) {
+    const auto dock=bunker_docking_cell(cx,cy,fw,fh);
+    return 0.5*std::clamp(1.0-std::hypot(x-dock[0],y-dock[1]),0.0,1.0);
+}
+inline bool bunker_contains_vehicle(double x,double y,int cx,int cy,int fw,int fh) {
+    return x>=cx-0.5 && y>=cy-0.5 && x<cx+fw-0.5 && y<cy+fh-0.5;
+}
+inline bool bunker_vehicle_in_front(double x,double y,int cx,int cy,int fw,int fh) {
+    const double offset=bunker_platform_offset(x,y,cx,cy,fw,fh);
+    return x+y+2*offset>cx+cy+(fw+fh-2)/2.0+0.001;
+}
 // Opening runs Start..LoopEnd before holding; closing uses its reverse span.
 inline long bunker_motion_ticks(int start,int loop_end,int delay,bool reverse) {
     const long frames=reverse?loop_end:loop_end-start;

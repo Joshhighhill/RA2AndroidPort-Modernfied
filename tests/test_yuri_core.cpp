@@ -27,6 +27,23 @@
 #include <iterator>
 using namespace ra2engine;
 
+TEST_CASE("Tank Bunker presentation: platform offset is continuous and never changes world coordinates") {
+    CHECK(bunker_platform_offset(8,8,8,8,2,2)==0.5);
+    CHECK(bunker_platform_offset(9,8,8,8,2,2)==0);
+    for(int i=0;i<100;++i) {
+        const double x=7+i/100.0;
+        const double a=x+bunker_platform_offset(x,8,8,8,2,2);
+        const double b=x+0.01+bunker_platform_offset(x+0.01,8,8,8,2,2);
+        CHECK(std::abs(b-a)<0.02);
+    }
+    CHECK(bunker_contains_vehicle(8,8,8,8,2,2));
+    CHECK_FALSE(bunker_contains_vehicle(8,9.5,8,8,2,2));
+    CHECK_FALSE(bunker_contains_vehicle(7.49,8,8,8,2,2));
+    CHECK_FALSE(bunker_vehicle_in_front(8,8,8,8,2,2));
+    CHECK_FALSE(bunker_vehicle_in_front(7.5,8,8,8,2,2));
+    CHECK(bunker_vehicle_in_front(9,9,8,8,2,2));
+}
+
 TEST_CASE("weapon art: correct image, numbered, secondary and elite muzzle entries") {
     const auto ini=ra2assets::Ini::parse(
         "[LTNK]\nPrimaryFireFLH=225,0,100\nSecondaryFireFLH=80,15,90\n"
