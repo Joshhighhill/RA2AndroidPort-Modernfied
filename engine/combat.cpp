@@ -1418,6 +1418,10 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                         // test itself (3-D to the centre, range + (w+h)*64),
                         // the rule the approach cell below is chosen by.
                         if (w7_approach) need = !in_range_from_cell(g.x, g.y);
+                        // A parked unit can take a previously free firing
+                        // position. Re-select a legal position instead of
+                        // waiting forever merely because the old goal is in range.
+                        if(w7_approach && u.wait_time>=3.0 && !occ.can_enter(g.x,g.y,i,u.on_deck))need=true;
                     }
                     if (need && w7_approach) {
                         const Cellxy c = approach_cell();
@@ -1852,6 +1856,7 @@ std::vector<MoveRequest> step_combat(const World& world, std::vector<Unit>& unit
                 const Cellxy g = u.path.back();
                 need = dist_leptons(static_cast<double>(g.x), static_cast<double>(g.y),
                                     v.fx, v.fy) > range_leptons;
+                if(u.wait_time>=3.0 && !occ.can_enter(g.x,g.y,i,u.on_deck))need=true;
             }
             if (need) requests.push_back({i, v.cell_x, v.cell_y, /*approach=*/true});
         } else if (w7) {

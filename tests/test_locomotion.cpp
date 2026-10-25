@@ -291,6 +291,22 @@ TEST_CASE("traffic recovery: take the longer opening instead of retrying a cheap
     CHECK(occ.at(3,5)==1);
 }
 
+TEST_CASE("traffic reservations: an idle unit releases remote claims without moving its real cell") {
+ auto p=open_grid(12,12);Occupancy occ(12,12);
+ std::vector<Unit> units{make_unit(2,5,occ,0),make_unit(9,9,occ,1)};
+ occ.set(3,5,1); // Reproduces 900039: owner is physically two cells elsewhere.
+ give_path(units[0],find_path(p,12,12,{2,5},{8,5}));units[0].speed_cps=cps_of_lept(30);
+ const int frames=frames_to_arrive(units,p,12,12,occ,500);
+ CHECK(frames>0);CHECK(units[0].cell_x==8);CHECK(occ.at(3,5)!=1);CHECK(occ.at(9,9)==1);
+}
+
+TEST_CASE("traffic reservations: finishing a walk drops all unused reserved cells") {
+ auto p=open_grid(12,12);Occupancy occ(12,12);std::vector<Unit> units{make_unit(2,5,occ,0)};
+ occ.set(7,7,0);give_path(units[0],find_path(p,12,12,{2,5},{3,5}));units[0].speed_cps=cps_of_lept(30);
+ REQUIRE(frames_to_arrive(units,p,12,12,occ,500)>0);
+ CHECK(occ.at(7,7)==Occupancy::kEmpty);CHECK(occ.at(3,5)==0);
+}
+
 TEST_CASE("W7-11-08: uniform step cost -- a diagonal costs what an orthogonal does") {
     // (0,0) -> (4,2) on an open grid: 4 steps (Chebyshev), not 4+ octile.
     auto p = open_grid(8, 8);

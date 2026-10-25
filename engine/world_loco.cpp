@@ -302,6 +302,7 @@ void arrive(StepEnv& e, Unit& u, int self) {
     u.loco.blockage = -1.0;
     u.loco.temp_tries = 0;
     e.occ.mark_layer(self, u.on_deck);
+    e.occ.release_all_of(self,u.cell_x,u.cell_y);
     e.occ.set(u.cell_x, u.cell_y, self, u.on_deck);   // w8fix-layer: its own layer's plane
 }
 
@@ -542,6 +543,18 @@ void on_blocked(StepEnv& e, Unit& u, int self, Cellxy bc, bool cliff, int layer)
         if (o >= static_cast<int>(e.units.size())) o = Occupancy::kEmpty;
     }
     const Cellxy goal = u.path.empty() ? Cellxy{u.cell_x, u.cell_y} : u.path.back();
+    if(o>=0) {
+        const auto& owner=e.units[o];
+        // A completed mover must not keep a remote cell reserved. Repair an
+        // orphan left by an older save/mission before treating it as traffic.
+        if(!owner.moving() && owner.loco.trk<0 &&
+           std::abs(owner.fx-owner.cell_x)<1e-9 && std::abs(owner.fy-owner.cell_y)<1e-9 &&
+           (owner.cell_x!=bc.x || owner.cell_y!=bc.y)) {
+            e.occ.release(bc.x,bc.y,o);
+            diag::note("TRAFFIC_STALE_RELEASE unit=%d cell=%d,%d owner=%d owner_cell=%d,%d",self,bc.x,bc.y,o,owner.cell_x,owner.cell_y);
+            return;
+        }
+    }
     if(diag::state().enabled.load() && o>=0 && u.wait_time>=3.0 && (u.wait_time-e.dt<3.0 || diag::state().frame.load()%150==0))
         diag::note("TRAFFIC_BLOCK unit=%d image=%s wait_s=%.2f cell=%d,%d next=%d,%d goal=%d,%d layer=%d blocker=%d blocker_image=%s blocker_moving=%d blocker_wait=%.2f allied=%d",
             self,u.image.c_str(),u.wait_time,u.cell_x,u.cell_y,bc.x,bc.y,goal.x,goal.y,LB,o,
@@ -1048,6 +1061,7 @@ void step_units(std::vector<Unit>& units, const std::vector<std::uint8_t>& passa
         }
         if (!u.moving()) {
             const UnitAnimSeq& seq = anim_for_image(anims, u.image);
+            occ.release_all_of(self,u.cell_x,u.cell_y);
             occ.set(u.cell_x, u.cell_y, self, u.on_deck);   // idle units own their cell (own layer)
             u.fx = u.cell_x;
             u.fy = u.cell_y;

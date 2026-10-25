@@ -87,6 +87,14 @@ TEST_CASE("w7 force-fire: an explicit order on an own unit is kept and fired on 
     CHECK(l.units[0].target == -1);
 }
 
+TEST_CASE("combat approach: a blocked occupied firing goal requests a new position") {
+ Rig r;r.units.push_back(soldier(0,0,r.occ,0));r.units.push_back(soldier(10,1,r.occ,1,0));
+ r.units.push_back(soldier(7,0,r.occ,2,0));
+ auto& u=r.units[0];u.target=1;u.attack_order=true;u.path={{0,0},{7,0}};u.path_idx=1;u.wait_time=4;
+ const auto requests=step_combat(r.w,r.units,r.bs,r.occ,1.0/15.0);
+ CHECK(std::any_of(requests.begin(),requests.end(),[](const auto& m){return m.unit==0 && m.approach;}));
+}
+
 TEST_CASE("w7 1% Verses: no passive acquire at <= 2%, acquire at 3% (Evaluate_Object 0x6F7270)") {
     for (int pct : {1, 2, 3}) {
         Rig r;
