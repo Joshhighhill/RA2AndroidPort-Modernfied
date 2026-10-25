@@ -53,7 +53,8 @@ Deployment speech (explicit latest user request): automatic MCV/Slave Miner
 deploy attempts use quiet saved mission variants, suppressing CannotDeploy
 events both immediately and after a failed delayed arrival. Player Deploy
 orders retain failure feedback. AI automatic MCV production uses the quiet
-entry point too. Existing VoiceDeploy is queued from player input actions,
+entry point too, as do campaign team-script MCV deployments. Existing
+VoiceDeploy is queued from player input actions,
 not from automatic infantry deploy state changes. Selection voices, physical
 deployment sounds, combat effects and urgent announcements are not muted.
 Quiet missions survive format53 save/load. Use same-build multiplayer peers;
@@ -138,11 +139,12 @@ missing-retail landmark fixture excluded. Existing 2000-frame deterministic
 lockstep, save/load, normal shell projectiles, bridge collapse/repair and
 touch regressions pass. Six new cases cover quiet deploy/save continuation,
 all-faction ConYard command gates, follower continuation, ground/deck policy,
-retail Boomer prerequisites and scaled selection input. Android C++ syntax
+retail Boomer prerequisites and scaled selection input.
 Ground tests include the locomotor's destination-cell ownership before its
 continuous position arrives, uphill and downhill. Source/target segment
 height is sampled without allocating or invoking the planner per draw.
-passes with the existing waypoint_cell override warning. Release APK build,
+Android C++ syntax passes with the existing waypoint_cell override warning.
+Release APK build,
 signature/asset audit, checksum, source SHA and Drive readback recorded after
 packaging in BUILD_INFO.json and the same Google Doc. No physical POCO,
 thermal, Android emulator or instrumentation testing performed in this pass.

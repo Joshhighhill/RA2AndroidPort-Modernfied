@@ -2841,7 +2841,7 @@ private:
         // member to a nearby free cell [campaign.md §7].
         case K::Deploy:
             for (int m : tm.members)
-                if (w_.is_mcv(m)) w_.order_deploy_mcv(m);
+                if (w_.is_mcv(m)) w_.order_deploy_mcv_auto(m);
             return;
         // W4-SQ-01 [RE: FUN_006ee670]: every member transport unloads; the line
         // completes once they are all empty (step_map_team), and then the arg
