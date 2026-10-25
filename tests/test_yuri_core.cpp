@@ -1030,3 +1030,11 @@ TEST_CASE("Slave passage: a mobile manager can traverse its worker without overw
  for(int tick=0;tick<100;++tick){w.step(1.0/15.0);if(w.units()[0].cell_x==8 && w.units()[1].cell_x==8){shared=true;CHECK(w.occupancy().spot_of(8,8,1)>=0);}if(w.units()[0].cell_x==10)break;}
  CHECK(shared);CHECK(w.units()[0].cell_x==10);CHECK(w.units()[1].alive);
 }
+
+TEST_CASE("Tank Bunker hull: travel then horizontal alignment gates the lift") {
+ CHECK(bunker_horizontal_facing(0)==8192);CHECK(bunker_horizontal_facing(40000)==40960);
+ const long alignment=bunker_alignment_ticks(0,8192,16384);CHECK(alignment==8);
+ CHECK(bunker_hull_facing(0,8192,14,15,alignment,0)==0);
+ CHECK(bunker_hull_facing(0,8192,19,15,alignment,0)==doctest::Approx(4096));
+ CHECK(bunker_hull_facing(0,8192,23,15,alignment,0)==8192);
+}

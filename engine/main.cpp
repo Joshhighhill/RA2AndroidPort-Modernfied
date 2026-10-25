@@ -4502,6 +4502,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             lifted->fire_flash=bunker->def_fire_flash;
             lifted->target=bunker->garrison_target;
             lifted->target_building=bunker->w7.garrison_target_building;
+            lifted->body_facing=ra2engine::bunker_horizontal_facing(lifted->body_facing);
             up=&*lifted;
         }
         auto motion=g_bunker_motion.find(idx);
@@ -4517,6 +4518,9 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                 const double ty=motion->second.entering?motion->second.to_y:us[idx].fy;
                 lifted->fx=motion->second.from_x+(tx-motion->second.from_x)*f;
                 lifted->fy=motion->second.from_y+(ty-motion->second.from_y)*f;
+                if(motion->second.entering)
+                    lifted->body_facing=ra2engine::bunker_hull_facing(motion->second.hull_from,motion->second.hull_to,
+                        age,motion->second.drive,motion->second.align,g_pres_render_fraction);
                 lifted->sub_x=lifted->sub_y=0;
                 up=&*lifted;
             }

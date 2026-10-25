@@ -20,6 +20,21 @@ inline long bunker_drive_ticks(double dx,double dy,double cells_per_second) {
 inline double bunker_drive_fraction(long age,long drive,long delay,double sub_tick) {
     return std::clamp((age-delay+std::clamp(sub_tick,0.0,1.0))/std::max<long>(1,drive),0.0,1.0);
 }
+inline double bunker_horizontal_facing(double facing) {
+    // A horizontal screen axis is NE/SW in map coordinates. Choose the
+    // nearer hull orientation; this never changes the turret's aim.
+    auto distance=[](double a,double b){return std::abs(std::remainder(a-b,65536.0));};
+    return distance(facing,8192)<=distance(facing,40960)?8192:40960;
+}
+inline long bunker_alignment_ticks(double from,double to,double turn_per_second) {
+    return std::clamp<long>(long(std::ceil(std::abs(std::remainder(to-from,65536.0))*15/
+                                         std::max(1.0,turn_per_second))),0,300);
+}
+inline double bunker_hull_facing(double from,double to,long age,long drive,long align,double fraction) {
+    const double t=std::clamp((age-drive+fraction)/std::max<long>(1,align),0.0,1.0);
+    double result=std::fmod(from+std::remainder(to-from,65536.0)*t+65536.0,65536.0);
+    return result;
+}
 // A visual transition never changes simulation state or command timing.
 inline bool transition_active(long start,long duration,long now) {
     return duration>0 && now>=start && now-start<duration;

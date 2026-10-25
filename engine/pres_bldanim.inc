@@ -65,7 +65,7 @@ struct SlaveMinerPackFx {
     long start = 0, duration = 0;
 };
 std::map<int, SlaveMinerPackFx> g_slave_miner_pack_fx;
-struct BunkerMotion { double from_x=0,from_y=0,to_x=0,to_y=0; long start=0; bool entering=true; int building=-1; long duration=15,drive=15,delay=0; };
+struct BunkerMotion { double from_x=0,from_y=0,to_x=0,to_y=0; long start=0; bool entering=true; int building=-1; long duration=15,drive=15,delay=0,align=0; double hull_from=0,hull_to=0; };
 std::map<int,BunkerMotion> g_bunker_motion;
 double g_pres_render_fraction = 0; // sub-tick movement only; never simulation input
 
@@ -245,7 +245,11 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
                     motion.drive=ra2engine::bunker_drive_ticks(motion.to_x-from_x,motion.to_y-from_y,
                         u.speed_cps>0?u.speed_cps:1.0);
                     motion.delay=occupied?0:art_ticks;
-                    motion.duration=motion.drive+art_ticks;
+                    motion.hull_from=u.body_facing;
+                    motion.hull_to=ra2engine::bunker_horizontal_facing(u.body_facing);
+                    motion.align=occupied?ra2engine::bunker_alignment_ticks(motion.hull_from,motion.hull_to,
+                        u.rot_u16_per_sec>0?u.rot_u16_per_sec:16384):0;
+                    motion.duration=motion.drive+motion.align+art_ticks;
                     ra2engine::diag::note("BUNKER_VISUAL building=%zu unit=%d entering=%d duration=%ld from=%.3f,%.3f to=%.3f,%.3f",
                         bi,ui,occupied,g_bunker_motion[ui].duration,g_bunker_motion[ui].from_x,
                         g_bunker_motion[ui].from_y,g_bunker_motion[ui].to_x,g_bunker_motion[ui].to_y);
@@ -256,7 +260,7 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
                 // Entry drives across the lowered platform before it rises.
                 // Exit lowers first, then drives clear at the vehicle speed.
                 const auto m=g_bunker_motion.find(ui);
-                const long art_start=now+(occupied && m!=g_bunker_motion.end()?m->second.drive:0);
+                const long art_start=now+(occupied && m!=g_bunker_motion.end()?m->second.drive+m->second.align:0);
                 start(st, a, occupied ? kBsSpecial : kBsSpecial3, art_start);
                 start(st, a, occupied ? kBsSpecial2 : kBsSpecial4, art_start);
             }
@@ -266,7 +270,11 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
                 // rather than being restarted after a synthetic finite run.
                 st.bunker_transition=0;
             }
-            if (st.bunker_transition < 0 && !st.run[kBsSpecial3].on && !st.run[kBsSpecial4].on) {
+            const bool clearing=std::any_of(g_bunker_motion.begin(),g_bunker_motion.end(),[&](const auto& item){
+                return item.second.building==static_cast<int>(bi) && !item.second.entering &&
+                    ra2engine::transition_active(item.second.start,item.second.duration,now);
+            });
+            if (st.bunker_transition < 0 && !clearing && !st.run[kBsSpecial3].on && !st.run[kBsSpecial4].on) {
                 st.bunker_transition = 0;
                 if (occupied) {
                     start(st, a, kBsSpecial, now);
@@ -501,9 +509,10 @@ void pres_tank_bunker_overlay(SDL_Renderer* ren, ra2engine::TextureCache& tc, co
     const FxAnimType* t = damaged && sl.dmg ? sl.dmg : garrisoned && sl.garr ? sl.garr : sl.t;
     if (!t) return;
     const BldSlotRun& run = ev->second.run[slot];
-    if (!run.on) return;
+    if (!run.on && ev->second.bunker_transition>=0) return;
     int frame = ev->second.bunker_transition < 0
-                    ? t->frame_at(g_pres_tick-run.start)
+                    ? t->frame_at(std::min<long>(g_pres_tick-run.start,
+                        std::max<long>(0,ra2engine::bunker_motion_ticks(t->start,t->loop_end,t->delay,t->reverse)-1)))
                     : bld_run_frame(*t, run.start, g_pres_tick);
     if (frame < 0) return;
     if (t->shadow)
