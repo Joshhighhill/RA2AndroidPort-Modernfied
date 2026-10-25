@@ -9297,6 +9297,12 @@ class SkirmishSetupScene;
 // parent page. `MainMenuScene` is an alias for the PAGE_MAIN entry (below).
 // W5-E2 (R-143): `set leave_band 1` in a --play script (see ShellScene).
 bool g_play_leave_band = false;
+// Independently drawn mobile hub. No CnCNet code, graphics or network
+// protocol is imported; the original shell remains the default.
+bool command_menu_enabled() {
+    const char* value=std::getenv("RA2_COMMAND_MENU");
+    return value && value[0]=='1';
+}
 class ShellScene : public Scene {
 public:
     ShellScene(const Rules& rules, bool no_audio, const MenuArt& art,
@@ -9416,6 +9422,8 @@ private:
     static int rowY(int k) { return 199 + 42 * k; }
     std::vector<ShellButton> layout() const {
         auto btn = [&](int row, const char* s, bool en, int act, ShellPage t) {
+            if(page_==PAGE_MAIN && command_menu_enabled())
+                return ShellButton{{40,115+row*49,280,44},s,en,act,t};
             return ShellButton{ {kBtnX, rowY(row), kBtnW, kBtnH}, s, en, act, t }; };
         switch (page_) {
             case PAGE_SINGLE:   // dialog 0x100
@@ -9729,6 +9737,29 @@ void MainMenuScene::update(double dt) {
 void MainMenuScene::render(ra2engine::Platform& plat, ra2engine::TextureCache& tc) {
     SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
     const std::vector<ShellButton> btns = layout();
+
+    if(page_==PAGE_MAIN && command_menu_enabled()) {
+        SDL_SetRenderDrawColor(ren,12,18,26,255);SDL_RenderClear(ren);
+        const ShellPainter p{ren,tc,art_,xform()};
+        p.label("COMMAND CENTER",40,30,560,35,1);
+        p.label("YURI'S REVENGE / ANDROID",40,72,560,24,0);
+        p.fill(p.dev(350,115,250,289),20,30,42);
+        p.label("OPERATIONS",370,135,210,28,1);
+        p.label("Campaign / Skirmish",370,180,210,26,0);
+        p.label("LAN / Online",370,216,210,26,0);
+        p.label("Unofficial community port",365,310,225,25,0);
+        p.label("Original game files required",365,346,225,25,0);
+        for(const auto& b:btns) {
+            const auto r=to_device(b.rect);const bool hot=r.contains(mx_,my_);
+            const SDL_Rect rect{r.x,r.y,r.w,r.h};
+            p.fill(rect,hot?40:24,hot?65:38,hot?86:52);
+            SDL_SetRenderDrawColor(ren,hot?122:64,hot?205:100,hot?226:122,255);SDL_RenderDrawRect(ren,&rect);
+            p.label(b.label,b.rect.x+12,b.rect.y+5,b.rect.w-24,b.rect.h-10,1,b.enabled);
+        }
+        p.label(RA2_VERSION,40,435,560,22,0);
+        sld_.render(ren,tc,SDL_GetTicks());gf_confirm_.render(ren,tc);
+        return;
+    }
 
     // --- Art-guarded fallback: no essential chrome/palette (partial install) ->
     // a plain rect-font placeholder using the SAME device rects as the real path,

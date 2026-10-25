@@ -255,6 +255,15 @@ public class SetupActivity extends Activity {
 
         root.addView(label("SUPPORT & PREFERENCES",12,Color.rgb(135,163,181)));
         root.addView(button("Launcher theme",v->chooseTheme()));
+        root.addView(button("Game main menu",v->{
+            if(copying)return;
+            new AlertDialog.Builder(this).setTitle("Game main menu")
+                .setSingleChoiceItems(new String[]{"Original Yuri's Revenge","Command Center (experimental)"},
+                    getSharedPreferences("interface",MODE_PRIVATE).getBoolean("command_menu",false)?1:0,
+                    (dialog,which)->{getSharedPreferences("interface",MODE_PRIVATE).edit()
+                        .putBoolean("command_menu",which==1).apply();dialog.dismiss();})
+                .setNegativeButton("Close",null).show();
+        }));
         exitButton = button(getString(R.string.setup_exit), v -> finish());
         root.addView(button("Share game report", v -> Diagnostics.share(this)));
         root.addView(button("Refresh file status", v -> { if (!copying) refresh(); }));

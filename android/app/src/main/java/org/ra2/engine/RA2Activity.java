@@ -66,6 +66,10 @@ public class RA2Activity extends SDLActivity implements AudioManager.OnAudioFocu
      */
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        try {
+            android.system.Os.setenv("RA2_COMMAND_MENU",
+                getSharedPreferences("interface",MODE_PRIVATE).getBoolean("command_menu",false)?"1":"0",true);
+        } catch(android.system.ErrnoException e) { Log.w(TAG,"Menu preference unavailable",e); }
         Diagnostics.begin(this);
         super.onCreate(savedInstanceState);
         if (Build.VERSION.SDK_INT >= 29) {
