@@ -2,6 +2,9 @@
 #include "world.hpp"
 #include <cmath>
 namespace ra2engine {
+inline ra2assets::Rgba psychic_intent_color(const World& w,const ra2assets::Palette& pal,int house) {
+    return w.house_palette(pal,house)[24];
+}
 inline bool psychic_sensor_active(const World& w,int bi,int viewer) {
     if(bi<0 || bi>=static_cast<int>(w.buildings().size())) return false;
     const auto& b=w.buildings()[bi];

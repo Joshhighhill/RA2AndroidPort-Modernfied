@@ -166,6 +166,18 @@ TEST_CASE("Yuri core: psychic sensor uses powered allied radius and commanded de
     CHECK(psychic_sensor_target(w,0,0,x,y));CHECK(x==9);CHECK(y==9);
     w.order_unit_move(0,18,18);CHECK_FALSE(psychic_sensor_target(w,0,0,x,y));
     w.buildings()[0].power_off=true;CHECK_FALSE(psychic_sensor_active(w,0,0));
+    ra2assets::Palette pal{};
+    for(int i=0;i<256;++i)pal[i]={static_cast<unsigned char>(i),static_cast<unsigned char>(i),static_cast<unsigned char>(i),255};
+    w.set_house(1,World::HouseRec{World::Side::Soviet,2,"Russians",-1,true});
+    w.set_house(2,World::HouseRec{World::Side::Allied,5,"Americans",-1,true});
+    const auto color=psychic_intent_color(w,pal,1),expected=w.house_palette(pal,1)[24];
+    CHECK(color.r==expected.r);CHECK(color.g==expected.g);CHECK(color.b==expected.b);
+    const auto other=psychic_intent_color(w,pal,2);
+    CHECK((color.r!=other.r || color.g!=other.g || color.b!=other.b));
+    // Presentation queries cannot alter the simulation/save state.
+    const auto before=save::save_world(w);(void)psychic_intent_color(w,pal,2);
+    CHECK(save::save_world(w)==before);
+
 }
 
 TEST_CASE("Yuri core: presentation collects unit and building mind-control links") {

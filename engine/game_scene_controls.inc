@@ -20,6 +20,7 @@
     // Colour thresholds = [General] ConditionYellow / ConditionRed.
     mutable ra2engine::TextureCache* pip_tc_ = nullptr;   // W2-UI-11 (set by render)
     void draw_psychic_sensors(SDL_Renderer* ren) const {
+        std::map<int,ra2assets::Rgba> intent_colors;
         auto point=[&](double x,double y) {
             return SDL_Point{static_cast<int>(std::lround((x-y)*30))+cam_.x+30,
                 static_cast<int>(std::lround((x+y)*15-world_.cell_level(static_cast<int>(x),static_cast<int>(y))*15))+cam_.y+15};
@@ -42,7 +43,11 @@
                 int x=0,y=0;if(!ra2engine::psychic_sensor_target(world_,bi,ui,x,y)) continue;
                 const auto& u=world_.units()[ui];
                 const auto from=point(u.fx,u.fy),to=point(x,y);
-                SDL_SetRenderDrawColor(ren,210,100,245,210);
+                auto c=intent_colors.find(u.house);
+                if(c==intent_colors.end())c=intent_colors.emplace(u.house,
+                    ra2engine::psychic_intent_color(world_,ua_.pal,u.house)).first;
+                const auto color=c->second;
+                SDL_SetRenderDrawColor(ren,color.r,color.g,color.b,210);
                 SDL_RenderDrawLine(ren,from.x,from.y,to.x,to.y);
                 SDL_RenderDrawLine(ren,to.x-4,to.y,to.x+4,to.y);
                 SDL_RenderDrawLine(ren,to.x,to.y-4,to.x,to.y+4);
