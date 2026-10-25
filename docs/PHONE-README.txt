@@ -139,6 +139,14 @@ sites. Display-only unit position/facing/height interpolation and slope shadow
 corrections preserve fixed-tick gameplay. See TOUCH-TEST39.txt for phone checks.
 Save format 54: retain backups; old format-53 saves are not converted. Start a
 fresh skirmish. Every network participant must use the same engine build.
+
+Build 900040: fixes remote stale occupancy claims and reselects blocked firing
+positions. Tank Bunker movement/drawing now share the art-aligned docking cell
+instead of the southeast foundation cell. Skirmish has a uniform UI transform,
+bounded flags/badges, compact Team/Start controls and separated slider labels.
+Native validation: 1259 cases / 276943 assertions passed; 12 focused cases /
+261 assertions passed. Save schema stays 54. See TOUCH-TEST40.txt and
+ENGINE-REFERENCES40.md for phone checks, research links and remaining limits.
 Automated validation: 1255 cases / 276810 assertions passed, zero failures;
 one optional absent-retail landmark fixture excluded. No phone/GPU/thermal
 measurement or universal bridge/animation parity is claimed.

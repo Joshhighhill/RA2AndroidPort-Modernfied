@@ -1,0 +1,32 @@
+RA2AndroidPort 900040 — phone acceptance
+
+Install over the existing app. Save format remains 54 (same schema as 900039).
+Use a fresh match for comparison; all multiplayer peers need the same build.
+
+Tank Bunker: repeat the uploaded entry/exit sequence from all directions. The
+tank should sit on the platform, not below its front edge. Watch the entire
+approach, horizontal alignment, raised hull, lowering and normal drive-out.
+Test blocked exits and save/load mid-transition. Report the map/unit and time
+in the recording if it still needs visual calibration.
+
+Traffic: repeat xmp17t6.map with Yuri versus Soviet AI. Watch parked Lasher
+tanks, opposing Brutes, traffic near factories, and tanks attacking a bunker.
+An idle tank should not block remote cells it left earlier. Attackers should
+re-select occupied firing positions. Debug reports now include stale-claim
+release records as well as blocker diagnostics. Narrow routes may still queue;
+units should not cross unrelated buildings, enemies or the wrong bridge layer.
+
+Skirmish: check flags, Yuri badge, Team A–K and Start dropdowns, labels/sliders,
+map name and numbered preview. Tap every visible control and confirm its hit
+position matches its drawing. Check a 2-, 4-, 6- and 8-player map at your menu
+resolutions. Spawn badges should stay inside the image and flags inside rows.
+Test Start, Back, saved settings, map scrolling and popup lists.
+
+Regression: MCV packing is already user-confirmed; confirm it stays working
+without Structure Sold speech. Test ordinary sale speech, generic tank shells,
+force-fire, factory production, pinch zoom and cameo pause/cancel.
+
+Source research and limits: docs/ENGINE-REFERENCES40.md.
+No connected-phone/GPU/thermal validation was performed by the build workflow.
+Please share logs with a brief map/unit/action description and a recording for
+visual defects. Automated tests do not prove the appearance of the final APK.
