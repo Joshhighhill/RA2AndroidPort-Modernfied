@@ -57,6 +57,7 @@ static char* ra2_cli_pref_path() {
 ra2engine::ProjectilePresentation g_projectile_motion;
 #include "unit_presentation.hpp"
 #include "skirmish_layout.hpp"
+#include "faction_art.hpp"
 ra2engine::UnitPresentation g_unit_motion;
 #include "shell_layout.hpp"
 #include "ra2assets/asset_trace.hpp"
@@ -6576,7 +6577,7 @@ struct MenuArt {
     // [SK-10] Skirmish-page flag pictures (local.mix, 47x23, magenta key,
     // FUN_004D1120): 0..8 = usai japi frai geri gbri djbi arbi lati rusi
     // (the lobby country order), 9 = rani (Random), 10 = obsi (observer).
-    const ra2assets::PcxImage* flags[11] = {};
+    const ra2assets::PcxImage* flags[12] = {};
     // Control text ramps (options.md §4: text yellow 0x00FFFF, disabled dark
     // red 0x00009F) for the 12metfnt glyph shade values.
     const ra2assets::Palette* font_pal_text = nullptr;
@@ -8834,7 +8835,7 @@ struct MenuArtStore {
     std::unique_ptr<ra2assets::PcxImage> logo, title;
     // [P8] Options-page control skins.
     std::unique_ptr<ra2assets::PcxImage> trakgrip, trofl, trofm, trofr, chk_off, chk_on;
-    std::unique_ptr<ra2assets::PcxImage> flags[11];   // [SK-10]
+    std::unique_ptr<ra2assets::PcxImage> flags[12];   // [SK-10], plus Yuri
     std::unique_ptr<ra2assets::ShpFile> pudlg, pudlg_s;   // W2-UI-17
     std::unique_ptr<ra2assets::ShpFile> fsbkgd;           // W2-UI-18
     std::unique_ptr<ra2assets::Palette> fsscrn_pal;       // W2-UI-18
@@ -9098,6 +9099,11 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     } catch(const std::exception& error) {
         ra2engine::diag::note("MENU_ASSET classic-fallback reason=%s",error.what());
     }
+    try {
+        auto md=MixFile::open_path(dir+"ra2md.mix");auto local=md.open_nested("localmd.mix");
+        store.flags[11]=try_pcx(local,"yrii.pcx");
+        if(!store.flags[11])std::cerr<<"[menu-art] Yuri yrii.pcx missing\n";
+    } catch(const std::exception& e) { std::cerr<<"[menu-art] Yuri flag unavailable: "<<e.what()<<"\n"; }
     if (!no_audio) store.audio = load_menu_music(dir);
 
     store.art.bg       = store.bg.get();
@@ -9133,7 +9139,7 @@ void load_menu_art(const std::string& dir, bool no_audio, MenuArtStore& store) {
     store.art.trofr    = store.trofr.get();
     store.art.chk_off  = store.chk_off.get();
     store.art.chk_on   = store.chk_on.get();
-    for (int fi = 0; fi < 11; ++fi) store.art.flags[fi] = store.flags[fi].get();
+    for (int fi = 0; fi < 12; ++fi) store.art.flags[fi] = store.flags[fi].get();
     store.art.pudlg      = store.pudlg.get();
     store.art.pudlg_s    = store.pudlg_s.get();
     store.art.fsbkgd     = store.fsbkgd.get();

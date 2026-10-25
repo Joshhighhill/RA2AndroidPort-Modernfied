@@ -3,6 +3,31 @@
 #include "menu_readability.hpp"
 #include "ra2assets/rules.hpp"
 #include "skirmish_layout.hpp"
+#include "faction_art.hpp"
+#include "asset_fixture.hpp"
+#include "ra2assets/pcx.hpp"
+#include "ra2assets/shp.hpp"
+TEST_CASE("Yuri presentation: retail flag loading image and palette decode from verified archives") {
+ if(!ra2fixture::assets_available() || !ra2fixture::ra2_available())return;
+ const auto local=ra2fixture::mix_by_name("ra2md.mix").open_nested("localmd.mix");
+ const auto* flag=local.find(std::string("yrii.pcx"));REQUIRE(flag);
+ const auto pcx=ra2assets::decode_pcx(local.read(*flag));CHECK(pcx.w>0);CHECK(pcx.h>0);
+ const auto load=ra2fixture::mix_by_name("ra2md.mix").open_nested("loadmd.mix");
+ const auto* image=load.find(std::string("ls800yuri.shp"));REQUIRE(image);
+ const auto shp=ra2assets::ShpFile::load(load.read(*image));CHECK(shp.count()>0);CHECK(shp.width()==800);
+ const auto cache=ra2fixture::ra2_mix().open_nested("cache.mix");
+ const auto* palette=cache.find(std::string("mpls.pal"));REQUIRE(palette);
+ const auto bytes=cache.read(*palette);CHECK(bytes.size()==768);
+}
+TEST_CASE("Yuri presentation: expansion loading image and harvesting-role warning are distinct") {
+ using namespace ra2engine;
+ CHECK(loading_country_art("YuriCountry",false)=="yuri");
+ CHECK(loading_country_art("YuriCountry",true)=="yuri");
+ CHECK(loading_country_art("Americans",false)=="ustates");
+ CHECK(loading_country_art("Russians",true)=="russia");
+ CHECK(std::string(attacked_building_eva(true))=="EVA_OreMinerUnderAttack");
+ CHECK(std::string(attacked_building_eva(false))=="EVA_OurBaseIsUnderAttack");
+}
 TEST_CASE("Yuri country remains a distinct side with its own default") {
  using namespace ra2engine;
  CHECK(faction_side("YuriCountry","ThirdSide")==World::Side::Yuri);

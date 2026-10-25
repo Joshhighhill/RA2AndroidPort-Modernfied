@@ -863,14 +863,13 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
                 p.combo(ai_rect(k), ai_label(r.ai), true, combo_ == CB_AI && combo_row_ == k);
             }
             // Flag (FUN_004D1120): country PCX, rani.pcx for Random / None.
-            const int fi = (active && r.country >= 0 && r.country < 9) ? r.country : 9;
+            const bool yuri=active && r.country>=0 && r.country<int(countries_.size()) && countries_[r.country]=="YuriCountry";
+            const int fi = yuri?11:(active && r.country >= 0 && r.country < 9) ? r.country : 9;
             const ra2engine::SbRect fr = flag_rect(k);
             if (art_.flags[fi]) {
                 const std::string key = "skp:flag" + std::to_string(fi);
-                if(active && r.country>=0 && r.country<int(countries_.size()) && countries_[r.country]=="YuriCountry") {
-                    p.fill(p.dev(fr),65,25,85);p.label("Y",fr.x,fr.y,fr.w,fr.h,1);
-                } else p.pcx(key.c_str(),art_.flags[fi],p.dev(ra2engine::fit_skirmish_image(art_.flags[fi]->w,art_.flags[fi]->h,fr)),true);
-            }
+                p.pcx(key.c_str(),art_.flags[fi],p.dev(ra2engine::fit_skirmish_image(art_.flags[fi]->w,art_.flags[fi]->h,fr)),true);
+            } else if(yuri) {p.fill(p.dev(fr),65,25,85);p.label("Y",fr.x,fr.y,fr.w,fr.h,1);}
             p.combo(country_rect(k), active ? country_label(r.country) : text_.random_country, active,
                     combo_ == CB_COUNTRY && combo_row_ == k);
             const SDL_Color sw = swatch_of(active ? r.color : -1);

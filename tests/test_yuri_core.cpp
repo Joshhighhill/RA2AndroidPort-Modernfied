@@ -23,6 +23,7 @@
 #include "input.hpp"
 #include "slave_passage.hpp"
 #include "unit_presentation.hpp"
+#include "faction_art.hpp"
 #include <fstream>
 #include <iterator>
 using namespace ra2engine;

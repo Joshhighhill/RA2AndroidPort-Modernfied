@@ -5,12 +5,15 @@
 // untouched. Included by main.cpp after pres_audio.inc / pres_fx.inc.
 
 class Presentation {
+    bool miner_role_alerts_=true;
 public:
     // side_ix: 0 Allied, 1 Soviet (Russian clips), 2 Yuri.
     void init(const std::string& dir, const ra2assets::MixFile& ra2, AudioSystem& audio, bool audio_on,
               const Rules& rules, const Ini& rules_ini, const Ini& art_ini,
               const std::vector<const std::vector<ra2engine::UnitTypeDef>*>& defs, int side_ix) {
         audio_ = &audio;
+        const auto role_alert=read_settings_doc(settings_file_path()).get("Audio","MinerRoleAlerts");
+        miner_role_alerts_=role_alert?ra2engine::ww_parse_bool(*role_alert,true):true;
         g_bld_events.clear();
         g_bunker_motion.clear();   // W2-GA-14 per-building anim state is per game
         speech_cooldown_.clear();
@@ -1161,9 +1164,12 @@ private:
                 // [RE: presentation.md §1.2 FUN_004f9200] throttled by
                 // RadarEvent 3 BaseAttacked (8 cells, alive 400 frames); the
                 // same event is the radar flash. Plays BaseUnderAttackSound.
-                if (radar_event(3, cx, cy)) {
-                    snd_.eva("EVA_OurBaseIsUnderAttack");
-                    snd_.play(base_attack_siren_, 0.0, "base under attack");
+                const bool miner=miner_role_alerts_ && b.type>=0 && b.type<int(w.btypes().size()) && w.btypes()[b.type].slave_count>0;
+                if (radar_event(miner?4:3, cx, cy)) {
+                    // Requested harvesting-role alert; this does not change
+                    // the deployed manager's authoritative building type.
+                    snd_.eva(ra2engine::attacked_building_eva(miner));
+                    if(!miner)snd_.play(base_attack_siren_, 0.0, "base under attack");
                 }
                 const double half = 0.5 * b.max_hp;
                 if (p.hp > half && b.hp <= half) snd_.play_at(building_damage_, cx, cy, "half strength");
@@ -1235,7 +1241,11 @@ public:
             if (bw.bolt || bw.laser) {
                 double tx = 0, ty = 0, tl = 0;
                 int tlev = 0;
-                if (target_point(w, e.target_unit, e.target_building, tx, ty, tlev, tl))
+                bool target=target_point(w,e.target_unit,e.target_building,tx,ty,tlev,tl);
+                if(!target && e.cell_x>=0 && e.cell_y>=0) {
+                    tx=e.cell_x;ty=e.cell_y;tlev=w.cell_level(e.cell_x,e.cell_y);tl=0;target=true;
+                }
+                if (target)
                     fx_.add_beam(fx, fy, building_level(w, b), 60.0, tx, ty, tlev, tl, bw, house_color(w, b.house));
             }
             const std::vector<std::string> m = fx_.weapon_muzzle(e.weapon);

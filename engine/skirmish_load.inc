@@ -20,13 +20,7 @@ struct SkirmishLoadArt {
     std::vector<std::string> players;
 
     static std::string country_art(const std::string& country, bool soviet) {
-        static const std::pair<const char*, const char*> k[] = {
-            {"Americans", "ustates"}, {"British", "ukingdom"}, {"French", "france"}, {"Germans", "germany"},
-            {"Alliance", "korea"},    {"Koreans", "korea"},    {"Russians", "russia"}, {"Confederation", "cuba"},
-            {"Africans", "libya"},    {"Arabs", "iraq"}};
-        for (const auto& e : k)
-            if (country == e.first) return e.second;
-        return soviet ? "russia" : "ustates";   // Random: the side's first country until resolved
+        return ra2engine::loading_country_art(country,soviet);
     }
     void load(const ra2engine::SkirmishConfig& cfg) {
         // L2: the loading screen shows the LOCAL player's country.
@@ -56,6 +50,16 @@ struct SkirmishLoadArt {
                     pal = ra2assets::Palette::load(raw.data(), raw.size());
                     ok = bg.count() > 0;
                     if (ok) g_skirmish_load_art_drawn = art_name;   // --play evidence (art found)
+                }
+                // Yuri's default MPLS.PAL is in the original cache.mix,
+                // while its LS800YURI.SHP is in expansion loadmd.mix.
+                else if(country=="YuriCountry") {
+                    auto original=ra2assets::MixFile::open_path(dir+"ra2.mix");
+                    auto cache=original.open_nested("cache.mix");
+                    if(const auto* pe=cache.find(std::string("mpls.pal"))) {
+                        const auto raw=cache.read(*pe);pal=ra2assets::Palette::load(raw.data(),raw.size());
+                        ok=bg.count()>0;if(ok)g_skirmish_load_art_drawn=art_name;
+                    }
                 }
             }
             map_name = cfg.map_file;
