@@ -12,8 +12,60 @@
 #include "weapon_unit.hpp"
 #include "world.hpp"
 #include "savegame.hpp"
+#include "command.hpp"
 
 using namespace ra2engine;
+
+TEST_CASE("building force fire: explicit command respects owner range power and Stop, survives deterministic save") {
+    auto map=ra2assets::MapFile::parse("[Map]\nSize=0,0,20,20\nTheater=TEMPERATE\n");
+    auto& cells=const_cast<std::vector<ra2assets::MapCell>&>(map.cells());
+    for(int y=0;y<20;++y)for(int x=0;x<20;++x)cells.push_back({x,y,0,0,0});
+    World w(map);BuildingTypeDef d;d.id="GUN";d.armed=true;d.strength=1000;
+    auto& gun=d.weapon[0];gun.valid=true;gun.id="testgun";gun.damage=10;gun.rof=8;gun.range=5;gun.verses.assign(11,100);
+    w.set_building_types({d});w.add_building(0,4,4,1,1,0,1000,0,0,true);
+    UnitCombat target;target.strength=1000;w.add_combat_unit(6,4,0,target);
+    auto cmd=make_building_event(EventType::MegaMission,0);cmd.house=1;cmd.mission=Mission::Attack;cmd.dest=Target::cell(-1,-1);
+    cmd.target=Target::unit(w,0);apply_command(w,cmd);CHECK(w.buildings()[0].attack_order_kind==0);
+    cmd.house=0;cmd.dest=Target{};apply_command(w,cmd);CHECK(w.buildings()[0].attack_order_kind==0);
+    cmd.dest=Target::cell(-1,-1);apply_command(w,cmd);CHECK(w.buildings()[0].attack_order_kind==1);
+    w.step(1.0/15);CHECK(w.units()[0].hp<1000);
+    World restored(map);REQUIRE(save::load_world(restored,save::save_world(w)));
+    for(int i=0;i<20;++i){w.step(1.0/15);restored.step(1.0/15);}
+    CHECK(save::save_world(w)==save::save_world(restored));
+    auto stop=make_building_event(EventType::Idle,0);stop.house=0;apply_command(w,stop);
+    CHECK(w.buildings()[0].attack_order_kind==0);const int hp=w.units()[0].hp;
+    for(int i=0;i<20;++i)w.step(1.0/15);CHECK(w.units()[0].hp==hp);
+    cmd.target=Target::cell(18,18);apply_command(w,cmd);w.take_fire_events();
+    for(int i=0;i<20;++i)w.step(1.0/15);CHECK(w.take_fire_events().empty());
+    cmd.target=Target::cell(6,4);apply_command(w,cmd);w.buildings()[0].power_off=true;
+    for(int i=0;i<20;++i)w.step(1.0/15);CHECK(w.take_fire_events().empty());
+    w.buildings()[0].power_off=false;w.step(1.0/15);CHECK_FALSE(w.take_fire_events().empty());
+}
+
+TEST_CASE("building force fire: ground projectile uses turret muzzle, AA-only and unarmed cannot shoot ground") {
+    auto map=ra2assets::MapFile::parse("[Map]\nSize=0,0,20,20\nTheater=TEMPERATE\n");
+    auto& cells=const_cast<std::vector<ra2assets::MapCell>&>(map.cells());
+    for(int y=0;y<20;++y)for(int x=0;x<20;++x)cells.push_back({x,y,0,0,0});
+    World w(map);BuildingTypeDef d;d.id="GUN";d.armed=true;d.strength=1000;d.turret=true;d.rot=100;
+    auto& gun=d.weapon[0];gun.valid=true;gun.damage=10;gun.range=8;gun.rof=30;
+    gun.proj.kind=ProjKind::Ballistic;gun.proj.weapon_id="testgun";gun.proj.speed_cap=100;
+    gun.proj.flh[0]=128;gun.proj.flh[1]=32;gun.proj.flh[2]=80;gun.proj.weapon_range=8*256;
+    BuildingTypeDef aa=d;aa.id="AA";aa.weapon[0].ag=false;aa.weapon[0].aa=true;
+    BuildingTypeDef unarmed;unarmed.id="HOUSE";unarmed.strength=1000;
+    w.set_building_types({d,aa,unarmed});w.add_building(0,4,4,1,1,0,1000,0,0,true);
+    w.add_building(1,4,8,1,1,0,1000,0,0,true);w.add_building(2,4,10,1,1,0,1000,0,0,true);
+    w.enable_projectiles(ProjectileRules{});
+    CHECK_FALSE(w.order_building_attack(0,2,-1,-1,7,10,true));
+    REQUIRE(w.order_building_attack(0,1,-1,-1,7,8,true));
+    REQUIRE(w.order_building_attack(0,0,-1,-1,7,4,true));
+    for(int i=0;i<20;++i)w.step(1.0/15);
+    const auto events=w.take_projectile_events();REQUIRE_FALSE(events.empty());
+    bool launch=false;for(const auto& e:events)if(e.kind==ProjectileEvent::Launch) {
+        CHECK(e.x==4*256+128);CHECK(std::abs(e.y-4*256)==32);CHECK(e.z==80);launch=true;
+    }
+    CHECK(launch);
+    for(const auto& e:w.take_fire_events())CHECK(e.building==0);
+}
 
 TEST_CASE("Gattling: stock tank and turret resolve all stage pairs and elite thresholds") {
     if (!ra2fixture::assets_available()) return;

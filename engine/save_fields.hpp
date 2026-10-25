@@ -570,6 +570,7 @@ template <class Ar> void fields(Ar& ar, World::FragEvent& v) {   // W7-12-07 (v3
 template <class Ar> void fields(Ar& ar, World::FireEvent& v) {
     io(ar, v.unit); io(ar, v.building); io(ar, v.target_unit); io(ar, v.target_building);
     io(ar, v.slot); io(ar, v.weapon);
+    io(ar, v.cell_x); io(ar, v.cell_y);
 }
 // Gap fix C: one resolved weapon slot.
 template <class Ar> void fields(Ar& ar, WeaponSlot& v) {
@@ -1297,6 +1298,9 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.selling);
     io(ar, v.sell_time);
     io(ar, v.bunker_exit_left);
+    io(ar, v.attack_order_kind); io(ar, v.attack_order_target);
+    io(ar, v.attack_order_house);
+    io(ar, v.attack_order_x); io(ar, v.attack_order_y); io(ar, v.attack_order_force);
     io(ar, v.sold);
     // P5
     io(ar, v.vet_recv);

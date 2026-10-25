@@ -607,6 +607,17 @@ TEST_CASE("command bridge: to_event / from_event round-trip through the EventCla
     CHECK_FALSE(ra2::net::to_event(run, e));       // two records
     CHECK(ra2::net::to_events(run).size() == 2);
 }
+TEST_CASE("command bridge: building Force Fire marker survives wire codec and does not merge with normal attack") {
+    Command c;c.type=EventType::MegaMission;c.house=0;c.frame=20;c.mission=Mission::Attack;
+    c.whom={Target::building(2)};c.target=Target::cell(10,10);c.dest=Target::cell(-1,-1);
+    ra2::net::Event event;REQUIRE(ra2::net::to_event(c,event));
+    Command decoded;REQUIRE(ra2::net::from_event(event,decoded));
+    CHECK(decoded.dest==c.dest);CHECK(decoded.target==c.target);CHECK(decoded.whom==c.whom);
+    auto records=ra2::net::to_net(c);Command ordinary=c;ordinary.dest=Target{};
+    const auto next=ra2::net::to_net(ordinary);records.insert(records.end(),next.begin(),next.end());
+    const auto commands=ra2::net::from_net(records);REQUIRE(commands.size()==2);
+    CHECK(commands[0].dest==Target::cell(-1,-1));CHECK(commands[1].dest.none());
+}
 
 // W9-05-12: a command that arrived from the network is bounds-checked before
 // it reaches the World (forged / corrupt events are dropped, never applied).

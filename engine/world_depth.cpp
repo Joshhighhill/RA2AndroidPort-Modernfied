@@ -453,7 +453,7 @@ void World::step_garrison_combat(double dt) {
     const int nu = static_cast<int>(units_.size());
     for (int bi = 0; bi < nb; ++bi) {
         Building& b = buildings_[bi];
-        if (!b.alive || b.state != Building::State::Idle || !garrison_firing(bi)) continue;
+        if (!b.alive || b.state != Building::State::Idle || !garrison_firing(bi) || b.attack_order_kind) continue;
         if (b.garrison_rearm_frames > 0) --b.garrison_rearm_frames;   // Net L0: whole frames
         b.def_fire_flash = std::max(0.0, b.def_fire_flash - dt);
         if (b.firing_occupant < 0 || b.firing_occupant >= static_cast<int>(b.occupants.size()))

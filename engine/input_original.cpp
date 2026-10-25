@@ -164,6 +164,12 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
     }
 
     if (!units_sel) {
+        if(selected_building_valid() && world_.building_can_attack(selected_building_)) {
+            const int house=world_.buildings()[selected_building_].house;
+            if(ctrl && (idx>=0 || b!=selected_building_))return Action::Attack;
+            if(idx>=0 && world_.is_enemy(house,us[idx].house))return Action::Attack;
+            if(b>=0 && b!=selected_building_ && world_.is_enemy(house,world_.buildings()[b].house))return Action::Attack;
+        }
         if (idx >= 0 && world_.controllable(us[idx].house)) return shift ? Action::ToggleSelect : Action::Select;
         if (b >= 0 && world_.buildings()[b].house == world_.order_issuer()) {
             if (selected_building_valid() && b == selected_building_ &&
@@ -424,6 +430,17 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
             return;
         }
         case Action::Attack:
+            if(sel_.ids().empty() && selected_building_valid() && world_.building_can_attack(selected_building_)) {
+                auto c=make_building_event(EventType::MegaMission,selected_building_);
+                c.mission=Mission::Attack;
+                // Clone-local explicit-force marker in Attack's unused Dest.
+                // Unlike Command::value, Dest survives the original event codec.
+                if(mod_ctrl_)c.dest=Target::cell(-1,-1);
+                const int unit=unit_under(px,py),building=pick_building(px,py,ev_touch_);
+                int x=0,y=0;resolve_ground_cell(px,py,x,y);
+                c.target=unit>=0?Target::unit(world_,unit):building>=0?Target::building(building):Target::cell(x,y);
+                emit(std::move(c));actions_.attack_ordered=true;actions_.actor=-1;return;
+            }
             // w7fix-combat: a friendly target (AttackCursorOnFriendlies, the
             // Tesla charge) takes the force-fire emission too.
             if (mod_ctrl_ || [&] {
@@ -625,6 +642,7 @@ void Input::stop_selected() {
     sel_.prune(world_);
     const std::vector<int> sel = sel_.ids();
     if (!sel.empty()) emit(make_whom(world_, EventType::Idle, sel));
+    else if(selected_building_valid())emit(make_building_event(EventType::Idle,selected_building_));
 }
 
 void Input::guard_selected() {

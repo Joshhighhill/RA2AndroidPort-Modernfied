@@ -225,8 +225,10 @@ void apply_mega(World& w, const Command& c, CommandHost* host) {
             // W7-02-10: an own firing garrison in the Whom takes the target.
             for (const Target& t : c.whom)
                 if (t.is_building() && bld_ok(w, t.id))
-                    (void)w.garrison_attack(H, t.id, c.target.is_unit() ? c.target.id : -1,
-                                            c.target.is_building() ? c.target.id : -1);
+                    (void)w.order_building_attack(H,t.id,c.target.is_unit()?c.target.id:-1,
+                        c.target.is_building()?c.target.id:-1,c.target.is_cell()?c.target.cell_x():-1,
+                        c.target.is_cell()?c.target.cell_y():-1,
+                        c.dest.is_cell() && c.dest.cell_x()==-1 && c.dest.cell_y()==-1);
             if (c.target.is_unit()) w.group_attack(H, ids, c.target.id);
             else if (c.target.is_building()) w.group_attack_building(H, ids, c.target.id);
             else if (c.target.is_cell()) w.group_attack_cell(H, ids, c.target.cell_x(), c.target.cell_y());
@@ -296,6 +298,7 @@ void apply_mega(World& w, const Command& c, CommandHost* host) {
             return;
         case Mission::Stop:
             w.group_stop(H, ids);
+            for(const auto& t:c.whom) if(t.is_building())w.stop_building_attack(H,t.id);
             return;
         default:
             return;   // missions the clone's UI never issues
@@ -377,6 +380,7 @@ void apply_command(World& w, const Command& c, CommandHost* host) {
             const std::vector<int> ids = unit_whom(w,c);
             w.mark_player_orders(ids);
             w.group_stop(H, ids);
+            for(const auto& t:c.whom)if(t.is_building())w.stop_building_attack(H,t.id);
             return;
         }
         case EventType::Scatter: {

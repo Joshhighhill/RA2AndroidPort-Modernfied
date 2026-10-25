@@ -175,6 +175,12 @@ struct Building {
     bool   selling        = false;  // [§B2] mission 0x13 (Selling) is running
     double sell_time      = 0.0;    // seconds elapsed in the MIRRORED buildup [§B2]
     int bunker_exit_left = -1; // lowering timer; -1 no player evacuation
+    // Explicit human/network attack order, independent of automatic acquisition.
+    int attack_order_kind = 0; // 0 none, 1 unit, 2 building, 3 ground cell
+    int attack_order_target = -1;
+    int attack_order_house = -1; // cancel if the structure changes hands
+    int attack_order_x = 0, attack_order_y = 0;
+    bool attack_order_force = false;
     bool   sold           = false;  // died via sell, not combat (suppresses the explosion)
     // --- P5 Veterancy + Crates [RE: veterancy.md V3/V6/C6] --- ALL inert:
     // vet_recv is set only by a vet-enabled World; killed_by is a plain stamp

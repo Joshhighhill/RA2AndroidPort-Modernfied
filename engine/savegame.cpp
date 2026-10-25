@@ -386,6 +386,12 @@ bool SaveAccess::valid_world(const World& w, std::string* why) {
         if (!unit_ix(b.killed_by) || !unit_ix(b.c4_by) || !unit_ix(b.bomb_owner) || !unit_ix(b.def_target))
             return bad(at + "unit reference");
         if (b.bomb_house < -1 || b.bomb_house >= kMaxHouses) return bad(at + "bomb house");
+        if(b.attack_order_kind<0 || b.attack_order_kind>3) return bad(at+"attack order kind");
+        if(b.attack_order_house < -1 || (b.attack_order_house>=0 && !house_ix(b.attack_order_house)))return bad(at+"attack order owner");
+        if((b.attack_order_kind==1 && (b.attack_order_target<0 || !unit_ix(b.attack_order_target))) ||
+           (b.attack_order_kind==2 && (b.attack_order_target<0 || !bld_ix(b.attack_order_target))) ||
+           (b.attack_order_kind==3 && (b.attack_order_x<0 || b.attack_order_y<0 || b.attack_order_x>=gw || b.attack_order_y>=gh)))
+            return bad(at+"attack order target");
         for (int o : b.occupants)   // W8-06-01 audit: the garrison list
             if (!unit_ix(o)) return bad(at + "occupant list");
     }

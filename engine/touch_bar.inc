@@ -55,6 +55,7 @@ bool touch_button_enabled(int id) const {
             (!world_.buildings()[b].occupants.empty() || world_.can_pack_slave_miner(b) || world_.can_pack_conyard(b));
     }
     if (id == TB_STOP || id == TB_GUARD || id == TB_SCATTER || id == TB_FIRE || id == TB_MOVE) {
+        if((id==TB_STOP || id==TB_FIRE) && world_.building_can_attack(input_.selected_building()))return true;
         for (int i : input_.selection().ids()) {
             if (i < 0 || i >= static_cast<int>(world_.units().size())) continue;
             const auto& u = world_.units()[i];

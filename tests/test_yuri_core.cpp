@@ -383,6 +383,21 @@ TEST_CASE("Yuri core: Tank Bunker accepts one eligible tank, fires and unloads w
     w.units()[1].w7.t.bunkerable=false;CHECK_FALSE(w.can_occupy(1,0));
     w.units()[1].w7.t.bunkerable=true;w.units()[1].house=1;CHECK_FALSE(w.can_occupy(1,0));
 }
+TEST_CASE("building force fire: Tank Bunker fires occupant weapon and capture cancels explicit target") {
+ Rig r;World w(r.map);BuildingTypeDef d;d.id="NATBNK";d.tank_bunker=true;
+ d.can_be_occupied=d.can_occupy_fire=true;d.max_occupants=1;d.fw=d.fh=2;d.strength=1000;d.rot=100;
+ w.set_building_types({d});w.add_building(0,8,8,2,2,0,1000,0,0,true);
+ auto tank=unit("LTNK");tank.is_vehicle=true;tank.w7.bunkerable=true;
+ tank.occupy_weapon.valid=true;tank.occupy_weapon.id="OwnTankGun";tank.occupy_weapon.damage=20;
+ tank.occupy_weapon.rof=10;tank.occupy_weapon.range=5;tank.occupy_weapon.verses.assign(11,100);
+ auto target=unit("TARGET");target.strength=1000;
+ w.add_combat_unit(7,8,0,tank);w.add_combat_unit(12,8,0,target);
+ REQUIRE(w.campaign_occupy_now(0,0));REQUIRE(w.order_building_attack(0,0,1,-1,-1,-1,true));
+ for(int i=0;i<30;++i)w.step(1.0/15);
+ CHECK(w.units()[1].hp<1000);bool fired=false;
+ for(const auto& e:w.take_fire_events())if(e.building==0){CHECK(e.weapon=="OwnTankGun");fired=true;}
+ CHECK(fired);w.buildings()[0].house=1;w.step(1.0/15);CHECK(w.buildings()[0].attack_order_kind==0);
+}
 TEST_CASE("Yuri core: a controlled tank retains its link inside a bunker and leaves on controller loss") {
     Rig r;World w(r.map);BuildingTypeDef b;b.id="NATBNK";b.tank_bunker=true;
     b.can_be_occupied=b.can_occupy_fire=true;b.max_occupants=1;b.strength=1000;
@@ -990,6 +1005,21 @@ TEST_CASE("ConYard original input: map move is emitted from a selected redeploya
  REQUIRE(commands.size()==1);CHECK(commands[0].mission==Mission::Move);
  REQUIRE(commands[0].whom.size()==1);CHECK(commands[0].whom[0].is_building());CHECK(commands[0].whom[0].id==0);
  w.set_mcv_redeploys(false);CHECK(input.action_at(30,435)==Input::Action::None);
+}
+TEST_CASE("building force fire input: selected defense emits a building actor and Stop cancels it") {
+ Rig r;World w(r.map);BuildingTypeDef d;d.id="GUN";d.armed=true;d.strength=500;
+ d.weapon[0].valid=true;d.weapon[0].damage=10;d.weapon[0].range=8;
+ w.set_building_types({d});w.add_building(0,8,8,1,1,0,500,0,0,true);
+ Camera cam;Input input(w,cam,1280,720);std::vector<Command> commands;
+ input.set_command_sink([&](Command c){commands.push_back(c);});
+ auto click=[&](int x,int y,unsigned time,bool force){InputEvent e;e.kind=InputEvent::PointerDown;e.button=InputEvent::Left;e.x=x;e.y=y;e.t_ms=time;e.ctrl=force;input.handle(e);e.kind=InputEvent::PointerUp;input.handle(e);};
+ click(30,255,1000,false);REQUIRE(input.selected_building()==0);
+ click(90,285,2000,true);REQUIRE(commands.size()==1);
+ CHECK(commands[0].mission==Mission::Attack);CHECK(commands[0].dest==Target::cell(-1,-1));
+ REQUIRE(commands[0].whom.size()==1);CHECK(commands[0].whom[0].is_building());
+ apply_command(w,commands[0]);CHECK(w.buildings()[0].attack_order_kind==3);
+ input.stop_selected();REQUIRE(commands.size()==2);apply_command(w,commands[1]);
+ CHECK(w.buildings()[0].attack_order_kind==0);
 }
 TEST_CASE("Tank Bunker: normal ordered drive finishes approach before attachment") {
  Rig r;World w(r.map);BuildingTypeDef d;d.id="NATBNK";d.tank_bunker=true;d.can_be_occupied=true;

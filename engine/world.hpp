@@ -2328,6 +2328,7 @@ public:
         int target_building = -1;
         int slot = 0;              // weapon slot fired (0 primary / 1 secondary)
         std::string weapon;        // weapon id when known (defenses), else ""
+        int cell_x = -1, cell_y = -1; // explicit ground-fire visual endpoint
     };
     std::vector<FireEvent> take_fire_events();
     // W7-12-07 [RE: BulletClass shrapnel FUN_0046a230 @0x46a7cc/0x46aca1 --
@@ -2483,6 +2484,10 @@ public:
     bool can_occupy(int unit_idx, int b_idx) const;          // BuildingClass::CanBeOccupiedBy
     bool garrison_red(const Building& b) const;              // W7-08-09: hp ratio <= ConditionRed
     bool garrison_attack(int issuer, int b_idx, int unit_target, int bld_target);   // W7-02-10
+    bool building_can_attack(int bi) const;
+    bool order_building_attack(int issuer, int bi, int unit, int building, int x, int y, bool force);
+    bool stop_building_attack(int issuer, int bi);
+    void step_ordered_building_fire(int bi, double dt);
     void order_occupy(int unit_idx, int b_idx);              // walk adjacent, then enter
     int group_occupy(int issuer, const std::vector<int>& ids, int b_idx);   // returns #ordered
     int group_occupy_count(int issuer, const std::vector<int>& ids, int b_idx) const;   // the same, dry run

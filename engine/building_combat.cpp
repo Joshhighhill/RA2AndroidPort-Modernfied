@@ -31,6 +31,141 @@ std::vector<World::FireEvent> World::take_fire_events() {
     return out;
 }
 
+bool World::building_can_attack(int bi) const {
+    if (bi<0 || bi>=int(buildings_.size())) return false;
+    const auto& b=buildings_[bi];
+    if (!b.alive || b.selling || b.state!=Building::State::Idle || b.type<0 || b.type>=int(btypes().size())) return false;
+    return btypes()[b.type].armed || garrison_firing(bi);
+}
+
+bool World::stop_building_attack(int issuer,int bi) {
+    if (bi<0 || bi>=int(buildings_.size()) || !can_command(issuer,buildings_[bi].house)) return false;
+    auto& b=buildings_[bi];b.attack_order_kind=0;b.attack_order_target=-1;b.attack_order_force=false;b.attack_order_house=-1;
+    b.def_target=b.garrison_target=b.w6.def_target_building=b.w7.garrison_target_building=-1;
+    return true;
+}
+
+bool World::order_building_attack(int issuer,int bi,int unit,int building,int x,int y,bool force) {
+    if (!building_can_attack(bi) || !can_command(issuer,buildings_[bi].house)) return false;
+    auto& b=buildings_[bi];const auto& t=btypes()[b.type];
+    // Keep the existing charged/support Prism pipeline intact until explicit
+    // object/ground charging has its own validated transition coverage.
+    if (t.w5.prism || t.w5.delayed_fire_delay>0) return false;
+    int kind=3,target=-1;
+    if(unit>=0) {
+        if(unit>=int(units_.size()) || !units_[unit].alive || !unit_combat_exposed(units_[unit]) ||
+           (!force && !is_enemy(b.house,units_[unit].house))) return false;
+        kind=1;target=unit;
+    } else if(building>=0) {
+        if(building>=int(buildings_.size()) || building==bi || !buildings_[building].alive ||
+           buildings_[building].state==Building::State::Dead || (!force && !is_enemy(b.house,buildings_[building].house))) return false;
+        kind=2;target=building;
+    } else if(!force || x<0 || y<0 || x>=grid_w_ || y>=grid_h_) return false;
+    if(t.mind_control && kind!=1) return false;
+    b.attack_order_kind=kind;b.attack_order_target=target;b.attack_order_x=x;b.attack_order_y=y;b.attack_order_force=force;b.attack_order_house=b.house;
+    return true;
+}
+
+void World::step_ordered_building_fire(int bi,double dt) {
+    auto& b=buildings_[bi];
+    if(!building_can_attack(bi) || b.attack_order_house!=b.house) {stop_building_attack(b.house,bi);return;}
+    const auto& t=btypes()[b.type];
+    const bool garrison=garrison_firing(bi);
+    b.def_fire_flash=std::max(0.0,b.def_fire_flash-dt);
+    int& reload=garrison?b.garrison_rearm_frames:b.def_rearm_frames;
+    if(reload>0)--reload;
+    b.def_offline=b.power_off || (t.powered && (b.w7.warp_unpowered || !w5_power_online(bi)));
+    if(b.def_offline)return;
+    int tu=-1,tb=-1,armor=0,tx=0,ty=0,tz=0;bool air=false;
+    double x=b.attack_order_x,y=b.attack_order_y;
+    if(b.attack_order_kind==1) {
+        tu=b.attack_order_target;
+        if(tu<0 || tu>=int(units_.size()) || !units_[tu].alive || units_[tu].die_time>=0 ||
+           !unit_combat_exposed(units_[tu])) {stop_building_attack(b.house,bi);return;}
+        const auto& v=units_[tu];
+        if((!b.attack_order_force && !is_enemy(b.house,v.house)) || unit_hidden_from(b.house,v) ||
+           !v.seen_by_house(b.house) || v.an.submerged || rocket_on_launcher(v)) return;
+        x=v.fx;y=v.fy;armor=v.armor_ix;air=unit_airborne(v);
+        tx=unit_lept_x(v);ty=unit_lept_y(v);tz=unit_lept_z(v);
+        if(t.mind_control && (playfield_.campaign || !psionic_target_ok(tu) || v.an.iron_left_frames>0 ||
+            v.w7.mc_controller>=0 || v.w7.mc_building>=0 || int(b.w7.mc_victims.size())>=std::max(1,t.weapon[0].damage)))return;
+    } else if(b.attack_order_kind==2) {
+        tb=b.attack_order_target;
+        if(tb<0 || tb>=int(buildings_.size()) || !buildings_[tb].alive || buildings_[tb].state==Building::State::Dead) {
+            stop_building_attack(b.house,bi);return;
+        }
+        const auto& v=buildings_[tb];
+        if((!b.attack_order_force && !is_enemy(b.house,v.house)) || !object_visible_at(b.house,v.cx,v.cy))return;
+        x=bcenter_x(v);y=bcenter_y(v);armor=v.armor_ix;
+        building_aim_lept(v,cell_level(v.cx,v.cy),tx,ty,tz);
+    } else {
+        if(x<0 || y<0 || x>=grid_w_ || y>=grid_h_) {stop_building_attack(b.house,bi);return;}
+        tx=ftol(x*kLept);ty=ftol(y*kLept);tz=cell_level(int(x),int(y))*104+deck_z(int(x),int(y));
+    }
+    Unit* occupant=nullptr;
+    WeaponSlot first,second;
+    if(garrison) {
+        if(b.firing_occupant<0 || b.firing_occupant>=int(b.occupants.size()))b.firing_occupant=0;
+        occupant=&units_[b.occupants[b.firing_occupant]];
+        const bool elite=occupant->vet.recv?is_elite(occupant->vet.veterancy):occupant->veteran_rank>=2;
+        first=elite && occupant->occupy_w_elite.valid?occupant->occupy_w_elite:occupant->occupy_w;
+        if(t.tank_bunker) {
+            if(occupant->house!=b.house)return;
+            if(occupant->gattling.enabled()) {occupant->gattling.step(true,elite);first=occupant->gattling.weapon(0,elite);second=occupant->gattling.weapon(1,elite);}
+            else second=secondary_view(*occupant);
+        }
+    } else {
+        if(t.gattling.enabled())b.gattling_charge=std::min(t.gattling.thresholds.back(),b.gattling_charge+t.gattling.rate_up);
+        first=defense_weapon(t,b,0);second=defense_weapon(t,b,1);
+    }
+    const int slot=choose_weapon(first,second,air,armor);
+    if(slot<0)return;
+    const WeaponSlot& weapon=slot==0?first:second;
+    Unit shooter=garrison?Unit{}:defense_shooter(bi,slot);
+    shooter.house=b.house;shooter.fx=bcenter_x(b);shooter.fy=bcenter_y(b);
+    shooter.w_range=garrison?(t.tank_bunker?weapon.range+t.bunker_range:garrison_range(bi)):weapon.range;
+    shooter.w_proj=weapon.proj;
+    int sx=0,sy=0,sz=0;building_aim_lept(b,cell_level(b.cx,b.cy),sx,sy,sz);
+    const double distance=om::sqrt(double(tx-sx)*(tx-sx)+double(ty-sy)*(ty-sy)+double(tz-sz)*(tz-sz));
+    if(distance<weapon.min_range*kLept || !weapon_in_range_from(*this,shooter,sx,sy,sz,tx,ty,tz,
+       tb>=0?(buildings_[tb].fw+buildings_[tb].fh)*64:0))return;
+    if(t.turret || (garrison && t.tank_bunker)) {
+        double& facing=occupant?occupant->turret_facing:b.def_turret_facing;
+        const double want=facing_u16_from_delta(x-shooter.fx,y-shooter.fy);
+        facing=turn_toward(facing,want,std::max(1,t.rot)*kRotU16PerRotPerSec*dt);
+        if(facing!=want)return;
+    }
+    if(reload>0)return;
+    b.def_target=tu;b.w6.def_target_building=tb;b.garrison_target=tu;b.w7.garrison_target_building=tb;
+    b.def_slot=slot;b.def_fire_flash=kFireFlashSecs;
+    if(garrison) {
+        const double mult=std::max(1.0,t.tank_bunker?t.bunker_rof:depth_rules_.occupy_rof_mult);
+        if(w7_rules_.armed) {
+            double frames=weapon.rof*house_rof_mul(b.house)+combat_rng_.random(0,2);
+            reload=ftol(frames/b.occupants.size()/mult);
+        } else {
+            int frames=weapon.rof/int(b.occupants.size());
+            if(mult>1)frames=ftol(frames/mult);
+            reload=rearm_frames_for(frames,&combat_rng_);
+        }
+    } else reload=burst_rearm_frames(b.w6.burst_index,weapon.burst,house_rof_frames(b.house,weapon.rof),&combat_rng_);
+    fire_events_.push_back({-1,bi,tu,tb,slot,weapon.id,b.attack_order_kind==3?int(x):-1,b.attack_order_kind==3?int(y):-1});
+    if(t.mind_control) {try_building_mind_control(bi,tu,slot);return;}
+    if(!garrison && projectiles_enabled_ && weapon.proj.flies()) {
+        launch_defense_projectile(bi,tu,slot,tb);return;
+    }
+    if(garrison) {
+        shooter.w_damage=ftol(weapon.damage*(t.tank_bunker?t.bunker_damage:depth_rules_.occupy_damage_mult));
+        shooter.w_verses=weapon.verses;shooter.w_cell_spread=weapon.cell_spread;
+        shooter.w_percent_at_max=weapon.percent_at_max;shooter.w_affects_allies=weapon.affects_allies;
+        shooter.w_inf_death=weapon.inf_death;shooter.w_prone_damage=weapon.prone_damage;
+        b.firing_occupant=(b.firing_occupant+1)%int(b.occupants.size());++garrison_shots_;
+    }
+    damage_area(*this,units_,buildings_,occ_,shooter,-1,bi,tx,ty,tz);
+    if(garrison && tu>=0 && units_[tu].die_time>=0 && units_[tu].vet.killed_by<0)
+        units_[tu].vet.killed_by=b.occupants[(b.firing_occupant+int(b.occupants.size())-1)%int(b.occupants.size())];
+}
+
 bool World::defense_power_ok(int house) const {
     // [RE: defenses.md §2] FUN_004555c0: Powered && drain > 0 && the house's
     // output/drain ratio (FUN_004fcc50) < 1.0 -> not operational. Same
@@ -68,13 +203,25 @@ Unit World::defense_shooter(int b_idx, int slot) const {
 void World::launch_defense_projectile(int b_idx, int target_unit, int slot, int target_building) {
     const Building& b = buildings_[b_idx];
     const ProjectileSpec& spec = defense_weapon(btypes()[b.type], b, slot).proj;
+    // Defense projectiles need the same art-defined muzzle as their flash.
+    // Keep ordinary mobile-vehicle launch code and its validated shells intact.
+    const double angle=b.def_turret_facing*(2.0*3.14159265358979323846/65536.0);
+    const double dx=om::sin(angle),dy=-om::cos(angle);
+    const int burst=std::max(1,defense_weapon(btypes()[b.type],b,slot).burst);
+    const int shot=(b.w6.burst_index+burst-1)%burst;
+    const double lateral=spec.flh[1]*(shot&1?-1.0:1.0);
+    const Vec3i muzzle{ftol(bcenter_x(b)*kLept+spec.flh[0]*dx+lateral*dy),
+        ftol(bcenter_y(b)*kLept+spec.flh[0]*dy-lateral*dx),
+        spec.flh[2]>0?spec.flh[2]:(spec.kind==ProjKind::Homing?100:0)};
     if (target_unit < 0) {   // W6-04-13: a structure target -- aim at its centre
-        if (target_building < 0 || target_building >= static_cast<int>(buildings_.size())) return;
-        const Building& o = buildings_[static_cast<std::size_t>(target_building)];
         int ox = 0, oy = 0, oz = 0;
-        building_aim_lept(o, cell_level(o.cx, o.cy), ox, oy, oz);
-        const int muzzle_z0 = spec.flh[2] > 0 ? spec.flh[2] : 0;
-        const Vec3i src0{ftol(bcenter_x(b) * kLept), ftol(bcenter_y(b) * kLept), muzzle_z0};
+        if(target_building>=0 && target_building<int(buildings_.size())) {
+            const Building& o=buildings_[target_building];
+            building_aim_lept(o,cell_level(o.cx,o.cy),ox,oy,oz);
+        } else if(b.attack_order_kind==3) {
+            ox=b.attack_order_x*256;oy=b.attack_order_y*256;
+        } else return;
+        const Vec3i src0=muzzle;
         const Vec3i tgt0{ox, oy, 0};
         const LaunchResult lr0 = compute_launch(spec, proj_rules_, src0, tgt0, proj_rng_);
         ProjectileEvent ev0;
@@ -113,8 +260,7 @@ void World::launch_defense_projectile(int b_idx, int target_unit, int slot, int 
     // W4: the muzzle height. [RE-FALLBACK: the building art PrimaryFireFLH is
     // not resolved for defence weapon slots; 100 = NASAM's H (90,50,100) --
     // a homing bullet launched at height 0 would fail its height < 1 test.]
-    const int muzzle_z = spec.flh[2] > 0 ? spec.flh[2] : (spec.kind == ProjKind::Homing ? 100 : 0);
-    const Vec3i src{ftol(bcenter_x(b) * kLept), ftol(bcenter_y(b) * kLept), muzzle_z};
+    const Vec3i src=muzzle;
     const Vec3i tgt{ftol(v.fx * kLept), ftol(v.fy * kLept),
                     unit_parachuting(v) ? (v.on_deck ? 416 : 0) + ftol(v.an.para_alt) :
                     (v.is_aircraft ? ftol(v.altitude) : (v.on_deck ? 416 : 0))};
@@ -169,6 +315,7 @@ void World::step_building_combat(double dt) {
         if (!b.alive || b.state != Building::State::Idle) continue;
         if (b.type < 0 || b.type >= static_cast<int>(types.size())) continue;
         const BuildingTypeDef& t = types[b.type];
+        if(b.attack_order_kind) {step_ordered_building_fire(bi,dt);continue;}
         if (!t.armed) continue;
 
         b.def_fire_flash = std::max(0.0, b.def_fire_flash - dt);
