@@ -55,6 +55,8 @@ static char* ra2_cli_pref_path() {
 #include "weapon_art.hpp"
 #include "projectile_presentation.hpp"
 ra2engine::ProjectilePresentation g_projectile_motion;
+#include "unit_presentation.hpp"
+ra2engine::UnitPresentation g_unit_motion;
 #include "shell_layout.hpp"
 #include "ra2assets/asset_trace.hpp"
 #if defined(__ANDROID__) && !defined(RA2_ANDROID_CLI)
@@ -3709,9 +3711,22 @@ void vxl_prewarm(const VehicleAssets& va, int key) {
     if (!slot) slot = std::move(built);
 }
 // W2-GA-12: the hull's ground shadow at facing bi (built once per type).
-const ra2engine::VoxelSprite* vxl_shadow(const VehicleAssets& va, int bi) {
+const ra2engine::VoxelSprite* vxl_shadow(const VehicleAssets& va, int bi,int ramp=0) {
     if (!va.vsrc) return nullptr;
     std::lock_guard<std::mutex> lk(g_vxl_mu);
+    if(ramp && bi>=0 && bi<ra2engine::kVehicleFacings) {
+        const std::string key="shadow:r"+std::to_string(ramp)+":"+std::to_string(bi);
+        if(const auto* found=va.animation_sprites.find(key))return found;
+        const auto& m=va.vsrc->hull;const auto& h=va.vsrc->hull_h;
+        const int si=va.shadow_index;
+        if(si>=0 && si<int(m.sections.size()) && !h.frames.empty() && si<int(h.frames[0].size())) {
+            auto one=m;one.sections={m.sections[si]};auto one_h=h;one_h.frames={{h.frames[0][si]}};
+            return &va.animation_sprites.insert(key,ra2engine::rasterize_shadow(one,one_h,
+                ra2engine::index_to_yaw(bi,ra2engine::kVehicleFacings),128,ramp));
+        }
+        return &va.animation_sprites.insert(key,ra2engine::rasterize_shadow(m,h,
+            ra2engine::index_to_yaw(bi,ra2engine::kVehicleFacings),128,ramp));
+    }
     if (!va.shadow) {
         auto v = std::make_shared<std::vector<ra2engine::VoxelSprite>>();
         // W7-12-44 [RE: 0x73A3A0 tail / 0x4144B0 -> FUN_004DAFE0(body,
@@ -3722,7 +3737,7 @@ const ra2engine::VoxelSprite* vxl_shadow(const VehicleAssets& va, int bi) {
         ra2assets::VxlModel one;
         ra2assets::HvaModel one_h;
         const int si = va.shadow_index;
-        if (si > 0 && si < static_cast<int>(m->sections.size()) && !h->frames.empty() &&
+        if (si >= 0 && si < static_cast<int>(m->sections.size()) && !h->frames.empty() &&
             si < static_cast<int>(h->frames[0].size())) {
             one = *m;
             one.sections = {m->sections[static_cast<std::size_t>(si)]};
@@ -3851,6 +3866,8 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
 
     const std::string img = va.combat.image+":asset"+std::to_string(va.render_key);
     const int bi = ra2engine::facing_to_index(u.body_facing, ra2engine::kVehicleFacings);
+    const int ramp=pres_unit_ramp(u);
+    const std::string shadow_key="vxlsh:"+img+":"+std::to_string(bi)+":r"+std::to_string(ramp);
 
     // CB-2 Aircraft [RE-GATE APPLIED: aircraft.md §3]: an airborne unit is drawn RAISED
     // by altitude_to_screen_dy, with a ground shadow at the un-raised cell.
@@ -3864,17 +3881,17 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
         : 0;
     if (u.an.t.no_shadow || g_sink_drop_px > 0) {   // W7-12-11: no shadow while sinking
         // W4: NoShadow=yes (V3ROCKET / DMISL) -- no ground shadow at all.
-    } else if (extra_dy > 0 && g_map_dressing && vxl_shadow(va, bi)) {
+    } else if (extra_dy > 0 && g_map_dressing && vxl_shadow(va, bi,ramp)) {
         // W5-PRES [RE: Shadow_Point 0x55A550 / AircraftClass::Draw 0x4144B0 /
         // FUN_00755680]: an airborne voxel casts its own silhouette straight
         // down on the ground, same size at any height (live game).
-        ra2engine::draw_voxel_sprite(ren, tc, "vxlsh:" + img + ":" + std::to_string(bi), *vxl_shadow(va, bi), u.fx,
+        ra2engine::draw_voxel_sprite(ren, tc, shadow_key, *vxl_shadow(va, bi,ramp), u.fx,
                                      u.fy, u.level, cam, W, H, 0);
     } else if (extra_dy > 0)
         ra2engine::draw_ground_shadow(ren, u.fx, u.fy, u.level,
                                       vxl_set(va, 0, u.house).sprites[bi].w, cam, W, H);
-    else if (const ra2engine::VoxelSprite* sh = vxl_shadow(va, bi))
-        ra2engine::draw_voxel_sprite(ren, tc, "vxlsh:" + img + ":" + std::to_string(bi), *sh, u.fx, u.fy,
+    else if (const ra2engine::VoxelSprite* sh = vxl_shadow(va, bi,ramp))
+        ra2engine::draw_voxel_sprite(ren, tc, shadow_key, *sh, u.fx, u.fy,
                                      u.level, cam, W, H, 0);   // W2-GA-12 ground shadow
 
     // W3-B: a multi-frame HVA (Night Hawk / Spy Plane rotors, Kirov
@@ -3889,7 +3906,6 @@ void draw_vehicle_unit(SDL_Renderer* ren, ra2engine::TextureCache& tc, const ra2
         return ra2engine::hva_animation_frame(clock,h.frames.size());
     };
     const int hf = part_frame(0), tf = part_frame(1), bf = part_frame(2);
-    const int ramp=pres_unit_ramp(u);
     auto part_sprite = [&](int part, int fi) -> const ra2engine::VoxelSprite& {
         const int frame=part_frame(part);
         if (frame == 0 && ramp==0) return vxl_set(va, part, u.house).sprites[fi];
@@ -4466,10 +4482,6 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // down the whole frame.
     auto draw_one_unit = [&](int idx, const ra2engine::Building* bunker = nullptr) {
         auto unit_cam=cam;
-        if(!bunker && !us[idx].is_aircraft && !us[idx].is_naval) {
-            const double drawn=us[idx].level+pres_unit_lift_levels(world,us[idx]);
-            unit_cam.y+=int(std::lround((drawn-pres_ground_level(world,us[idx]))*15.0));
-        }
         const auto& cam=unit_cam;
         const auto exiting=g_bunker_motion.find(idx);
         if (!bunker && exiting!=g_bunker_motion.end() && !exiting->second.entering &&
@@ -4484,15 +4496,25 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         // W5-PRES R-100: a unit on a high-bridge deck draws BridgeHeight up.
         std::optional<ra2engine::Unit> lifted;
         const ra2engine::Unit* up = &us[idx];
-        if (const int lv = pres_unit_lift_levels(world, *up)) {
+        if(!bunker && g_unit_motion.moving(idx,*up)) {
             lifted.emplace(*up);
+            g_unit_motion.apply(idx,*lifted,g_pres_render_fraction);
+            up=&*lifted;
+        }
+        if(!bunker && !up->is_aircraft && !up->is_naval) {
+            const double drawn=up->level+pres_unit_lift_levels(world,*up);
+            const double ground=g_unit_motion.ground_level(idx,us[idx],pres_ground_level(world,*up),g_pres_render_fraction);
+            unit_cam.y+=int(std::lround((drawn-ground)*15.0));
+        }
+        if (const int lv = pres_unit_lift_levels(world, *up)) {
+            if(!lifted) lifted.emplace(*up);
             lifted->level += lv;
             up = &*lifted;
         }
         if (bunker && us[idx].garrison_of>=0) {
             if (!lifted) lifted.emplace(*up);
-            lifted->fx=bunker->cx+(bunker->fw-1)/2.0;
-            lifted->fy=bunker->cy+(bunker->fh-1)/2.0;
+            lifted->fx=bunker->cx+bunker->fw/2;
+            lifted->fy=bunker->cy+bunker->fh/2;
             lifted->cell_x=bunker->cx;
             lifted->cell_y=bunker->cy;
             lifted->level=world.cell_level(bunker->cx,bunker->cy);
@@ -4692,7 +4714,11 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         // W5-PRES R-100/R-101: on-deck units sort after their deck; airborne
         // units leave the ground sort for the air layer (drawn below).
         for (int i : uorder)
-            if (!(g_map_dressing && pres_airborne(us[i]))) B.push_back({pres_unit_key(world, us[i]), 1, i});
+            if (!(g_map_dressing && pres_airborne(us[i]))) {
+                const auto xy=g_unit_motion.position(i,us[i],g_pres_render_fraction);
+                B.push_back({ra2engine::deck_unit_depth(xy[0],xy[1],us[i].cell_x,us[i].cell_y,
+                    pres_on_high_deck(world,us[i])),1,i});
+            }
         for (auto it = g_slave_miner_pack_fx.begin(); it != g_slave_miner_pack_fx.end();) {
             const SlaveMinerPackFx& fx = it->second;
             // A move/deploy/death supersedes this visual-only transition. Do

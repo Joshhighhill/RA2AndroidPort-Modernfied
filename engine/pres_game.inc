@@ -15,6 +15,7 @@ public:
         g_bunker_motion.clear();   // W2-GA-14 per-building anim state is per game
         speech_cooldown_.clear();
         g_projectile_motion.clear();
+        g_unit_motion.clear();
         g_pres_crushed.clear();  // W7-04-25
         g_pres_sinkers.clear();  // W7-12-11
         g_pres_tick = 0;        // W3-B: the logic-tick anim clock restarts per game
@@ -245,6 +246,7 @@ public:
     void logic_tick(const ra2engine::World& w, const BuildingAssets& ba, double player_credits,
                     const std::vector<ra2engine::ProjectileEvent>& pev) {
         g_projectile_motion.capture(w.projectiles(),pev);
+        g_unit_motion.capture_world(w);
         g_pres_tick = ++logic_;
         fx_.tick();
         pres_state_tick(w, fx_);   // W5-PRES R-120 chrono warp anims / sparkles
@@ -1189,7 +1191,7 @@ private:
                     if (!da.empty()) fx_.spawn_hold(da, b.cx - 0.5, b.cy - 0.5, building_level(w, b), b.house, own);
                 }
             }
-            if (b.selling && !p.selling && b.house == g_local_house) {
+            if (b.selling && !p.selling && b.house == g_local_house && !w.packing_conyard(static_cast<int>(i))) {
                 snd_.play_at(sell_sound_, cx, cy, "sell");
                 snd_.eva("EVA_StructureSold");
             }

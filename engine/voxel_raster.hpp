@@ -52,6 +52,6 @@ VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaMo
 // of the same yaw. [RE-FALLBACK: RE-Q9 open -- no light-direction offset;
 // 50 % Darken like the SHP shadows.]
 VoxelSprite rasterize_shadow(const ra2assets::VxlModel& m, const ra2assets::HvaModel& hva,
-                             double yaw_rad, int alpha);
+                             double yaw_rad, int alpha, int ramp = 0);
 
 }  // namespace ra2engine

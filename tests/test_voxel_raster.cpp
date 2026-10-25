@@ -157,6 +157,18 @@ TEST_CASE("voxel_raster: HVA animation changes the drawn anchor and wraps exactl
     CHECK(wrapped.rgba==first.rgba);
 }
 
+TEST_CASE("voxel shadow: terrain orientation changes silhouette without animating the shadow frame") {
+ auto model=single_voxel_model(100,0);model.sections[0].min_bounds[2]=20;model.sections[0].max_bounds[2]=21;
+ auto h=identity_hva();const auto flat=ra2engine::rasterize_shadow(model,h,0,128);
+ const auto explicit_flat=ra2engine::rasterize_shadow(model,h,0,128,0);
+ CHECK(flat.rgba==explicit_flat.rgba);CHECK(flat.anchor_x==explicit_flat.anchor_x);
+ const auto slope=ra2engine::rasterize_shadow(model,h,0,128,1);
+ CHECK(opaque_count(slope)>0);CHECK(slope.anchor_x!=flat.anchor_x);
+ h.frames.push_back(h.frames[0]);h.frames[1][0].transform[0][3]=99;h.frame_count=2;
+ const auto still=ra2engine::rasterize_shadow(model,h,0,128,1);
+ CHECK(still.rgba==slope.rgba);CHECK(still.anchor_x==slope.anchor_x);
+}
+
 TEST_CASE("voxel_raster: single voxel lands on the anchor") {
     auto spr = ra2engine::rasterize_model(single_voxel_model(100, 0), identity_hva(),
                                           0.0, identity_vpl(), gray_pal());

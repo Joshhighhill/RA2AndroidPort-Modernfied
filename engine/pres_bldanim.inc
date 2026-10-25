@@ -207,6 +207,14 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
         }
         if (r.tank_bunker) {
             const bool occupied = !b.occupants.empty();
+            if(b.bunker_exit_left>=0 && st.bunker_transition!=-1) {
+                for(int s=kBsSpecial;s<=kBsSpecial4;++s)stop(st,s);
+                start(st,a,kBsSpecial3,now);start(st,a,kBsSpecial4,now);
+                st.bunker_transition=-1;
+            }
+            const bool physical_departure=st.bunker_occupied && !occupied &&
+                st.bunker_unit>=0 && st.bunker_unit<int(w.units().size()) &&
+                w.units()[st.bunker_unit].bunker_exit_host==int(bi);
             if (!st.bunker_known) {
                 st.bunker_known = true;
                 st.bunker_occupied = occupied;
@@ -214,11 +222,15 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
                     start(st, a, kBsSpecial, now);
                     start(st, a, kBsSpecial2, now);
                 }
+            } else if (physical_departure) {
+                // The simulator now drives the real tank out. Do not replace
+                // it with the old straight-line ejection presentation.
+                st.bunker_occupied=false;
             } else if (occupied != st.bunker_occupied) {
                 const int ui = occupied ? b.occupants.front() : st.bunker_unit;
                 if(ui>=0 && ui<static_cast<int>(w.units().size())) {
                     const auto& u=w.units()[ui];
-                    const double cx=b.cx+(b.fw-1)/2.0, cy=b.cy+(b.fh-1)/2.0;
+                    const double cx=b.cx+b.fw/2, cy=b.cy+b.fh/2;
                     double from_x=occupied?u.fx:cx,from_y=occupied?u.fy:cy;
                     const auto previous=g_bunker_motion.find(ui);
                     if(previous!=g_bunker_motion.end() &&
@@ -269,7 +281,9 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
                 // rather than being restarted after a synthetic finite run.
                 st.bunker_transition=0;
             }
-            const bool clearing=std::any_of(g_bunker_motion.begin(),g_bunker_motion.end(),[&](const auto& item){
+            const bool physical_clearing=b.bunker_exit_left>=0 ||
+                (st.bunker_transition<0 && std::any_of(w.units().begin(),w.units().end(),[&](const auto& u){return u.bunker_exit_host==int(bi);}));
+            const bool clearing=physical_clearing || std::any_of(g_bunker_motion.begin(),g_bunker_motion.end(),[&](const auto& item){
                 return item.second.building==static_cast<int>(bi) && !item.second.entering &&
                     ra2engine::transition_active(item.second.start,item.second.duration,now);
             });

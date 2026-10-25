@@ -187,8 +187,9 @@ VoxelSprite rasterize_model(const ra2assets::VxlModel& m, const ra2assets::HvaMo
 }
 
 VoxelSprite rasterize_shadow(const ra2assets::VxlModel& m, const ra2assets::HvaModel& hva,
-                             double yaw_rad, int alpha) {
+                             double yaw_rad, int alpha, int ramp) {
     const double c = std::cos(yaw_rad), s = std::sin(yaw_rad);
+    const auto tilt=terrain_tilt(ramp);
     VoxelSprite out;
     if (m.sections.empty() || hva.frames.empty() || hva.frames[0].empty()) return out;
     // Collect the flattened projections first (bounds), then plot.
@@ -209,6 +210,8 @@ VoxelSprite rasterize_shadow(const ra2assets::VxlModel& m, const ra2assets::HvaM
                     const V3 local = {sec.min_bounds[0] + x * stepx, sec.min_bounds[1] + y * stepy,
                                       sec.min_bounds[2] + z * stepz};
                     V3 w = yaw_rotate(apply_xform(xf.transform, sec.scale, local), c, s);
+                    const auto tilted=tilt.apply(w.x,w.y,w.z);
+                    w.x=tilted[0];w.y=tilted[1];
                     w.z = 0.0;   // flattened onto the ground plane
                     double sx, sy, d;
                     project(w, sx, sy, d);
