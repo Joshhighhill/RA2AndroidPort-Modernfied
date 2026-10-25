@@ -9,6 +9,13 @@ be reopened in the launcher. Confirmation is not proof of purchase or legal
 clearance. Diagnostics remain local until you choose Share game report.
 Current test builds use Google Drive delivery; do not redistribute retail assets.
 
+Build 900042: correct Yuri Citadel wall asset, black-edged enemy-colour dashed
+sensor intent lines, combat idle/secondary animation correction, Floating Disc
+rim laser/air-target height and nuclear ascent trail. Full Disc drain abilities
+and Mental Omega gameplay are NOT implemented. See FIDELITY-AUDIT42.md and
+TOUCH-TEST42.txt for evidence, limitations and the read-only mod audit.
+Save schema remains 55; use identical builds on every network peer.
+
 Build 900041: Tank Bunker platform/composite depth correction, explicit defense
 FIRE/STOP orders, authentic Yuri flag/loading art, deployed-miner role alert,
 and defense-projectile muzzle alignment. See TOUCH-TEST41.txt and

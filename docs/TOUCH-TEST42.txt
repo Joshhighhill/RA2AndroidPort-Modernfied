@@ -1,0 +1,26 @@
+900042 phone acceptance — use a fresh skirmish for comparison.
+
+Build a new Yuri Citadel wall. It should use Yuri art, without the old pink
+placeholder. Check straight runs/corners, damage and other factions' walls.
+
+Psychic Sensor: send an enemy toward a destination inside its detection range.
+The intention line should have gaps, enemy-house colour and black edges.
+This change concerns the detected line, not the selected building's radius.
+
+Brute: attack infantry, vehicles and buildings. Each secondary attack should
+finish between real shots, without endlessly cycling independently of ROF.
+Check Boris still sustains his designator and units interrupt idle fidgets
+on combat/force-fire. Damage/cadence must remain consistent.
+
+Floating Disc: test ground and airborne targets, turning/retargeting and moving.
+Expect one rim-origin laser rather than several random spokes. Target height
+should match aircraft. Exact charging remains incomplete. Power/refinery drain
+is NOT implemented by this visual patch; do not expect those abilities fixed.
+
+Nuke: watch upward missile and configured ascent puffs, downward payload and
+impact. V3/Boomer: test actual launch, rocket/trail/path/impact and report the
+specific phase still missing. Full missile choreography is not claimed fixed.
+
+Preserve ordinary tank shells, Force Fire/Stop, MCV redeploy, bunker entry/exit,
+touch pinch/cameo controls and save/load. Share a report with description and
+timestamps. Mental Omega is not enabled or supported by this build.
