@@ -472,7 +472,9 @@ bool repath(StepEnv& e, Unit& u, int self, int mode) {
     if (np.size() > 1) {
         u.path = std::move(np);
         u.path_idx = 1;
-        if (mode==3) diag::note("TRAFFIC_RECOVERY unit=%d wait_s=%.2f goal=%d,%d path=%zu",self,u.wait_time,goal.x,goal.y,u.path.size());
+        if (mode==3) diag::note("TRAFFIC_RECOVERY unit=%d wait_s=%.2f goal=%d,%d path=%zu image=%s house=%d mission=%d cell=%d,%d deck=%d manager=%d next=%d,%d blocker=%d",
+            self,u.wait_time,goal.x,goal.y,u.path.size(),u.image.c_str(),u.house,u.tg.mission,u.cell_x,u.cell_y,u.on_deck,u.w7.slave_manager,
+            u.path[1].x,u.path[1].y,e.occ.at(u.path[1].x,u.path[1].y,u.on_deck));
         return true;
     }
     return mode == 0 && np.size() == 1;   // already at the goal: a route trivially exists
