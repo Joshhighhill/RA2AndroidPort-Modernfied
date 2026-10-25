@@ -48,10 +48,19 @@ Touch controls
 - Tap the only selected unit, then wait: deploy / unload it (or DEPLOY).
 - Drag with one or two fingers: scroll the map.
 - Spread or pinch two fingers on the battlefield to zoom in or out. The
-  viewport and sidebar scale together; zoom is bounded and lasts this game
+  battlefield zooms while the sidebar and command panel keep their size.
+  Zoom is bounded (0.75x to 1.75x) and lasts this game
   session. Lift both fingers before tapping an order. A pinch never becomes
   a deselect or movement tap. Sidebar and command-panel gestures keep their
   existing meaning. A screen resize resets zoom to the selected resolution.
+- Launcher theme opens eight saved appearance choices. The game artwork and
+  faction interface remain independent of this launcher preference.
+- Main-menu Quit returns to the portrait launcher. No phone-home step is
+  intended. Please report any remaining home-screen flash on your device.
+- With MCV Redeploy enabled in skirmish, select an eligible Construction Yard
+  and press UNDEPLOY. Blocked exits or a disabled option prevent this action.
+- Automatic deployment retries are quiet. Player-issued deployment failures
+  retain their normal feedback; this does not mute combat or urgent alerts.
 - Hold (a ring fills), then drag: draw a selection box. Or turn on BOX in
   the command column: then a one-finger drag draws the box at once.
 - Hold, then lift: cancel the armed mode (sell / repair / placement /

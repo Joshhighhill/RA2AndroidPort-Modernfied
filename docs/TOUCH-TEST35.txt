@@ -1,0 +1,164 @@
+Build 900035 - terrain/deck presentation, deployment, followers and Android UI
+25 October 2026
+Baseline c390e514613e659714566422bb895341786e8d81 (900034).
+
+Evidence and scope
+------------------
+Read current RA2YRINST.txt completely (modified 05:32:09 UTC) and the full
+existing PC Fidelity vs Gagarin report. Also read the appended log-triage
+instructions in RA2YRINST_LOG_UPDATE_UPLOAD_TMP.txt (05:41:11 UTC).
+Three build-900034 diagnostic ZIPs were downloaded and all text files scanned:
+1J9YaMowGs8hcRmdw2v_8d9uBc9wDMmvo (05:15:23 UTC),
+1OBhat_Gk1xsI9NMZ4bi-mSD1iy8XdtJp (05:33:32 UTC),
+1skZwmPzvQxbhUWWShCtcVZTUoNEUROc2 (06:17:04 UTC, newest).
+Member timestamps, full-file hashes, summaries and traffic CSV retained in
+local deliverables/RA2AndroidPort/reports/test35-review; no logs committed.
+Latest current log: 2941 lines, frame 2585, ENGINE NORMAL EXIT code=0.
+Earlier sessions: 8150 lines/frame18442/normal exit; 6651 lines/frame10032/no
+final native-exit record. No fatal/assert/signal marker in these logs. Binary
+exit traces are historical, not newly symbolicated or treated as new crashes.
+Descriptions are blank. Current/previous logs duplicate across archives;
+content hashes identify duplicates, not separate failure evidence.
+There are 22 distinct-session TRAFFIC_RECOVERY records, waits up to 4.87s.
+Unit4 in the 10032-frame session is LTNK; unit8 is INIT. Manager103 spawns
+workers53-57 at frame2223, then they follow packed manager58 (link -60).
+Unit54 has a 3.07s recovery at frame4594. IDs are reused later (53 becomes
+BRUTE), so type must be correlated by frame. Existing samples do not reveal
+every obstructing unit or exact next successful move; richer diagnostics added.
+The newest archive has no current-session traffic-recovery record. It does
+contain explicit unsupported SpyPlane/ForceShield/GeneticConverter/Psychic
+Dominator capability reports. Those powers remain real feature gaps, not
+merely missing effects. No claims that this build implements them.
+
+Implemented changes
+-------------------
+R-058 Construction Yards: existing touch panel and Deploy command now expose
+the existing sell-mission packing transition for permitted ConYards. All
+GACNST/NACNST/YACNST mappings checked; human owner, registered UndeploysInto,
+skirmish and MCVRedeploys must permit it. Occupied exit prevents starting.
+The existing reverse buildup, health ratio and queue/factory cleanup remain.
+This adds UNDEPLOY command access, not a new arbitrary move-to-pack rule.
+
+R-060: mobile Slave Miner workers choose reachable free neighbouring cells,
+with distinct worker goals, rather than the miner's occupied centre. Goals
+that become stale after manager movement can be refreshed at the existing
+30-frame stagger; prolonged blockage also allows re-routing. No teleport,
+worker deletion, unrestricted direct orders, extra resources or RNG changes.
+Deployment clearance also reconsiders friendly blockers stalled over 3s.
+Full follower pathing under every map/threat remains a device-test item.
+
+Deployment speech (explicit latest user request): automatic MCV/Slave Miner
+deploy attempts use quiet saved mission variants, suppressing CannotDeploy
+events both immediately and after a failed delayed arrival. Player Deploy
+orders retain failure feedback. AI automatic MCV production uses the quiet
+entry point too. Existing VoiceDeploy is queued from player input actions,
+not from automatic infantry deploy state changes. Selection voices, physical
+deployment sounds, combat effects and urgent announcements are not muted.
+Quiet missions survive format53 save/load. Use same-build multiplayer peers;
+old binaries do not understand the new automatic mission values.
+
+R-004/R-014/R-040/R-055 and latest bridge texture report: bridge tank sort
+depth is clamped after the deck of its occupied cell even when its continuous
+track position trails behind that cell. Previously the deck could overpaint
+part of its own on-deck vehicle. Legal ground segments interpolate display Z
+between effective source/destination heights; each bridge layer contributes
+its own +4. Vehicle/infantry body, shadows and selected-unit pips use the
+continuous height rather than an entire 15px cell-height jump. Simulation
+height/collision/projectiles unchanged. This is a targeted presentation fix,
+not proof that all bridge/slope textures or VXL tilt are now PC-perfect.
+Exact failing bridge map and original-PC visual comparison still needed.
+
+Pinch zoom: battlefield-only 0.75x..1.75x scale, with input coordinates and
+camera viewport remapped. Production sidebar, shortcut panel, menus and HUD
+keep their canvas size. World selection/placement/sensor/target overlays and
+beacons scale with the battlefield. Screen resize resets zoom. It does not
+change user-selected game resolution or simulation state. Selection tests
+at both zoom limits pass. Phone alignment, corner cases and feel still need
+device verification; no full graphical --play/emulator run was performed.
+
+Psychic Sensor boundary: selected active sensor now has brighter, two-pixel
+dashes instead of the previous solid purple ring. Detection radius, power,
+eligibility and enemy-house intent colors unchanged. Mobile readability
+enhancement, not a verified reproduction of every PC range-overlay detail.
+
+Android Quit: keep the launcher alive behind the game's separate task and
+bring it forward in finish(), before the native task disappears. Native
+process still ends only after SDL teardown. Intended to remove the reported
+home-screen flash; repeated quit/launch requires actual phone verification.
+Launcher appearance: eight persisted palettes, Command Center/Allied Blue/
+Soviet Red/Yuri Violet/Emerald/Desert Gold/Arctic/Midnight OLED. Theme selection
+is blocked during import. Existing Terms/importer/privacy/credits preserved.
+
+R-061 retail-backed audit: BSUB Prerequisite=YAYARD,RADAR and TechLevel=2.
+It does NOT require a Battle Lab. Regression verifies yard+radar availability,
+missing yard, hostile-owned radar and lost radar; no invented new requirement.
+Current common prerequisites_met code requires every token, accepts a member
+of a named group and checks ownership/liveness. This is a scoped Boomer audit,
+not a complete all-faction/prerequisite-override certification.
+
+R-063 traffic diagnostics: recovery records now include image, house, mission,
+source cell, bridge layer, slave-manager link, next step and blocker. Existing
+3s recovery cadence and global A* are not indiscriminately replaced. The
+follower fixes above are tested; broad 1-100 unit congestion parity stays open.
+
+Comparisons and remaining issues
+--------------------------------
+Gagarin pin aedf638cea5e96a3ee8be5151296f41936192e44, research only:
+match/movement/drive_locomotion.cpp: 0x4AFAA0 slope fraction and 0x4AF9B0
+matrix/SlopeTimer support continuous slope state; not a complete Android
+render fix. This fork's renderer corrections are independent, no GPL code.
+match/combat/slave_manager_class_wake_methods.cpp: ShouldWakeUpNow 0x6B1020
+is labelled retail byte-matched; owned idle manager and ore/scan gates. It is
+not the complete worker path planner. slave_manager_class_methods.cpp contains
+LostSlave 0x6B0A20 and AllGuard 0x6B0C80, separate from follower routing.
+match/map/map_class_update_pathfinding2_methods.cpp: 0x586990 rebuilds dirty
+cell subzones; it is not the full search algorithm. Source provenance was
+read; Gagarin's matching harness/retail binary was NOT executed here.
+Current original-PC evidence uses read-only retail rules/art and existing
+fork disassembly notes. No PC gameplay capture performed in this pass.
+
+R-059 Boomer surfacing/hull/missile timing remains open: current launcher uses
+a generic +0.2 cell second-spawn offset and fixed launch height40. Retail
+SecondaryFireFLH and SecondSpawnOffset need a properly serialized art-backed
+spawn profile, plus flight/surfacing tests. No invented hull animation added.
+R-062 Boomer passive land targeting remains open: current LandTargeting=2
+selects the secondary for legal land attacks. This alone does not prove that
+vanilla guard never acquires land targets. Need original mission/acquisition
+evidence; manual cruise attacks and naval torpedoes are preserved.
+Magnetron lift/pull/drop, Chaos Drone berserk, exact Disc/drain/rim rendering,
+Tank Bunker physical trajectory, full Gatling visual/audio PC parity and
+Chronosphere/SW lifecycle backlog remain open. No fake completion claims.
+
+Validation and delivery
+-----------------------
+1235 native cases, 267493 assertions passed, zero failures; one optional
+missing-retail landmark fixture excluded. Existing 2000-frame deterministic
+lockstep, save/load, normal shell projectiles, bridge collapse/repair and
+touch regressions pass. Six new cases cover quiet deploy/save continuation,
+all-faction ConYard command gates, follower continuation, ground/deck policy,
+retail Boomer prerequisites and scaled selection input. Android C++ syntax
+passes with the existing waypoint_cell override warning. Release APK build,
+signature/asset audit, checksum, source SHA and Drive readback recorded after
+packaging in BUILD_INFO.json and the same Google Doc. No physical POCO,
+thermal, Android emulator or instrumentation testing performed in this pass.
+
+Preserved Omar El Arab's original 0BSD engine license, Bryle13 credit,
+third-party notices, EA non-affiliation and game-file ownership confirmation.
+No retail assets, GPL source, executable or signing secret committed/bundled.
+Existing org.ra2.engine and signer preserved; save format53. Changes made
+only in the requested native fork, not StillM8 or synced sources. Delivery
+Google Drive only as RA2YRPORT.apk, never GitHub Releases or another host.
+
+Phone acceptance checklist
+--------------------------
+Install over existing app; keep save backups. Start a fresh skirmish.
+Test each faction yard with MCV Redeploy ON/OFF, blocked exits and captured
+yards. Test miner auto retries silently, then a manually blocked Deploy
+with audible feedback. Move packed miners around obstacles and watch all
+workers follow/redeploy without pileups. Cross the failing bridge both ways
+and stop on it; compare slope contact, deck overpaint and shadows. Test
+pinch with the production sidebar open, cameo hold/pause/cancel, box select,
+placement and superweapon confirmations at both zoom limits. Check all eight
+launcher palettes persist after Quit/relaunch and main-menu Quit returns
+directly to launcher without a home flash. Share a report naming map/unit/
+action and whether the issue persists; diagnostics cannot prove visual parity.
