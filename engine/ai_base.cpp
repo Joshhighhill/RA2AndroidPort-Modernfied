@@ -128,6 +128,7 @@ bool prereqs_in_plan(int type, const std::vector<PlannedNode>& plan,
         else if (tok == "FACTORY") want = cat.war_factory;
         else if (tok == "BARRACKS") want = cat.barracks;
         else if (tok == "RADAR") want = cat.radar;
+        else if (tok == "TECH") want = cat.tech;
         else if (tok == "PROC") want = cat.refinery;
         bool met = false;
         for (const PlannedNode& n : plan) {

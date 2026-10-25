@@ -11,6 +11,7 @@
 #include "psychic_sensor.hpp"
 #include "presentation_policy.hpp"
 #include "weapon_art.hpp"
+#include "ai_base.hpp"
 #include "projectile_presentation.hpp"
 #include "building_transition.hpp"
 #include "faction_support.hpp"
@@ -796,4 +797,16 @@ TEST_CASE("Slave Miner move command: owner packs and drives; enemy cannot conver
     CHECK(w.units()[index].path.back().x==14);CHECK(w.units()[index].path.back().y==14);
     for(int t=0;t<180;++t){w.step(1.0/15.0);restored.step(1.0/15.0);}
     CHECK(save::save_world(w)==save::save_world(restored));
+}
+
+TEST_CASE("AI plan: TECH group recognizes the existing side-specific tech laboratory") {
+    std::vector<BuildingTypeDef> defs(5);defs[0].id="YACNST";defs[1].id="YAPOWR";
+    defs[2].id="YATECH";defs[3].id="SPECIAL";defs[3].prerequisite={"TECH"};
+    defs[4].id="YABRCK";
+    AiCatalog cat;cat.conyard=0;cat.power=1;cat.tech=2;cat.barracks=4;cat.defenses={3};
+    AiRules rules;rules.extra_refineries=0;DifficultyMods mods;mods.defense_target=1;
+    std::uint32_t rng=123;
+    const auto plan=build_base_plan(BaseView{},cat,defs,rules,mods,&rng);
+    int tech=-1,special=-1;for(int i=0;i<int(plan.size());++i){if(plan[i].type==2)tech=i;if(plan[i].type==3)special=i;}
+    REQUIRE(tech>=0);REQUIRE(special>=0);CHECK(tech<special);
 }
