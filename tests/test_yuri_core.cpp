@@ -22,6 +22,7 @@
 #include "selection.hpp"
 #include "input.hpp"
 #include "slave_passage.hpp"
+#include "unit_presentation.hpp"
 #include <fstream>
 #include <iterator>
 using namespace ra2engine;
@@ -118,6 +119,8 @@ TEST_CASE("Tank Bunker: drive state is reset on attachment and ejection without 
     CHECK(w.units()[0].loco.trk==-1);CHECK(w.units()[0].loco.accum==0);
     CHECK(w.units()[0].wait_time==0);CHECK(w.units()[0].loco.t.accel_factor==doctest::Approx(0.07));
     poison();w.unload_occupants(0);
+    CHECK(w.buildings()[0].bunker_exit_left==18);
+    w.buildings()[0].bunker_exit_left=0;w.unload_occupants(0);
     CHECK(w.units()[0].garrison_of==-1);CHECK(w.units()[0].loco.trk==-1);
     CHECK(w.units()[0].loco.path_delay==0);CHECK(w.units()[0].wait_time==0);
     World restored(map);REQUIRE(save::load_world(restored,save::save_world(w)));
@@ -357,7 +360,9 @@ TEST_CASE("Yuri core: Tank Bunker accepts one eligible tank, fires and unloads w
     CHECK(w.units()[2].hp==74);CHECK(w.garrison_range(0)==7);
     const auto state=save::save_world(w);World loaded(r.map);REQUIRE(save::load_world(loaded,state));
     CHECK(loaded.units()[0].garrison_of==0);CHECK(loaded.btypes()[0].tank_bunker);
-    w.unload_occupants(0);CHECK(w.units()[0].cargo_of<0);CHECK(w.units()[0].alive);CHECK(w.buildings()[0].house==0);
+    w.unload_occupants(0);CHECK(w.units()[0].cargo_of==kGarrisonCargo);
+    for(int n=0;n<18;++n)w.step(1.0/15.0);
+    CHECK(w.units()[0].cargo_of<0);CHECK(w.units()[0].alive);CHECK(w.buildings()[0].house==0);
     w.units()[1].w7.t.bunkerable=false;CHECK_FALSE(w.can_occupy(1,0));
     w.units()[1].w7.t.bunkerable=true;w.units()[1].house=1;CHECK_FALSE(w.can_occupy(1,0));
 }
@@ -456,7 +461,10 @@ TEST_CASE("Yuri core: mobile miner seeks ore and explicit Stop persists through 
     w.add_combat_unit(2,2,0,miner);
     w.ore().set(17,17,OreKind::Ore,5,0);
     w.step_yuri_workers();
-    REQUIRE(w.units()[0].moving());CHECK(w.units()[0].path.back().x==17);
+    REQUIRE(w.units()[0].moving());
+    CHECK(std::abs(w.units()[0].path.back().x-17)<=2);
+    CHECK(w.can_deploy_at(0,w.units()[0].path.back().x,w.units()[0].path.back().y));
+    CHECK(w.units()[0].deploy_mission==4);
     w.order_stop(0);CHECK(w.units()[0].manual_hold);
     w.step_yuri_workers();CHECK_FALSE(w.units()[0].moving());
     World restored(r.map);REQUIRE(save::load_world(restored,save::save_world(w)));
@@ -928,6 +936,7 @@ TEST_CASE("ConYard move-to-pack: saved reverse buildup retains faction destinati
   w.add_building(0,8,8,4,4,0,1000,0,0,true);w.buildings()[0].buildup_total=1;
   auto c=make_mega(w,{},Mission::Move,Target{},Target::cell(14,14));c.house=0;c.whom.push_back(Target::building(0));apply_command(w,c);
   CHECK(w.buildings()[0].selling);World loaded(r.map);REQUIRE(save::load_world(loaded,save::save_world(w)));
+  CHECK(w.packing_conyard(0));CHECK(loaded.packing_conyard(0));
   for(int tick=0;tick<150;++tick){w.step(1.0/15.0);loaded.step(1.0/15.0);}
   REQUIRE(w.units().size()==1);CHECK(w.buildings()[0].state==Building::State::Dead);
   CHECK(w.units()[0].cell_x==14);CHECK(w.units()[0].cell_y==14);
@@ -1047,4 +1056,56 @@ TEST_CASE("Tank Bunker automation: drive into foundation then align before attac
  for(int tick=0;tick<400;++tick){w.step(1.0/15.0);copy.step(1.0/15.0);if(w.units()[0].garrison_of==0)break;}
  REQUIRE(w.units()[0].garrison_of==0);CHECK(w.units()[0].cell_x==9);CHECK(w.units()[0].cell_y==9);
  CHECK(w.units()[0].body_facing==bunker_horizontal_facing(w.units()[0].body_facing));CHECK(save::save_world(w)==save::save_world(copy));}
+}
+
+TEST_CASE("Tank Bunker automation: lower first then physically path out with deterministic save") {
+ Rig r;World w(r.map);BuildingTypeDef d;d.id="NATBNK";d.tank_bunker=true;d.can_be_occupied=true;
+ d.max_occupants=1;d.fw=d.fh=2;d.strength=1000;w.set_building_types({d});w.add_building(0,8,8,2,2,0,1000,0,0,true);
+ auto t=unit("LTNK");t.is_vehicle=true;t.rot=8;t.w7.bunkerable=true;w.add_combat_unit(4,9,0,t);
+ w.order_occupy(0,0);for(int n=0;n<400 && w.units()[0].garrison_of<0;++n)w.step(1.0/15.0);
+ REQUIRE(w.units()[0].garrison_of==0);w.unload_occupants(0);
+ for(int n=0;n<17;++n){w.step(1.0/15.0);CHECK(w.units()[0].garrison_of==0);}
+ World copy(r.map);REQUIRE(save::load_world(copy,save::save_world(w)));
+ w.step(1.0/15.0);copy.step(1.0/15.0);
+ REQUIRE(w.units()[0].garrison_of==-1);CHECK(w.units()[0].fx==9);CHECK(w.units()[0].fy==9);
+ REQUIRE(w.units()[0].moving());CHECK(w.units()[0].bunker_exit_host==0);
+ double px=9,py=9;bool moved=false;
+ for(int n=0;n<200;++n){w.step(1.0/15.0);copy.step(1.0/15.0);const auto& u=w.units()[0];
+   CHECK(std::hypot(u.fx-px,u.fy-py)<0.6);moved=moved || u.fx!=px || u.fy!=py;px=u.fx;py=u.fy;
+   CHECK(save::save_world(w)==save::save_world(copy));if(!u.moving())break;}
+ CHECK(moved);CHECK(w.units()[0].bunker_exit_host==-1);CHECK(w.units()[0].alive);
+}
+
+TEST_CASE("Unit presentation: interpolate display rates without changing simulation or teleport boundaries") {
+ Rig r;World w(r.map);auto c=unit("LTNK");c.is_vehicle=true;w.add_combat_unit(4,4,0,c);
+ UnitPresentation motion;motion.capture(w.units());w.units()[0].fx=4.5;w.units()[0].body_facing=65000;
+ motion.capture(w.units());const auto saved=save::save_world(w);
+ for(int hz:{30,60,120})for(int k=0;k<=hz;++k){auto draw=w.units()[0];motion.apply(0,draw,double(k)/hz);
+   CHECK(draw.fx==doctest::Approx(4+0.5*k/hz));CHECK(save::save_world(w)==saved);}
+ w.units()[0].fx=15;motion.capture(w.units());auto draw=w.units()[0];motion.apply(0,draw,0);CHECK(draw.fx==15);
+ w.units()[0].fx=15.2;w.units()[0].cargo_of=kGarrisonCargo;motion.capture(w.units());draw=w.units()[0];
+ motion.apply(0,draw,0);CHECK(draw.fx==15.2);motion.clear();draw.fx=20;motion.apply(0,draw,0);CHECK(draw.fx==20);
+}
+
+TEST_CASE("Slave Miner: planned legal ore site drives and deploys quietly across save load") {
+ Rig r;World w(r.map);BuildingTypeDef d;d.id="YAREFN";d.fw=d.fh=2;d.strength=500;d.slave_count=2;
+ d.slave_combat=unit("SLAV");w.set_economy({d},{0},OreValues{},1000,0,0);
+ auto miner=unit("SMIN");miner.is_vehicle=true;miner.rot=8;miner.deploys_into="YAREFN";
+ w.set_undeploy_unit(0,miner);w.add_combat_unit(2,2,0,miner);w.ore().set(17,17,OreKind::Ore,5,0);
+ w.step_yuri_workers();REQUIRE(w.units()[0].deploy_mission==4);
+ World copy(r.map);REQUIRE(save::load_world(copy,save::save_world(w)));
+ for(int n=0;n<900 && w.buildings().empty();++n){w.step(1.0/15.0);copy.step(1.0/15.0);}
+ REQUIRE_FALSE(w.buildings().empty());CHECK(w.buildings()[0].alive);
+ CHECK(w.buildings()[0].cx>=15);CHECK(w.buildings()[0].cy>=15);
+ CHECK(save::save_world(w)==save::save_world(copy));
+ for(const auto& e:w.take_deploy_events())CHECK(e.kind!=World::DeployEvent::Kind::CannotDeploy);
+}
+
+TEST_CASE("Traffic yield: blocked walking units accept forced clearance but retain player scatter rules") {
+ Rig r;World w(r.map);auto c=unit("BRUTE");c.is_infantry=true;w.add_combat_unit(8,8,0,c);
+ w.order_unit_move(0,15,8);REQUIRE(w.units()[0].moving());w.units()[0].wait_time=4;
+ w.order_scatter(0);CHECK(w.units()[0].path.back().x==15);
+ w.order_scatter(0,true);REQUIRE(w.units()[0].moving());
+ CHECK((w.units()[0].path.back().x!=15 || w.units()[0].path.back().y!=8));
+ CHECK(std::max(std::abs(w.units()[0].path.back().x-8),std::abs(w.units()[0].path.back().y-8))==1);
 }

@@ -247,11 +247,31 @@ void World::step_yuri_workers(bool relocate) {
         int x=0,y=0;
         if (!find_reachable_ore(ore_,passable_,grid_w_,grid_h_,occ_,i,miner.cell_x,miner.cell_y,
             48,miner.harv_skip_x,miner.harv_skip_y,x,y)) continue;
-        if (std::max(std::abs(x-miner.cell_x),std::abs(y-miner.cell_y))<=2) {
+        if (std::max(std::abs(x-miner.cell_x),std::abs(y-miner.cell_y))<=2 &&
+            can_deploy_at(i,miner.cell_x,miner.cell_y)) {
             const bool deployed=order_deploy_mcv_auto(i);
             diag::note("MINER auto-deploy unit=%d ore=%d,%d accepted=%d",i,x,y,deployed);
         } else {
-            order_unit_move(i,x,y);
+            // Route to a legal deployment footprint, not merely to ore which
+            // may border a cliff/building. Test near-field sites in stable
+            // travel-distance order; the normal pathfinder rejects pockets.
+            std::vector<Cellxy> sites;
+            for(int dy=-2;dy<=2;++dy)for(int dx=-2;dx<=2;++dx)
+                if(can_deploy_at(i,x+dx,y+dy))sites.push_back({x+dx,y+dy});
+            std::stable_sort(sites.begin(),sites.end(),[&](Cellxy a,Cellxy b){
+                auto cost=[&](Cellxy p){return std::max(std::abs(p.x-miner.cell_x),std::abs(p.y-miner.cell_y))*8+
+                    std::max(std::abs(p.x-x),std::abs(p.y-y));};
+                return cost(a)<cost(b);
+            });
+            for(const auto& site:sites) {
+                order_unit_move(i,site.x,site.y);
+                if(miner.moving()) {
+                    miner.deploy_goal_x=site.x;miner.deploy_goal_y=site.y;
+                    miner.deploy_mission=4; // saved quiet walk-then-deploy
+                    deploy_any_=true;
+                    break;
+                }
+            }
             if (!miner.moving()) {miner.harv_skip_x=x;miner.harv_skip_y=y;}
             else {miner.harv_skip_x=miner.harv_skip_y=-1;}
             diag::note("MINER ore-route unit=%d ore=%d,%d moving=%d",i,x,y,miner.moving());

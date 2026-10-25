@@ -273,7 +273,7 @@ struct StepEnv {
         if (terrain && terrain->gates && u.movement_domain != MovementDomain::Water && u.house >= 0 &&
             u.house < static_cast<int>(terrain->gates->size()) && !(*terrain->gates)[(std::size_t)u.house].empty())
             t.open_cells = &(*terrain->gates)[(std::size_t)u.house];
-        if(sc.world && (u.occupy_target>=0 || slave_passage_building(u,sc.world->buildings(),sc.world->btypes()))) {
+        if(sc.world && (u.occupy_target>=0 || u.bunker_exit_host>=0 || slave_passage_building(u,sc.world->buildings(),sc.world->btypes()))) {
             passage_cells=t.open_cells?*t.open_cells:std::vector<int>{};
             append_slave_passage(u,sc.world->buildings(),sc.world->btypes(),w,h,passage_cells);
             t.open_cells=&passage_cells;
@@ -542,7 +542,11 @@ void on_blocked(StepEnv& e, Unit& u, int self, Cellxy bc, bool cliff, int layer)
         if (o >= static_cast<int>(e.units.size())) o = Occupancy::kEmpty;
     }
     const Cellxy goal = u.path.empty() ? Cellxy{u.cell_x, u.cell_y} : u.path.back();
-    if (o>=0 && u.wait_time>=3.0 && L.path_delay<=0.0 && repath(e,u,self,3)) {
+    if(diag::state().enabled.load() && o>=0 && u.wait_time>=3.0 && (u.wait_time-e.dt<3.0 || diag::state().frame.load()%150==0))
+        diag::note("TRAFFIC_BLOCK unit=%d image=%s wait_s=%.2f cell=%d,%d next=%d,%d goal=%d,%d layer=%d blocker=%d blocker_image=%s blocker_moving=%d blocker_wait=%.2f allied=%d",
+            self,u.image.c_str(),u.wait_time,u.cell_x,u.cell_y,bc.x,bc.y,goal.x,goal.y,LB,o,
+            e.units[o].image.c_str(),e.units[o].moving(),e.units[o].wait_time,e.allied(u.house,e.units[o].house));
+    if (o>=0 && (!e.sc.scatter_out || !e.allied(u.house,e.units[o].house)) && u.wait_time>=3.0 && L.path_delay<=0.0 && repath(e,u,self,3)) {
         L.path_delay=lr.path_delay_frames;
         return;
     }
@@ -617,7 +621,7 @@ void on_blocked(StepEnv& e, Unit& u, int self, Cellxy bc, bool cliff, int layer)
                 // World::incoming_scatters when the W7 rules are armed)
                 // (w7r2 [RE: FUN_00742880]: a vehicle held up on its own
                 // route -- not under way -- is pushed too; order_scatter)
-                const bool parked = !ov.moving() || (ov.is_vehicle && !under_way(ov));
+                const bool parked = !ov.moving() || (!under_way(ov) && (ov.is_vehicle || v>self));
                 if (live_on_map(ov) && parked && e.allied(u.house, ov.house) && ov.target < 0 &&
                     ov.target_building < 0 && ov.attack_cell_x < 0 && ov.enter_target < 0 &&
                     (!e.sc.world || !e.sc.world->combat_w7().armed ||
@@ -626,7 +630,9 @@ void on_blocked(StepEnv& e, Unit& u, int self, Cellxy bc, bool cliff, int layer)
             }
         }
         ++L.temp_tries;
-        repath(e, u, self, 1);
+        // Queue the friendly scatter first; keep strict recovery available if
+        // there is no space to yield. Neither action should starve the other.
+        if(u.wait_time<3.0 || !repath(e,u,self,3))repath(e,u,self,1);
         return;
     }
     // An enemy in the way (Destroyable): re-plan on the PathDelay cadence.

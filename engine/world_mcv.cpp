@@ -302,6 +302,12 @@ bool World::can_pack_conyard(int bi) const {
     const int x=b.cx+(b.fw>2 || b.fh>2),y=b.cy+(b.fw>2 || b.fh>2);
     return occ_.is_free(x,y);
 }
+bool World::packing_conyard(int bi) const {
+    if(!skirmish_session_ || !mcv_redeploys_ || bi<0 || bi>=int(buildings_.size()))return false;
+    const auto& b=buildings_[bi];
+    return b.selling && !ai_enabled(b.house) && b.type>=0 && b.type<int(btypes().size()) &&
+        btypes()[b.type].conyard && std::find(undeploy_types_.begin(),undeploy_types_.end(),b.type)!=undeploy_types_.end();
+}
 bool World::order_pack_conyard(int bi,int house) {
     return can_pack_conyard(bi) && buildings_[bi].house==house && begin_sell(bi,house);
 }

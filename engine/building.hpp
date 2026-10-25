@@ -174,6 +174,7 @@ struct Building {
     bool   has_been_captured = false;
     bool   selling        = false;  // [§B2] mission 0x13 (Selling) is running
     double sell_time      = 0.0;    // seconds elapsed in the MIRRORED buildup [§B2]
+    int bunker_exit_left = -1; // lowering timer; -1 no player evacuation
     bool   sold           = false;  // died via sell, not combat (suppresses the explosion)
     // --- P5 Veterancy + Crates [RE: veterancy.md V3/V6/C6] --- ALL inert:
     // vet_recv is set only by a vet-enabled World; killed_by is a plain stamp

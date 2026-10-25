@@ -78,6 +78,7 @@ bool World::can_occupy(int ui, int bi) const {
     if (!t.can_be_occupied) return false;
     if (t.tank_bunker) {
         if (!u.is_vehicle || !u.w7.t.bunkerable || b.house != u.house) return false;
+        if(b.bunker_exit_left>=0 || std::any_of(units_.begin(),units_.end(),[&](const Unit& v){return v.alive && v.bunker_exit_host==bi;}))return false;
     } else if (!u.occupier || u.is_vehicle) return false;
     const bool owner_ok = b.house == u.house || !house_combatant(b.house) || passive_house(b.house);
     // W7-08-09 [RE: CanBeOccupiedBy FUN_00457CE0]: no entry at or below
@@ -243,6 +244,12 @@ void World::unload_occupants(int bi, bool place_inside) {
     diag::note("GARRISON unload-request building=%d house=%d occupants=%zu inside=%d",bi,b.house,b.occupants.size(),place_inside);
     const int x0 = b.cx, y0 = b.cy, w = b.fw, h = b.fh;
     const int lead = b.occupants.front();
+    const bool physical_exit=btypes()[b.type].tank_bunker && b.alive &&
+        b.state==Building::State::Idle && !b.selling && !place_inside && units_[lead].house==b.house;
+    if(physical_exit && b.bunker_exit_left!=0) {
+        if(b.bunker_exit_left<0)b.bunker_exit_left=18; // retail reverse hull: 9 frames at delay 2
+        return;
+    }
     PathTerrain pterr;
     std::vector<int> pgates;
     const PathTerrain* ptp = terrain_for(units_[static_cast<std::size_t>(lead)], pterr, pgates);
@@ -265,7 +272,17 @@ void World::unload_occupants(int bi, bool place_inside) {
     int exit_layer = 0;
     for (const Cellxy& c : ring) {
         const int l = enter(lead, x0, y0, 0, c.x, c.y);
-        if (l >= 0) { exit = c; exit_layer = l; break; }
+        if (l >= 0) {
+            if(physical_exit) {
+                Unit probe=units_[lead];probe.cargo_of=-1;probe.garrison_of=-1;probe.bunker_exit_host=bi;
+                PathTerrain route_terrain;std::vector<int> openings;
+                const auto* terrain=terrain_for(probe,route_terrain,openings);
+                const auto route=find_path_bounded_t(grid_for(probe.movement_domain),grid_w_,grid_h_,
+                    {b.cx+b.fw/2,b.cy+b.fh/2},c,2048,nullptr,terrain);
+                if(route.size()<2)continue;
+            }
+            exit = c; exit_layer = l; break;
+        }
     }
     const int house = b.house;
     // A blocked player unload keeps a tank safely inside its bunker.
@@ -304,6 +321,15 @@ void World::unload_occupants(int bi, bool place_inside) {
         if (map_) if (const ra2assets::MapCell* mc = map_->at(c.x, c.y)) u.level = mc->level;
         occ_.set(c.x, c.y, ui);
     };
+    if(physical_exit && exit.x>=0) {
+        const int ui=lead;
+        b.occupants.clear();b.bunker_exit_left=-1;
+        auto& u=units_[ui];u.garrison_of=-1;u.cargo_of=-1;u.bunker_exit_host=bi;
+        put(ui,{b.cx+b.fw/2,b.cy+b.fh/2},0);
+        order_unit_move(ui,exit.x,exit.y);
+        garrison_events_.push_back({GarrisonEvent::Unloaded,bi,house});
+        return;
+    }
     // The unlimbo loop runs from the LAST occupant down (0x458088: index
     // count-1 .. 0).
     for (auto it = occ_list.rbegin(); it != occ_list.rend(); ++it) {
@@ -335,6 +361,7 @@ void World::unload_occupants(int bi, bool place_inside) {
         put(ui, got, got_layer);
     }
     garrison_events_.push_back({GarrisonEvent::Unloaded, bi, house});
+    b.bunker_exit_left=-1;
     sync_garrison_owner(bi);
     diag::note("GARRISON unloaded building=%d owner=%d count=%zu exit=%d,%d",bi,b.house,occ_list.size(),exit.x,exit.y);
 }
@@ -1010,6 +1037,21 @@ void World::step_depth(double dt) {
         w6_overlay_wall_hit(x, y, u.w6.wall_flags, u.w_damage);
     }
     if (!garrison_any_) return;
+    for(int ui=0;ui<int(units_.size());++ui) {
+        auto& u=units_[ui];const int host=u.bunker_exit_host;
+        if(host<0)continue;
+        if(!u.alive || u.die_time>=0 || u.cargo_of>=0 || host>=int(buildings_.size()) ||
+           !buildings_[host].alive || u.house!=buildings_[host].house) {u.bunker_exit_host=-1;continue;}
+        const auto& b=buildings_[host];
+        if(u.fx<b.cx-0.5 || u.fy<b.cy-0.5 || u.fx>b.cx+b.fw-0.5 || u.fy>b.cy+b.fh-0.5)
+            u.bunker_exit_host=-1;
+    }
+    for(int bi=0;bi<int(buildings_.size());++bi) {
+        auto& b=buildings_[bi];
+        if(b.occupants.empty())b.bunker_exit_left=-1;
+        if(b.bunker_exit_left>0)--b.bunker_exit_left;
+        if(b.bunker_exit_left==0 && !b.occupants.empty())unload_occupants(bi);
+    }
     // Occupy arrivals (the step_capture analogue).
     for (int i = 0; i < static_cast<int>(units_.size()); ++i) {
         Unit& u = units_[i];

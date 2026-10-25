@@ -29,12 +29,12 @@ inline void append_slave_passage(const Unit& u,const std::vector<Building>& bs,
     }
     // An Enter order permits only its eligible bunker foundation. The tank
     // still uses the normal path, speed, reservations and turning code.
-    const int target=u.occupy_target;
+    const int target=u.bunker_exit_host>=0?u.bunker_exit_host:u.occupy_target;
     if(u.is_vehicle && u.w7.t.bunkerable && target>=0 && target<int(bs.size())) {
         const auto& b=bs[target];
         if(b.alive && b.house==u.house && b.state==Building::State::Idle && !b.selling &&
            b.type>=0 && b.type<int(types.size()) && types[b.type].tank_bunker &&
-           int(b.occupants.size())<types[b.type].max_occupants) {
+           (u.bunker_exit_host==target || int(b.occupants.size())<types[b.type].max_occupants)) {
             for(int y=b.cy;y<b.cy+b.fh;++y)for(int x=b.cx;x<b.cx+b.fw;++x)
                 if(x>=0 && y>=0 && x<width && y<height)cells.push_back(y*width+x);
             std::sort(cells.begin(),cells.end());cells.erase(std::unique(cells.begin(),cells.end()),cells.end());

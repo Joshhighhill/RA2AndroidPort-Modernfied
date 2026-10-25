@@ -170,6 +170,7 @@ struct Unit {
     // Facings live in the original's 16-bit space [0, 65536); 32768 faces
     // screen-South like the infantry spawn (docs/re/voxel-render.md §2/§5).
     bool is_vehicle = false;
+    int bunker_exit_host = -1; // foundation passage only while physically exiting
     double body_facing = 32768.0;
     double turret_facing = 32768.0;
     double rot_u16_per_sec = 0.0;  // ROT * kRotU16PerRotPerSec
@@ -2426,6 +2427,7 @@ public:
     bool order_deploy_mcv(int idx);
     bool order_deploy_mcv_auto(int idx);
     bool can_pack_conyard(int bi) const;
+    bool packing_conyard(int bi) const;
     bool order_pack_conyard(int bi,int house);
     bool order_pack_conyard_move(int bi,int house,int x,int y);
     bool is_mcv(int idx) const;
@@ -2443,6 +2445,7 @@ public:
     void set_mcv_redeploys(bool on) { mcv_redeploys_ = on; }
     bool mcv_redeploys() const { return mcv_redeploys_; }
     void set_skirmish_session(bool on) { skirmish_session_ = on; }
+    bool skirmish_session() const { return skirmish_session_; }
     // Net L0 session seed [RE: InitRandom FUN_0052F960 seeds Scenario->Random
     // (+0x218) and the global randomizer 0x885B08 from the session Seed
     // DAT_00A8DCFC; docs/gap/net/01-original-protocol.md "Seed"]. Every sim RNG

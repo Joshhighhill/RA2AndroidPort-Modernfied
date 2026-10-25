@@ -1150,6 +1150,7 @@ template <class Ar> void fields(Ar& ar, Unit& v) {
     io(ar, v.die_time);
     // vehicles
     io(ar, v.is_vehicle);
+    io(ar, v.bunker_exit_host);
     io(ar, v.body_facing);
     io(ar, v.turret_facing);
     io(ar, v.rot_u16_per_sec);
@@ -1295,6 +1296,7 @@ template <class Ar> void fields(Ar& ar, Building& v) {
     io(ar, v.being_repaired);
     io(ar, v.selling);
     io(ar, v.sell_time);
+    io(ar, v.bunker_exit_left);
     io(ar, v.sold);
     // P5
     io(ar, v.vet_recv);

@@ -345,6 +345,8 @@ bool SaveAccess::valid_world(const World& w, std::string* why) {
     auto unit_ix = [&](int i) { return i >= -1 && i < nu; };
     auto bld_ix = [&](int i) { return i >= -1 && i < nb; };
     auto house_ix = [&](int h) { return h >= 0 && h < kMaxHouses; };
+    for(const auto& b:w.buildings_)if(b.bunker_exit_left < -1 || b.bunker_exit_left>18)
+        return bad("bunker lowering timer");
     for (int i = 0; i < nu; ++i) {
         const Unit& u = w.units_[static_cast<std::size_t>(i)];
         const std::string at = "unit " + std::to_string(i) + " ";
@@ -358,7 +360,7 @@ bool SaveAccess::valid_world(const World& w, std::string* why) {
             !unit_ix(u.ability_fired_unit))
             return bad(at + "unit reference");
         if (!bld_ix(u.target_building) || !bld_ix(u.dock_refinery) || !bld_ix(u.capture_target) ||
-            !bld_ix(u.infiltrate_target) || !bld_ix(u.garrison_of) || !bld_ix(u.occupy_target) ||
+            !bld_ix(u.infiltrate_target) || !bld_ix(u.garrison_of) || !bld_ix(u.occupy_target) || !bld_ix(u.bunker_exit_host) ||
             !bld_ix(u.temporal_target_building) || !bld_ix(u.ability_fired_building))
             return bad(at + "building reference");
         if (u.bomb_house < -1 || u.bomb_house >= kMaxHouses) return bad(at + "bomb house");

@@ -152,7 +152,7 @@ void World::order_scatter(int idx, bool cell_push) {
     // 0x742A9B NearbyLocation -> 0x742EA0 SetDestination). Without it two
     // vehicles meeting head-on in a one-cell lane waited on each other forever
     // (SOV07's harvesters at (74,61)/(75,61)).
-    if (u.moving() && !(cell_push && u.is_vehicle && u.wait_time > 0.0)) return;
+    if (u.moving() && !(cell_push && u.wait_time > 0.0)) return;
     static const int kDx[8] = {0, 1, 1, 1, 0, -1, -1, -1};
     static const int kDy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
     const int start = combat_rng_.random(0, 7);   // deterministic sync-RNG pick
