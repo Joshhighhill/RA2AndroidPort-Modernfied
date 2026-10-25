@@ -242,13 +242,12 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
                     }
                     auto& motion=g_bunker_motion[ui];
                     const long art_ticks=duration>1?duration:15;
-                    motion.drive=ra2engine::bunker_drive_ticks(motion.to_x-from_x,motion.to_y-from_y,
+                    motion.drive=occupied?1:ra2engine::bunker_drive_ticks(motion.to_x-from_x,motion.to_y-from_y,
                         u.speed_cps>0?u.speed_cps:1.0);
                     motion.delay=occupied?0:art_ticks;
                     motion.hull_from=u.body_facing;
                     motion.hull_to=ra2engine::bunker_horizontal_facing(u.body_facing);
-                    motion.align=occupied?ra2engine::bunker_alignment_ticks(motion.hull_from,motion.hull_to,
-                        u.rot_u16_per_sec>0?u.rot_u16_per_sec:16384):0;
+                    motion.align=0; // physical entry mission has already aligned the hull
                     motion.duration=motion.drive+motion.align+art_ticks;
                     ra2engine::diag::note("BUNKER_VISUAL building=%zu unit=%d entering=%d duration=%ld from=%.3f,%.3f to=%.3f,%.3f",
                         bi,ui,occupied,g_bunker_motion[ui].duration,g_bunker_motion[ui].from_x,

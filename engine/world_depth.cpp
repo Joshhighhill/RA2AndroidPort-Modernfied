@@ -14,6 +14,7 @@
 #include "diagnostics.hpp"
 #include "weapon_unit.hpp"
 #include "slave_passage.hpp"
+#include "building_transition.hpp"
 
 namespace ra2engine {
 
@@ -120,6 +121,10 @@ void World::order_occupy(int ui, int bi) {
     u.attack_cell_x = u.attack_cell_y = -1;
     u.occupy_target = bi;
     const Building& b = buildings_[bi];
+    if(btypes()[b.type].tank_bunker) {
+        order_unit_move(ui,b.cx+b.fw/2,b.cy+b.fh/2);
+        return;
+    }
     if (cheb_to_foundation(b, u.cell_x, u.cell_y) <= 1) return;   // enters next step
     int nx = b.cx, ny = b.cy, best = -1;
     for (const Cellxy& c : foundation_cells(b.cx, b.cy, b.fw, b.fh)) {
@@ -1018,6 +1023,15 @@ void World::step_depth(double dt) {
         // consume a bunker approach on that reservation: finish the track
         // first, otherwise entry jumps from a still-moving hull position.
         const bool bunker=btypes()[buildings_[bi].type].tank_bunker;
+        if(bunker) {
+            const auto& b=buildings_[bi];
+            if(u.cell_x==b.cx+b.fw/2 && u.cell_y==b.cy+b.fh/2 && !u.moving()) {
+                const double desired=bunker_horizontal_facing(u.body_facing);
+                u.body_facing=turn_toward(u.body_facing,desired,(u.rot_u16_per_sec>0?u.rot_u16_per_sec:16384)*dt);
+                if(std::abs(std::remainder(u.body_facing-desired,65536.0))<1)occupy_now(i,bi);
+            } else if(!u.moving())order_occupy(i,bi);
+            continue;
+        }
         if (cheb_to_foundation(buildings_[bi], u.cell_x, u.cell_y) <= 1 &&
             (!bunker || (!u.moving() && std::abs(u.fx-u.cell_x)<0.01 && std::abs(u.fy-u.cell_y)<0.01))) {
             occupy_now(i, bi);

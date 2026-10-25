@@ -273,7 +273,7 @@ struct StepEnv {
         if (terrain && terrain->gates && u.movement_domain != MovementDomain::Water && u.house >= 0 &&
             u.house < static_cast<int>(terrain->gates->size()) && !(*terrain->gates)[(std::size_t)u.house].empty())
             t.open_cells = &(*terrain->gates)[(std::size_t)u.house];
-        if(sc.world && slave_passage_building(u,sc.world->buildings(),sc.world->btypes())) {
+        if(sc.world && (u.occupy_target>=0 || slave_passage_building(u,sc.world->buildings(),sc.world->btypes()))) {
             passage_cells=t.open_cells?*t.open_cells:std::vector<int>{};
             append_slave_passage(u,sc.world->buildings(),sc.world->btypes(),w,h,passage_cells);
             t.open_cells=&passage_cells;

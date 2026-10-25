@@ -940,7 +940,7 @@ TEST_CASE("Tank Bunker: arrival reservation cannot consume an unfinished approac
  auto t=unit("LTNK");t.is_vehicle=true;t.w7.bunkerable=true;w.add_combat_unit(7,8,0,t);
  auto& u=w.units()[0];u.fx=6.25;u.path={{6,8},{7,8}};u.path_idx=1;
  w.order_occupy(0,0);w.step_depth(0);CHECK(w.buildings()[0].occupants.empty());CHECK(u.occupy_target==0);
- u.path.clear();u.path_idx=0;u.fx=7;u.fy=8;w.step_depth(0);REQUIRE(w.buildings()[0].occupants.size()==1);
+ u.path.clear();u.path_idx=0;u.cell_x=9;u.cell_y=9;u.fx=9;u.fy=9;u.body_facing=8192;w.step_depth(0);REQUIRE(w.buildings()[0].occupants.size()==1);
  CHECK(u.garrison_of==0);
 }
 TEST_CASE("Tank Bunker presentation: drive speed and lower-before-exit sequence") {
@@ -1037,4 +1037,14 @@ TEST_CASE("Tank Bunker hull: travel then horizontal alignment gates the lift") {
  CHECK(bunker_hull_facing(0,8192,14,15,alignment,0)==0);
  CHECK(bunker_hull_facing(0,8192,19,15,alignment,0)==doctest::Approx(4096));
  CHECK(bunker_hull_facing(0,8192,23,15,alignment,0)==8192);
+}
+
+TEST_CASE("Tank Bunker automation: drive into foundation then align before attachment") {
+ for(int direction=0;direction<4;++direction){Rig r;World w(r.map);BuildingTypeDef d;d.id="NATBNK";d.tank_bunker=true;d.can_be_occupied=true;d.max_occupants=1;d.fw=d.fh=2;d.strength=1000;
+ w.set_building_types({d});w.add_building(0,8,8,2,2,0,1000,0,0,true);
+ auto t=unit("LTNK");t.is_vehicle=true;t.rot=8;t.w7.bunkerable=true;int xs[]={4,13,9,9},ys[]={9,9,4,13};w.add_combat_unit(xs[direction],ys[direction],0,t);
+ w.order_occupy(0,0);World copy(r.map);REQUIRE(save::load_world(copy,save::save_world(w)));
+ for(int tick=0;tick<400;++tick){w.step(1.0/15.0);copy.step(1.0/15.0);if(w.units()[0].garrison_of==0)break;}
+ REQUIRE(w.units()[0].garrison_of==0);CHECK(w.units()[0].cell_x==9);CHECK(w.units()[0].cell_y==9);
+ CHECK(w.units()[0].body_facing==bunker_horizontal_facing(w.units()[0].body_facing));CHECK(save::save_world(w)==save::save_world(copy));}
 }
