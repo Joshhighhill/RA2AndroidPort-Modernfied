@@ -33,8 +33,21 @@ public:
         for(const auto& p:bullets) {
             const auto k=key(p,ordinals[key(p,0)]++);
             Segment s{pos(p),pos(p)};
-            const auto old=live_.find(k);
-            if(old!=live_.end())s.from=old->second.to;
+            // Ballistic salvos can share a launch frame and have no unique
+            // simulation UID. If their first bullet disappears, vector order
+            // changes. Match the remaining endpoints by the current velocity,
+            // not by their old ordinal, so no survivor jumps to its sibling.
+            const auto base=key(p,0);
+            auto old=live_.end();double nearest=std::numeric_limits<double>::max();
+            for(auto candidate=live_.lower_bound(base);candidate!=live_.end();++candidate) {
+                auto group=candidate->first;std::get<6>(group)=0;
+                if(group!=base)break;
+                const auto& q=candidate->second.to;
+                const double dx=s.to[0]-p.vx-q[0],dy=s.to[1]-p.vy-q[1],dz=s.to[2]-p.vz-q[2];
+                const double d=dx*dx+dy*dy+dz*dz;
+                if(d<nearest){nearest=d;old=candidate;}
+            }
+            if(old!=live_.end()) {s.from=old->second.to;live_.erase(old);}
             else {
                 // A salvo may contain several launches from one firer. Match
                 // each event once, nearest to its integrated bullet position.

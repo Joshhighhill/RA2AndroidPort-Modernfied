@@ -76,6 +76,10 @@ TEST_CASE("projectile presentation: reordered bullets, salvos and separate defen
     e.attacker=f.attacker=1;e.x=100;f.x=120;
     m.clear();m.capture({a,b},{e,f});
     CHECK(m.size()==2);CHECK(m.sample(0,a,0)[0]!=m.sample(1,b,0)[0]);
+    // One salvo sibling expires; its survivor must retain its own segment.
+    a.x=100;b.x=300;m.clear();m.capture({a,b},{});
+    b.x=320;b.vx=20;m.capture({b},{});
+    CHECK(m.sample(0,b,0)[0]==300);CHECK(m.sample(0,b,0.5)[0]==310);
 }
 
 TEST_CASE("presentation policy: repeated queue and rally speech has independent three-second windows") {
