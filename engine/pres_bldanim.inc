@@ -65,7 +65,7 @@ struct SlaveMinerPackFx {
     long start = 0, duration = 0;
 };
 std::map<int, SlaveMinerPackFx> g_slave_miner_pack_fx;
-struct BunkerMotion { double from_x=0,from_y=0,to_x=0,to_y=0; long start=0; bool entering=true; int building=-1; long duration=15; };
+struct BunkerMotion { double from_x=0,from_y=0,to_x=0,to_y=0; long start=0; bool entering=true; int building=-1; long duration=15,drive=15,delay=0; };
 std::map<int,BunkerMotion> g_bunker_motion;
 double g_pres_render_fraction = 0; // sub-tick movement only; never simulation input
 
@@ -224,7 +224,7 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
                     if(previous!=g_bunker_motion.end() &&
                        ra2engine::transition_active(previous->second.start,previous->second.duration,now)) {
                         const auto& old=previous->second;
-                        const double blend=ra2engine::transition_blend(now-old.start,old.duration,0);
+                        const double blend=ra2engine::bunker_drive_fraction(now-old.start,old.drive,old.delay,0);
                         const double tx=old.entering?old.to_x:u.fx,ty=old.entering?old.to_y:u.fy;
                         from_x=old.from_x+(tx-old.from_x)*blend;
                         from_y=old.from_y+(ty-old.from_y)*blend;
@@ -240,7 +240,12 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
                         if(anim)duration=std::max(duration,ra2engine::bunker_motion_ticks(
                             anim->start,anim->loop_end,anim->delay,anim->reverse));
                     }
-                    g_bunker_motion[ui].duration=duration>1?duration:15;
+                    auto& motion=g_bunker_motion[ui];
+                    const long art_ticks=duration>1?duration:15;
+                    motion.drive=ra2engine::bunker_drive_ticks(motion.to_x-from_x,motion.to_y-from_y,
+                        u.speed_cps>0?u.speed_cps:1.0);
+                    motion.delay=occupied?0:art_ticks;
+                    motion.duration=motion.drive+art_ticks;
                     ra2engine::diag::note("BUNKER_VISUAL building=%zu unit=%d entering=%d duration=%ld from=%.3f,%.3f to=%.3f,%.3f",
                         bi,ui,occupied,g_bunker_motion[ui].duration,g_bunker_motion[ui].from_x,
                         g_bunker_motion[ui].from_y,g_bunker_motion[ui].to_x,g_bunker_motion[ui].to_y);
@@ -248,8 +253,12 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
                 st.bunker_occupied = occupied;
                 st.bunker_transition = occupied ? 1 : -1;
                 for (int s = kBsSpecial; s <= kBsSpecial4; ++s) stop(st, s);
-                start(st, a, occupied ? kBsSpecial : kBsSpecial3, now);
-                start(st, a, occupied ? kBsSpecial2 : kBsSpecial4, now);
+                // Entry drives across the lowered platform before it rises.
+                // Exit lowers first, then drives clear at the vehicle speed.
+                const auto m=g_bunker_motion.find(ui);
+                const long art_start=now+(occupied && m!=g_bunker_motion.end()?m->second.drive:0);
+                start(st, a, occupied ? kBsSpecial : kBsSpecial3, art_start);
+                start(st, a, occupied ? kBsSpecial2 : kBsSpecial4, art_start);
             }
             st.bunker_unit = occupied ? b.occupants.front() : -1;
             if (st.bunker_transition > 0) {

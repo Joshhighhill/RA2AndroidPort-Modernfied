@@ -20,6 +20,7 @@
 #include "faction_support.hpp"
 #include "command.hpp"
 #include "selection.hpp"
+#include "input.hpp"
 #include <fstream>
 #include <iterator>
 using namespace ra2engine;
@@ -916,4 +917,56 @@ TEST_CASE("retail Boomer prerequisites: yard and radar required; Battle Lab is n
     buildings[0].alive=false;CHECK_FALSE(prerequisites_met(required,buildings,defs,0,groups));
     buildings[0].alive=true;buildings[1].house=1;CHECK_FALSE(prerequisites_met(required,buildings,defs,0,groups));
     buildings[1].house=0;buildings[1].state=Building::State::Dead;CHECK_FALSE(prerequisites_met(required,buildings,defs,0,groups));
+}
+
+TEST_CASE("ConYard move-to-pack: saved reverse buildup retains faction destination") {
+ for(const auto& name:{"GACNST","NACNST","YACNST"}) {
+  Rig r;World w(r.map);BuildingTypeDef d;d.id=name;d.fw=d.fh=4;d.strength=1000;d.conyard=true;
+  w.set_building_types({d});auto m=unit("MCV");m.deploys_into=name;w.set_undeploy_unit(0,m);
+  w.set_skirmish_session(true);w.set_mcv_redeploys(true);
+  w.add_building(0,8,8,4,4,0,1000,0,0,true);w.buildings()[0].buildup_total=1;
+  auto c=make_mega(w,{},Mission::Move,Target{},Target::cell(14,14));c.house=0;c.whom.push_back(Target::building(0));apply_command(w,c);
+  CHECK(w.buildings()[0].selling);World loaded(r.map);REQUIRE(save::load_world(loaded,save::save_world(w)));
+  for(int tick=0;tick<150;++tick){w.step(1.0/15.0);loaded.step(1.0/15.0);}
+  REQUIRE(w.units().size()==1);CHECK(w.buildings()[0].state==Building::State::Dead);
+  CHECK(w.units()[0].cell_x==14);CHECK(w.units()[0].cell_y==14);
+  CHECK(save::save_world(w)==save::save_world(loaded));
+ }
+}
+TEST_CASE("Tank Bunker: arrival reservation cannot consume an unfinished approach") {
+ Rig r;World w(r.map);BuildingTypeDef d;d.id="NATBNK";d.tank_bunker=true;d.can_be_occupied=true;
+ d.max_occupants=1;d.fw=d.fh=2;d.strength=1000;w.set_building_types({d});w.add_building(0,8,8,2,2,0,1000,0,0,true);
+ auto t=unit("LTNK");t.is_vehicle=true;t.w7.bunkerable=true;w.add_combat_unit(7,8,0,t);
+ auto& u=w.units()[0];u.fx=6.25;u.path={{6,8},{7,8}};u.path_idx=1;
+ w.order_occupy(0,0);w.step_depth(0);CHECK(w.buildings()[0].occupants.empty());CHECK(u.occupy_target==0);
+ u.path.clear();u.path_idx=0;u.fx=7;u.fy=8;w.step_depth(0);REQUIRE(w.buildings()[0].occupants.size()==1);
+ CHECK(u.garrison_of==0);
+}
+TEST_CASE("Tank Bunker presentation: drive speed and lower-before-exit sequence") {
+ CHECK(bunker_drive_ticks(1,0,1)>bunker_drive_ticks(1,0,2));
+ CHECK(bunker_drive_fraction(0,15,30,0)==0);CHECK(bunker_drive_fraction(29,15,30,1)==0);
+ CHECK(bunker_drive_fraction(37,15,30,0.5)==doctest::Approx(0.5));
+ CHECK(bunker_drive_fraction(45,15,30,0)==1);
+ CHECK(bunker_drive_fraction(7,15,0,0.5)==doctest::Approx(0.5));
+}
+
+TEST_CASE("ConYard original input: map move is emitted from a selected redeployable yard") {
+ Rig r;World w(r.map);BuildingTypeDef d;d.id="YACNST";d.fw=d.fh=4;d.strength=1000;d.conyard=true;
+ w.set_building_types({d});auto m=unit("PCV");m.is_vehicle=true;m.deploys_into="YACNST";
+ w.set_undeploy_unit(0,m);w.set_skirmish_session(true);w.set_mcv_redeploys(true);w.add_building(0,8,8,4,4,0,1000,0,0,true);
+ Camera cam;Input input(w,cam,1280,720);std::vector<Command> commands;input.set_command_sink([&](Command c){commands.push_back(c);});
+ auto click=[&](int x,int y,unsigned time){InputEvent e;e.kind=InputEvent::PointerDown;e.button=InputEvent::Left;e.x=x;e.y=y;e.t_ms=time;input.handle(e);e.kind=InputEvent::PointerUp;input.handle(e);};
+ click(30,255,1000);REQUIRE(input.selected_building()==0);
+ CHECK(input.action_at(30,435)==Input::Action::Move);click(30,435,2000);
+ REQUIRE(commands.size()==1);CHECK(commands[0].mission==Mission::Move);
+ REQUIRE(commands[0].whom.size()==1);CHECK(commands[0].whom[0].is_building());CHECK(commands[0].whom[0].id==0);
+ w.set_mcv_redeploys(false);CHECK(input.action_at(30,435)==Input::Action::None);
+}
+TEST_CASE("Tank Bunker: normal ordered drive finishes approach before attachment") {
+ Rig r;World w(r.map);BuildingTypeDef d;d.id="NATBNK";d.tank_bunker=true;d.can_be_occupied=true;
+ d.max_occupants=1;d.fw=d.fh=2;d.strength=1000;w.set_building_types({d});w.add_building(0,8,8,2,2,0,1000,0,0,true);
+ auto t=unit("LTNK");t.is_vehicle=true;t.w7.bunkerable=true;w.add_combat_unit(3,8,0,t);w.order_occupy(0,0);
+ for(int tick=0;tick<200 && w.buildings()[0].occupants.empty();++tick)w.step(1.0/15.0);
+ REQUIRE(w.buildings()[0].occupants.size()==1);CHECK(w.units()[0].garrison_of==0);
+ CHECK(w.units()[0].fx==w.units()[0].cell_x);CHECK(w.units()[0].fy==w.units()[0].cell_y);
 }

@@ -4510,7 +4510,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             if(age<0 || age>=motion->second.duration || !up->alive) g_bunker_motion.erase(motion);
             else {
                 if(!lifted) lifted.emplace(*up);
-                const double f=ra2engine::transition_blend(age,motion->second.duration,g_pres_render_fraction);
+                const double f=ra2engine::bunker_drive_fraction(age,motion->second.drive,motion->second.delay,g_pres_render_fraction);
                 // Exiting units may already be following a new command. Blend
                 // toward their current position, not a stale ejection cell.
                 const double tx=motion->second.entering?motion->second.to_x:us[idx].fx;

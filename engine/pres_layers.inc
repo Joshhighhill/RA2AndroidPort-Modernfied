@@ -159,6 +159,20 @@ inline int pres_unit_ramp(const ra2engine::Unit& u) {
         return 0;
     const auto kind=ra2engine::unit_loco_kind(u);
     if(kind!=ra2engine::LocoKind::Drive && kind!=ra2engine::LocoKind::Teleport) return 0;
-    const int ramp=pres_cell_ramp(*g_pres_assets,u.cell_x,u.cell_y);
-    return ramp>=1 && ramp<=16 ? ramp : 0;
+    int ramp=pres_cell_ramp(*g_pres_assets,u.cell_x,u.cell_y);
+    if(u.moving() && u.path.size()>1) {
+        const auto first=std::max<std::size_t>(1,std::min(u.path_idx,u.path.size()-1));
+        double best=0.75*0.75;
+        for(std::size_t k=first;k<u.path.size() && k<=first+1;++k) {
+            const auto a=u.path[k-1],b=u.path[k];
+            const double dx=b.x-a.x,dy=b.y-a.y,len=dx*dx+dy*dy;
+            if(len<=0 || std::abs(dx)>1 || std::abs(dy)>1)continue;
+            const double f=std::clamp(((u.fx-a.x)*dx+(u.fy-a.y)*dy)/len,0.0,1.0);
+            const double ex=u.fx-a.x-f*dx,ey=u.fy-a.y-f*dy,d=ex*ex+ey*ey;
+            if(d>best)continue;
+            best=d;ramp=ra2engine::terrain_tilt_transition(pres_cell_ramp(*g_pres_assets,a.x,a.y),
+                                                       pres_cell_ramp(*g_pres_assets,b.x,b.y),f);
+        }
+    }
+    return ramp;
 }

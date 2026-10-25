@@ -286,6 +286,10 @@ bool World::try_undeploy(int b_idx) {
         static_cast<double>((t.deploy_facing & 0xFF) << 8);
     const int ui = static_cast<int>(units_.size()) - 1;
     deploy_events_.push_back({DeployEvent::Kind::Undeployed, ui, b_idx, house});
+    // Construction yards do not produce units at a rally point. For a
+    // move-to-pack order these existing saved coordinates carry the MCV's
+    // destination through the reverse buildup and a save/load mid-pack.
+    if(b.has_rally) order_unit_move(ui,b.rally_x,b.rally_y);
     return true;
 }
 
@@ -300,6 +304,14 @@ bool World::can_pack_conyard(int bi) const {
 }
 bool World::order_pack_conyard(int bi,int house) {
     return can_pack_conyard(bi) && buildings_[bi].house==house && begin_sell(bi,house);
+}
+bool World::order_pack_conyard_move(int bi,int house,int x,int y) {
+    if(!can_pack_conyard(bi) || buildings_[bi].house!=house || !walkable(x,y))return false;
+    auto& b=buildings_[bi];
+    const bool previous=b.has_rally;const int px=b.rally_x,py=b.rally_y;
+    b.has_rally=true;b.rally_x=x;b.rally_y=y;
+    if(order_pack_conyard(bi,house))return true;
+    b.has_rally=previous;b.rally_x=px;b.rally_y=py;return false;
 }
 
 bool World::can_pack_slave_miner(int bi) const {

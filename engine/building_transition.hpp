@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <cmath>
 namespace ra2engine {
 // Opening runs Start..LoopEnd before holding; closing uses its reverse span.
 inline long bunker_motion_ticks(int start,int loop_end,int delay,bool reverse) {
@@ -9,6 +10,15 @@ inline long bunker_motion_ticks(int start,int loop_end,int delay,bool reverse) {
 inline double transition_blend(long age,long duration,double sub_tick) {
     const double t=std::clamp((age+std::clamp(sub_tick,0.0,1.0))/std::max<long>(1,duration),0.0,1.0);
     return t*t*(3.0-2.0*t);
+}
+inline long bunker_drive_ticks(double dx,double dy,double cells_per_second) {
+    // Drive's straight track covers 161 speed units per cell, versus 256
+    // used by speed_cps. This is presentation only, not a mission timer.
+    return std::clamp<long>(long(std::ceil(std::hypot(dx,dy)*15*161/
+                                         (256*std::max(0.05,cells_per_second)))),1,300);
+}
+inline double bunker_drive_fraction(long age,long drive,long delay,double sub_tick) {
+    return std::clamp((age-delay+std::clamp(sub_tick,0.0,1.0))/std::max<long>(1,drive),0.0,1.0);
 }
 // A visual transition never changes simulation state or command timing.
 inline bool transition_active(long start,long duration,long now) {

@@ -2427,6 +2427,7 @@ public:
     bool order_deploy_mcv_auto(int idx);
     bool can_pack_conyard(int bi) const;
     bool order_pack_conyard(int bi,int house);
+    bool order_pack_conyard_move(int bi,int house,int x,int y);
     bool is_mcv(int idx) const;
     // Would the unit's DeploysInto building be legal with the MCV at (x, y)?
     // (the MCV itself does not block its own spot). Out: foundation origin.

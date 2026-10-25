@@ -366,3 +366,16 @@ TEST_CASE("voxel_raster: reordered named HVA sections preserve model and shadow"
     const auto sb=ra2engine::rasterize_shadow(model,reversed,0,128);
     CHECK(sa.w==sb.w);CHECK(sa.h==sb.h);CHECK(sa.rgba==sb.rgba);
 }
+
+TEST_CASE("terrain tilt: movement blends remain rigid and retain endpoint orientation") {
+ for(int a=0;a<=16;++a)for(int b=0;b<=16;++b) {
+  CHECK(ra2engine::terrain_tilt_transition(a,b,0)==a);
+  CHECK(ra2engine::terrain_tilt_transition(a,b,1)==b);
+  for(int step=1;step<8;++step) {
+   const auto t=ra2engine::terrain_tilt(ra2engine::terrain_tilt_transition(a,b,step/8.0));
+   const auto p=t.apply(3,4,12),q=t.inverse(p[0],p[1],p[2]);
+   CHECK(p[0]*p[0]+p[1]*p[1]+p[2]*p[2]==doctest::Approx(169));
+   CHECK(q[0]==doctest::Approx(3));CHECK(q[1]==doctest::Approx(4));CHECK(q[2]==doctest::Approx(12));
+  }
+ }
+}

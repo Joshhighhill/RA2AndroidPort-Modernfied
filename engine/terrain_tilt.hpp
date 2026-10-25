@@ -18,6 +18,18 @@ struct TerrainTilt {
 };
 inline TerrainTilt terrain_tilt(int ramp) {
     TerrainTilt t;
+    // Bounded, quantized presentation variants. Interpolate surface normals
+    // then construct a rigid rotation; matrix lerp would squash the voxel.
+    if(ramp>=1024 && ramp<1024+17*17*9) {
+        const int key=ramp-1024,a=key/(17*9),b=(key/9)%17,step=key%9;
+        const auto p=terrain_tilt(a).apply(0,0,1),q=terrain_tilt(b).apply(0,0,1);
+        const double f=step/8.0;
+        double x=p[0]+(q[0]-p[0])*f,y=p[1]+(q[1]-p[1])*f,z=p[2]+(q[2]-p[2])*f;
+        const double length=std::sqrt(x*x+y*y+z*z);x/=length;y/=length;z/=length;
+        const double v=1.0/(1.0+z);
+        t.m={1-x*x*v,-x*y*v,x, -x*y*v,1-y*y*v,y, -x,-y,z};
+        return t;
+    }
     if(ramp<1 || ramp>16) return t;
     double dx=0,dy=0;
     if(ramp<=4) {
@@ -36,5 +48,12 @@ inline TerrainTilt terrain_tilt(int ramp) {
     const double ax=dy,ay=-dx,c=std::cos(angle),s=std::sin(angle),v=1-c;
     t.m={c+ax*ax*v,ax*ay*v,ay*s, ax*ay*v,c+ay*ay*v,-ax*s, -ay*s,ax*s,c};
     return t;
+}
+inline int terrain_tilt_transition(int from,int to,double fraction) {
+    from=from>=1 && from<=16?from:0;to=to>=1 && to<=16?to:0;
+    if(from==to)return from;
+    const int step=std::max(0,std::min(8,int(std::floor(fraction*8+0.5))));
+    if(step==0)return from;if(step==8)return to;
+    return 1024+(from*17+to)*9+step;
 }
 }

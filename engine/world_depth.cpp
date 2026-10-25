@@ -1013,7 +1013,12 @@ void World::step_depth(double dt) {
             u.occupy_target = -1;
             continue;
         }
-        if (cheb_to_foundation(buildings_[bi], u.cell_x, u.cell_y) <= 1) {
+        // Drive reserves the next cell before the hull reaches it. Do not
+        // consume a bunker approach on that reservation: finish the track
+        // first, otherwise entry jumps from a still-moving hull position.
+        const bool bunker=btypes()[buildings_[bi].type].tank_bunker;
+        if (cheb_to_foundation(buildings_[bi], u.cell_x, u.cell_y) <= 1 &&
+            (!bunker || (!u.moving() && std::abs(u.fx-u.cell_x)<0.01 && std::abs(u.fy-u.cell_y)<0.01))) {
             occupy_now(i, bi);
         } else if (!u.moving()) {
             order_occupy(i, bi);   // re-path adjacent
