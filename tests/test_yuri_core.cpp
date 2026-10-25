@@ -885,6 +885,12 @@ TEST_CASE("ground presentation: legal slope Z interpolates and bridge deck canno
     }
     CHECK(deck_unit_depth(7.7,8,8,8,true)>16.99);
     CHECK(deck_unit_depth(7.7,8,8,8,false)==15.7);
+    ra2assets::MapFile map;auto& cells=const_cast<std::vector<ra2assets::MapCell>&>(map.cells());
+    for(int y=0;y<20;++y)for(int x=0;x<20;++x)cells.push_back({x,y,0,0,static_cast<std::uint8_t>(x<9?2:3)});
+    World w(map);const int n=w.grid_w()*w.grid_h();w.arm_land_speed(std::vector<uint8_t>(n),std::vector<uint8_t>(n),World::LandSpeedRules{});
+    w.add_combat_unit(9,8,0,unit("TANK"));auto& u=w.units()[0];u.path={{8,8},{9,8}};u.path_idx=1;u.fx=8.25;u.fy=8;
+    CHECK(moving_ground_level(w,u)==doctest::Approx(2.25));
+    u.path={{9,8},{8,8}};u.cell_x=8;u.fx=8.75;CHECK(moving_ground_level(w,u)==doctest::Approx(2.75));
 }
 TEST_CASE("Slave followers: packed workers use distinct reachable neighbours and deterministic continuation") {
     Rig r;World w(r.map);BuildingTypeDef d;d.id="YAREFN";d.slave_count=4;d.fw=d.fh=2;

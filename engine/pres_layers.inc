@@ -46,20 +46,7 @@ inline int pres_unit_lift_levels(const ra2engine::World& w, const ra2engine::Uni
 }
 
 inline double pres_ground_level(const ra2engine::World& w,const ra2engine::Unit& u) {
-    const double a=w.cell_level(u.cell_x,u.cell_y)+(u.on_deck?4:0);
-    if(u.is_aircraft || u.is_naval || !u.moving() || !w.terrain_armed())return a;
-    std::size_t p=u.path_idx;
-    while(p<u.path.size() && u.path[p].x==u.cell_x && u.path[p].y==u.cell_y)++p;
-    if(p>=u.path.size())return a;
-    const auto t=u.path[p];
-    if(std::abs(t.x-u.cell_x)>1 || std::abs(t.y-u.cell_y)>1)return a;
-    // This is an existing planner-approved segment. Never rebuild gates or
-    // pathfinding data per sprite draw; reject a stale cliff/deck discontinuity.
-    const int base=w.cell_level(t.x,t.y);
-    const int layer=w.deck_intact(t.x,t.y) && base+4==a ? 1 : 0;
-    const double b=base+(layer?4:0);
-    if(std::abs(b-a)>1)return a;
-    return ra2engine::segment_ground_level(u.fx,u.fy,u.cell_x,u.cell_y,t.x,t.y,a,b);
+    return ra2engine::moving_ground_level(w,u);
 }
 
 // w8fix-layer W8-02-03 [RE: an OnBridge object's Z includes BridgeHeight

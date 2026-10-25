@@ -14,6 +14,8 @@ Three build-900034 diagnostic ZIPs were downloaded and all text files scanned:
 Member timestamps, full-file hashes, summaries and traffic CSV retained in
 local deliverables/RA2AndroidPort/reports/test35-review; no logs committed.
 Latest current log: 2941 lines, frame 2585, ENGINE NORMAL EXIT code=0.
+Its skirmish snapshot is xgrinder.map, human Russians vs Africans AI. The
+10032-frame session snapshot is nowimps.map with human Yuri and three AIs.
 Earlier sessions: 8150 lines/frame18442/normal exit; 6651 lines/frame10032/no
 final native-exit record. No fatal/assert/signal marker in these logs. Binary
 exit traces are historical, not newly symbolicated or treated as new crashes.
@@ -131,12 +133,15 @@ Chronosphere/SW lifecycle backlog remain open. No fake completion claims.
 
 Validation and delivery
 -----------------------
-1235 native cases, 267493 assertions passed, zero failures; one optional
+1235 native cases, 267495 assertions passed, zero failures; one optional
 missing-retail landmark fixture excluded. Existing 2000-frame deterministic
 lockstep, save/load, normal shell projectiles, bridge collapse/repair and
 touch regressions pass. Six new cases cover quiet deploy/save continuation,
 all-faction ConYard command gates, follower continuation, ground/deck policy,
 retail Boomer prerequisites and scaled selection input. Android C++ syntax
+Ground tests include the locomotor's destination-cell ownership before its
+continuous position arrives, uphill and downhill. Source/target segment
+height is sampled without allocating or invoking the planner per draw.
 passes with the existing waypoint_cell override warning. Release APK build,
 signature/asset audit, checksum, source SHA and Drive readback recorded after
 packaging in BUILD_INFO.json and the same Google Doc. No physical POCO,
