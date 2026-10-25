@@ -700,3 +700,12 @@ TEST_CASE("Yuri core: captured units leave their previous AI team immediately") 
     CHECK(state->teams[0].members.empty());CHECK(state->teams[0].member_types.empty());
     CHECK_FALSE(w.units()[0].tg.team_aggressive);CHECK_FALSE(w.units()[0].tg.team_suicide);
 }
+
+TEST_CASE("Gatling loop: keep audio over ROF gaps, stop on target loss and charge exhaustion") {
+    CHECK(weapon_loop_active(true,true,0,true,200));
+    CHECK_FALSE(weapon_loop_active(true,true,0,true,0));
+    CHECK_FALSE(weapon_loop_active(true,false,0,true,200));
+    CHECK_FALSE(weapon_loop_active(false,true,0,true,200));
+    CHECK_FALSE(weapon_loop_active(true,true,0,false,200));
+    CHECK(weapon_loop_active(true,true,0.2,false,0));
+}

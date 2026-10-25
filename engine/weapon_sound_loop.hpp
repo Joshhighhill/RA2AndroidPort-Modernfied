@@ -2,6 +2,11 @@
 #include <cstdint>
 #include <string>
 namespace ra2engine {
+// A Gatling loop survives the short muzzle-flash gap between charged shots.
+inline bool weapon_loop_active(bool enabled,bool target,double flash,bool staged,int charge) {
+    return enabled && target && (flash>0 || (staged && charge>0));
+}
+
 // One report loop per shooter. Audio owns attenuation and handle lifetime.
 struct WeaponSoundLoop {
     std::uint32_t handle=0;

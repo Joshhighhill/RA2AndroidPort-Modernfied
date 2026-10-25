@@ -605,6 +605,10 @@ private:
                     pres_log(frame_, std::string("fx superweapon activated ") + ra2engine::superweapon_type_name(t));
                     break;
                 case E::Bolt:
+                    // The launch cloud is finite and may finish during the
+                    // deferment. Each real strike also needs its cloud above
+                    // the bolt, rather than leaving the active storm cloudless.
+                    fx_.spawn(gen_s("WeatherConClouds"),e.x,e.y,level_at(w,e.x,e.y),60.0);
                     if (const FxAnimType* ft = fx_.spawn(gen_s("WeatherConBolts"), e.x, e.y, level_at(w, e.x, e.y), 0.0))
                         snd_.play_at(ft->report, e.x, e.y, "bolt");
                     fx_.spawn(gen_s("WeatherConBoltExplosion"), e.x, e.y, level_at(w, e.x, e.y), 0.0);
@@ -1267,8 +1271,10 @@ public:
         }
         for (std::size_t i=0;i<bs.size();++i) {
             const auto& b=bs[i];
-            building_shot_loops_[i].update(snd_,b.alive && b.state==ra2engine::Building::State::Idle &&
-                !b.selling && !b.power_off && b.def_fire_flash>0,
+            const bool staged=b.type>=0 && b.type<static_cast<int>(w.btypes().size()) && w.btypes()[b.type].gattling.enabled();
+            building_shot_loops_[i].update(snd_,ra2engine::weapon_loop_active(
+                b.alive && b.state==ra2engine::Building::State::Idle && !b.selling && !b.power_off,
+                b.def_target>=0 || b.w6.def_target_building>=0,b.def_fire_flash,staged,b.gattling_charge),
                 b.cx+(b.fw-1)/2.0,b.cy+(b.fh-1)/2.0);
         }
     }
@@ -1441,8 +1447,9 @@ private:
             }
             auto& shot_loop=shot_loops_[i];
             if (shot_loop.handle) {
-                const bool firing=u.alive && u.die_time<0 && u.cargo_of<0 && u.fire_flash>0 &&
-                    (u.target>=0 || u.target_building>=0 || u.attack_cell_x>=0);
+                const bool firing=ra2engine::weapon_loop_active(u.alive && u.die_time<0 && u.cargo_of<0,
+                    u.target>=0 || u.target_building>=0 || u.attack_cell_x>=0,
+                    u.fire_flash,u.gattling.enabled(),u.gattling.charge);
                 shot_loop.update(snd_,firing,u.fx,u.fy);
             }
             if (u.die_time >= 0.0 && prev_[i].second < 0.0) {
@@ -1794,6 +1801,8 @@ private:
                 if (st == 2) { e.super_phase=0; e.super_start=g_pres_tick; }
                 else if (e.super_previous == 2) { e.super_phase=2; e.super_start=g_pres_tick; }
                 else { e.super_phase=2; e.super_start=-1; }
+                ra2engine::diag::note("SW_BUILDING type=%s house=%d state=%d->%d phase=%d tick=%ld",
+                    ba.roster[b.type].id.c_str(),b.house,e.super_previous,st,e.super_phase,g_pres_tick);
                 e.super_previous=st;
             } else if (e.super_phase < 0) { e.super_phase=2; e.super_start=-1; }
         }
