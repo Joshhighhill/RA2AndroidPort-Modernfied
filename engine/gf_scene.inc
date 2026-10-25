@@ -126,6 +126,9 @@ private:
             if (e.kind == ra2engine::World::DeployEvent::Kind::Undeployed && e.building >= 0 &&
                 e.building < static_cast<int>(world_.buildings().size()) && e.unit >= 0 &&
                 e.unit < static_cast<int>(world_.units().size())) {
+                if(e.house==local_house_ && input_.selected_building()==e.building) {
+                    input_.deselect_all();input_.selection().set(e.unit);
+                }
                 const ra2engine::Building& b = world_.buildings()[static_cast<std::size_t>(e.building)];
                 if (b.type >= 0 && b.type < static_cast<int>(ba_.roster.size()) &&
                     b.type < static_cast<int>(ba_.art.size()) &&

@@ -174,6 +174,9 @@ Input::Action Input::classify(int px, int py, bool shift, bool ctrl, bool alt) c
         if (selected_building_valid() &&
             is_unit_factory_type(world_.buildings()[selected_building_].type))
             return Action::Rally;
+        if(selected_building_valid() && world_.buildings()[selected_building_].house==world_.order_issuer() &&
+           world_.can_pack_slave_miner(selected_building_))
+            return world_.walkable(cx,cy) ? Action::Move : Action::NoMove;
         // W7-02-10: a selected own firing garrison attacks like a defence.
         if (selected_building_valid() && world_.garrison_firing(selected_building_)) {
             const int sb_house = world_.buildings()[selected_building_].house;
@@ -453,6 +456,14 @@ void Input::left_click_original(int px, int py, bool shift, uint32_t t_ms) {
             return;
         case Action::Move:
         case Action::NoMove:
+            if(a==Action::Move && sel_.ids().empty() && selected_building_valid() &&
+               world_.can_pack_slave_miner(selected_building_)) {
+                int cx=0,cy=0;resolve_ground_cell(px,py,cx,cy);
+                auto c=make_mega(world_,{},Mission::Move,Target{},Target::cell(cx,cy));
+                c.whom.push_back(Target::building(selected_building_));emit(c);
+                actions_.move_ordered=true;actions_.actor=-1;
+                return;
+            }
             if (mod_ctrl_ && shift && a == Action::Move) {   // W7-07-12 attack-move
                 int cx = 0, cy = 0;
                 resolve_ground_cell(px, py, cx, cy);

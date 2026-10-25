@@ -11,6 +11,7 @@
 //                              (repair-sell.md §B6)
 #include <algorithm>
 #include <cmath>
+#include <set>
 
 #include "building.hpp"
 #include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
@@ -77,6 +78,11 @@ bool World::order_deploy_mcv(int idx) {
     Unit& u = units_[idx];
     if (u.frozen || u.is_aircraft) return false;
     deploy_any_ = true;
+    if (!can_deploy_at(idx,u.cell_x,u.cell_y) && clear_slave_deploy_blockers(idx)) {
+        order_stop(idx);
+        units_[idx].deploy_mission=1;
+        return true;
+    }
     if (can_deploy_at(idx, u.cell_x, u.cell_y)) {
         // Legal here: stop and run the deploy mission (turn, then unfold).
         if (u.moving()) {
@@ -113,6 +119,49 @@ bool World::order_deploy_mcv(int idx) {
     deploy_events_.push_back({DeployEvent::Kind::CannotDeploy, idx, -1, u.house});
     u.deploy_mission = 0;
     return false;
+}
+
+bool World::clear_slave_deploy_blockers(int idx) {
+    if(!is_mcv(idx))return false;
+    const auto& miner=units_[idx];
+    const auto& d=btypes()[miner.deploys_into];
+    if(d.slave_count<=0)return false; // do not change the ordinary MCV relocation policy
+    int x=miner.cell_x,y=miner.cell_y;
+    if(d.fw>2 || d.fh>2){--x;--y;}
+    auto inside=[&](int cx,int cy){return cx>=x && cy>=y && cx<x+d.fw && cy<y+d.fh;};
+    std::vector<int> blockers;
+    Occupancy cleared=occ_;cleared.release_all_of(idx,-1,-1);
+    for(int i=0;i<static_cast<int>(units_.size());++i) {
+        const auto& u=units_[i];
+        if(i==idx || !live_on_map(u) || !inside(u.cell_x,u.cell_y))continue;
+        if(!are_allied(miner.house,u.house) || u.frozen || u.deployed || u.is_aircraft || u.is_naval || u.deploy_mission)
+            return false;
+        blockers.push_back(i);cleared.release_all_of(i,-1,-1);
+    }
+    if(blockers.empty())return false;
+    // Never scatter units for a footprint still blocked by terrain, a building,
+    // an enemy, a reservation or another static obstacle.
+    if(!placement_check(x,y,d.fw,d.fh,miner.house,d.adjacent,passable_,grid_w_,grid_h_,cleared,
+        buildings_,true,nullptr,build_mask(false)).ok)return false;
+    bool waiting=false;std::set<std::pair<int,int>> goals;
+    for(int i:blockers) {
+        auto& u=units_[i];
+        if(u.moving() && !inside(u.path.back().x,u.path.back().y)) {
+            goals.emplace(u.path.back().x,u.path.back().y);waiting=true;continue;
+        }
+        bool routed=false;
+        for(int r=1;r<=4 && !routed;++r)for(int dy=-r;dy<=r && !routed;++dy)for(int dx=-r;dx<=r && !routed;++dx) {
+            if(std::abs(dx)!=r && std::abs(dy)!=r)continue;
+            const int gx=u.cell_x+dx,gy=u.cell_y+dy;
+            if(inside(gx,gy) || goals.count({gx,gy}) || !unit_can_enter_cell(u,gx,gy) ||
+               building_at_cell(gx,gy)>=0 || !occ_.can_enter(gx,gy,i,u.on_deck))continue;
+            order_unit_move(i,gx,gy);
+            if(u.moving() && u.path.back().x==gx && u.path.back().y==gy) {
+                goals.emplace(gx,gy);waiting=true;routed=true;
+            }
+        }
+    }
+    return waiting;
 }
 
 void World::finish_deploy(int idx) {
@@ -168,6 +217,7 @@ void World::step_deploy(double dt) {
         }
         if (u.moving()) { u.deploy_mission = 0; continue; }   // re-ordered mid-turn
         if (!can_deploy_at(i, u.cell_x, u.cell_y)) {
+            if(clear_slave_deploy_blockers(i))continue;
             // [FUN_007383E0 @0x738500] failure on the spot -> EVA_CannotDeployHere
             // (human player) and back to Guard.
             deploy_events_.push_back({DeployEvent::Kind::CannotDeploy, i, -1, u.house});

@@ -752,3 +752,48 @@ TEST_CASE("bridge traversal: infantry and tracked units cross both directions on
         CHECK(saw_deck);CHECK(w.units()[0].cell_x==(reverse?15:24));CHECK(w.units()[0].on_deck==0);
     }
 }
+
+TEST_CASE("Slave Miner deploy: friendly blockers walk out before conversion; no teleport") {
+    Rig r;World w(r.map);BuildingTypeDef d;d.id="YAREFN";d.fw=d.fh=2;d.strength=1000;d.slave_count=5;
+    w.set_building_types({d});auto miner=unit("SMIN");miner.is_vehicle=true;miner.deploys_into="YAREFN";
+    w.add_combat_unit(8,8,0,miner);w.add_combat_unit(9,8,0,unit("FRIEND"));
+    REQUIRE_FALSE(w.can_deploy_at(0,8,8));REQUIRE(w.order_deploy_mcv(0));
+    CHECK(w.units()[1].cell_x==9);CHECK(w.units()[1].cell_y==8);CHECK(w.units()[1].fx==9);
+    CHECK(w.units()[1].moving());CHECK(w.units()[0].deploy_mission==1);
+    for(int i=0;i<240 && w.buildings().empty();++i)w.step(1.0/15.0);
+    REQUIRE(w.buildings().size()==1);CHECK(w.buildings()[0].cx==8);CHECK(w.buildings()[0].cy==8);
+    CHECK_FALSE((w.units()[1].cell_x>=8 && w.units()[1].cell_x<10 && w.units()[1].cell_y>=8 && w.units()[1].cell_y<10));
+    World restored(r.map);REQUIRE(save::load_world(restored,save::save_world(w)));
+    for(int i=0;i<90;++i){w.step(1.0/15.0);restored.step(1.0/15.0);}
+    CHECK(save::save_world(w)==save::save_world(restored));
+}
+TEST_CASE("Slave Miner deploy: enemy and static blockers are not pushed by footprint clearing") {
+    for(bool enemy:{false,true}) {
+        Rig r;World w(r.map);BuildingTypeDef d;d.id="YAREFN";d.fw=d.fh=2;d.strength=1000;d.slave_count=5;
+        w.set_building_types({d});auto m=unit("SMIN");m.is_vehicle=true;m.deploys_into="YAREFN";
+        w.add_combat_unit(8,8,0,m);w.add_combat_unit(9,8,enemy?1:0,unit("BLOCKER"));
+        if(!enemy)w.units()[1].frozen=true;
+        (void)w.order_deploy_mcv(0);
+        CHECK_FALSE(w.units()[1].moving());CHECK(w.units()[1].cell_x==9);CHECK(w.units()[1].cell_y==8);
+        CHECK_FALSE(w.can_deploy_at(0,8,8));
+    }
+}
+
+TEST_CASE("Slave Miner move command: owner packs and drives; enemy cannot convert building") {
+    Rig r;World w(r.map);BuildingTypeDef d;d.id="YAREFN";d.fw=d.fh=2;
+    d.strength=200;d.slave_count=2;d.slave_combat=unit("SLAV");
+    w.set_economy({d},{0},OreValues{},1000,0,0);
+    auto mobile=unit("SMIN");mobile.deploys_into="YAREFN";mobile.rot=8;
+    w.set_undeploy_unit(0,mobile);w.add_building(0,8,8,2,2,0,200,0,0,true);
+    w.buildings()[0].hp=100;w.step_yuri_workers();const int index=int(w.units().size());
+    auto cmd=make_mega(w,{},Mission::Move,Target{},Target::cell(14,14));
+    cmd.whom.push_back(Target::building(0));cmd.house=1;apply_command(w,cmd);
+    REQUIRE(w.buildings()[0].alive);CHECK(w.units().size()==index);
+    World restored(r.map);REQUIRE(save::load_world(restored,save::save_world(w)));
+    cmd.house=0;apply_command(w,cmd);apply_command(restored,cmd);
+    REQUIRE(w.units().size()==index+1);CHECK(w.buildings()[0].state==Building::State::Dead);
+    CHECK(w.units()[index].hp==50);REQUIRE(w.units()[index].moving());
+    CHECK(w.units()[index].path.back().x==14);CHECK(w.units()[index].path.back().y==14);
+    for(int t=0;t<180;++t){w.step(1.0/15.0);restored.step(1.0/15.0);}
+    CHECK(save::save_world(w)==save::save_world(restored));
+}

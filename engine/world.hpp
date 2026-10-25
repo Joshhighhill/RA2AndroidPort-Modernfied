@@ -3206,6 +3206,7 @@ private:
     std::uint32_t session_seed_ = 0;           // Net L0: the one session seed (saved, v34)
     bool try_undeploy(int b_idx);              // called by complete_sell
     void finish_deploy(int idx);
+    bool clear_slave_deploy_blockers(int idx);
 
     // --- Wave-5 abilities (world_w5.cpp) ---
     WorldW5 w5_;

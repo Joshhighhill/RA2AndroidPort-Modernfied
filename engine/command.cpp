@@ -210,6 +210,11 @@ void apply_mega(World& w, const Command& c, CommandHost* host) {
         case Mission::Move:
         case Mission::QMove:
             if (c.dest.is_cell()) w.group_move(H, ids, c.dest.cell_x(), c.dest.cell_y());
+            if(c.dest.is_cell())for(const auto& t:c.whom) {
+                if(!t.is_building() || !bld_ok(w,t.id) || w.buildings()[t.id].house!=H || !w.can_pack_slave_miner(t.id))continue;
+                const int mobile=static_cast<int>(w.units().size());
+                if(w.order_pack_slave_miner(t.id,H))w.order_unit_move(mobile,c.dest.cell_x(),c.dest.cell_y());
+            }
             return;
         case Mission::Attack:
             // W7-02-10: an own firing garrison in the Whom takes the target.
