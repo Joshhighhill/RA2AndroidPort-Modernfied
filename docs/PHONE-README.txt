@@ -128,3 +128,5 @@ Three-finger tap in a game shows FPS (frames per second), LOGIC (15/s =
 full speed) and the milliseconds per frame. Please send a screenshot of it
 in a busy moment, with the phone model. With a PC: see docs/INSTALL.md
 section 5 (adb shell setprop debug.ra2.perf 1, then adb logcat).
+
+Build 900036: Game main menu in the Android launcher selects Original Yuri's Revenge (default) or independently drawn Command Center (experimental). Submenus and game controls are retained. This does not connect to CnCNet servers. With MCV Redeploy enabled, select your Construction Yard and tap legal ground to pack and move; the UNDEPLOY command remains available. Reverse buildup completes before movement.

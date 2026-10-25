@@ -1,0 +1,43 @@
+RA2AndroidPort Android touch test 36 / build 900036
+25 October 2026
+
+Evidence
+- Read RA2YRINST.txt fully; unchanged modification time 2026-10-25 05:32:09Z.
+- Read current living PC Fidelity vs Gagarin report (137404 text characters).
+- Downloaded both new MP4s completely: SlopeMovements.mp4 (9173855 bytes) and Tank Bunker animation and vehicle entry exit.mp4 (16960991 bytes). Decoded all frames and inspected contact sheets. These show filmed reference gameplay, not an instrumented test of this APK. Reference slope clip is 6.51s; bunker clip 13.15s.
+- Bunker reference: vehicle approaches lowered platform, drives on, bunker rises; exit lowers before the vehicle drives off. No claim that this pass establishes every original engine timing or offset.
+- Latest diagnostic ZIP in accessible folder remains 1skZwmPzvQxbhUWWShCtcVZTUoNEUROc2, build 900034 / c390e51, modified 2026-10-25 06:17:04Z. Its previous complete analysis is retained in the living report. There is NO newer 900035/900036 diagnostic session to correlate with MCV/bridge observations. No fabricated crash/root-cause claim from old logs.
+
+Implemented changes
+1. Bunker approach: attachment waits for the reserved approach cell to be physically reached and the drive path to finish. Infantry garrison logic retains its prior gate. Target death/occupancy and legal blocked exits retain existing checks.
+2. Presentation: entry drive uses distance and the vehicle's Drive speed conversion; lift animation starts after that crossing. Exit art lowers first, then the hull drives clear. Movement is linear instead of smoothstep magnet-like acceleration, and rapid reversals use the currently presented position. This remains a presentation bridge over the existing instantaneous occupant simulation; full physical through-foundation locomotion, rotation, lift-height and collision/attack timing parity are NOT claimed.
+3. All-faction Construction Yard input: selected permitted yard now accepts a map move command, packs using existing reverse buildup and carries the destination through saved rally coordinates to the MCV. Existing Deploy/Undeploy panel still works. Ownership, human/skirmish, MCV Redeploy option and placement checks remain. Move-to-pack is a mobile convenience built on the existing sell-to-undeploy mechanism; the fork's RE notes establish the sell gate, not proof of this exact PC gesture. No save-format bump; default ConYard has no factory rally.
+4. Terrain rendering: hull/turret/barrel use a shared bounded tilt key blended along the active route segment. Surface normals are interpolated and converted to a rigid rotation, so the vehicle is not scaled/sheared. Eight intermediate steps bound cache variants; original flat and endpoint matrices are retained. Z movement uses build35's existing helper. SHP infantry do not gain fictional 3D body tilt. No claim of exact original slope matrix/timer parity or a thermal/FPS improvement without profiling.
+5. Optional independently drawn Command Center main menu: Android launcher -> Game main menu. Original Yuri's Revenge remains default. Rectangles are shared by drawing and input; menu buttons remain at least original logical target height. Original submenus, campaigns, network actions and exit confirmation remain. No CnCNet code, skins or networking imported. Experimental until physical visual/touch QA.
+6. Added docs/MODDING-COMPATIBILITY.md: actual loader seams, vanilla INI/art/AI/asset categories, engine extension limitations, license-aware CnCNet assessment and staged profile compatibility plan. A general mod importer is NOT added.
+
+Testing
+- Native full suite: 1241 passed, 0 failed, 1 optional absent-retail landmark fixture excluded; 276208 assertions passed.
+- Focused MCV/bunker/tilt suite: 15 cases / 8909 assertions passed before the final full run.
+- Initial full run had 1 failed NEW bunker fixture (2 assertions): its tank omitted is_vehicle=true, so the engine correctly refused it. Corrected fixture; expanded full normal ordered-drive and original input tests; final complete suite passes. No failures hidden.
+- Android ARM64 syntax check passes; existing waypoint_cell missing-override warning retained.
+- Determinism: full suite includes lockstep replay/hash checks. Added all-faction saved mid-pack destination continuation; prior slave following/save-state/projectile regressions remain included. Presentation choices add no simulation RNG.
+- Android build/lint, APK signature/archive alignment and final delivery evidence are recorded after execution in the living Google Doc and BUILD_INFO.json.
+- adb devices: no device connected. No emulator, Android instrumentation or real-device POCO verification performed.
+
+Preserved and limitations
+Original normal tank projectiles and Android touch gestures (including pinch/HUD behavior) are unchanged and covered by the existing suite. Existing launcher themes and direct return remain. This build is incremental; it does NOT close all R-044 onward issues.
+Bridge entrance/middle/exit overlap remains OPEN: likely needs finer deck/vehicle occlusion than cell sort; the new slope clip is not a bridge reproduction and no guessed bias workaround is added. No new general 1-100 unit pathfinding rewrite, particle overhaul, Magnetron/Disc/Chaos/superweapon parity, Boomer art/guard correction, or exact bunker physical movement parity is claimed.
+User says slaves may traverse their own miner but other units may not. Neither new clip shows that collision case. Asked whether deployed, mobile or both; until confirmed, no broad passability bypass that could let units cross other buildings/vehicles. Still open.
+MCV disabled when MCV Redeploy is OFF remains correct. New move-to-pack automated input works; user should test the actual original reported UI scenario. Blocked center still refuses rather than deleting units. Existing mid-sale blocked-spawn refund fallback is not redesigned here.
+CnCNet client is GPL-3.0-or-later; this fork remains 0BSD with original author notices and Bryle13 modifications. Mod packages' asset rights are independent. Ares/Phobos Windows DLLs do not run as native Android plugins. Gagarin research only, no GPL code copied. No retail assets or credentials bundled.
+
+Phone checks
+1. Install this build over the existing app; preserve save backups. Enable MCV Redeploy, test each faction yard via ground move and Undeploy; test OFF, blocked center, captured yard and save mid-pack.
+2. Bunker: tanks from all directions, stop/retarget during approach, rapid enter/exit, blocked exits, Gatling/large vehicles, damaged bunker, fire while inside. Compare to supplied clip; report visual frame/time and map.
+3. Slopes both directions, long diagonals, stops/reorders on ramp, hull/turret/barrel contact; bridges separately at entrance/middle/exit. Share a fresh report naming map and unit.
+4. Original and experimental main menus: all navigation/exit, phone/tablet sizes, text, touch positions, relaunch persistence. Experimental hub is not a complete reskin of all submenus.
+5. Normal tank force-fire shells, anti-air, Gatling, pinch/sidebar production pause/cancel and launcher return remain regression priorities.
+
+Delivery policy
+Small descriptive commits to android-touch in shietgrupe-cpu13/RA2AndroidPort. Never force-push. APK only to existing Google Drive RA2YRPORT.apk file ID, never GitHub Releases. Source SHA, final test evidence, signer, size, SHA256 and verified download are recorded in the same report after successful execution. No unrelated repository or synced sources modified.
