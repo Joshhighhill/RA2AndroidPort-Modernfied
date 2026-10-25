@@ -1,0 +1,72 @@
+Build 900033 - weapon origins, projectile presentation and sensor colors
+25 October 2026
+
+Baseline: bcc710e1697970b82327284c99e545337166297f (900032).
+RA2YRINST.txt and existing R-001..R-043 report reread before edits.
+
+R-044 Psychic Sensor intent lines (new user observation):
+The line and destination cross now use the enemy unit's current house remap
+color, the same palette entry as the other house-colored effects. The selected
+sensor's purple coverage circle is unchanged. Colors are resolved once per
+encountered house per draw, not by creating a palette for every enemy unit.
+Fog/intent eligibility, alliance rules and powered radius are unchanged.
+
+R-045 / R-009 weapon launch points (new user observation):
+A common strict art resolver selects Primary/SecondaryFireFLH, numbered
+WeaponNFlH and elite overrides from the actual IMAGE section. Explicit zero
+is valid; missing/malformed extra keys preserve the existing primary fallback.
+Previously all simulation weapon slots were assigned the primary offset.
+Starting skirmish units bypassed the voxel loader and had zero FLH; now that
+path also receives the imported art. Produced unit profiles and muzzle flashes
+use the same resolver. Retail examples: HTNK/GTNK 150,0,100; LTNK 225,0,100;
+YTNK 160,30,150. Do not copy the Gatling's numeric offset to every tank.
+These art bindings correct launch coordinates; they are not purely cosmetic.
+Existing flight integrators, damage, RNG, weapon cadence and projectile art
+are preserved. Use same-build peers for multiplayer.
+Instant projectile line trails now begin at the transformed weapon FLH rather
+than the unit center. Beam sources no longer have an arbitrary minimum-height
+clamp that displaces low muzzles. Full slope/voxel FLH parity remains open.
+
+R-043 projectile presentation:
+Store previous/current authoritative projectile coordinates outside World and
+save data. New bullets begin their first displayed interval at the recorded
+Launch event rather than the already-integrated position. Interpolate only
+within those endpoints; no extrapolation or changes to damage/impact timing.
+Retire vanished bullets and clear the cache per session. Tests cover reordered
+bullets, duplicate salvos, defense launch association and cache cleanup.
+No claim of an engine-wide rendering rewrite or improved phone thermals.
+
+New uploaded report reviewed:
+Drive ID 1uS9MzF1ZMQ25otH6XjHSRu0DdcekZxfY; build 900032, created
+2026-10-25T02:33:57Z. All 9 text/log files scanned in full. Current 2049 lines,
+previous 7931 lines. No assertion/fatal/SIGSEGV/SIGABRT/nonzero invalid marker.
+NUKETO and NUKEANIM both available=1; this proves lookup, not visual fidelity.
+35 retained performance samples: FPS 46.8..61.5, median 61.3; median render CPU
+2.56ms; worst recorded CPU sample 23.6ms. No GPU/temperature recording or A/B.
+289 TRAFFIC_RECOVERY records remain evidence for OPEN pathing work, not proof
+of successful recovery. Latest Android exit reason=2 status=9 is signaled;
+it does not establish a native crash or its cause. Attached .trace timestamps
+are 22/23 October, older than this session. User description was not provided;
+chat observations supply the symptom. Trace internals were not re-symbolicated.
+
+Validation: native 1219 cases / 267298 assertions passed, 0 failures;
+one optional absent-retail fixture excluded. Android syntax passes with the
+existing waypoint_cell missing-override warning. Final APK build/signature,
+checksum and pushed source SHAs are recorded in the existing Drive report.
+No emulator or POCO test of this new build was performed.
+
+Phone checks: start a NEW skirmish (old saves keep their serialized weapon
+profiles). Test Lasher, Grizzly, Rhino and Gatling firing in all directions,
+turning, elite/burst, force fire and enemy fire. Compare muzzle flash and shell
+start. Test two differently colored enemies giving orders into a sensor radius,
+including through fog and after ownership changes. Check paused/resumed play,
+fast salvos, save/load, and nuclear strikes for presentation regressions.
+
+OPEN: full slope ground contact, bunker trajectory/heading/art fidelity,
+Gatling barrel/recoil/audio parity, factory roof/door exits, specialized
+Magnetron/Flying Disc mechanics and other unclosed tracker items.
+Save format 53, portrait launcher, touch controls, app ID, configured signer,
+licenses and credits preserved. No EA assets, executables or secrets bundled.
+Gagarin remains a research reference (previous pin cbe6261d2fee4306ab8e79ef622d5686bd9eb0b3);
+no new Gagarin function match claimed or GPL source copied in this pass.
+Delivery: Google Drive only, RA2YRPORT.apk. No GitHub Release.
