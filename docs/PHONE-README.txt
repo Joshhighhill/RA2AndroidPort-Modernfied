@@ -139,6 +139,6 @@ sites. Display-only unit position/facing/height interpolation and slope shadow
 corrections preserve fixed-tick gameplay. See TOUCH-TEST39.txt for phone checks.
 Save format 54: retain backups; old format-53 saves are not converted. Start a
 fresh skirmish. Every network participant must use the same engine build.
-Automated validation: 1255 cases / 276808 assertions passed, zero failures;
+Automated validation: 1255 cases / 276810 assertions passed, zero failures;
 one optional absent-retail landmark fixture excluded. No phone/GPU/thermal
 measurement or universal bridge/animation parity is claimed.

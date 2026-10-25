@@ -43,12 +43,14 @@ exact visual timing still requires phone/PC comparison.
 
 ## Validation and remaining work
 
-The complete native suite passed 1255 cases and 276808 assertions, zero
+The complete native suite passed 1255 cases and 276810 assertions, zero
 failures; one optional missing-retail landmark fixture was excluded. Focused
 validation passed 15 cases / 618 assertions. Android syntax passed with the
 existing waypoint_cell missing-override warning. The first broad run caught
 five failures (old instant-exit/direct-ore expectations and a standalone
 traffic detour regression); these were corrected before the final full run.
+Final review also corrected Stop cancelling a pending automatic miner deploy;
+the full suite was rerun successfully after that change.
 The release record and Google Drive tracker contain the final test counts,
 source commits, APK checksum and upload readback. Tests cover physical bunker
 travel, save/load during lowering and movement, render-rate independence,

@@ -466,6 +466,8 @@ TEST_CASE("Yuri core: mobile miner seeks ore and explicit Stop persists through 
     CHECK(w.can_deploy_at(0,w.units()[0].path.back().x,w.units()[0].path.back().y));
     CHECK(w.units()[0].deploy_mission==4);
     w.order_stop(0);CHECK(w.units()[0].manual_hold);
+    CHECK(w.units()[0].deploy_mission==0);
+    w.step(1.0/15.0);CHECK(w.buildings().empty());
     w.step_yuri_workers();CHECK_FALSE(w.units()[0].moving());
     World restored(r.map);REQUIRE(save::load_world(restored,save::save_world(w)));
     CHECK(restored.units()[0].manual_hold);
