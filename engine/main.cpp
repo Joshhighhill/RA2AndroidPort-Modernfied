@@ -7218,6 +7218,15 @@ public:
         // sidebar FUN_006ab0b0 ignore input -- only Esc reaches the options]:
         // every pointer / key / touch event past the options menu is dropped.
         if (input_locked_) return;
+        if(ev.kind==ra2engine::InputEvent::Zoom) {
+            if(ev.dx<=0 || (sidebar_up_ && lay_.contains(ev.x0,ev.y0)) ||
+               touch_panel_contains(ev.x0,ev.y0) || menu_.open_)return;
+            const double ratio=std::max(0.8,std::min(1.25,ev.dx/1000000.0));
+            const int h=std::max(360,std::min(900,int(std::lround(kWinH/ratio))));
+            const int w=std::max(640,std::min(2560,int(std::lround(double(kWinW)*h/kWinH))));
+            relayout_canvas(w,h);
+            return;
+        }
         if (hotkey(ev)) return;      // G-04: KeyboardMD.ini [Hotkey] commands
         if (touch_banner_handle(ev)) return; // Instructions own touches before placement input.
         if (touch_bar_handle(ev)) return;   // W2-AR-08 touch command bar (touch_bar.inc)

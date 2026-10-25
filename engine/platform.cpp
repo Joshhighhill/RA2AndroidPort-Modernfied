@@ -155,6 +155,7 @@ void Platform::set_fullscreen(bool on) {
 
 void Platform::set_logical_size(int w, int h) {
     if (!p_ || w <= 0 || h <= 0 || (w == p_->w && h == p_->h)) return;
+    p_->touch.rescale(p_->w,p_->h,w,h);
     p_->w = w;
     p_->h = h;
     SDL_RenderSetLogicalSize(p_->renderer, w, h);

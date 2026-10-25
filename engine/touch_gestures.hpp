@@ -17,6 +17,7 @@
 //                                  button: create the team). It NEVER deselects
 //                                  units (W4-AM-07).
 //   two-finger drag             -> Pan
+//   two-finger pinch            -> Zoom (camera only; never a release click)
 //   two-finger tap              -> right click (cancel a mode, else deselect)
 // A second finger can upgrade a stationary hold, but an already-started pan
 // remains camera-only until every finger lifts (it cannot become a cancel).
@@ -52,6 +53,7 @@ public:
     // W9-04-06: the Platform scales the slop to 8 dp on a phone.
     void set_slop(int px) { if (px > 0) cfg_.slop_px = px; }
     int slop() const { return cfg_.slop_px; }
+    void rescale(int old_w,int old_h,int new_w,int new_h);
 
     void finger_down(int64_t id, int x, int y, uint32_t t_ms);
     void finger_move(int64_t id, int x, int y, uint32_t t_ms);
@@ -95,6 +97,9 @@ private:
     uint32_t t0_ = 0;
     int mid_x_ = 0, mid_y_ = 0;               // two-finger centroid (last emitted)
     int travel_ = 0;                          // two-finger centroid travel (px)
+    double span_ = 0;
+    bool pinching_ = false;
+    bool moved0_ = false, moved1_ = false;
     uint32_t t2_ = 0;                         // two-finger start time
     bool three_ = false;                      // R-170: a third finger joined
     bool two_tap_candidate_ = false;          // never revive a consumed one-finger pan

@@ -6,6 +6,19 @@
 
 using namespace ra2engine;
 
+TEST_CASE("touch pinch: zoom survives canvas resize and never emits an order on lift") {
+    TouchGestures g;g.finger_down(1,200,200,0);g.finger_down(2,400,200,10);
+    g.finger_move(1,140,200,20);InputEvent e;REQUIRE(g.pop(e));CHECK(e.kind==InputEvent::Pan);
+    g.finger_move(2,460,200,30);REQUIRE(g.pop(e));
+    CHECK(e.kind==InputEvent::Zoom);CHECK(e.dx==1600000);CHECK(e.touch);
+    g.rescale(1000,500,800,400);
+    g.finger_move(2,368,160,50);REQUIRE(g.pop(e));CHECK(e.kind==InputEvent::Zoom);
+    CHECK(e.dx==1000000);
+    g.finger_move(2,320,160,60);REQUIRE(g.pop(e));CHECK(e.kind==InputEvent::Zoom);CHECK(e.dx<1000000);
+    g.finger_up(2,320,160,80);g.finger_up(1,112,160,90);
+    CHECK_FALSE(g.pending());
+}
+
 namespace {
 std::vector<InputEvent> drain(TouchGestures& g) {
     std::vector<InputEvent> v;

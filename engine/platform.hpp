@@ -12,7 +12,7 @@ struct InputEvent {
     // AppLowMemory (drop caches), RenderReset (GL context lost: textures gone).
     enum Kind { None, Quit, PointerDown, PointerUp, PointerMove, Key, Text, Pan,
                 AppBackground, AppForeground, AppLowMemory, RenderReset,
-                Resize /* R-162: the window / panel changed size */ } kind = None;
+                Resize /* R-162: the window / panel changed size */, Zoom } kind = None;
     int x = 0, y = 0;                       // pointer position (window pixels)
     enum Button { Left, Right } button = Left;  // valid on PointerDown/PointerUp
     bool shift = false;                     // Shift held at event time
@@ -26,7 +26,7 @@ struct InputEvent {
     // KeyboardMD.ini [Hotkey] uses (A..Z = 65..90, 0..9 = 48..57, F1 = 112,
     // Esc = 27, Space = 32, Home = 36, ...). 0 = unmapped key.
     int vk = 0;
-    int dx = 0, dy = 0;                     // Pan: camera delta (window pixels)
+    int dx = 0, dy = 0;                     // Pan: camera delta; Zoom: span ratio in millionths
     char text[32] = {0};                    // Text: NUL-terminated UTF-8
     // W4-AM-01/07 (touch only): `hold` marks the right click a finger hold
     // produces (it cancels a mode but never deselects); x0/y0 is where a Pan

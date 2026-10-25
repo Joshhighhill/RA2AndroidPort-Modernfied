@@ -47,6 +47,11 @@ Touch controls
 - Double tap a unit: select every unit of that type on screen (never deploys).
 - Tap the only selected unit, then wait: deploy / unload it (or DEPLOY).
 - Drag with one or two fingers: scroll the map.
+- Spread or pinch two fingers on the battlefield to zoom in or out. The
+  viewport and sidebar scale together; zoom is bounded and lasts this game
+  session. Lift both fingers before tapping an order. A pinch never becomes
+  a deselect or movement tap. Sidebar and command-panel gestures keep their
+  existing meaning. A screen resize resets zoom to the selected resolution.
 - Hold (a ring fills), then drag: draw a selection box. Or turn on BOX in
   the command column: then a one-finger drag draws the box at once.
 - Hold, then lift: cancel the armed mode (sell / repair / placement /
