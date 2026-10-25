@@ -9,6 +9,14 @@ be reopened in the launcher. Confirmation is not proof of purchase or legal
 clearance. Diagnostics remain local until you choose Share game report.
 Current test builds use Google Drive delivery; do not redistribute retail assets.
 
+Build 900041: Tank Bunker platform/composite depth correction, explicit defense
+FIRE/STOP orders, authentic Yuri flag/loading art, deployed-miner role alert,
+and defense-projectile muzzle alignment. See TOUCH-TEST41.txt and
+FIDELITY-AUDIT41.md for verification steps and unresolved cases, including
+charged Prism explicit orders and specialist FX. Save schema 55 requires a
+fresh match; retain old saves and use identical network builds. Advanced
+RA2.INI [Audio] MinerRoleAlerts=no restores the prior deployed-building alert.
+
 1. Copy RA2-Engine.apk to the phone and open it to install
    (allow "Install unknown apps" when asked). To update, install the new
    APK over the old one - your game files and settings are kept. NOTE:

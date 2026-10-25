@@ -1,0 +1,33 @@
+RA2AndroidPort 900041 — phone acceptance
+
+Save format 55: keep older saves backed up and start a fresh skirmish.
+All multiplayer peers must use this build.
+
+Bunker: repeat your latest 6.64-second scene, then approach from every direction.
+Watch the tank's tracks on the platform, front/rear walls, horizontal alignment,
+lowering and complete drive-out. The tank must not be painted over by the base
+or sit on top of the front hull. Check Lasher/Rhino/Gatling, damaged bunker,
+blocked exits, repeated use, Stop during approach, death and save/load.
+The visual alignment is newly calibrated and still needs your phone feedback.
+
+Force Fire: select an own defense, open the touch panel, tap FIRE then a ground
+cell or legal friendly/enemy target in range. STOP cancels the explicit order.
+Test Gatling Cannon vs ground/air, Pillbox, Tesla, Psychic Tower and an occupied
+bunker. Non-weapon structures cannot shoot, AA-only guns cannot shoot ground,
+and powered-off defenses cannot shoot. Charged Prism explicit orders remain
+unsupported; its normal automatic/support behavior is preserved.
+
+Yuri UI: select Yuri, check the authentic flag and start a match. Loading should
+use Yuri art rather than an Allied fallback. Check other countries and resolutions.
+
+Miner alert: damage a mobile and deployed Slave Miner. Deployed manager should
+announce Ore Miner Under Attack rather than Base Under Attack; ordinary buildings
+must retain base alerts. This is a requested UX change, not proven vanilla parity.
+
+Regression: working normal vehicle shells, force fire muzzle/flight/impact,
+Disc/Magnetron/Chaos/V3/Boomer effects, MCV redeploy, factory production,
+bridge/slope traffic, pinch zoom, cameo pause/cancel, launcher Quit and save/load.
+Share game report with unit, action, map and recording time in its description.
+
+Native regression tests do not establish correct device pixels or temperature.
+See FIDELITY-AUDIT41.md for confirmed changes and remaining limitations.
