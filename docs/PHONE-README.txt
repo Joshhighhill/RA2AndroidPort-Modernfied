@@ -130,3 +130,15 @@ in a busy moment, with the phone model. With a PC: see docs/INSTALL.md
 section 5 (adb shell setprop debug.ra2.perf 1, then adb logcat).
 
 Build 900036: Game main menu in the Android launcher selects Original Yuri's Revenge (default) or independently drawn Command Center (experimental). Submenus and game controls are retained. This does not connect to CnCNet servers. With MCV Redeploy enabled, select your Construction Yard and tap legal ground to pack and move; the UNDEPLOY command remains available. Reverse buildup completes before movement.
+
+Build 900039: Tank Bunker evacuation lowers the hull before normal pathfinding
+from the center; blocked exits keep the tank inside. Entry no longer shifts
+half a cell after arrival. MCV packing suppresses Structure Sold speech.
+Blocked friendly infantry can yield, and miners plan legal near-ore deploy
+sites. Display-only unit position/facing/height interpolation and slope shadow
+corrections preserve fixed-tick gameplay. See TOUCH-TEST39.txt for phone checks.
+Save format 54: retain backups; old format-53 saves are not converted. Start a
+fresh skirmish. Every network participant must use the same engine build.
+Automated validation: 1255 cases / 276808 assertions passed, zero failures;
+one optional absent-retail landmark fixture excluded. No phone/GPU/thermal
+measurement or universal bridge/animation parity is claimed.

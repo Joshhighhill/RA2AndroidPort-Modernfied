@@ -1,0 +1,37 @@
+RA2AndroidPort Android ARM64 build 900039 — phone acceptance
+
+Install over the current application. Preserve save backups. Save format 54
+requires a fresh match; older format-53 saves are not converted. All network
+participants must run this build. Original licensed retail files remain external.
+
+1. Tank Bunker: approach from all four directions. Tank drives to center,
+   aligns horizontally, then hull rises. Evacuate: hull lowers before the
+   tank begins normal turning/movement. Block every exit and retry; tank
+   must stay alive inside. Save/load while lowering and while driving out.
+   Repeat near walls, bridges, other tanks; try destruction/control loss.
+2. MCV: with redeploy on, pack each faction yard. There should be no
+   Structure Sold announcement. Ordinary building sales should still speak.
+3. Traffic: send tanks and Brutes through opposing groups and narrow lanes.
+   Idle friendlies should clear when there is space. No unit may walk through
+   an unrelated building or enemy. Report lingering waits with map and unit.
+4. Slave Miner: place away from ore, test ore near a cliff or blocked 2x2
+   footprint, stop/reorder, then save/load on approach. It should drive to
+   a legal nearby site and deploy quietly; manual failures remain audible.
+5. Rendering: compare movement/turning at slow and fast game speeds and
+   phone refresh settings. Cross slopes uphill/downhill, stop on each ramp,
+   and compare unit, shadow and turret contact. Check animated aircraft HVA.
+6. Bridges: cross entry/middle/exit in both directions, stop a tank on deck,
+   and pass a ship underneath. Capture any texture/occlusion errors; exact
+   all-map bridge parity has not been visually verified in this build.
+7. Fire normal tank shells and force-fire before/after moving or entering a
+   bunker. Existing projectile behavior must remain intact. Check infantry
+   firing, factory production, superweapon phases, pinch zoom and cameo
+   pause/cancel for regressions.
+
+Share diagnostics with the map/unit/action named. TRAFFIC_BLOCK records now
+identify next cell, goal, layer and blocker; render stage rates are not GPU
+timings or battery temperature. Visual fidelity needs a recording.
+
+Preserves Omar El Arab / 0BSD, Bryle13 credits, third-party notices and EA
+non-affiliation/ownership terms. APK delivery: Google Drive only, no GitHub
+Release. Research details: docs/RENDERING-AUDIT39.md.
