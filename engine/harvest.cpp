@@ -1,5 +1,6 @@
 #include "harvest.hpp"
 #include "diagnostics.hpp"
+#include "slave_passage.hpp"
 #include "orig_math.hpp"   // Net L0: om::ftol (_ftol 0x7C4D00) for double->int
 
 #include <algorithm>
@@ -187,7 +188,7 @@ bool parking_cell(const std::vector<Building>& buildings, const std::vector<int>
 bool find_reachable_ore(const OreField& ore, const std::vector<std::uint8_t>& passable, int gw,
                         int gh, const Occupancy& occ, int self, int cx, int cy, int radius,
                         int skip_x, int skip_y, int& out_x, int& out_y,
-                        const std::vector<Cellxy>* reserved, int prefer_x, int prefer_y) {
+                        const std::vector<Cellxy>* reserved, int prefer_x, int prefer_y,const std::vector<int>* open_cells) {
     const int x0 = std::max(0, cx - radius), x1 = std::min(std::min(ore.w(), gw) - 1, cx + radius);
     const int y0 = std::max(0, cy - radius), y1 = std::min(std::min(ore.h(), gh) - 1, cy + radius);
     if (x0 > x1 || y0 > y1) return false;
@@ -209,7 +210,8 @@ bool find_reachable_ore(const OreField& ore, const std::vector<std::uint8_t>& pa
             const int nx = x + ndx[d], ny = y + ndy[d];
             if (nx < x0 || nx > x1 || ny < y0 || ny > y1) continue;
             const int j = (ny - y0) * bw + (nx - x0);
-            if (reach[(std::size_t)j] || !is_passable(passable, gw, gh, nx, ny)) continue;
+            if (reach[(std::size_t)j] || (!is_passable(passable, gw, gh, nx, ny) &&
+                !(open_cells && std::binary_search(open_cells->begin(),open_cells->end(),ny*gw+nx)))) continue;
             reach[(std::size_t)j] = 1;
             stack.push_back(j);
         }
@@ -339,6 +341,8 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                 // filtered; the last cell a move to failed is skipped once.
                 std::vector<Cellxy> reserved;
                 const bool slave=u.w7.slave_manager>=0;
+                std::vector<int> passage;
+                if(slave)append_slave_passage(u,buildings,types,gw,gh,passage);
                 int center_x=-1,center_y=-1;
                 if (slave) {
                     const auto& manager=buildings[u.w7.slave_manager];
@@ -354,7 +358,7 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
                 // Vanilla SlaveMinerSlaveScan default (14). Ordinary miners
                 // retain their existing short/long scans and selection order.
                 const bool got = slave ? find_reachable_ore(ore,passable,gw,gh,occ,idx,u.cell_x,u.cell_y,
-                    14,u.harv_skip_x,u.harv_skip_y,ox,oy,&reserved,center_x,center_y) :
+                    14,u.harv_skip_x,u.harv_skip_y,ox,oy,&reserved,center_x,center_y,&passage) :
                     find_reachable_ore(ore, passable, gw, gh, occ, idx, u.cell_x, u.cell_y,
                                        scan.short_scan, u.harv_skip_x, u.harv_skip_y, ox, oy) ||
                     find_reachable_ore(ore, passable, gw, gh, occ, idx, u.cell_x, u.cell_y,

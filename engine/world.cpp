@@ -1,4 +1,5 @@
 #include "world.hpp"
+#include "slave_passage.hpp"
 #include "orig_math.hpp"   // Net L0: the original's FastMath, never libm in the sim
 #include "weapon_unit.hpp"  // Gap fix C
 
@@ -1051,6 +1052,8 @@ const std::vector<std::uint8_t>& World::amphib_grid() const {
 bool World::unit_can_enter_cell(const Unit& u, int x, int y) const {
     if (x < 0 || y < 0 || x >= grid_w_ || y >= grid_h_) return false;
     if (u.is_aircraft) return true;   // flight ignores the ground grids
+    if(const auto* b=slave_passage_building(u,buildings_,btypes()))
+        if(x>=b->cx && y>=b->cy && x<b->cx+b->fw && y<b->cy+b->fh)return true;
     const std::size_t i = static_cast<std::size_t>(y) * grid_w_ + x;
     const bool land = i < passable_.size() && passable_[i] != 0;
     const bool water = i < water_passable_.size() && water_passable_[i] != 0;

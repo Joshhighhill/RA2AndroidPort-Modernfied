@@ -21,6 +21,7 @@
 #include "command.hpp"
 #include "selection.hpp"
 #include "input.hpp"
+#include "slave_passage.hpp"
 #include <fstream>
 #include <iterator>
 using namespace ra2engine;
@@ -969,4 +970,63 @@ TEST_CASE("Tank Bunker: normal ordered drive finishes approach before attachment
  for(int tick=0;tick<200 && w.buildings()[0].occupants.empty();++tick)w.step(1.0/15.0);
  REQUIRE(w.buildings()[0].occupants.size()==1);CHECK(w.units()[0].garrison_of==0);
  CHECK(w.units()[0].fx==w.units()[0].cell_x);CHECK(w.units()[0].fy==w.units()[0].cell_y);
+}
+
+TEST_CASE("Slave passage: only linked workers cross their deployed manager in a blocked corridor") {
+ for(bool linked:{false,true}) {
+  Rig r;World w(r.map);for(int y=0;y<20;++y)for(int x=0;x<20;++x)if(y!=8)w.block_cell(x,y);
+  BuildingTypeDef d;d.id="YAREFN";d.fw=d.fh=2;d.slave_count=1;d.strength=1000;
+  w.set_building_types({d});w.add_building(0,8,8,2,2,0,1000,0,0,true);
+  auto c=unit("SLAV");c.is_infantry=true;w.add_combat_unit(6,8,0,c);w.enable_subcells();
+  if(linked)w.units()[0].w7.slave_manager=0;
+  CHECK(w.unit_can_enter_cell(w.units()[0],8,8)==linked);w.order_unit_move(0,11,8);
+  bool crossed=false;for(int tick=0;tick<70;++tick){w.step(1.0/15.0);if(w.units()[0].cell_x==11){crossed=true;break;}}
+  CHECK(crossed==linked);CHECK_FALSE(w.walkable(8,8));
+  if(linked){w.buildings()[0].house=1;CHECK_FALSE(w.unit_can_enter_cell(w.units()[0],8,8));
+   w.buildings()[0].house=0;w.buildings()[0].alive=false;CHECK_FALSE(w.unit_can_enter_cell(w.units()[0],8,8));}
+ }
+}
+TEST_CASE("Slave passage: mobile manager retains its claim while linked worker crosses and saves") {
+ for(bool linked:{false,true}) {
+  Rig r;World w(r.map);for(int y=0;y<20;++y)for(int x=0;x<20;++x)if(y!=8)w.block_cell(x,y);
+  auto m=unit("SMIN");m.is_vehicle=true;w.add_combat_unit(8,8,0,m);w.units()[0].frozen=true;
+  auto c=unit("SLAV");c.is_infantry=true;w.add_combat_unit(6,8,0,c);w.enable_subcells();
+  if(linked)w.units()[1].w7.slave_manager=-2;
+  w.order_unit_move(1,10,8);bool shared=false,reached=false;
+  for(int tick=0;tick<100;++tick){w.step(1.0/15.0);
+   if(linked && !shared && w.units()[1].cell_x==8){
+    shared=true;CHECK(w.occupancy().at(8,8)==0);CHECK(w.occupancy().spot_of(8,8,1)>=0);
+    World loaded(r.map);REQUIRE(save::load_world(loaded,save::save_world(w)));
+    for(int t=0;t<40;++t){w.step(1.0/15.0);loaded.step(1.0/15.0);}
+    CHECK(save::save_world(w)==save::save_world(loaded));
+   }
+   if(w.units()[1].cell_x==10){reached=true;break;}
+  }
+  CHECK(reached==linked);CHECK(shared==linked);CHECK(w.occupancy().at(8,8)==0);
+  CHECK(w.units()[0].alive);CHECK(w.units()[1].alive);
+ }
+}
+TEST_CASE("Slave passage: ownership death and bridge layer revoke the mobile exception") {
+ auto c=unit("SLAV");c.is_infantry=true;auto m=unit("SMIN");m.is_vehicle=true;
+ Rig r;World w(r.map);w.add_combat_unit(7,8,0,c);w.add_combat_unit(8,8,0,m);
+ auto& worker=w.units()[0];auto& miner=w.units()[1];worker.w7.slave_manager=-3;
+ CHECK(slave_mobile_pair(worker,miner,1));miner.house=1;CHECK_FALSE(slave_mobile_pair(worker,miner,1));
+ miner.house=0;miner.on_deck=1;CHECK_FALSE(slave_mobile_pair(worker,miner,1));
+ miner.on_deck=0;miner.alive=false;CHECK_FALSE(slave_mobile_pair(worker,miner,1));
+}
+
+TEST_CASE("Slave passage: ore reachability opens only the supplied manager footprint") {
+ OreField ore(12,1);ore.set(10,0,OreKind::Ore,10,0);std::vector<uint8_t> grid(12,1);grid[8]=grid[9]=0;
+ Occupancy occ(12,1);int x=0,y=0;std::vector<int> own{8,9};
+ CHECK_FALSE(find_reachable_ore(ore,grid,12,1,occ,0,6,0,14,-1,-1,x,y));
+ CHECK(find_reachable_ore(ore,grid,12,1,occ,0,6,0,14,-1,-1,x,y,nullptr,8,0,&own));CHECK(x==10);
+ grid[7]=0;CHECK_FALSE(find_reachable_ore(ore,grid,12,1,occ,0,6,0,14,-1,-1,x,y,nullptr,8,0,&own));
+}
+TEST_CASE("Slave passage: a mobile manager can traverse its worker without overwriting the spot") {
+ Rig r;World w(r.map);for(int y=0;y<20;++y)for(int x=0;x<20;++x)if(y!=8)w.block_cell(x,y);
+ auto m=unit("SMIN");m.is_vehicle=true;m.rot=10;w.add_combat_unit(6,8,0,m);
+ auto c=unit("SLAV");c.is_infantry=true;w.add_combat_unit(8,8,0,c);w.units()[1].w7.slave_manager=-2;
+ w.enable_subcells();w.order_unit_move(0,10,8);bool shared=false;
+ for(int tick=0;tick<100;++tick){w.step(1.0/15.0);if(w.units()[0].cell_x==8 && w.units()[1].cell_x==8){shared=true;CHECK(w.occupancy().spot_of(8,8,1)>=0);}if(w.units()[0].cell_x==10)break;}
+ CHECK(shared);CHECK(w.units()[0].cell_x==10);CHECK(w.units()[1].alive);
 }

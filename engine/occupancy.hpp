@@ -107,10 +107,10 @@ public:
     // rotation row `rot` (0..3) of DAT_0081BCA8 (the original draws it from
     // the sync RNG). -1 = no free spot, or a vehicle holds the cell. With
     // kAnyLayer the spot must be free (and no vehicle) on both planes.
-    int free_spot(int x, int y, int pref, int rot = 0, int layer = kAnyLayer) const {
+    int free_spot(int x, int y, int pref, int rot = 0, int layer = kAnyLayer, int allowed_vehicle = kEmpty) const {
         if (!in(x, y) || !subcells()) return -1;
         for (int l = lo(layer); l <= hi(layer); ++l)
-            if (own(l, x, y) != kEmpty) return -1;
+            if (own(l, x, y) != kEmpty && own(l,x,y)!=allowed_vehicle) return -1;
         static const signed char kRows[5][4] = {{1, 2, 3, 4}, {0, 2, 3, 4}, {0, 1, 4, 3},
                                                 {0, 1, 4, 2}, {0, 2, 3, 1}};
         static const signed char kRot[4][4] = {{1, 2, 3, 4}, {2, 3, 4, 1}, {3, 4, 1, 2},

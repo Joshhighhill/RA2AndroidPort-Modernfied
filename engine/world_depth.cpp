@@ -13,6 +13,7 @@
 #include "world.hpp"
 #include "diagnostics.hpp"
 #include "weapon_unit.hpp"
+#include "slave_passage.hpp"
 
 namespace ra2engine {
 
@@ -1103,6 +1104,7 @@ const PathTerrain* World::terrain_for(const Unit& u, PathTerrain& out, std::vect
     out = PathTerrain{};
     gates.clear();
     if (u.movement_domain != MovementDomain::Water) open_gates_for(u.house, gates);
+    append_slave_passage(u,buildings_,btypes(),grid_w_,grid_h_,gates);
     if (!gates.empty()) out.open_cells = &gates;
     if (!terrain_armed()) return gates.empty() ? nullptr : &out;
     out.level = &level_grid_;

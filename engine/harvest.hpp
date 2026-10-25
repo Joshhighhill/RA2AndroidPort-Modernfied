@@ -74,7 +74,8 @@ void step_harvest(std::vector<Unit>& units, std::vector<Building>& buildings,
 bool find_reachable_ore(const OreField& ore, const std::vector<std::uint8_t>& passable, int gw,
                         int gh, const Occupancy& occ, int self, int cx, int cy, int radius,
                         int skip_x, int skip_y, int& out_x, int& out_y,
-                        const std::vector<Cellxy>* reserved = nullptr, int prefer_x = -1, int prefer_y = -1);
+                        const std::vector<Cellxy>* reserved = nullptr, int prefer_x = -1, int prefer_y = -1,
+                        const std::vector<int>* open_cells = nullptr);
 // Gap owner A: `house_credits` has `n_houses` entries (every skirmish house
 // is paid, not just 0/1 -- house 2+ income used to land in house 0's pool).
 // [RE: economy.md §2 CONFIRMED] each unloaded bale also pays

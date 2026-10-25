@@ -36,6 +36,7 @@
 #include "locomotion.hpp"
 #include "pathfind.hpp"
 #include "diagnostics.hpp"
+#include "slave_passage.hpp"
 
 namespace ra2engine {
 
@@ -157,6 +158,7 @@ void build_occupancy_cost(const std::vector<Unit>& units, const Occupancy& occ, 
         if (static_cast<int>(o) == self) continue;
         const Unit& v = units[o];
         if (!live_on_map(v)) continue;
+        if(slave_mobile_pair(me,v,int(o)) || slave_mobile_pair(v,me,self))continue;
         const int x = v.cell_x, y = v.cell_y;
         if (x < 0 || y < 0 || x >= w || y >= h) continue;
         int my_layer = 0;
@@ -261,16 +263,21 @@ struct StepEnv {
     const std::vector<std::uint8_t>* crush_passable;
     const std::vector<std::uint8_t>* crush_leak;
     const StepTerrain* terrain;
+    mutable std::vector<int> passage_cells;
 
     const PathTerrain* terrain_of_unit(const Unit& u, PathTerrain& t) const {
-        if (!terrain) return nullptr;
-        t = u.movement_domain == MovementDomain::Water ? terrain->water
+        t = !terrain ? PathTerrain{} : u.movement_domain == MovementDomain::Water ? terrain->water
             : u.movement_domain == MovementDomain::Amphibious ? terrain->amph : terrain->land;
         t.start_layer = t.deck ? u.on_deck : 0;
         t.open_cells = nullptr;
-        if (terrain->gates && u.movement_domain != MovementDomain::Water && u.house >= 0 &&
+        if (terrain && terrain->gates && u.movement_domain != MovementDomain::Water && u.house >= 0 &&
             u.house < static_cast<int>(terrain->gates->size()) && !(*terrain->gates)[(std::size_t)u.house].empty())
             t.open_cells = &(*terrain->gates)[(std::size_t)u.house];
+        if(sc.world && slave_passage_building(u,sc.world->buildings(),sc.world->btypes())) {
+            passage_cells=t.open_cells?*t.open_cells:std::vector<int>{};
+            append_slave_passage(u,sc.world->buildings(),sc.world->btypes(),w,h,passage_cells);
+            t.open_cells=&passage_cells;
+        }
         return (t.level || t.open_cells) ? &t : nullptr;
     }
     // w7fix-combat: the alliance view IsAlliedWith (null World: same house).
@@ -384,7 +391,9 @@ Reserve reserve_cell(StepEnv& e, Unit& u, int self, Cellxy from, int from_layer,
         if (e.occ.spot_of(tgt.x, tgt.y, self, L) < 0) {
             int cur = e.occ.spot_of(from.x, from.y, self);
             if (cur < 0) cur = 0;
-            const int sp = e.occ.free_spot(tgt.x, tgt.y, cur, self & 3, L);
+            const int owner=e.occ.at(tgt.x,tgt.y,L);
+            const int allowed=owner>=0 && owner<int(e.units.size()) && slave_mobile_pair(u,e.units[owner],owner)?owner:-1;
+            const int sp = e.occ.free_spot(tgt.x, tgt.y, cur, self & 3, L,allowed);
             if (sp < 0) return Reserve::Blocked;
             e.occ.set_spot(tgt.x, tgt.y, self, sp, L);
         }
@@ -392,7 +401,19 @@ Reserve reserve_cell(StepEnv& e, Unit& u, int self, Cellxy from, int from_layer,
         // W7-07-21 (w7fix-combat): a cell held only by infantry this crusher
         // may squash is entered (the squash happens on arrival).
         bool crush_only = false;
-        if (w7crush && u.crusher && u.is_vehicle && !e.occ.can_enter(tgt.x, tgt.y, self, L)) {
+        // The manager may move across its own workers too. Keep their spots
+        // intact: other vehicles still see those infantry as blockers.
+        if(e.occ.subcells()) {
+            const int owner=e.occ.at(tgt.x,tgt.y,L);
+            bool only_workers=owner==self || owner<0 ||
+                (owner<int(e.units.size()) && slave_mobile_pair(e.units[owner],u,self));
+            for(int s=Occupancy::kFirstSpot;s<Occupancy::kFirstSpot+Occupancy::kSpots;++s) {
+                const int worker=e.occ.spot_unit(tgt.x,tgt.y,s,L);
+                if(worker>=0 && worker!=self && (worker>=int(e.units.size()) || !slave_mobile_pair(e.units[worker],u,self)))only_workers=false;
+            }
+            crush_only=only_workers;
+        }
+        if (!crush_only && w7crush && u.crusher && u.is_vehicle && !e.occ.can_enter(tgt.x, tgt.y, self, L)) {
             crush_only = true;
             for (int s = Occupancy::kFirstSpot; s < Occupancy::kFirstSpot + Occupancy::kSpots; ++s) {
                 const int o = e.occ.spot_unit(tgt.x, tgt.y, s, L);
@@ -455,7 +476,8 @@ bool repath(StepEnv& e, Unit& u, int self, int mode) {
         // actual route around stationary units on the mover's own layer.
         for (int i=0;i<static_cast<int>(e.units.size());++i) {
             const auto& v=e.units[i];
-            if (i==self || !live_on_map(v) || (under_way(v) && v.wait_time<3.0) || v.on_deck!=u.on_deck ||
+            if (i==self || !live_on_map(v) || slave_mobile_pair(u,v,i) || slave_mobile_pair(v,u,self) ||
+                (under_way(v) && v.wait_time<3.0) || v.on_deck!=u.on_deck ||
                 (can_crush(u,v) && !e.allied(u.house,v.house))) continue;
             if (v.cell_x>=0 && v.cell_y>=0 && v.cell_x<e.w && v.cell_y<e.h)
                 strict[static_cast<std::size_t>(v.cell_y)*e.w+v.cell_x]=0;
