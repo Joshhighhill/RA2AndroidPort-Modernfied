@@ -23,6 +23,7 @@
 #define SDL_MAIN_HANDLED
 #endif
 #include <SDL.h>
+#include "ground_presentation.hpp"
 #ifdef RA2_ANDROID_CLI
 // No Java activity: SDL's Android pref / storage paths need JNI and would
 // crash. The CLI uses RA2_PREF_DIR (else no settings file) like --play does.
@@ -4453,7 +4454,10 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
             ra2engine::draw_path(ren, u, cam, W, H);   // carried units draw nothing
         // W2-UI-11: in the real game the selection marker IS the pip board
         // (drawn with the bars below); other render paths keep the diamond.
-        if (usel(u) && !(input && g_pips)) ra2engine::draw_selection(ren, u, cam, W, H, veh_width(u));
+        if (usel(u) && !(input && g_pips)) {
+            auto marker_cam=cam;marker_cam.y+=int(std::lround((u.level-pres_ground_level(world,u))*15.0));
+            ra2engine::draw_selection(ren,u,marker_cam,W,H,veh_width(u));
+        }
     }
     // Sprites back-to-front so nearer units overlap farther ones. Vehicles
     // (an image with a VehicleAssets entry) draw via voxel sprites; otherwise
@@ -4461,6 +4465,12 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
     // image is logged and skipped (not thrown) so one bad unit can't take
     // down the whole frame.
     auto draw_one_unit = [&](int idx, const ra2engine::Building* bunker = nullptr) {
+        auto unit_cam=cam;
+        if(!bunker && !us[idx].is_aircraft && !us[idx].is_naval) {
+            const double drawn=us[idx].level+pres_unit_lift_levels(world,us[idx]);
+            unit_cam.y+=int(std::lround((drawn-pres_ground_level(world,us[idx]))*15.0));
+        }
+        const auto& cam=unit_cam;
         const auto exiting=g_bunker_motion.find(idx);
         if (!bunker && exiting!=g_bunker_motion.end() && !exiting->second.entering &&
             ra2engine::transition_active(exiting->second.start,exiting->second.duration,g_pres_tick)) {
@@ -4857,7 +4867,7 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
                 const int up = (u.is_aircraft && u.altitude > 0.0) ? ra2engine::altitude_to_screen_dy(u.altitude) : 0;
                 const double ufx = u.fx + u.sub_x / 256.0, ufy = u.fy + u.sub_y / 256.0;   // W5-B
                 const int sx = static_cast<int>(std::lround((ufx - ufy) * 30.0)) + cam.x + 30;
-                const int lv = u.level + pres_unit_lift_levels(world, u);   // W5-PRES R-100 deck
+                const double lv = (u.is_aircraft || u.is_naval) ? u.level+pres_unit_lift_levels(world,u) : pres_ground_level(world,u);
                 const int sy = static_cast<int>(std::lround((ufx + ufy) * 15.0 - lv * 15)) + cam.y + 15 - up;
                 draw_unit_pips(ren, tc, u, sx, sy, g_pip_yellow, g_pip_red, usel(u));
                 // W7-12-04/05/16/17/18/22 [RE: DrawHealthBar 0x6F5A00 tail]: the
@@ -7221,10 +7231,13 @@ public:
         if(ev.kind==ra2engine::InputEvent::Zoom) {
             if(ev.dx<=0 || (sidebar_up_ && lay_.contains(ev.x0,ev.y0)) ||
                touch_panel_contains(ev.x0,ev.y0) || menu_.open_)return;
-            const double ratio=std::max(0.8,std::min(1.25,ev.dx/1000000.0));
-            const int h=std::max(360,std::min(900,int(std::lround(kWinH/ratio))));
-            const int w=std::max(640,std::min(2560,int(std::lround(double(kWinW)*h/kWinH))));
-            relayout_canvas(w,h);
+            const double old=world_zoom_;
+            world_zoom_=std::clamp(world_zoom_*std::clamp(ev.dx/1000000.0,0.8,1.25),0.75,1.75);
+            const double cx=-cam_.x+playfield_w_/(2*old),cy=-cam_.y+kWinH/(2*old);
+            input_.set_screen_zoom(world_zoom_);
+            input_.set_viewport(int(playfield_w_/world_zoom_),int(kWinH/world_zoom_));
+            cam_.x=int(std::lround(playfield_w_/(2*world_zoom_)-cx));
+            cam_.y=int(std::lround(kWinH/(2*world_zoom_)-cy));input_.pan(0,0);
             return;
         }
         if (hotkey(ev)) return;      // G-04: KeyboardMD.ini [Hotkey] commands
@@ -7736,23 +7749,34 @@ public:
         static ra2engine::diag::StageStats render_stats;
         ra2engine::diag::StageTimer report_timer(render_stats,"scene-render");
         SDL_Renderer* ren = static_cast<SDL_Renderer*>(plat.renderer());
-        radar_.set_view(cam_, playfield_w_, kWinH);   // G-09 viewport box
+        const int world_w=int(std::ceil(playfield_w_/world_zoom_)),world_h=int(std::ceil(kWinH/world_zoom_));
+        radar_.set_view(cam_, world_w, world_h);
+        float base_sx=1,base_sy=1;SDL_RenderGetScale(ren,&base_sx,&base_sy);
+        SDL_RenderSetScale(ren,base_sx*world_zoom_,base_sy*world_zoom_);
         update_light_sources();   // W3-FIX-A
         // W6-05-07: the hovered unit's health pips (a real mouse over the
         // tactical view; a touch has no hover).
-        g_hover_unit = (mouse_present_ && mx_ < playfield_w_ && !input_locked_) ? input_.pick_unit_at(mx_, my_) : -1;
-        render_world(ren, tc, a_, ua_, world_, cam_, kWinW, kWinH, &input_,
+        g_hover_unit = (mouse_present_ && mx_ < playfield_w_ && !input_locked_) ? input_.pick_unit_at(int(mx_/world_zoom_),int(my_/world_zoom_)) : -1;
+        render_world(ren, tc, a_, ua_, world_, cam_, world_w, world_h, &input_,
                      &vlist_, ba_.ok ? &ba_ : nullptr, ore_art_.any ? &ore_art_ : nullptr);
         hidden_.rules = &rules_ini_;   // W5-E2 R-146: the Behind= marker over occluded objects
-        hidden_.draw(ren, tc, world_, ba_, cam_, playfield_w_, kWinH, g_user_settings && g_user_settings->show_hidden);
+        hidden_.draw(ren, tc, world_, ba_, cam_, world_w, world_h, g_user_settings && g_user_settings->show_hidden);
         if (!(sidebar_up_ && lay_.contains(mx_, my_))) {
             int pcx = 0, pcy = 0;
             input_.placement_cell(pcx, pcy);
             const ra2engine::PlacementCheck pchk =
                 placement_eval(input_.placement_type(), pcx, pcy);   // gap owner A rules
-            draw_placement_cursor(ren, tc, world_, ba_, input_, a_, cam_, kWinW, kWinH,
+            draw_placement_cursor(ren, tc, world_, ba_, input_, a_, cam_, world_w, world_h,
                                   input_.placement_active() ? &pchk : nullptr);
         }
+        draw_production_chrome(ren, world_, input_, a_, cam_, world_w, &tc);
+        pip_tc_ = &tc;
+        draw_selected_building(ren);
+        draw_psychic_sensors(ren);
+        draw_beacons(ren,tc);
+        draw_touch_aim(ren);
+        SDL_RenderSetClipRect(ren,nullptr);
+        SDL_RenderSetScale(ren,base_sx,base_sy);
         if (ba_.ok && ba_.sidebar_ok) {
             for (int t = 0; t < 4; ++t) g_tab_has[t] = tab_buildable(t).empty() ? 0 : 1;   // W2-UI-06
             g_tab_flash[0] = lq().state(ra2engine::QueueCat::Structure).slot.ready ? 1 : 0;   // W5-PRES R-142
@@ -7771,10 +7795,6 @@ public:
                          bm == ra2engine::Input::BaseMode::Repair ? 1
                                      : bm == ra2engine::Input::BaseMode::Sell ? 2 : 0, rp_on_);
         }
-        draw_production_chrome(ren, world_, input_, a_, cam_, playfield_w_, &tc);
-        pip_tc_ = &tc;
-        draw_selected_building(ren);   // G-10 / W2-UI-11
-        draw_psychic_sensors(ren);
         draw_queue_badges(ren, tc);    // G-07 / W2-UI-03/04
         draw_tooltip(ren, tc);         // W2-UI-07
         // Repair / Sell software cursor over the playfield [RE: §D8]; the OS
@@ -7796,11 +7816,9 @@ public:
             SDL_ShowCursor(drew ? SDL_DISABLE : SDL_ENABLE);
             os_cursor_hidden_ = drew;
         }
-        draw_beacons(ren, tc);    // W9-05-08: own + mutual allies' beacons
         draw_messages(ren, tc);   // W2-UI-21 (game saved, defeated, low power)
         draw_timer_stack(ren, tc);   // W6-05-04/05 mission timer + SW countdowns
         draw_touch_bar(ren, tc);      // W2-AR-08 (touch only)
-        draw_touch_aim(ren);           // W6-01-02 / -07 (touch only)
         draw_touch_mode_banner(ren);   // W4-AM-03 (touch only)
         draw_touch_hint(ren);          // W4-AM-01 (touch only)
         draw_touch_hold_ring(ren);     // W4-AM-07 (touch only)

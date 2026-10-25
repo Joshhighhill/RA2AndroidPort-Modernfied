@@ -219,6 +219,7 @@ public:
     // screen): recompute the default camera clamp for the new viewport.
     // set_view_limits (a campaign's LocalSize) must be re-applied after it.
     void set_viewport(int view_w, int view_h);
+    void set_screen_zoom(double z) { screen_zoom_=z; }
     // W4-MC-02: drop a half-done gesture (band box / right-drag) without
     // acting on it (LockInput's FUN_0054f3b0).
     void cancel_gesture() { l_down_ = dragging_ = false; r_down_ = r_drag_ = false; }
@@ -552,6 +553,7 @@ private:
     // Camera clamp bounds (computed once from the map's screen bbox + viewport;
     // same rule as the previous drag clamp -- see input.cpp).
     int view_w_ = 0, view_h_ = 0;
+    double screen_zoom_=1.0; // local presentation only; never serialized
     int min_cam_x_ = 0, max_cam_x_ = 0, min_cam_y_ = 0, max_cam_y_ = 0;
 };
 

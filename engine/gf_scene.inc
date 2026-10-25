@@ -9,6 +9,7 @@ private:
     int    gf_outcome_ = 0;                  // 0 playing, 1 won, -1 lost
     int    gf_borrowed_ = 0;                 // BorrowedTime frames left once flagged
     double gf_frame_accum_ = 0.0;
+    double world_zoom_ = 1.0;
     long   gf_frames_ = 0;                   // 15 Hz game frames elapsed
     std::vector<char> gf_defeated_seen_;     // per house: EVA_PlayerDefeated already said
     std::string gf_end_text_;

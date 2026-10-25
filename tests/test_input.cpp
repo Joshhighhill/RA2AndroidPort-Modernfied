@@ -216,6 +216,18 @@ TEST_CASE("Input: left-click a unit selects only it; empty click clears") {
     CHECK(input.selection().empty());
 }
 
+TEST_CASE("Input: battlefield zoom maps screen taps to unit coordinates without changing the World") {
+    MapFile map;if(!load_real_map(map)){MESSAGE("skipped: no install");return;}
+    for(double zoom:{0.75,1.75}) {
+        World world(map);Camera cam;Input input(world,cam,1280,720);
+        input.set_scheme(Input::Scheme::Legacy);Fixture fx=spawn(world,3);REQUIRE(fx.ok);
+        input.set_screen_zoom(zoom);int x=0,y=0;ground_px_for_unit(world.units()[1],x,y);
+        left_click(input,int(std::lround(x*zoom)),int(std::lround(y*zoom)),false,1000);
+        CHECK(input.selection().has(1));CHECK_FALSE(input.selection().has(0));CHECK_FALSE(input.selection().has(2));
+        input.set_screen_zoom(1.0);left_click(input,x,y,false,2000);CHECK(input.selection().has(1));
+    }
+}
+
 TEST_CASE("Input: Shift+left-click toggles units in and out of the selection") {
     MapFile map;
     if (!load_real_map(map)) { MESSAGE("skipped: no install"); return; }

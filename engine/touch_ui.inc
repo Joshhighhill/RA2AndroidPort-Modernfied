@@ -98,7 +98,7 @@ bool touch_confirm_tap(ra2engine::InputEvent& ev) {
     }
     if (input_.sw_targeting()) {
         int cx = 0, cy = 0;
-        input_.resolve_ground_cell(ev.x, ev.y, cx, cy);
+        input_.resolve_ground_cell(int(ev.x/world_zoom_),int(ev.y/world_zoom_),cx,cy);
         if (cx == touch_aim_cx_ && cy == touch_aim_cy_) {   // confirm: Input fires
             touch_aim_cx_ = touch_aim_cy_ = INT_MIN;
             return false;
@@ -109,7 +109,7 @@ bool touch_confirm_tap(ra2engine::InputEvent& ev) {
         return true;
     }
     if (bmode) {
-        const int bi = input_.pick_building(ev.x, ev.y, true);
+        const int bi = input_.pick_building(int(ev.x/world_zoom_),int(ev.y/world_zoom_),true);
         const bool own = bi >= 0 && world_.buildings()[static_cast<std::size_t>(bi)].house == local_house_;
         if (own && bi == touch_aim_bld_) {   // the confirming tap: Input commits it
             touch_aim_bld_ = -1;

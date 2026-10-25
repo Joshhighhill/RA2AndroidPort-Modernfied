@@ -778,7 +778,12 @@ void Input::issue_order(int px, int py) {
     }
 }
 
-void Input::handle(const InputEvent& ev) {
+void Input::handle(const InputEvent& source) {
+    InputEvent ev=source;
+    if(screen_zoom_!=1.0) {
+        ev.x=static_cast<int>(std::lround(ev.x/screen_zoom_));ev.y=static_cast<int>(std::lround(ev.y/screen_zoom_));
+        ev.dx=static_cast<int>(std::lround(ev.dx/screen_zoom_));ev.dy=static_cast<int>(std::lround(ev.dy/screen_zoom_));
+    }
     sel_.prune(world_);   // NET L1: the sim may have boarded / consumed selected units
     // NOTE: actions_ is deliberately NOT touched here -- it ACCUMULATES
 

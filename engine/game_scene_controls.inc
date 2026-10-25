@@ -11,7 +11,7 @@
     // Agent E draws the cursor art from this; over the sidebar it is None.
     ra2engine::Input::Action cursor_action() const {
         if (sidebar_up_ && lay_.contains(mx_, my_)) return ra2engine::Input::Action::None;
-        return input_.action_at(mx_, my_);
+        return input_.action_at(int(mx_/world_zoom_),int(my_/world_zoom_));
     }
 
     // G-10: selection bracket + health bar over the selected own building.
@@ -31,12 +31,18 @@
             const auto& b=world_.buildings()[bi];
             if(input_.selected_building()==bi) {
                 const double radius=world_.btypes()[b.type].w5.psychic_radius;
-                SDL_SetRenderDrawColor(ren,190,110,240,180);
+                SDL_SetRenderDrawColor(ren,215,155,255,230);
                 SDL_Point prev=point(b.cx+(b.fw-1)*0.5+radius,b.cy+(b.fh-1)*0.5);
                 for(int k=1;k<=64;++k) {
                     const double a=k*6.283185307179586/64;
                     const auto next=point(b.cx+(b.fw-1)*0.5+radius*std::cos(a),b.cy+(b.fh-1)*0.5+radius*std::sin(a));
-                    SDL_RenderDrawLine(ren,prev.x,prev.y,next.x,next.y);prev=next;
+                    // Mobile accessibility styling: preserve the true radius,
+                    // with readable dashes instead of a solid boundary.
+                    if((k-1)%4<2) {
+                        SDL_RenderDrawLine(ren,prev.x,prev.y,next.x,next.y);
+                        SDL_RenderDrawLine(ren,prev.x,prev.y+1,next.x,next.y+1);
+                    }
+                    prev=next;
                 }
             }
             for(int ui=0;ui<static_cast<int>(world_.units().size());++ui) {
