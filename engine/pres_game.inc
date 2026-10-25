@@ -951,6 +951,8 @@ private:
             const ra2engine::Unit& t = us[static_cast<std::size_t>(tu)];
             x = t.fx; y = t.fy; level = pres_unit_fx_level(w, t);   // w8fix-layer: a deck target
             lift = t.is_vehicle ? 10.0 : 8.0;
+            if(t.is_aircraft && t.altitude>0)lift+=ra2engine::altitude_to_screen_dy(t.altitude);
+            else if(ra2engine::unit_parachuting(t))lift+=ra2engine::altitude_to_screen_dy(t.an.para_alt);
             return true;
         }
         if (tb >= 0 && tb < static_cast<int>(w.buildings().size())) {

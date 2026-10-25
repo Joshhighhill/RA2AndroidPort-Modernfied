@@ -254,6 +254,7 @@ public:
         double seg_lep = 20.0;   // W7-12-06 rad beam segment length (leptons)
         double len_lep = 0.0;    // the beam's length in leptons
         bool white_core = true;  // W7-12-31 bolt: one of the 3 arcs in PALETTE[15]
+        double disk_x=0,disk_y=0; // fixed nearest-rim beam origin, screen offsets
     };
     // W7-12-06 / W7-12-32 colours, read once at init (Presentation::init).
     void set_beam_colors(SDL_Color rad, SDL_Color chrono) {
@@ -313,7 +314,10 @@ public:
                 b.inner = SDL_Color{255, 255, 255, 255};
             }
         }
-        if (fw.disk) b.kind = 4;
+        if (fw.disk) {
+            b.kind=4;const auto rim=ra2engine::disk_laser_rim(x1-x0,y1-y0);
+            b.disk_x=(rim[0]-rim[1])*30;b.disk_y=(rim[0]+rim[1])*15;
+        }
         beams_.push_back(b);
     }
     std::size_t beams_live() const { return beams_.size(); }
@@ -398,16 +402,17 @@ public:
                 for (int k=0;k<segments;++k) {
                     const double t=k*6.283185307179586/segments;
                     const double n=(k+1)*6.283185307179586/segments;
-                    const int x=ax+static_cast<int>(std::lround(22*std::cos(t)));
-                    const int y=ay+static_cast<int>(std::lround(11*std::sin(t)));
+                    const double rx=30*std::sqrt(2.0)*240/256,ry=rx/2;
+                    const int x=ax+static_cast<int>(std::lround(rx*std::cos(t)));
+                    const int y=ay+static_cast<int>(std::lround(ry*std::sin(t)));
                     SDL_SetRenderDrawColor(ren,b.inner.r,b.inner.g,b.inner.b,a);
-                    SDL_RenderDrawLine(ren,x,y,ax+static_cast<int>(std::lround(22*std::cos(n))),
-                        ay+static_cast<int>(std::lround(11*std::sin(n))));
-                    if ((k+b.age)%8==0) {
-                        SDL_SetRenderDrawColor(ren,b.outer.r,b.outer.g,b.outer.b,a);
-                        SDL_RenderDrawLine(ren,x,y,bx,by);
-                    }
+                    SDL_RenderDrawLine(ren,x,y,ax+static_cast<int>(std::lround(rx*std::cos(n))),
+                        ay+static_cast<int>(std::lround(ry*std::sin(n))));
                 }
+                const int sx=ax+int(std::lround(b.disk_x)),sy=ay+int(std::lround(b.disk_y));
+                SDL_SetRenderDrawColor(ren,b.outer.r,b.outer.g,b.outer.b,a);
+                SDL_RenderDrawLine(ren,sx,sy-1,bx,by-1);SDL_RenderDrawLine(ren,sx,sy+1,bx,by+1);
+                SDL_SetRenderDrawColor(ren,b.inner.r,b.inner.g,b.inner.b,a);SDL_RenderDrawLine(ren,sx,sy,bx,by);
                 continue;
             }
             if (b.kind == 2) {

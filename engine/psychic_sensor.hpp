@@ -1,7 +1,21 @@
 #pragma once
 #include "world.hpp"
 #include <cmath>
+#include <array>
 namespace ra2engine {
+inline std::vector<std::array<double,4>> psychic_intent_dashes(double x0,double y0,double x1,double y1) {
+    std::vector<std::array<double,4>> out;
+    const double length=std::hypot(x1-x0,y1-y0);
+    if(!std::isfinite(length) || length<0.001)return out;
+    const double dx=(x1-x0)/length,dy=(y1-y0)/length;
+    // Bound rendering work; retain visible gaps even for unusually long lines.
+    const double period=std::max(10.0,length/512.0);
+    for(double start=0;start<length;start+=period) {
+        const double end=std::min(length,start+period*0.6);
+        out.push_back({x0+dx*start,y0+dy*start,x0+dx*end,y0+dy*end});
+    }
+    return out;
+}
 inline ra2assets::Rgba psychic_intent_color(const World& w,const ra2assets::Palette& pal,int house) {
     return w.house_palette(pal,house)[24];
 }

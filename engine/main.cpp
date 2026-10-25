@@ -58,6 +58,7 @@ ra2engine::ProjectilePresentation g_projectile_motion;
 #include "unit_presentation.hpp"
 #include "skirmish_layout.hpp"
 #include "faction_art.hpp"
+#include "disk_laser.hpp"
 ra2engine::UnitPresentation g_unit_motion;
 #include "shell_layout.hpp"
 #include "ra2assets/asset_trace.hpp"

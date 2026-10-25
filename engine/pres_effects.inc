@@ -506,15 +506,7 @@ public:
         proj_ba_ = &ba;
         std::map<long long, bool> seen;
         for (const ra2engine::Projectile& p : w.projectiles()) {
-            std::string wid;
-            if (p.attacker >= 0 && p.attacker < static_cast<int>(w.units().size())) {
-                const ra2engine::Unit& u = w.units()[static_cast<std::size_t>(p.attacker)];
-                wid = weapon_of(pres_type_id(u), p.weapon_slot);
-            } else if (p.attacker_building >= 0 && p.attacker_building < static_cast<int>(w.buildings().size())) {
-                const ra2engine::Building& b = w.buildings()[static_cast<std::size_t>(p.attacker_building)];
-                if (b.type >= 0 && b.type < static_cast<int>(ba.roster.size()))
-                    wid = weapon_of(ba.roster[static_cast<std::size_t>(b.type)].id, p.weapon_slot);
-            }
+            const std::string wid=projectile_weapon(w,p);
             if (wid.empty()) continue;
             const ProjArt& pa = proj_art(wid);
             const ra2assets::MapCell* mc =
@@ -536,6 +528,19 @@ public:
         }
         for (auto& kv : lines_)
             if (!seen.count(kv.first)) kv.second.live = false;
+        // Nuclear carriers are timed strikes, not members of projectiles().
+        // Observe their existing clock here, once per logic tick, so the
+        // retail NKMSLUP Trailer= is not skipped or emitted per render frame.
+        for(const auto& strike:w.sw_strikes()) {
+            if(strike.kind!=1 || strike.done || strike.frame>=w.sw_params().nuke_up_frames ||
+               !w.object_visible_at(g_local_house,strike.ox,strike.oy))continue;
+            const auto& pa=proj_art("NukeCarrier");
+            if(!pa.trailer.empty() && frame_%std::max(1,pa.spawn_delay)==0) {
+                const double z=w.cell_level(strike.ox,strike.oy)*104.0+
+                    ra2engine::nuke_visual_height(strike.frame,w.sw_params().nuke_up_frames,w.sw_params().nuke_down_frames);
+                fx_->spawn(pa.trailer,strike.ox,strike.oy,0,z*kFxLepPx);
+            }
+        }
     }
     void observe_units(const ra2engine::World& w) {
         const auto& us = w.units();

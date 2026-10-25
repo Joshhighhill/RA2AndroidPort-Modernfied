@@ -24,9 +24,25 @@
 #include "slave_passage.hpp"
 #include "unit_presentation.hpp"
 #include "faction_art.hpp"
+#include "disk_laser.hpp"
 #include <fstream>
 #include <iterator>
 using namespace ra2engine;
+TEST_CASE("psychic intent: dashed segments preserve direction gaps and bounded work") {
+    const auto d=psychic_intent_dashes(0,0,100,0);REQUIRE(d.size()==10);
+    CHECK(d[0]==std::array<double,4>{0,0,6,0});CHECK(d[1][0]>d[0][2]);
+    const auto diagonal=psychic_intent_dashes(10,10,-20,-20);CHECK_FALSE(diagonal.empty());
+    for(const auto& s:diagonal){CHECK(s[2]<=s[0]);CHECK(s[3]<=s[1]);}
+    CHECK(psychic_intent_dashes(0,0,1e7,0).size()<=513);
+    CHECK(psychic_intent_dashes(1,1,1,1).empty());
+}
+TEST_CASE("Floating Disc laser: fixed rim point is nearest target on vanilla radius") {
+    for(const auto& d:{std::array<double,2>{1,0},{0,1},{-1,-1},{10,-3}}) {
+        const auto r=disk_laser_rim(d[0],d[1]);CHECK(std::hypot(r[0],r[1])==doctest::Approx(240.0/256));
+        CHECK(r[0]*d[1]-r[1]*d[0]==doctest::Approx(0));CHECK(r[0]*d[0]+r[1]*d[1]>0);
+    }
+    const auto r=disk_laser_rim(0,0);CHECK(std::isfinite(r[0]));CHECK(std::isfinite(r[1]));
+}
 
 TEST_CASE("Tank Bunker presentation: platform offset is continuous and never changes world coordinates") {
     CHECK(bunker_platform_offset(8,8,8,8,2,2)==0.5);

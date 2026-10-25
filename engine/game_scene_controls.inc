@@ -53,8 +53,24 @@
                 if(c==intent_colors.end())c=intent_colors.emplace(u.house,
                     ra2engine::psychic_intent_color(world_,ua_.pal,u.house)).first;
                 const auto color=c->second;
-                SDL_SetRenderDrawColor(ren,color.r,color.g,color.b,210);
-                SDL_RenderDrawLine(ren,from.x,from.y,to.x,to.y);
+                // One geometry batch per intent: black outline plus owner-
+                // coloured dash cores, without a draw call for every dash.
+                std::vector<SDL_Vertex> vertices;std::vector<int> indices;
+                auto quad=[&](const std::array<double,4>& d,double width,SDL_Color c) {
+                    const double length=std::hypot(d[2]-d[0],d[3]-d[1]);if(length<0.001)return;
+                    const float nx=float(-(d[3]-d[1])/length*width/2),ny=float((d[2]-d[0])/length*width/2);
+                    const int first=int(vertices.size());
+                    vertices.push_back({{float(d[0])+nx,float(d[1])+ny},c,{0,0}});
+                    vertices.push_back({{float(d[2])+nx,float(d[3])+ny},c,{0,0}});
+                    vertices.push_back({{float(d[2])-nx,float(d[3])-ny},c,{0,0}});
+                    vertices.push_back({{float(d[0])-nx,float(d[1])-ny},c,{0,0}});
+                    for(int i:{0,1,2,0,2,3})indices.push_back(first+i);
+                };
+                for(const auto& dash:ra2engine::psychic_intent_dashes(from.x,from.y,to.x,to.y)) {
+                    quad(dash,3.5,SDL_Color{0,0,0,240});quad(dash,1.5,SDL_Color{color.r,color.g,color.b,255});
+                }
+                if(!vertices.empty())SDL_RenderGeometry(ren,nullptr,vertices.data(),int(vertices.size()),indices.data(),int(indices.size()));
+                SDL_SetRenderDrawColor(ren,color.r,color.g,color.b,255);
                 SDL_RenderDrawLine(ren,to.x-4,to.y,to.x+4,to.y);
                 SDL_RenderDrawLine(ren,to.x,to.y-4,to.x,to.y+4);
             }
