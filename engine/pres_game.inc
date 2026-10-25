@@ -14,6 +14,7 @@ public:
         g_bld_events.clear();
         g_bunker_motion.clear();   // W2-GA-14 per-building anim state is per game
         speech_cooldown_.clear();
+        g_projectile_motion.clear();
         g_pres_crushed.clear();  // W7-04-25
         g_pres_sinkers.clear();  // W7-12-11
         g_pres_tick = 0;        // W3-B: the logic-tick anim clock restarts per game
@@ -243,6 +244,7 @@ public:
     // and scaled by GameSpeed exactly as the original's frames are.
     void logic_tick(const ra2engine::World& w, const BuildingAssets& ba, double player_credits,
                     const std::vector<ra2engine::ProjectileEvent>& pev) {
+        g_projectile_motion.capture(w.projectiles(),pev);
         g_pres_tick = ++logic_;
         fx_.tick();
         pres_state_tick(w, fx_);   // W5-PRES R-120 chrono warp anims / sparkles
@@ -764,21 +766,11 @@ private:
         std::snprintf(key, sizeof key, "%s|%d|%d|%d", img.c_str(), slot, elite ? 1 : 0, (gunner || wc > 0) ? 1 : 0);
         auto it = flh_cache_.find(key);
         if (it != flh_cache_.end()) return it->second;
-        auto art = [&](const std::string& k) { return w5_art_ini_ ? pres_clean(w5_art_ini_->get(img, k)) : std::string(); };
-        std::string v;
-        if (gunner || wc > 0) {
-            const std::string n = std::to_string(slot + 1);
-            if (elite) v = art("EliteWeapon" + n + "FLH");
-            if (v.empty()) v = art("Weapon" + n + "FLH");
-        } else {
-            const char* base = slot == 1 ? "SecondaryFireFLH" : "PrimaryFireFLH";
-            if (elite) v = art(std::string("Elite") + base);
-            if (v.empty()) v = art(base);
+        std::array<double,3> f{0,0,0};
+        if(w5_art_ini_) {
+            const auto v=ra2engine::weapon_art_flh(Art::load(*w5_art_ini_),img,slot,elite,gunner || wc>0);
+            for(int k=0;k<3;++k)f[k]=v[k];
         }
-        std::array<double, 3> f{0, 0, 0};
-        std::stringstream ss(v);
-        std::string t;
-        for (int k = 0; k < 3 && std::getline(ss, t, ','); ++k) f[static_cast<std::size_t>(k)] = std::atof(pres_clean(t).c_str());
         return flh_cache_[key] = f;
     }
     std::map<std::string, std::array<double, 3>> flh_cache_;
@@ -786,7 +778,8 @@ private:
     // voxel-render.md §6 projection [RE: GetFLH 0x6F3030 -- L negated on
     // every other burst shot; 0x6F32C0 -- the turret origin is
     // T(TurretOffset) along the BODY facing, then the turret yaw].
-    void muzzle_point(const ra2engine::World& w, const ra2engine::Unit& u, double& ox, double& lift) {
+    void muzzle_point(const ra2engine::World& w, const ra2engine::Unit& u, double& ox, double& lift,
+                      std::array<double,3>* source = nullptr) {
         std::array<double, 3> flh = fire_flh(w, u);
         const int burst = std::max(1, u.w6.burst);
         const int shot = (u.w6.burst_index + burst - 1) % burst;
@@ -816,6 +809,8 @@ private:
             }
         }
         const auto point=ra2engine::terrain_tilt(pres_unit_ramp(u)).apply(mx,my,flh[2]/256.0);
+        if(source) *source={u.fx*256.0+point[0]*256.0,u.fy*256.0-point[1]*256.0,
+            pres_unit_fx_level(w,u)*104.0+point[2]*256.0+(u.is_aircraft ? u.altitude : 0.0)};
         ox = (point[0] + point[1]) * 30.0;
         lift = -((point[0] - point[1]) * 15.0) + point[2] * 36.74;
         if (u.is_aircraft && u.altitude > 0.0) lift += ra2engine::altitude_to_screen_dy(u.altitude);
@@ -828,7 +823,8 @@ private:
         if (wp->id.empty()) wp = fx_.weapon(u.image);
         if (!wp) return;
         double ox = 0, lift = 0;
-        muzzle_point(w, u, ox, lift);
+        std::array<double,3> source{};
+        muzzle_point(w, u, ox, lift, &source);
         auto shot_target = [&](double& x,double& y,int& level,double& target_lift) {
             if (target_point(w,u.target,u.target_building,x,y,level,target_lift)) return true;
             if (u.attack_cell_x < 0 || u.attack_cell_y < 0) return false;
@@ -863,7 +859,7 @@ private:
             double tx = 0, ty = 0, tl = 0;
             int tlev = 0;
             if (shot_target(tx,ty,tlev,tl)) {
-                fx_.add_beam(u.fx, u.fy, pres_unit_fx_level(w, u), std::max(lift, u.is_vehicle ? 18.0 : 15.0), tx, ty, tlev, tl, *wp,
+                fx_.add_beam(u.fx, u.fy, pres_unit_fx_level(w, u), lift, tx, ty, tlev, tl, *wp,
                              house_color(w, u.house), ox);
                 // W7-12-31 [RE: EBolt::Fire 0x4c2980 -- ParticleSystem([General]
                 // DefaultSparkSystem=SparkSys) at the bolt end].
@@ -881,8 +877,8 @@ private:
                 double tx = 0, ty = 0, tl = 0;
                 int tlev = 0;
                 if (shot_target(tx,ty,tlev,tl))
-                    effects_.instant_line(wp->id.empty() ? effects_.unit_weapon(u.image, 0) : wp->id, u.fx * 256.0,
-                                          u.fy * 256.0, pres_unit_fx_level(w, u) * 104.0 + 60.0, tx * 256.0, ty * 256.0, tlev * 104.0 + 40.0);
+                    effects_.instant_line(wp->id.empty() ? effects_.unit_weapon(u.image, 0) : wp->id, source[0],
+                                          source[1], source[2], tx * 256.0, ty * 256.0, tlev * 104.0 + 40.0);
             }
             const auto& us = w.units();
             if (u.target >= 0 && u.target < static_cast<int>(us.size())) {

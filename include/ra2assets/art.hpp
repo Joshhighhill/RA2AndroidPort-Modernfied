@@ -54,7 +54,9 @@ public:
     // muzzle offset) parsed into flh[0..2]. Returns false and leaves flh
     // untouched if the image/key is absent or doesn't have exactly 3
     // int-parseable comma-separated fields.
-    bool fire_flh(const std::string& image, int flh[3]) const;
+    bool fire_flh(const std::string& image, int flh[3],
+                  const std::string& key = "PrimaryFireFLH") const;
+    int turret_offset(const std::string& image) const { return ini_->get_int(image, "TurretOffset", 0); }
 
     // [image] DockingOffset<index>=X,Y,Z (leptons, relative to the building's
     // centre coord) [RE: roster2.md TL;DR 9]. An inline ';' comment and

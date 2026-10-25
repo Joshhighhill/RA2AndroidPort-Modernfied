@@ -51,6 +51,9 @@ static char* ra2_cli_pref_path() {
 #include "power_cameo.hpp"
 #include "psychic_links.hpp"
 #include "psychic_sensor.hpp"
+#include "weapon_art.hpp"
+#include "projectile_presentation.hpp"
+ra2engine::ProjectilePresentation g_projectile_motion;
 #include "shell_layout.hpp"
 #include "ra2assets/asset_trace.hpp"
 #if defined(__ANDROID__) && !defined(RA2_ANDROID_CLI)
@@ -1939,22 +1942,7 @@ VehicleAssets load_vehicle_assets(const std::string& dir, const ra2assets::MixFi
                       << std::endl;
         // P2: the muzzle offset is also the projectile launch point (projectile.md
         // §4 step 1 -- FLH resolved before the bullet exists).
-        for (int k = 0; k < 3; ++k) {
-            va.combat.proj.flh[k] = va.flh[k];
-            // Gap fix C: the other slots launch from the same muzzle.
-            va.combat.elite_proj.flh[k] = va.flh[k];
-            va.combat.secondary.proj.flh[k] = va.flh[k];
-            va.combat.elite_secondary.proj.flh[k] = va.flh[k];
-            for (auto& slot : va.combat.gattling.weapons) slot.proj.flh[k] = va.flh[k];
-            for (auto& slot : va.combat.gattling.elite_weapons) slot.proj.flh[k] = va.flh[k];
-        }
-
-        va.combat.proj.turret_offset=va.turret_offset;
-        va.combat.elite_proj.turret_offset=va.turret_offset;
-        va.combat.secondary.proj.turret_offset=va.turret_offset;
-        va.combat.elite_secondary.proj.turret_offset=va.turret_offset;
-        for(auto& slot:va.combat.gattling.weapons) slot.proj.turret_offset=va.turret_offset;
-        for(auto& slot:va.combat.gattling.elite_weapons) slot.proj.turret_offset=va.turret_offset;
+        ra2engine::bind_unit_weapon_art(va.combat,art,rules,unit_id);
 
         {   // G-16: keep the sources for per-colour sets.
             auto src = std::make_shared<VehicleAssets::VoxelSrc>();
@@ -2301,6 +2289,7 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
                 d.combat.is_vehicle = false;
                 d.combat.speed_cps = speed_to_cps(ru.speed);
             }
+            ra2engine::bind_unit_weapon_art(d.combat,art,rules,e.id);
             ur.defs.push_back(std::move(d));
             ur.cameos.push_back(std::move(cshp));
             ur.has_cameo.push_back(have_cameo ? 1 : 0);
@@ -4274,7 +4263,12 @@ bool pres_draw_projectile(SDL_Renderer* ren, ra2engine::TextureCache& tc,
 void draw_projectiles(SDL_Renderer* ren, const ra2engine::World& world,
                       const ra2assets::MapFile& map, const ra2engine::Camera& cam, int W, int H,
                       ra2engine::TextureCache* tc = nullptr) {
-    for (const ra2engine::Projectile& p : world.projectiles()) {
+    std::size_t projectile_index=0;
+    for (const ra2engine::Projectile& authoritative : world.projectiles()) {
+        auto p=authoritative; // draw copy only: simulation and impact timing stay intact
+        const auto xyz=g_projectile_motion.sample(projectile_index++,p,g_pres_render_fraction);
+        p.x=static_cast<int>(std::lround(xyz[0]));p.y=static_cast<int>(std::lround(xyz[1]));
+        p.z=static_cast<int>(std::lround(xyz[2]));
         const double x = p.x / 256.0, y = p.y / 256.0;
         const ra2assets::MapCell* mc =
             map.at(ra2engine::lepton_to_cell(p.x), ra2engine::lepton_to_cell(p.y));
@@ -6041,7 +6035,8 @@ void draw_production_chrome(SDL_Renderer* ren, const ra2engine::World& world,
 ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
                                  Assets& a, UnitAssets& ua, BuildingAssets& ba,
                                  const Rules& rules, const Ini* gf_rules_ini = nullptr,
-                                 std::vector<std::string>* gf_spawned = nullptr);
+                                 std::vector<std::string>* gf_spawned = nullptr,
+                                 const Art* gf_art = nullptr);
 
 // ============================================================================
 // [P8 Options + persistence, RE: docs/re/options.md] The user's RA2.INI.
@@ -6919,7 +6914,7 @@ public:
           // P10: a campaign mission starts from the bare map world; its
           // CampaignRuntime (ctor body) places the mission's own objects.
           world_(cfg.campaign_map.empty() ? launch_skirmish(cfg, a_, ua_, ba_, rules_, &rules_ini_,
-                                                            &g_gf_spawned)
+                                                            &g_gf_spawned, &art_)
                                           : build_campaign_world(a_, ua_)),
           buildable_(building_buildable_tab(ba_, /*defenses=*/false)),   // active_tab_ starts at 0
           lay_(ra2engine::SidebarLayout::compute(kWinW, kWinH, buildable_)),
@@ -14912,7 +14907,7 @@ struct DemoMultihouseResult { std::vector<std::string> witness; uint64_t hash = 
 ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
                                  Assets& a, UnitAssets& ua, BuildingAssets& ba,
                                  const Rules& rules, const Ini* gf_rules_ini,
-                                 std::vector<std::string>* gf_spawned) {
+                                 std::vector<std::string>* gf_spawned, const Art* gf_art) {
     load_progress("SKIRMISH WORLD");   // W2-AR-02 loading-screen checkpoint
     ra2engine::World world = build_world(a, ua, 0);          // count=0 -> launcher spawns everything
     ra2engine::configure_skirmish_houses(world, cfg);       // house table + toggles + credit seed + minimal AI
@@ -14984,7 +14979,7 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
             ++combatant_ix;
             const std::string country = s.country.empty() ? gf_default_country(s.side) : s.country;
             const int mcv = gf_spawn_start_force(world, *gf_rules_ini, rules, i, country, bx, by,
-                                                 cfg.unit_count, cfg.tech_level, rng, gf_spawned);
+                                                 cfg.unit_count, cfg.tech_level, rng, gf_spawned, gf_art);
             if (s.is_ai && ba.ok) {
                 world.enable_ai_house(i, make_ai_config(ba, rules, s.diff, cfg.starting_cash));
                 // An AI house unfolds its MCV at once (the AI's "deploy the

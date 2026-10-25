@@ -10,6 +10,8 @@
 #include "psychic_links.hpp"
 #include "psychic_sensor.hpp"
 #include "presentation_policy.hpp"
+#include "weapon_art.hpp"
+#include "projectile_presentation.hpp"
 #include "building_transition.hpp"
 #include "faction_support.hpp"
 #include "command.hpp"
@@ -17,6 +19,65 @@
 #include <fstream>
 #include <iterator>
 using namespace ra2engine;
+
+TEST_CASE("weapon art: correct image, numbered, secondary and elite muzzle entries") {
+    const auto ini=ra2assets::Ini::parse(
+        "[LTNK]\nPrimaryFireFLH=225,0,100\nSecondaryFireFLH=80,15,90\n"
+        "ElitePrimaryFireFLH=250,0,120\nWeapon1FLH=160,30,150\n"
+        "Weapon2FLH=160,-30,150\nEliteWeapon2FLH=170,-35,160\n"
+        "Weapon3FLH=bad\nWeapon4FLH=0,0,0\nTurretOffset=-16\n"
+        "[RULESID]\nPrimaryFireFLH=999,999,999\n");
+    const auto art=ra2assets::Art::load(ini);
+    CHECK(weapon_art_flh(art,"LTNK",0,false,false)==std::array<int,3>{225,0,100});
+    CHECK(weapon_art_flh(art,"LTNK",0,true,false)==std::array<int,3>{250,0,120});
+    CHECK(weapon_art_flh(art,"LTNK",1,true,false)==std::array<int,3>{80,15,90});
+    CHECK(weapon_art_flh(art,"LTNK",1,true,true)==std::array<int,3>{170,-35,160});
+    CHECK(weapon_art_flh(art,"LTNK",2,false,true)==std::array<int,3>{225,0,100});
+    CHECK(weapon_art_flh(art,"LTNK",3,false,true)==std::array<int,3>{0,0,0});
+    const auto ri=ra2assets::Ini::parse("[RULESID]\nImage=LTNK\nWeaponCount=6\n");
+    const auto rules=ra2assets::Rules::load(ri);
+    UnitCombat c;c.image="LTNK";c.proj.kind=ProjKind::Ballistic;c.damage=37;
+    c.gattling.weapons.resize(6);c.gattling.elite_weapons.resize(6);
+    bind_unit_weapon_art(c,art,rules,"RULESID");
+    CHECK(c.proj.flh[0]==160);CHECK(c.secondary.proj.flh[1]==-30);
+    CHECK(c.elite_secondary.proj.flh[2]==160);
+    CHECK(c.gattling.weapons[1].proj.flh[1]==-30);
+    CHECK(c.gattling.elite_weapons[1].proj.flh[2]==160);
+    CHECK(c.proj.turret_offset==-16);CHECK(c.proj.kind==ProjKind::Ballistic);CHECK(c.damage==37);
+}
+TEST_CASE("projectile presentation: first interval starts at launch and subsequent ticks interpolate") {
+    ProjectilePresentation motion;Projectile p;p.attacker=4;p.weapon_id="120mm";
+    p.launch_frame=20;p.x=1100;p.y=500;p.z=140;
+    ProjectileEvent e;e.kind=ProjectileEvent::Launch;e.attacker=4;e.frame=20;
+    e.x=1000;e.y=500;e.z=100;
+    motion.capture({p},{e});
+    CHECK(motion.sample(0,p,0)==std::array<double,3>{1000,500,100});
+    CHECK(motion.sample(0,p,0.5)==std::array<double,3>{1050,500,120});
+    CHECK(motion.sample(0,p,1)==std::array<double,3>{1100,500,140});
+    CHECK(p.x==1100);CHECK(p.z==140);
+    p.x=1200;p.z=170;motion.capture({p},{});
+    CHECK(motion.sample(0,p,0)==std::array<double,3>{1100,500,140});
+    CHECK(motion.sample(0,p,0.5)==std::array<double,3>{1150,500,155});
+    CHECK(motion.sample(0,p,2)==std::array<double,3>{1200,500,170});
+    motion.capture({},{});CHECK(motion.size()==0);
+    motion.clear();CHECK(motion.sample(0,p,0)==std::array<double,3>{1200,500,170});
+}
+TEST_CASE("projectile presentation: reordered bullets, salvos and separate defense launches stay independent") {
+    ProjectilePresentation m;Projectile a;a.attacker=1;a.launch_frame=3;a.x=100;
+    Projectile b=a;b.attacker=2;b.x=1000;m.capture({a,b},{});
+    a.x=200;b.x=1200;m.capture({b,a},{});
+    CHECK(m.sample(0,b,0.5)[0]==1100);CHECK(m.sample(1,a,0.5)[0]==150);
+    a.attacker=b.attacker=-1;a.attacker_building=10;b.attacker_building=20;
+    a.launch_frame=b.launch_frame=9;a.x=200;b.x=1200;
+    ProjectileEvent e;e.frame=9;e.attacker=-1;e.x=100;
+    auto f=e;f.x=1100;m.clear();m.capture({b,a},{e,f});
+    CHECK(m.sample(0,b,0)[0]==1100);CHECK(m.sample(1,a,0)[0]==100);
+    a.attacker=1;a.attacker_building=-1;b=a;b.x=220;
+    e.attacker=f.attacker=1;e.x=100;f.x=120;
+    m.clear();m.capture({a,b},{e,f});
+    CHECK(m.size()==2);CHECK(m.sample(0,a,0)[0]!=m.sample(1,b,0)[0]);
+}
+
 TEST_CASE("presentation policy: repeated queue and rally speech has independent three-second windows") {
     SpeechCooldown gate;
     CHECK(gate.allow("building",0));CHECK_FALSE(gate.allow("building",1000));

@@ -70,8 +70,8 @@ bool Art::remapable(const std::string& image) const {
     return is_truthy(ini_->get(image, "Remapable", ""));
 }
 
-bool Art::fire_flh(const std::string& image, int flh[3]) const {
-    std::string v = ini_->get(image, "PrimaryFireFLH", "");
+bool Art::fire_flh(const std::string& image, int flh[3], const std::string& key) const {
+    std::string v = ini_->get(image, key, "");
     if (v.empty()) return false;
     int parsed[3];
     size_t pos = 0;
