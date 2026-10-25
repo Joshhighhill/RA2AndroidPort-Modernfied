@@ -215,7 +215,16 @@ public class RA2Activity extends SDLActivity implements AudioManager.OnAudioFocu
         // the player has quit, end the process so the next launch re-enters
         // main() with fresh statics instead of reusing this process. Done
         // after SDL's own teardown (an exit() from the SDL thread crashed).
-        if (isFinishing()) { Diagnostics.finish(this); android.os.Process.killProcess(android.os.Process.myPid()); }
+        if (isFinishing()) {
+            Diagnostics.finish(this);
+            // Setup lives in :setup. Recreate its task only AFTER SDL has
+            // joined the native thread and flushed the session's diagnostics.
+            // The launcher does not auto-start onCreate, so Quit stays quit.
+            Intent launcher = new Intent(this, SetupActivity.class);
+            launcher.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            startActivity(launcher);
+            android.os.Process.killProcess(android.os.Process.myPid());
+        }
     }
 
     private void requestFocus() {
