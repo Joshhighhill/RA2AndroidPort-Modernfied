@@ -1,0 +1,151 @@
+Build 900034 - deployment, bridge speed, presentation and pinch zoom
+25 October 2026
+
+Baseline: 3e6b347ba9e56ce734b6e095c3c536ac708e8cbc (900033).
+This phase uses the R-044..R-057 definitions appended at 12:07 PHT on
+25 October, not the older R-044 sensor-color / R-045 muzzle-offset entries.
+The historical entries and build 900033 fixes are preserved.
+
+Evidence
+--------
+RA2YRINST.txt and the same PC Fidelity vs Gagarin report were read fully.
+New report: RA2 game diagnostics 0.9.0+gv0.9.0-47-g3e6b347, Drive ID
+1t4EkAtRC-iV7K_D_KxlKlPJQ8fLAaVbB, modified 2026-10-25 03:53:31 UTC.
+All nine extracted text/log files inspected; session description is absent.
+Current log ends at frame 34619; settings saved, no fatal/assert/signal marker.
+Previous log is capped. Historical binary traces date from October 22/23;
+they were not re-symbolicated and are not evidence of a fresh crash.
+Exit history reason 2 / status 9 proves termination, not its cause. Bunker
+exit event at frame 32577 proves an event occurred, not animation fidelity.
+No new-build POCO capture or real-device tests: adb lists no connected device.
+
+Original rules/art/sound from the user's retail installation were read only.
+Gagarin pin: aedf638cea5e96a3ee8be5151296f41936192e44
+https://github.com/r-melvin/gagarin/tree/aedf638cea5e96a3ee8be5151296f41936192e44
+Its GPL reconstruction remains research only. No Gagarin source was copied
+into this fork, whose original Omar El Arab 0BSD license is retained.
+
+Implemented scope and remaining tracker work
+------------------------------------------
+R-044: Gatling report loops now survive the short muzzle-flash gaps while
+charged with a target. Existing weapon-stage reports select the stage's
+sound; target loss/death/disabled firing stop loops. No artificial pitch
+ramp or changes to weapon damage/cadence. Exact audible PC parity needs
+phone comparison. Gagarin 0x70E000 describes stage/audio controllers and
+RateDown, not a ready-made SDL mixer.
+
+R-045: bounded SW_BUILDING transition diagnostics added; no unverified
+Chronosphere lifecycle rewrite. The existing finite open/close logic and
+static SuperAnimE were inspected. Gagarin CreateChronoAnim 0x6CB3A0 is
+placement FX, not the Chronosphere building's complete animation machine.
+Repeated activation/render reproduction is still required; issue stays open.
+
+R-046: real lightning strikes now spawn the configured WeatherConClouds
+animation above the strike as well as existing bolts/explosions. Previously
+the finite launch cloud could expire during deferment, leaving later strikes
+cloudless. This is a presentation correction, not full PC storm-density or
+warm-up parity. Lightning RNG, damage and scheduler are unchanged. Gagarin
+FireStorm 0x509E00 establishes initiation, not the complete cloud renderer.
+
+R-047: when otherwise legal, Slave Miner deployment asks friendly mobile
+blockers to walk out of the footprint via legal, distinct paths. Enemy,
+frozen, deployed, air/naval and static blockers are not moved. Deployment
+waits for clearance; no teleport. Ordinary MCV relocation policy preserved.
+The generic Gagarin deploy-ready 0x41B890 is AircraftClass and is not proof
+of Slave Miner scattering; this is an independently implemented affordance.
+
+R-048: exact Flying Disc rotating-rim rendering remains open. The existing
+approximate ring was not replaced with an invented effect.
+R-049: full Magnetron vehicle/ship lift/pull/drop remains missing. Existing
+primary IsLocomotor damage=5000 is NOT ordinary HP damage. The guard against
+instant-kill shells stays. A retail-backed test verifies the separate
+MagneShake building weapon does damage and infantry is ineligible. No
+complete matching Magnetron locomotor was verified in the pinned Gagarin
+tree; a new deterministic attachment/height/landing model is still needed.
+R-050: optional dashed sensor-coverage styling not changed. Existing
+enemy-house intent line colors and sensor eligibility preserved.
+R-051: Android now explicitly starts SetupActivity after SDL teardown and
+diagnostic completion, before terminating the native process on final Quit.
+Configuration restarts retain the autosave path. Source/build verified;
+Quit -> launcher -> launch again requires real-device validation.
+R-052: Chaos Drone gas origin AND real berserk deployment need a dedicated
+mechanics audit; no cosmetic substitute or claim of completion in this build.
+R-053: retail DISK primary AA support remains available after a secondary
+selection (new regression). No AA damage/targeting rewrite was necessary.
+Drain mechanics and exact laser/rim presentation remain open.
+R-054: Tank Bunker full physical entry/exit and geometry remain open. The
+Gagarin unload reference 0x4593A0 has an offset/relinked locomotor; clear
+0x459470 clears attachment slots. These do not prove a fabricated interpolated
+path matches PC behavior. Existing visible occupant and firing preserved.
+R-055: high-bridge deck uses Road speed, independent of river below; equal
+effective height at the bridge end no longer applies a false hill penalty.
+Crossing tested both directions, foot and tracked; below-deck naval speed
+is separate. Existing bridge collapse/repair/path-layer tests also pass.
+This does not close every map-specific reported bridge issue without capture.
+R-056: AI prerequisite planner now recognizes TECH as its side-specific tech
+lab. The seeded defense-placement test catches the previously dropped
+advanced defense. No extra credits, unconditional expansion or enhanced-AI
+toggle. Broader AI expansion/economy parity remains open.
+R-057: selected deployed Slave Miner can receive a map Move command through
+the existing deterministic command format, pack and drive; selection hands
+off to its mobile form. Ownership, health/workers and save continuation tested.
+Ordinary ConYard packing remains governed by existing MCVRedeploys/session
+rules. GI/GGI original human-deployed movement restrictions are not overridden.
+
+Additional user request: two-finger pinch/spread zoom
+--------------------------------------------------
+Bounded, session-only logical viewport zoom uses existing layout/camera
+clamps. It scales the battlefield and sidebar together. Pinches are camera
+events, not simulation commands, and cannot turn into a click on finger lift.
+Logical-size changes rescale the active gesture to prevent zoom feedback.
+Ordinary two-finger pan, two-finger cancel, tap, hold and box gestures retain
+their tests. Exact phone feel and pinch during simultaneous UI overlays still
+need device testing. No new render backend or worker-thread claim is made.
+
+Validation
+----------
+Native suite: 1229 cases / 267391 assertions passed, zero failures; one
+optional absent-retail landmark fixture excluded. Existing deterministic
+2000-frame lockstep, save/load continuation, projectiles, touch and bridge
+collapse/repair tests passed. New deploy/move tests compare complete saved
+World state after continued play. Synthetic bridge fixture initially used an
+invalid post-parse coordinate index; corrected to an unparsed owned map.
+Initial restricted run also could not access local sockets/temp files; final
+normal-permission run passed those unchanged tests. The first pinch version
+conflicted with pan and was corrected before the final passing suite.
+Android syntax passes; only pre-existing waypoint_cell override warning.
+APK build, signer, asset audit, source SHAs and checksum are recorded in
+BUILD_INFO.json and the same Drive report after packaging and verification.
+No Android emulator or POCO test performed. Do not equate unit tests with
+visual or original-PC side-by-side verification. Save format remains 53;
+use the same build for all multiplayer peers after simulation corrections.
+
+Phone checks
+------------
+1. Keep backups. Install over current build; start a new Yuri skirmish.
+2. Test infantry, tanks, miners and MCV across intact bridges both ways;
+   collapse/repair, water traffic below and queued movement after repair.
+3. Deploy a Slave Miner with friendly infantry in its footprint. Confirm
+   they walk aside, not teleport. Select the deployed miner and tap ground;
+   confirm mobile form follows the order and workers remain attached.
+4. Hold Gatling fire on a durable target through all stages; stop, change
+   targets, lose sight and resume. Listen for stage change and stuck loops.
+5. Fire a Weather Storm; watch clouds above later strikes, save/load and fire
+   again. Repeat Chronosphere cycles and share a report describing the cycle.
+6. Pinch/spread on battlefield, then pan, select, box, cancel and issue orders.
+   Confirm no extra orders on lift and buttons still line up at zoom limits.
+7. Quit via the MAIN MENU (not surrender). Confirm portrait launcher returns
+   once, launch again, and check settings/saves persist.
+8. Verify normal tank shells/muzzle origins and Android production controls
+   from build 900033 still work. Record remaining Disc, Magnetron and bunker
+   discrepancies explicitly; they are not declared fixed here.
+
+Distribution/licensing
+----------------------
+Preserved LICENSE, CREDITS.md, THIRD_PARTY_NOTICES.md, launcher Terms and
+game-file-rights confirmation, EA non-affiliation notice and Bryle13 credit.
+No retail assets, EA executable, downloaded GPL source or credentials added.
+No disclaimer guarantees legal protection. Existing app ID org.ra2.engine
+and configured signer retained. APK delivery exclusively through Google Drive
+as RA2YRPORT.apk; no GitHub Release. Source commits pushed to android-touch
+only after successful validation; no force push or history rewrite.

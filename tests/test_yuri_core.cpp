@@ -12,6 +12,7 @@
 #include "presentation_policy.hpp"
 #include "weapon_art.hpp"
 #include "ai_base.hpp"
+#include "asset_fixture.hpp"
 #include "projectile_presentation.hpp"
 #include "building_transition.hpp"
 #include "faction_support.hpp"
@@ -586,6 +587,25 @@ TEST_CASE("Yuri core: blocked miner packing keeps the building and workforce") {
     CHECK(w.units().size()==3);CHECK(w.units()[0].w7.slave_manager==0);
 }
 
+TEST_CASE("Slave Miner move command: owner packs and drives; enemy cannot convert building") {
+    Rig r;World w(r.map);BuildingTypeDef d;d.id="YAREFN";d.fw=d.fh=2;
+    d.strength=200;d.slave_count=2;d.slave_combat=unit("SLAV");
+    w.set_economy({d},{0},OreValues{},1000,0,0);
+    auto mobile=unit("SMIN");mobile.deploys_into="YAREFN";mobile.rot=8;
+    w.set_undeploy_unit(0,mobile);w.add_building(0,8,8,2,2,0,200,0,0,true);
+    w.buildings()[0].hp=100;w.step_yuri_workers();const int index=int(w.units().size());
+    auto cmd=make_mega(w,{},Mission::Move,Target{},Target::cell(14,14));
+    cmd.whom.push_back(Target::building(0));cmd.house=1;apply_command(w,cmd);
+    REQUIRE(w.buildings()[0].alive);CHECK(w.units().size()==index);
+    World restored(r.map);REQUIRE(save::load_world(restored,save::save_world(w)));
+    cmd.house=0;apply_command(w,cmd);apply_command(restored,cmd);
+    REQUIRE(w.units().size()==index+1);CHECK(w.buildings()[0].state==Building::State::Dead);
+    CHECK(w.units()[index].hp==50);REQUIRE(w.units()[index].moving());
+    CHECK(w.units()[index].path.back().x==14);CHECK(w.units()[index].path.back().y==14);
+    for(int t=0;t<180;++t){w.step(1.0/15.0);restored.step(1.0/15.0);}
+    CHECK(save::save_world(w)==save::save_world(restored));
+}
+
 TEST_CASE("Yuri core: worker shovel and carry sequences animate and return to ready") {
     InfTable t; t.crawls=false;
     t.e[kSqReady]={0,1,0,-1,true}; t.e[kSqWalk]={8,4,4,-1,true};
@@ -702,58 +722,6 @@ TEST_CASE("Yuri core: captured units leave their previous AI team immediately") 
     CHECK_FALSE(w.units()[0].tg.team_aggressive);CHECK_FALSE(w.units()[0].tg.team_suicide);
 }
 
-TEST_CASE("Gatling loop: keep audio over ROF gaps, stop on target loss and charge exhaustion") {
-    CHECK(weapon_loop_active(true,true,0,true,200));
-    CHECK_FALSE(weapon_loop_active(true,true,0,true,0));
-    CHECK_FALSE(weapon_loop_active(true,false,0,true,200));
-    CHECK_FALSE(weapon_loop_active(false,true,0,true,200));
-    CHECK_FALSE(weapon_loop_active(true,true,0,false,200));
-    CHECK(weapon_loop_active(true,true,0.2,false,0));
-}
-
-TEST_CASE("bridge deck speed: Road on deck, river below, no fictitious hill at bridge end") {
-    Rig r;World w(r.map);const int W=w.grid_w(),H=w.grid_h();
-    std::vector<uint8_t> hb(W*H,0);hb[8*W+8]=1;w.set_high_bridges(hb);
-    std::vector<uint8_t> land(W*H,0);land[8*W+8]=2;
-    std::vector<int8_t> levels(W*H,4);levels[8*W+8]=0;
-    MoveSpeedCtx c;c.armed=true;c.land=&land;c.level=&levels;c.world=&w;
-    c.cost[0][1]=1;c.cost[1][1]=0.9f;c.cost[2][1]=0;c.cost[2][5]=1;
-    c.up[0]=0.25;c.down[0]=0.5;
-    Unit u;u.is_vehicle=true;u.land_speed_loco=true;u.speed_type=1;u.max_hp=u.hp=100;
-    u.cell_x=7;u.cell_y=8;
-    CHECK(land_speed_mult(c,u,W,H,8,8)==doctest::Approx(0.9));
-    u.cell_x=8;u.on_deck=1;
-    CHECK(land_speed_mult(c,u,W,H,9,8)==doctest::Approx(1.0));
-    u.on_deck=0;u.is_naval=true;u.speed_type=5;u.movement_domain=MovementDomain::Water;
-    levels[8*W+7]=0;u.cell_x=7;
-    CHECK(land_speed_mult(c,u,W,H,8,8)==doctest::Approx(1.0));
-}
-
-TEST_CASE("bridge traversal: infantry and tracked units cross both directions on legal height layer") {
-    for(bool vehicle:{false,true})for(bool reverse:{false,true}) {
-        Rig r;
-        // An unparsed synthetic map uses the linear lookup, not parse()'s
-        // immutable coordinate index (the Rig appends cells after parsing).
-        r.map=ra2assets::MapFile{};
-        auto& cells=const_cast<std::vector<ra2assets::MapCell>&>(r.map.cells());
-        for(int y=0;y<40;++y)for(int x=0;x<40;++x)cells.push_back({x,y,0,0,0});
-        for(auto& cell:const_cast<std::vector<ra2assets::MapCell>&>(r.map.cells()))cell.level=(cell.x>=18 && cell.x<=21)?0:4;
-        REQUIRE(r.map.at(17,18));REQUIRE(r.map.at(22,18));
-        World w(r.map);const int gw=w.grid_w(),gh=w.grid_h();
-        std::vector<ra2assets::LandType> land(gw*gh,ra2assets::LandType::Clear);
-        std::vector<uint8_t> hb(gw*gh,0),speed(gw*gh,0),ramp(gw*gh,0);
-        for(int y=0;y<gh;++y)for(int x=18;x<=21;++x){land[y*gw+x]=ra2assets::LandType::Water;speed[y*gw+x]=2;}
-        w.set_land_terrain(land);for(int x=18;x<=21;++x)hb[18*gw+x]=1;w.set_high_bridges(hb);
-        World::LandSpeedRules rules;w.arm_land_speed(speed,ramp,rules);
-        auto mover=unit(vehicle?"SMCV":"GI");mover.is_vehicle=vehicle;mover.speed_cps=4;
-        mover.land_speed_loco=vehicle;mover.speed_type=1;mover.rot=8;
-        w.add_combat_unit(reverse?24:15,18,0,mover);w.order_unit_move(0,reverse?15:24,18);
-        REQUIRE(w.units()[0].moving());bool saw_deck=false;
-        for(int t=0;t<500 && w.units()[0].moving();++t){w.step(1.0/15.0);saw_deck=saw_deck || w.units()[0].on_deck;}
-        CHECK(saw_deck);CHECK(w.units()[0].cell_x==(reverse?15:24));CHECK(w.units()[0].on_deck==0);
-    }
-}
-
 TEST_CASE("Slave Miner deploy: friendly blockers walk out before conversion; no teleport") {
     Rig r;World w(r.map);BuildingTypeDef d;d.id="YAREFN";d.fw=d.fh=2;d.strength=1000;d.slave_count=5;
     w.set_building_types({d});auto miner=unit("SMIN");miner.is_vehicle=true;miner.deploys_into="YAREFN";
@@ -779,26 +747,55 @@ TEST_CASE("Slave Miner deploy: enemy and static blockers are not pushed by footp
         CHECK_FALSE(w.can_deploy_at(0,8,8));
     }
 }
-
-TEST_CASE("Slave Miner move command: owner packs and drives; enemy cannot convert building") {
-    Rig r;World w(r.map);BuildingTypeDef d;d.id="YAREFN";d.fw=d.fh=2;
-    d.strength=200;d.slave_count=2;d.slave_combat=unit("SLAV");
-    w.set_economy({d},{0},OreValues{},1000,0,0);
-    auto mobile=unit("SMIN");mobile.deploys_into="YAREFN";mobile.rot=8;
-    w.set_undeploy_unit(0,mobile);w.add_building(0,8,8,2,2,0,200,0,0,true);
-    w.buildings()[0].hp=100;w.step_yuri_workers();const int index=int(w.units().size());
-    auto cmd=make_mega(w,{},Mission::Move,Target{},Target::cell(14,14));
-    cmd.whom.push_back(Target::building(0));cmd.house=1;apply_command(w,cmd);
-    REQUIRE(w.buildings()[0].alive);CHECK(w.units().size()==index);
-    World restored(r.map);REQUIRE(save::load_world(restored,save::save_world(w)));
-    cmd.house=0;apply_command(w,cmd);apply_command(restored,cmd);
-    REQUIRE(w.units().size()==index+1);CHECK(w.buildings()[0].state==Building::State::Dead);
-    CHECK(w.units()[index].hp==50);REQUIRE(w.units()[index].moving());
-    CHECK(w.units()[index].path.back().x==14);CHECK(w.units()[index].path.back().y==14);
-    for(int t=0;t<180;++t){w.step(1.0/15.0);restored.step(1.0/15.0);}
-    CHECK(save::save_world(w)==save::save_world(restored));
+TEST_CASE("bridge deck speed: Road on deck, river below, no fictitious hill at bridge end") {
+    Rig r;World w(r.map);const int W=w.grid_w(),H=w.grid_h();
+    std::vector<uint8_t> hb(W*H,0);hb[8*W+8]=1;w.set_high_bridges(hb);
+    std::vector<uint8_t> land(W*H,0);land[8*W+8]=2;
+    std::vector<int8_t> levels(W*H,4);levels[8*W+8]=0;
+    MoveSpeedCtx c;c.armed=true;c.land=&land;c.level=&levels;c.world=&w;
+    c.cost[0][1]=1;c.cost[1][1]=0.9f;c.cost[2][1]=0;c.cost[2][5]=1;
+    c.up[0]=0.25;c.down[0]=0.5;
+    Unit u;u.is_vehicle=true;u.land_speed_loco=true;u.speed_type=1;u.max_hp=u.hp=100;
+    u.cell_x=7;u.cell_y=8;
+    CHECK(land_speed_mult(c,u,W,H,8,8)==doctest::Approx(0.9));
+    u.cell_x=8;u.on_deck=1;
+    CHECK(land_speed_mult(c,u,W,H,9,8)==doctest::Approx(1.0));
+    u.on_deck=0;u.is_naval=true;u.speed_type=5;u.movement_domain=MovementDomain::Water;
+    levels[8*W+7]=0;u.cell_x=7;
+    CHECK(land_speed_mult(c,u,W,H,8,8)==doctest::Approx(1.0));
 }
-
+TEST_CASE("bridge traversal: infantry and tracked units cross both directions on legal height layer") {
+    for(bool vehicle:{false,true})for(bool reverse:{false,true}) {
+        Rig r;
+        // An unparsed synthetic map uses the linear lookup, not parse()'s
+        // immutable coordinate index (the Rig appends cells after parsing).
+        r.map=ra2assets::MapFile{};
+        auto& cells=const_cast<std::vector<ra2assets::MapCell>&>(r.map.cells());
+        for(int y=0;y<40;++y)for(int x=0;x<40;++x)cells.push_back({x,y,0,0,0});
+        for(auto& cell:const_cast<std::vector<ra2assets::MapCell>&>(r.map.cells()))cell.level=(cell.x>=18 && cell.x<=21)?0:4;
+        REQUIRE(r.map.at(17,18));REQUIRE(r.map.at(22,18));
+        World w(r.map);const int gw=w.grid_w(),gh=w.grid_h();
+        std::vector<ra2assets::LandType> land(gw*gh,ra2assets::LandType::Clear);
+        std::vector<uint8_t> hb(gw*gh,0),speed(gw*gh,0),ramp(gw*gh,0);
+        for(int y=0;y<gh;++y)for(int x=18;x<=21;++x){land[y*gw+x]=ra2assets::LandType::Water;speed[y*gw+x]=2;}
+        w.set_land_terrain(land);for(int x=18;x<=21;++x)hb[18*gw+x]=1;w.set_high_bridges(hb);
+        World::LandSpeedRules rules;w.arm_land_speed(speed,ramp,rules);
+        auto mover=unit(vehicle?"SMCV":"GI");mover.is_vehicle=vehicle;mover.speed_cps=4;
+        mover.land_speed_loco=vehicle;mover.speed_type=1;mover.rot=8;
+        w.add_combat_unit(reverse?24:15,18,0,mover);w.order_unit_move(0,reverse?15:24,18);
+        REQUIRE(w.units()[0].moving());bool saw_deck=false;
+        for(int t=0;t<500 && w.units()[0].moving();++t){w.step(1.0/15.0);saw_deck=saw_deck || w.units()[0].on_deck;}
+        CHECK(saw_deck);CHECK(w.units()[0].cell_x==(reverse?15:24));CHECK(w.units()[0].on_deck==0);
+    }
+}
+TEST_CASE("Gatling loop: keep audio over ROF gaps, stop on target loss and charge exhaustion") {
+    CHECK(weapon_loop_active(true,true,0,true,200));
+    CHECK_FALSE(weapon_loop_active(true,true,0,true,0));
+    CHECK_FALSE(weapon_loop_active(true,false,0,true,200));
+    CHECK_FALSE(weapon_loop_active(false,true,0,true,200));
+    CHECK_FALSE(weapon_loop_active(true,true,0,false,200));
+    CHECK(weapon_loop_active(true,true,0.2,false,0));
+}
 TEST_CASE("AI plan: TECH group recognizes the existing side-specific tech laboratory") {
     std::vector<BuildingTypeDef> defs(5);defs[0].id="YACNST";defs[1].id="YAPOWR";
     defs[2].id="YATECH";defs[3].id="SPECIAL";defs[3].prerequisite={"TECH"};
@@ -809,4 +806,35 @@ TEST_CASE("AI plan: TECH group recognizes the existing side-specific tech labora
     const auto plan=build_base_plan(BaseView{},cat,defs,rules,mods,&rng);
     int tech=-1,special=-1;for(int i=0;i<int(plan.size());++i){if(plan[i].type==2)tech=i;if(plan[i].type==3)special=i;}
     REQUIRE(tech>=0);REQUIRE(special>=0);CHECK(tech<special);
+}
+TEST_CASE("Flying Disc retail weapon: anti-air remains available after a secondary selection") {
+    if(!ra2fixture::assets_available())return;
+    const auto& rules=ra2fixture::rulesmd();const auto tw=resolve_type_weapons(rules,"DISK");
+    REQUIRE(tw.slot[0].aa);REQUIRE_FALSE(tw.slot[1].aa);
+    Rig r;World w(r.map);auto disk=unit("DISK");disk.is_vehicle=disk.is_aircraft=true;
+    disk.damage=90;disk.range=7;disk.rof=80;disk.verses=tw.slot[0].verses;disk.proj=tw.slot[0].proj;
+    fill_unit_combat_extras(rules,"DISK",tw,disk);
+    w.add_combat_unit(2,2,0,disk);auto target=unit("ROCK");target.is_aircraft=true;w.add_combat_unit(4,2,1,target);
+    w.units()[1].altitude=300;w.units()[1].flight_state=FlightState::Cruising;
+    CHECK(unit_weapon_for_unit(w.units()[0],w.units()[1])==0);
+    activate_weapon_slot(w.units()[0],1,nullptr);CHECK_FALSE(w.units()[0].w_aa);
+    CHECK(unit_weapon_for_unit(w.units()[0],w.units()[1])==0);
+}
+
+TEST_CASE("Magnetron retail audit: building weapon damages structures, infantry remains ineligible") {
+    if(!ra2fixture::assets_available())return;
+    const auto& rules=ra2fixture::rulesmd();const auto tw=resolve_type_weapons(rules,"TELE");
+    REQUIRE(tw.slot[1].valid);CHECK(tw.slot[1].damage==80);
+    Rig r;World w(r.map);BuildingTypeDef d;d.id="TARGET";d.strength=1000;d.armor_ix=6;w.set_building_types({d});
+    w.add_building(0,7,2,1,1,1,1000,6,0,true);
+    auto magnet=unit("TELE");magnet.is_vehicle=true;magnet.w7.magnetic=true;magnet.rot=8;
+    magnet.damage=5000;magnet.range=12;magnet.rof=20;magnet.verses=tw.slot[0].verses;magnet.omni_fire=true;
+    fill_unit_combat_extras(rules,"TELE",tw,magnet);w.add_combat_unit(2,2,0,magnet);
+    REQUIRE(unit_weapon_for_building(w.units()[0],6)==1);
+    w.units()[0].target_building=0;w.units()[0].attack_order=true;
+    for(int t=0;t<180;++t)w.step(1.0/15.0);
+    INFO("slot="<<w.units()[0].w_active<<" damage="<<w.units()[0].w_damage<<" target="<<w.units()[0].target_building<<" range="<<w.units()[0].w_range<<" rearm="<<w.units()[0].rearm_frames);
+    CHECK(w.buildings()[0].hp<1000);CHECK(w.buildings()[0].hp>0);
+    Unit infantry;infantry.armor_ix=0;infantry.is_infantry=true;
+    CHECK(unit_weapon_for_unit(w.units()[0],infantry)<0);
 }
