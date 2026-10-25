@@ -1,7 +1,14 @@
 #pragma once
 #include <algorithm>
 #include <cmath>
+#include <array>
 namespace ra2engine {
+inline std::array<int,2> bunker_docking_cell(int cx,int cy,int fw,int fh) {
+    // NATBNK's platform art is anchored at the origin, not at the southeast
+    // cell of its 2x2 foundation. Its retail docking offset is (-1,-1).
+    // Share this socket between approach, attachment, ejection and drawing.
+    return {cx+fw/2-1,cy+fh/2-1};
+}
 // Opening runs Start..LoopEnd before holding; closing uses its reverse span.
 inline long bunker_motion_ticks(int start,int loop_end,int delay,bool reverse) {
     const long frames=reverse?loop_end:loop_end-start;

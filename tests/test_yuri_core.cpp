@@ -951,7 +951,7 @@ TEST_CASE("Tank Bunker: arrival reservation cannot consume an unfinished approac
  auto t=unit("LTNK");t.is_vehicle=true;t.w7.bunkerable=true;w.add_combat_unit(7,8,0,t);
  auto& u=w.units()[0];u.fx=6.25;u.path={{6,8},{7,8}};u.path_idx=1;
  w.order_occupy(0,0);w.step_depth(0);CHECK(w.buildings()[0].occupants.empty());CHECK(u.occupy_target==0);
- u.path.clear();u.path_idx=0;u.cell_x=9;u.cell_y=9;u.fx=9;u.fy=9;u.body_facing=8192;w.step_depth(0);REQUIRE(w.buildings()[0].occupants.size()==1);
+ u.path.clear();u.path_idx=0;u.cell_x=8;u.cell_y=8;u.fx=8;u.fy=8;u.body_facing=8192;w.step_depth(0);REQUIRE(w.buildings()[0].occupants.size()==1);
  CHECK(u.garrison_of==0);
 }
 TEST_CASE("Tank Bunker presentation: drive speed and lower-before-exit sequence") {
@@ -1056,7 +1056,7 @@ TEST_CASE("Tank Bunker automation: drive into foundation then align before attac
  auto t=unit("LTNK");t.is_vehicle=true;t.rot=8;t.w7.bunkerable=true;int xs[]={4,13,9,9},ys[]={9,9,4,13};w.add_combat_unit(xs[direction],ys[direction],0,t);
  w.order_occupy(0,0);World copy(r.map);REQUIRE(save::load_world(copy,save::save_world(w)));
  for(int tick=0;tick<400;++tick){w.step(1.0/15.0);copy.step(1.0/15.0);if(w.units()[0].garrison_of==0)break;}
- REQUIRE(w.units()[0].garrison_of==0);CHECK(w.units()[0].cell_x==9);CHECK(w.units()[0].cell_y==9);
+ REQUIRE(w.units()[0].garrison_of==0);CHECK(w.units()[0].cell_x==8);CHECK(w.units()[0].cell_y==8);
  CHECK(w.units()[0].body_facing==bunker_horizontal_facing(w.units()[0].body_facing));CHECK(save::save_world(w)==save::save_world(copy));}
 }
 
@@ -1069,9 +1069,9 @@ TEST_CASE("Tank Bunker automation: lower first then physically path out with det
  for(int n=0;n<17;++n){w.step(1.0/15.0);CHECK(w.units()[0].garrison_of==0);}
  World copy(r.map);REQUIRE(save::load_world(copy,save::save_world(w)));
  w.step(1.0/15.0);copy.step(1.0/15.0);
- REQUIRE(w.units()[0].garrison_of==-1);CHECK(w.units()[0].fx==9);CHECK(w.units()[0].fy==9);
+ REQUIRE(w.units()[0].garrison_of==-1);CHECK(w.units()[0].fx==8);CHECK(w.units()[0].fy==8);
  REQUIRE(w.units()[0].moving());CHECK(w.units()[0].bunker_exit_host==0);
- double px=9,py=9;bool moved=false;
+ double px=8,py=8;bool moved=false;
  for(int n=0;n<200;++n){w.step(1.0/15.0);copy.step(1.0/15.0);const auto& u=w.units()[0];
    CHECK(std::hypot(u.fx-px,u.fy-py)<0.6);moved=moved || u.fx!=px || u.fy!=py;px=u.fx;py=u.fy;
    CHECK(save::save_world(w)==save::save_world(copy));if(!u.moving())break;}

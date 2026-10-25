@@ -56,6 +56,7 @@ static char* ra2_cli_pref_path() {
 #include "projectile_presentation.hpp"
 ra2engine::ProjectilePresentation g_projectile_motion;
 #include "unit_presentation.hpp"
+#include "skirmish_layout.hpp"
 ra2engine::UnitPresentation g_unit_motion;
 #include "shell_layout.hpp"
 #include "ra2assets/asset_trace.hpp"
@@ -4513,8 +4514,8 @@ void render_world(SDL_Renderer* ren, ra2engine::TextureCache& tc, Assets& a,
         }
         if (bunker && us[idx].garrison_of>=0) {
             if (!lifted) lifted.emplace(*up);
-            lifted->fx=bunker->cx+bunker->fw/2;
-            lifted->fy=bunker->cy+bunker->fh/2;
+            const auto dock=ra2engine::bunker_docking_cell(bunker->cx,bunker->cy,bunker->fw,bunker->fh);
+            lifted->fx=dock[0];lifted->fy=dock[1];
             lifted->cell_x=bunker->cx;
             lifted->cell_y=bunker->cy;
             lifted->level=world.cell_level(bunker->cx,bunker->cy);

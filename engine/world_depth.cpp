@@ -123,7 +123,8 @@ void World::order_occupy(int ui, int bi) {
     u.occupy_target = bi;
     const Building& b = buildings_[bi];
     if(btypes()[b.type].tank_bunker) {
-        order_unit_move(ui,b.cx+b.fw/2,b.cy+b.fh/2);
+        const auto dock=bunker_docking_cell(b.cx,b.cy,b.fw,b.fh);
+        order_unit_move(ui,dock[0],dock[1]);
         return;
     }
     if (cheb_to_foundation(b, u.cell_x, u.cell_y) <= 1) return;   // enters next step
@@ -277,8 +278,9 @@ void World::unload_occupants(int bi, bool place_inside) {
                 Unit probe=units_[lead];probe.cargo_of=-1;probe.garrison_of=-1;probe.bunker_exit_host=bi;
                 PathTerrain route_terrain;std::vector<int> openings;
                 const auto* terrain=terrain_for(probe,route_terrain,openings);
+                const auto dock=bunker_docking_cell(b.cx,b.cy,b.fw,b.fh);
                 const auto route=find_path_bounded_t(grid_for(probe.movement_domain),grid_w_,grid_h_,
-                    {b.cx+b.fw/2,b.cy+b.fh/2},c,2048,nullptr,terrain);
+                    {dock[0],dock[1]},c,2048,nullptr,terrain);
                 if(route.size()<2)continue;
             }
             exit = c; exit_layer = l; break;
@@ -325,7 +327,8 @@ void World::unload_occupants(int bi, bool place_inside) {
         const int ui=lead;
         b.occupants.clear();b.bunker_exit_left=-1;
         auto& u=units_[ui];u.garrison_of=-1;u.cargo_of=-1;u.bunker_exit_host=bi;
-        put(ui,{b.cx+b.fw/2,b.cy+b.fh/2},0);
+        const auto dock=bunker_docking_cell(b.cx,b.cy,b.fw,b.fh);
+        put(ui,{dock[0],dock[1]},0);
         order_unit_move(ui,exit.x,exit.y);
         garrison_events_.push_back({GarrisonEvent::Unloaded,bi,house});
         return;
@@ -1067,7 +1070,8 @@ void World::step_depth(double dt) {
         const bool bunker=btypes()[buildings_[bi].type].tank_bunker;
         if(bunker) {
             const auto& b=buildings_[bi];
-            if(u.cell_x==b.cx+b.fw/2 && u.cell_y==b.cy+b.fh/2 && !u.moving()) {
+            const auto dock=bunker_docking_cell(b.cx,b.cy,b.fw,b.fh);
+            if(u.cell_x==dock[0] && u.cell_y==dock[1] && !u.moving()) {
                 const double desired=bunker_horizontal_facing(u.body_facing);
                 u.body_facing=turn_toward(u.body_facing,desired,(u.rot_u16_per_sec>0?u.rot_u16_per_sec:16384)*dt);
                 if(std::abs(std::remainder(u.body_facing-desired,65536.0))<1)occupy_now(i,bi);

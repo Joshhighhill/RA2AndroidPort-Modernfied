@@ -230,7 +230,8 @@ void pres_bld_anim_tick(const ra2engine::World& w, const BuildingAssets& ba, Pre
                 const int ui = occupied ? b.occupants.front() : st.bunker_unit;
                 if(ui>=0 && ui<static_cast<int>(w.units().size())) {
                     const auto& u=w.units()[ui];
-                    const double cx=b.cx+b.fw/2, cy=b.cy+b.fh/2;
+                    const auto dock=ra2engine::bunker_docking_cell(b.cx,b.cy,b.fw,b.fh);
+                    const double cx=dock[0],cy=dock[1];
                     double from_x=occupied?u.fx:cx,from_y=occupied?u.fy:cy;
                     const auto previous=g_bunker_motion.find(ui);
                     if(previous!=g_bunker_motion.end() &&
