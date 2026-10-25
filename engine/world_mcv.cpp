@@ -121,6 +121,16 @@ bool World::order_deploy_mcv(int idx) {
     return false;
 }
 
+bool World::order_deploy_mcv_auto(int idx) {
+    const auto events=deploy_events_.size();
+    const bool accepted=order_deploy_mcv(idx);
+    // Saved mission values 3/4 are quiet versions of turn/walk (1/2).
+    if(accepted && units_[idx].deploy_mission>0)units_[idx].deploy_mission+=2;
+    deploy_events_.erase(std::remove_if(deploy_events_.begin()+events,deploy_events_.end(),
+        [](const DeployEvent& e){return e.kind==DeployEvent::Kind::CannotDeploy;}),deploy_events_.end());
+    return accepted;
+}
+
 bool World::clear_slave_deploy_blockers(int idx) {
     if(!is_mcv(idx))return false;
     const auto& miner=units_[idx];
@@ -146,7 +156,7 @@ bool World::clear_slave_deploy_blockers(int idx) {
     bool waiting=false;std::set<std::pair<int,int>> goals;
     for(int i:blockers) {
         auto& u=units_[i];
-        if(u.moving() && !inside(u.path.back().x,u.path.back().y)) {
+        if(u.moving() && u.wait_time<3.0 && !inside(u.path.back().x,u.path.back().y)) {
             goals.emplace(u.path.back().x,u.path.back().y);waiting=true;continue;
         }
         bool routed=false;
@@ -206,21 +216,22 @@ void World::step_deploy(double dt) {
         Unit& u = units_[i];
         if (u.deploy_mission == 0) continue;
         if (!live_on_map(u) || u.deploys_into < 0) { u.deploy_mission = 0; continue; }
-        if (u.deploy_mission == 2) {
+        const bool quiet=u.deploy_mission>=3;
+        if (u.deploy_mission == 2 || u.deploy_mission==4) {
             if (u.moving()) {
                 // A new player order re-pathed the unit elsewhere: drop the deploy.
                 const Cellxy& g = u.path.back();
                 if (g.x != u.deploy_goal_x || g.y != u.deploy_goal_y) u.deploy_mission = 0;
                 continue;
             }
-            u.deploy_mission = 1;   // arrived (or stopped): attempt the unfold here
+            u.deploy_mission = quiet ? 3 : 1;   // arrived: attempt the unfold here
         }
         if (u.moving()) { u.deploy_mission = 0; continue; }   // re-ordered mid-turn
         if (!can_deploy_at(i, u.cell_x, u.cell_y)) {
             if(clear_slave_deploy_blockers(i))continue;
             // [FUN_007383E0 @0x738500] failure on the spot -> EVA_CannotDeployHere
             // (human player) and back to Guard.
-            deploy_events_.push_back({DeployEvent::Kind::CannotDeploy, i, -1, u.house});
+            if(!quiet)deploy_events_.push_back({DeployEvent::Kind::CannotDeploy, i, -1, u.house});
             u.deploy_mission = 0;
             continue;
         }
@@ -276,6 +287,19 @@ bool World::try_undeploy(int b_idx) {
     const int ui = static_cast<int>(units_.size()) - 1;
     deploy_events_.push_back({DeployEvent::Kind::Undeployed, ui, b_idx, house});
     return true;
+}
+
+bool World::can_pack_conyard(int bi) const {
+    if(!skirmish_session_ || !mcv_redeploys_ || bi<0 || bi>=static_cast<int>(buildings_.size()))return false;
+    const auto& b=buildings_[bi];
+    if(!b.alive || b.state!=Building::State::Idle || b.selling || b.c4_applied || ai_enabled(b.house) ||
+       b.type<0 || b.type>=static_cast<int>(btypes().size()) || !btypes()[b.type].conyard)return false;
+    if(std::find(undeploy_types_.begin(),undeploy_types_.end(),b.type)==undeploy_types_.end())return false;
+    const int x=b.cx+(b.fw>2 || b.fh>2),y=b.cy+(b.fw>2 || b.fh>2);
+    return occ_.is_free(x,y);
+}
+bool World::order_pack_conyard(int bi,int house) {
+    return can_pack_conyard(bi) && buildings_[bi].house==house && begin_sell(bi,house);
 }
 
 bool World::can_pack_slave_miner(int bi) const {

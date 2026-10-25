@@ -12,6 +12,8 @@
 #include "presentation_policy.hpp"
 #include "weapon_art.hpp"
 #include "ai_base.hpp"
+#include "ground_presentation.hpp"
+#include "production.hpp"
 #include "asset_fixture.hpp"
 #include "projectile_presentation.hpp"
 #include "building_transition.hpp"
@@ -837,4 +839,75 @@ TEST_CASE("Magnetron retail audit: building weapon damages structures, infantry 
     CHECK(w.buildings()[0].hp<1000);CHECK(w.buildings()[0].hp>0);
     Unit infantry;infantry.armor_ix=0;infantry.is_infantry=true;
     CHECK(unit_weapon_for_unit(w.units()[0],infantry)<0);
+}
+
+TEST_CASE("deploy feedback: automatic attempts stay quiet across save while manual failures report") {
+    Rig r;World w(r.map);BuildingTypeDef d;d.id="YAREFN";d.fw=d.fh=2;d.slave_count=5;
+    w.set_building_types({d});auto m=unit("SMIN");m.deploys_into="YAREFN";
+    w.add_combat_unit(8,8,0,m);REQUIRE(w.order_deploy_mcv_auto(0));
+    CHECK(w.units()[0].deploy_mission==3);
+    World loaded(r.map);REQUIRE(save::load_world(loaded,save::save_world(w)));
+    for(auto* world:{&w,&loaded}) {
+        world->add_building(0,8,8,2,2,1,100,0,0,true);world->step(1.0/15.0);
+        const auto events=world->take_deploy_events();
+        CHECK(std::none_of(events.begin(),events.end(),[](const auto& e){return e.kind==World::DeployEvent::Kind::CannotDeploy;}));
+        CHECK(world->units()[0].deploy_mission==0);
+    }
+    CHECK(save::save_world(w)==save::save_world(loaded));
+    // Cover the entire relocation ring: a manual attempt must still report failure.
+    for(int y=3;y<14;++y)for(int x=3;x<14;++x)if(w.building_at_cell(x,y)<0)w.add_building(0,x,y,1,1,1,100,0,0,true);
+    CHECK_FALSE(w.order_deploy_mcv(0));const auto failed=w.take_deploy_events();
+    REQUIRE(failed.size()==1);CHECK(failed[0].kind==World::DeployEvent::Kind::CannotDeploy);
+    CHECK_FALSE(w.order_deploy_mcv_auto(0));CHECK(w.take_deploy_events().empty());
+}
+TEST_CASE("ConYard deploy command: all faction mappings obey option ownership and blockers") {
+    for(const auto& name:{"GACNST","NACNST","YACNST"})for(bool enabled:{false,true}) {
+        Rig r;World w(r.map);BuildingTypeDef d;d.id=name;d.fw=d.fh=4;d.strength=1000;d.conyard=true;
+        w.set_building_types({d});auto m=unit("MCV");m.deploys_into=name;w.set_undeploy_unit(0,m);
+        w.set_skirmish_session(true);w.set_mcv_redeploys(enabled);
+        w.add_building(0,8,8,4,4,0,1000,0,0,true);w.buildings()[0].hp=500;
+        auto c=make_building_event(EventType::Deploy,0);c.house=1;apply_command(w,c);CHECK(w.units().empty());
+        c.house=0;apply_command(w,c);
+        if(!enabled){CHECK(w.units().empty());CHECK(w.buildings()[0].alive);continue;}
+        REQUIRE(w.units().size()==1);CHECK(w.units()[0].hp==50);CHECK(w.units()[0].deploys_into==0);
+        CHECK(w.buildings()[0].state==Building::State::Dead);
+    }
+    Rig r;World w(r.map);BuildingTypeDef d;d.id="YACNST";d.fw=d.fh=4;d.conyard=true;
+    w.set_building_types({d});w.set_undeploy_unit(0,unit("PCV"));w.set_skirmish_session(true);w.set_mcv_redeploys(true);
+    w.add_building(0,8,8,4,4,0,100,0,0,true);w.add_combat_unit(9,9,0,unit("BLOCKER"));
+    CHECK_FALSE(w.can_pack_conyard(0));CHECK_FALSE(w.order_pack_conyard(0,0));CHECK(w.buildings()[0].alive);
+}
+TEST_CASE("ground presentation: legal slope Z interpolates and bridge deck cannot overpaint own tank") {
+    for(int i=0;i<=10;++i){const double t=i/10.0;
+        CHECK(segment_ground_level(8+t,8,8,8,9,8,2,3)==doctest::Approx(2+t));
+        CHECK(segment_ground_level(9-t,8,9,8,8,8,3,2)==doctest::Approx(3-t));
+        CHECK(segment_ground_level(8+t,8,8,8,9,8,4,4)==4);
+    }
+    CHECK(deck_unit_depth(7.7,8,8,8,true)>16.99);
+    CHECK(deck_unit_depth(7.7,8,8,8,false)==15.7);
+}
+TEST_CASE("Slave followers: packed workers use distinct reachable neighbours and deterministic continuation") {
+    Rig r;World w(r.map);BuildingTypeDef d;d.id="YAREFN";d.slave_count=4;d.fw=d.fh=2;
+    d.slave_combat=unit("SLAV");w.set_economy({d},{0},OreValues{},1000,0,0);
+    auto m=unit("SMIN");m.deploys_into="YAREFN";w.set_undeploy_unit(0,m);
+    w.add_building(0,4,4,2,2,0,100,0,0,true);w.step_yuri_workers();REQUIRE(w.order_pack_slave_miner(0,0));
+    const int mobile=int(w.units().size())-1;w.order_unit_move(mobile,13,13);
+    World loaded(r.map);REQUIRE(save::load_world(loaded,save::save_world(w)));
+    for(int t=0;t<450;++t){w.step(1.0/15.0);loaded.step(1.0/15.0);}
+    CHECK(save::save_world(w)==save::save_world(loaded));
+    for(int i=0;i<mobile;++i){CHECK(w.units()[i].w7.slave_manager==-2-mobile);
+        CHECK(std::max(std::abs(w.units()[i].cell_x-w.units()[mobile].cell_x),std::abs(w.units()[i].cell_y-w.units()[mobile].cell_y))<=2);}
+}
+
+TEST_CASE("retail Boomer prerequisites: yard and radar required; Battle Lab is not required") {
+    if(!ra2fixture::assets_available())return;
+    const auto& rules=ra2fixture::rulesmd();const auto required=rules.prerequisite("BSUB");
+    CHECK(required==std::vector<std::string>{"YAYARD","RADAR"});CHECK(rules.section_double("BSUB","TechLevel",-1)==2);
+    std::vector<BuildingTypeDef> defs(3);defs[0].id="YAYARD";defs[1].id="NAPSIS";defs[2].id="YATECH";
+    std::vector<std::pair<std::string,std::vector<std::string>>> groups{{"RADAR",rules.prerequisite_group("RADAR")}};
+    std::vector<Building> buildings(3);for(int i=0;i<3;++i){buildings[i].type=i;buildings[i].house=0;buildings[i].alive=true;buildings[i].state=Building::State::Idle;}
+    buildings[2].alive=false;CHECK(prerequisites_met(required,buildings,defs,0,groups));
+    buildings[0].alive=false;CHECK_FALSE(prerequisites_met(required,buildings,defs,0,groups));
+    buildings[0].alive=true;buildings[1].house=1;CHECK_FALSE(prerequisites_met(required,buildings,defs,0,groups));
+    buildings[1].house=0;buildings[1].state=Building::State::Dead;CHECK_FALSE(prerequisites_met(required,buildings,defs,0,groups));
 }

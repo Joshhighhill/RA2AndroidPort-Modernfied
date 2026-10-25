@@ -307,6 +307,7 @@ void apply_deploy(World& w, const Command& c) {
             const Building& b = w.buildings()[static_cast<std::size_t>(t.id)];
             if (b.house == H) {
                 if (!b.occupants.empty()) w.unload_occupants(t.id);
+                else if(w.can_pack_conyard(t.id)) (void)w.order_pack_conyard(t.id,H);
                 else (void)w.order_pack_slave_miner(t.id, H);
             }
         }

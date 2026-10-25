@@ -380,7 +380,7 @@ struct Unit {
     bool crushable = false;          // Crushable=yes (infantry)
     // --- gF MCV deploy [RE: docs/re/mcv-deploy.md] --- inert defaults.
     int deploys_into = -1;           // DeploysInto= building roster index (-1 none)
-    int deploy_mission = 0;          // 0 none, 1 turning to DeployFacing, 2 driving to a spot
+    int deploy_mission = 0;          // 0 none; 1/2 manual turn/walk; 3/4 automatic quiet turn/walk
     int deploy_goal_x = 0, deploy_goal_y = 0;   // mission 2 destination
     bool deployed_away = false;      // consumed by a deploy (not a death)
     // --- G16 world depth (agent G, world_depth.cpp) [RE: docs/re/world-depth.md] ---
@@ -2424,6 +2424,9 @@ public:
     // Order unit `idx` to deploy (any house: player 'D', AI, campaign script 9).
     // false = not a deployer / dead / no legal spot anywhere in the ring.
     bool order_deploy_mcv(int idx);
+    bool order_deploy_mcv_auto(int idx);
+    bool can_pack_conyard(int bi) const;
+    bool order_pack_conyard(int bi,int house);
     bool is_mcv(int idx) const;
     // Would the unit's DeploysInto building be legal with the MCV at (x, y)?
     // (the MCV itself does not block its own spot). Out: foundation origin.

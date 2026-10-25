@@ -146,10 +146,25 @@ void World::step_yuri_workers(bool relocate) {
             if (mobile >= 0 && mobile < static_cast<int>(units_.size()) &&
                 active(units_[mobile]) && units_[mobile].house == u.house) {
                 const Unit& miner = units_[mobile];
-                if (active(u) && (!u.moving() || u.wait_time>=3.0) &&
+                const bool stale=u.moving() && std::max(std::abs(u.path.back().x-miner.cell_x),std::abs(u.path.back().y-miner.cell_y))>2;
+                if (active(u) && (!u.moving() || u.wait_time>=3.0 || stale) &&
                     std::max(std::abs(u.cell_x-miner.cell_x),std::abs(u.cell_y-miner.cell_y)) > 2 &&
-                    (ability_frame()+static_cast<unsigned>(i))%30==0)
-                    order_unit_move(i,miner.cell_x,miner.cell_y);
+                    (ability_frame()+static_cast<unsigned>(i))%30==0) {
+                    // Follow to a free reachable neighbour, not the manager's
+                    // occupied centre. Distinct worker goals avoid piling up.
+                    bool routed=false;
+                    for(int r=1;r<=2 && !routed;++r)for(int dy=-r;dy<=r && !routed;++dy)for(int dx=-r;dx<=r && !routed;++dx) {
+                        if(std::abs(dx)!=r && std::abs(dy)!=r)continue;
+                        const int x=miner.cell_x+dx,y=miner.cell_y+dy;
+                        if(!unit_can_enter_cell(u,x,y) || !occ_.can_enter(x,y,i,u.on_deck))continue;
+                        bool claimed=false;
+                        for(int j=0;j<static_cast<int>(units_.size());++j)if(j!=i && units_[j].w7.slave_manager==manager && units_[j].moving() &&
+                            units_[j].path.back().x==x && units_[j].path.back().y==y){claimed=true;break;}
+                        if(claimed)continue;
+                        order_unit_move(i,x,y);
+                        routed=u.moving() && u.path.back().x==x && u.path.back().y==y;
+                    }
+                }
                 continue;
             }
             u.w7.slave_manager = -1;
@@ -233,7 +248,7 @@ void World::step_yuri_workers(bool relocate) {
         if (!find_reachable_ore(ore_,passable_,grid_w_,grid_h_,occ_,i,miner.cell_x,miner.cell_y,
             48,miner.harv_skip_x,miner.harv_skip_y,x,y)) continue;
         if (std::max(std::abs(x-miner.cell_x),std::abs(y-miner.cell_y))<=2) {
-            const bool deployed=order_deploy_mcv(i);
+            const bool deployed=order_deploy_mcv_auto(i);
             diag::note("MINER auto-deploy unit=%d ore=%d,%d accepted=%d",i,x,y,deployed);
         } else {
             order_unit_move(i,x,y);

@@ -5272,7 +5272,7 @@ bool World::ai_launch_unit_ready(int house, HouseAiRec& rec, QueueCat cat) {
     // W7-01-03: the AI spy's invented enemy-colour look is gone -- every spy
     // starts with its side's PermaDisguise (add_combat_unit).
     if (!tc.unit_roster[uslot].combat.deploys_into.empty()) {   // W2-SK-07: unfold it
-        order_deploy_mcv(uidx);
+        order_deploy_mcv_auto(uidx);
         ai_econ(rec).queues.placed(cat);
         return true;
     }
