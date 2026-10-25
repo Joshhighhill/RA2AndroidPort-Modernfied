@@ -59,6 +59,7 @@ struct LobbyRow {
     int ai = kLobbyAiNone;          // rows 1..7 only; row 0 is always the human
     int country = kLobbyRandom;     // index into the country list, or -2
     int color = kLobbyRandom;       // lobby colour 0..7, or -2
+    int spawn = -1; // explicit map waypoint index, -1 random
     int team = -1;                  // -1 free-for-all; 0..10 teams (launcher extension)
 };
 

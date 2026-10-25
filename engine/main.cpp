@@ -9300,6 +9300,7 @@ class SkirmishSetupScene;
 // click==draw invariant holds on every page. Back is just a nav button to the
 // parent page. `MainMenuScene` is an alias for the PAGE_MAIN entry (below).
 // W5-E2 (R-143): `set leave_band 1` in a --play script (see ShellScene).
+std::vector<int> g_skirmish_requested_starts;
 bool g_play_leave_band = false;
 // Independently drawn mobile hub. No CnCNet code, graphics or network
 // protocol is imported; the original shell remains the default.
@@ -15024,6 +15025,16 @@ ra2engine::World launch_skirmish(const ra2engine::SkirmishConfig& cfg,
         // original picked. The pick above still runs, so the RNG stream is
         // unchanged; empty (every normal path) = no effect.
         if (!g_simdiff_starts.empty()) picks = g_simdiff_starts;
+        if(!g_skirmish_requested_starts.empty()) {
+            std::vector<bool> used(real_starts.size(),false);
+            for(std::size_t i=0;i<picks.size() && i<g_skirmish_requested_starts.size();++i) {
+                const int requested=g_skirmish_requested_starts[i];
+                if(requested>=0 && requested<int(real_starts.size()) && !used[requested]){picks[i]=requested;used[requested]=true;}
+                else picks[i]=-1;
+            }
+            for(int& pick:picks)if(pick<0){for(std::size_t j=0;j<used.size();++j)if(!used[j]){pick=int(j);used[j]=true;break;}}
+            g_skirmish_requested_starts.clear();
+        }
         gf_arm_mcv(world, ba, rules, /*skirmish_session=*/true);
         // [SK-25] The lobby's MCV Repacks checkbox overrides the rules default.
         if (cfg.mcv_redeploys >= 0) world.set_mcv_redeploys(cfg.mcv_redeploys != 0);

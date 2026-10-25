@@ -193,6 +193,8 @@ LobbyState lobby_load(const IniDoc& d, const LobbyState& base, const LobbyRulesI
         st.rows[row].color = col;
     }
     for(int row=0;row<kLobbyRows;++row) {
+        st.rows[row].spawn=rd_int(kSk,("Spawn"+std::to_string(row)).c_str(),-1);
+        if(st.rows[row].spawn<0 || st.rows[row].spawn>=8)st.rows[row].spawn=-1;
         const std::string key="Team"+std::to_string(row);
         st.rows[row].team=rd_int(kSk,key.c_str(),-1);
         if(st.rows[row].team<0 || st.rows[row].team>=kLobbyTeams) st.rows[row].team=-1;
@@ -246,6 +248,7 @@ void lobby_store(const LobbyState& st, IniDoc& d, const std::vector<std::string>
     }
     for(int row=0;row<kLobbyRows;++row)
         d.set(kSk,"Team"+std::to_string(row),ww_format_int(lobby_row_active(st,row) ? st.rows[row].team : -1));
+    for(int row=0;row<kLobbyRows;++row)d.set(kSk,"Spawn"+std::to_string(row),ww_format_int(st.rows[row].spawn));
     if (!st.scen_file.empty()) d.set(kSk, "ScenFile", st.scen_file);
 }
 

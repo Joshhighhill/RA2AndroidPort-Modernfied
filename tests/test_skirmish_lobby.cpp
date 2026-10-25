@@ -277,3 +277,9 @@ TEST_CASE("lobby: requested lettered teams A through K persist") {
  IniDoc doc;lobby_store(st,doc,kCountries);auto restored=lobby_load(doc,st,{},kCountries);
  CHECK(restored.rows[0].team==team);}
 }
+
+TEST_CASE("lobby: spawn selection round trips without altering teams") {
+ auto st=lobby_first_run({});st.rows[0].spawn=2;st.rows[1].spawn=0;IniDoc doc;lobby_store(st,doc,kCountries);
+ const auto restored=lobby_load(doc,st,{},kCountries);CHECK(restored.rows[0].spawn==2);CHECK(restored.rows[1].spawn==0);
+ doc.set("Skirmish","Spawn0","999");CHECK(lobby_load(doc,st,{},kCountries).rows[0].spawn==-1);
+}
