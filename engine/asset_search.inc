@@ -47,6 +47,18 @@ inline bool asset_building_shp(const std::string& image, ra2assets::ShpFile& out
     std::string literal = image;
     for (char& c : literal) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     if (std::find(bases.begin(),bases.end(),literal) == bases.end()) bases.push_back(literal);
+    // GAFWLL was an unused French-wall placeholder in RA2; YR replaces it
+    // with Yuri's Citadel wall under the same generic filename. This explicit
+    // override must precede the classic-only roster probe as well.
+    if(literal=="gafwll")for(const auto& base:bases) {
+        const ra2assets::MixFile* owner=nullptr;std::string where;
+        const auto* e=asset_fs().find(base+".shp",&owner,&where,false,true);
+        // Try every YR candidate before accepting a classic theater fallback.
+        if(e && where.rfind("ra2md.mix",0)==0) {
+            try {out=ra2assets::ShpFile::load(owner->read(*e));return true;}
+            catch(const std::exception&) {}
+        }
+    }
     return !asset_find_shp(bases, {".shp"}, out, ra2_only).empty();
 }
 

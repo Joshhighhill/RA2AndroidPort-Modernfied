@@ -12,6 +12,15 @@ using ra2assets::AssetMixSpec;
 using ra2assets::asset_search_order;
 using ra2assets::art_base_names;
 using ra2assets::theater_chain;
+TEST_CASE("Yuri wall override: expansion Citadel replaces the pink classic French placeholder") {
+    if(!ra2fixture::assets_available() || !ra2fixture::ra2_available())return;
+    std::string base=ra2fixture::install_base()+"/";AssetFS fs(base,theater_chain("TEMPERATE"));
+    const ra2assets::MixFile *classic=nullptr,*expansion=nullptr;std::string a,b;
+    const auto* old=fs.find("ggfwll.shp",&classic,&a,true);
+    const auto* correct=fs.find("ggfwll.shp",&expansion,&b,false,true);
+    REQUIRE(old);REQUIRE(correct);CHECK(a=="ra2.mix/generic.mix");CHECK(b=="ra2md.mix/genermd.mix");
+    CHECK(old->size!=correct->size);CHECK(classic->read(*old)!=expansion->read(*correct));
+}
 
 namespace {
 int index_of(const std::vector<AssetMixSpec>& v, const std::string& label) {
