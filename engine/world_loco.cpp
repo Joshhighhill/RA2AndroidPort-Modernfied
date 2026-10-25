@@ -204,6 +204,17 @@ double land_speed_mult(const MoveSpeedCtx& c, const Unit& u, int w, int h, int n
             if (c.bridge_ovl && i < c.bridge_ovl->size() && (*c.bridge_ovl)[i] >= 0 &&
                 !low_bridge_destroyed((*c.bridge_ovl)[i]))
                 land = 1;
+            // A high bridge has a Road deck and an independent water/ground
+            // plane below it. Read the entered plane, not the river's speed.
+            bool next_deck=false;
+            if(c.world && c.world->deck_intact(nx,ny) && c.level && i<c.level->size()) {
+                const int cx=u.cell_x,cy=u.cell_y;
+                if(cx>=0 && cy>=0 && cx<w && cy<h) {
+                    const std::size_t ci=static_cast<std::size_t>(cy)*w+cx;
+                    if(ci<c.level->size())next_deck=((*c.level)[ci]+(u.on_deck?4:0)==(*c.level)[i]+4);
+                }
+            }
+            if(next_deck)land=1;
             if (land < 0 || land > 11) land = 0;
             int st = u.speed_type;
             if (st < 0 || st > 7) st = u.is_naval ? 5 : 1;   // default: Track (Drive), Float (ship)
@@ -215,7 +226,7 @@ double land_speed_mult(const MoveSpeedCtx& c, const Unit& u, int w, int h, int n
             if (c.level && !u.is_naval) {
                 const std::size_t ci = static_cast<std::size_t>(u.cell_y) * w + u.cell_x;
                 if (u.cell_x >= 0 && u.cell_y >= 0 && u.cell_x < w && u.cell_y < h && ci < c.level->size()) {
-                    const int cur = (*c.level)[ci], nxt = (*c.level)[i];
+                    const int cur = (*c.level)[ci]+(u.on_deck?4:0), nxt = (*c.level)[i]+(next_deck?4:0);
                     const int k = st == 1 ? 0 : 1;
                     if (cur < nxt) m *= c.up[k];
                     else if (nxt < cur) m *= c.down[k];

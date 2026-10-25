@@ -709,3 +709,46 @@ TEST_CASE("Gatling loop: keep audio over ROF gaps, stop on target loss and charg
     CHECK_FALSE(weapon_loop_active(true,true,0,false,200));
     CHECK(weapon_loop_active(true,true,0.2,false,0));
 }
+
+TEST_CASE("bridge deck speed: Road on deck, river below, no fictitious hill at bridge end") {
+    Rig r;World w(r.map);const int W=w.grid_w(),H=w.grid_h();
+    std::vector<uint8_t> hb(W*H,0);hb[8*W+8]=1;w.set_high_bridges(hb);
+    std::vector<uint8_t> land(W*H,0);land[8*W+8]=2;
+    std::vector<int8_t> levels(W*H,4);levels[8*W+8]=0;
+    MoveSpeedCtx c;c.armed=true;c.land=&land;c.level=&levels;c.world=&w;
+    c.cost[0][1]=1;c.cost[1][1]=0.9f;c.cost[2][1]=0;c.cost[2][5]=1;
+    c.up[0]=0.25;c.down[0]=0.5;
+    Unit u;u.is_vehicle=true;u.land_speed_loco=true;u.speed_type=1;u.max_hp=u.hp=100;
+    u.cell_x=7;u.cell_y=8;
+    CHECK(land_speed_mult(c,u,W,H,8,8)==doctest::Approx(0.9));
+    u.cell_x=8;u.on_deck=1;
+    CHECK(land_speed_mult(c,u,W,H,9,8)==doctest::Approx(1.0));
+    u.on_deck=0;u.is_naval=true;u.speed_type=5;u.movement_domain=MovementDomain::Water;
+    levels[8*W+7]=0;u.cell_x=7;
+    CHECK(land_speed_mult(c,u,W,H,8,8)==doctest::Approx(1.0));
+}
+
+TEST_CASE("bridge traversal: infantry and tracked units cross both directions on legal height layer") {
+    for(bool vehicle:{false,true})for(bool reverse:{false,true}) {
+        Rig r;
+        // An unparsed synthetic map uses the linear lookup, not parse()'s
+        // immutable coordinate index (the Rig appends cells after parsing).
+        r.map=ra2assets::MapFile{};
+        auto& cells=const_cast<std::vector<ra2assets::MapCell>&>(r.map.cells());
+        for(int y=0;y<40;++y)for(int x=0;x<40;++x)cells.push_back({x,y,0,0,0});
+        for(auto& cell:const_cast<std::vector<ra2assets::MapCell>&>(r.map.cells()))cell.level=(cell.x>=18 && cell.x<=21)?0:4;
+        REQUIRE(r.map.at(17,18));REQUIRE(r.map.at(22,18));
+        World w(r.map);const int gw=w.grid_w(),gh=w.grid_h();
+        std::vector<ra2assets::LandType> land(gw*gh,ra2assets::LandType::Clear);
+        std::vector<uint8_t> hb(gw*gh,0),speed(gw*gh,0),ramp(gw*gh,0);
+        for(int y=0;y<gh;++y)for(int x=18;x<=21;++x){land[y*gw+x]=ra2assets::LandType::Water;speed[y*gw+x]=2;}
+        w.set_land_terrain(land);for(int x=18;x<=21;++x)hb[18*gw+x]=1;w.set_high_bridges(hb);
+        World::LandSpeedRules rules;w.arm_land_speed(speed,ramp,rules);
+        auto mover=unit(vehicle?"SMCV":"GI");mover.is_vehicle=vehicle;mover.speed_cps=4;
+        mover.land_speed_loco=vehicle;mover.speed_type=1;mover.rot=8;
+        w.add_combat_unit(reverse?24:15,18,0,mover);w.order_unit_move(0,reverse?15:24,18);
+        REQUIRE(w.units()[0].moving());bool saw_deck=false;
+        for(int t=0;t<500 && w.units()[0].moving();++t){w.step(1.0/15.0);saw_deck=saw_deck || w.units()[0].on_deck;}
+        CHECK(saw_deck);CHECK(w.units()[0].cell_x==(reverse?15:24));CHECK(w.units()[0].on_deck==0);
+    }
+}
