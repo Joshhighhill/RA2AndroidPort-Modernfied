@@ -29,6 +29,8 @@ namespace ra2engine {
 
 constexpr int kLobbyRows = 8;        // row 0 = the human (name edit), rows 1..7 = AI combos
 constexpr int kLobbyRandom = -2;     // country/colour "Random (???)" / "???"
+constexpr int kLobbyTeams = 11;
+inline std::string lobby_team_label(int team) { return team>=0 && team<kLobbyTeams?std::string(1,char('A'+team)):"-"; }
 constexpr int kLobbyColors = 8;      // Gold Red Blue Green Orange Sky Purple Pink
 
 // AI combo item data (FUN_00683FC0): None -1, Brutal 0, Medium 1, Easy 2.
@@ -57,7 +59,7 @@ struct LobbyRow {
     int ai = kLobbyAiNone;          // rows 1..7 only; row 0 is always the human
     int country = kLobbyRandom;     // index into the country list, or -2
     int color = kLobbyRandom;       // lobby colour 0..7, or -2
-    int team = -1;                  // -1 free-for-all; 0..3 teams (launcher extension)
+    int team = -1;                  // -1 free-for-all; 0..10 teams (launcher extension)
 };
 
 struct LobbyState {

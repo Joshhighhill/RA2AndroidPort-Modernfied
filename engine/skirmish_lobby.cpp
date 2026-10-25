@@ -195,7 +195,7 @@ LobbyState lobby_load(const IniDoc& d, const LobbyState& base, const LobbyRulesI
     for(int row=0;row<kLobbyRows;++row) {
         const std::string key="Team"+std::to_string(row);
         st.rows[row].team=rd_int(kSk,key.c_str(),-1);
-        if(st.rows[row].team<0 || st.rows[row].team>3) st.rows[row].team=-1;
+        if(st.rows[row].team<0 || st.rows[row].team>=kLobbyTeams) st.rows[row].team=-1;
         if(row>0 && st.rows[row].ai==kLobbyAiNone) st.rows[row].team=-1;
     }
     // Sanitize: out-of-range -> Random; None rows hold -2/-2; duplicate
@@ -316,7 +316,7 @@ LobbyCheck lobby_validate(const LobbyState& st, int map_max) {
     const int players = lobby_ai_count(st) + 1;
     if (map_max < players) return LobbyCheck::ScenarioTooSmall;
     if (players < 2) return LobbyCheck::NeedTwoPlayers;
-    bool enemy=st.rows[0].team<0 || st.rows[0].team>3;
+    bool enemy=st.rows[0].team<0 || st.rows[0].team>=kLobbyTeams;
     for(int row=1;row<kLobbyRows;++row)
         if(lobby_row_active(st,row) && st.rows[row].team!=st.rows[0].team) enemy=true;
     if(!enemy) return LobbyCheck::NeedEnemy;
@@ -381,7 +381,7 @@ SkirmishConfig lobby_to_config(const LobbyState& st, const LobbyConvertCtx& ctx)
         s.side = ctx.side_of ? ctx.side_of(s.country) : World::Side::Allied;
         s.color_ix = lobby_color_to_house(z.color);
         const int team=st.rows[z.row].team;
-        s.alliance_team = team>=0 && team<4 ? team : -1;
+        s.alliance_team = team>=0 && team<kLobbyTeams ? team : -1;
         s.combatant = true;
         s.is_ai = z.row != 0;
         s.diff = s.is_ai ? lobby_ai_difficulty(st.rows[z.row].ai) : AiDifficulty::Normal;

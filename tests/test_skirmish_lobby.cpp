@@ -270,3 +270,10 @@ TEST_CASE("lobby: teams persist, survive inactive row gaps, and require an enemy
     const auto sanitized=lobby_load(doc,st,{},kCountries);CHECK(sanitized.rows[0].team==-1);
     CHECK(sanitized.rows[1].team==2); // stored active row is restored before its team
 }
+
+TEST_CASE("lobby: requested lettered teams A through K persist") {
+ CHECK(lobby_team_label(-1)=="-");CHECK(lobby_team_label(0)=="A");CHECK(lobby_team_label(10)=="K");
+ for(int team=0;team<kLobbyTeams;++team){auto st=lobby_first_run({});st.rows[0].team=team;
+ IniDoc doc;lobby_store(st,doc,kCountries);auto restored=lobby_load(doc,st,{},kCountries);
+ CHECK(restored.rows[0].team==team);}
+}

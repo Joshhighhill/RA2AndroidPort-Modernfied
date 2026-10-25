@@ -213,6 +213,7 @@ public:
             else if (st_.scen_index >= 0 && st_.scen_index < static_cast<int>(maps().size()))
                 map_ix_ = st_.scen_index;
         }
+        enter_customize();mode_=MODE_SETUP;
         // [RE-FALLBACK] an empty Handle shows the CSF "Player" default.
         if (st_.name.empty()) st_.name = gf_csf("GUI:Player", "Player");
         ra2engine::lobby_apply_max_players(st_, map_max());
@@ -259,31 +260,33 @@ private:
     }
 
     // --- §1.2-§1.4 template rects (LOGICAL 640x480) ---
-    static int rowY(int k) { return 17 + 26 * k; }
-    static ra2engine::SbRect name_rect() { return {52, 17, 150, 19}; }
-    static ra2engine::SbRect ai_rect(int k) { return {52, rowY(k), 150, 19}; }
-    static ra2engine::SbRect flag_rect(int k) { return {214, rowY(k), 48, 19}; }
-    static ra2engine::SbRect country_rect(int k) { return {270, rowY(k), 104, 19}; }
-    static ra2engine::SbRect color_rect(int k) { return {381, rowY(k), 45, 19}; }
-    static ra2engine::SbRect team_rect(int k) { return {433, rowY(k), 34, 19}; }
+    static int rowY(int k) { return 30 + 24 * k; }
+    static ra2engine::SbRect name_rect() { return {200,30,72,19}; }
+    static ra2engine::SbRect ai_rect(int k) { return {200,rowY(k),72,19}; }
+    static ra2engine::SbRect flag_rect(int k) { return {277,rowY(k),32,19}; }
+    static ra2engine::SbRect country_rect(int k) { return {315,rowY(k),95,19}; }
+    static ra2engine::SbRect color_rect(int k) { return {416,rowY(k),45,19}; }
+    static ra2engine::SbRect team_rect(int k) { return {467,rowY(k),34,19}; }
     static ra2engine::SbRect check_rect(int c) {
         static const ra2engine::SbRect k[CK_COUNT] = {
-            {52, 235, 150, 16}, {52, 263, 150, 16}, {52, 290, 150, 16}, {52, 320, 154, 16},
-            {219, 318, 249, 17}};
+            {510,30,120,16}, {510,55,120,16}, {510,80,120,16}, {510,105,120,16},
+            {510,130,120,17}};
         return k[c];
     }
-    static ra2engine::SbRect slider_rect(int s) { return {321, 235 + (s == 1 ? 28 : s == 2 ? 55 : 0), 127, 21}; }
-    static ra2engine::SbRect slider_label(int s) { return {219, slider_rect(s).y, 90, 16}; }
-    static ra2engine::SbRect preview_rect() { return {486, 37, 144, 112}; }
+    static ra2engine::SbRect slider_rect(int s) { return {510,170+s*24,120,21}; }
+    static ra2engine::SbRect slider_label(int s) { return {510,slider_rect(s).y-12,120,12}; }
+    static ra2engine::SbRect preview_rect() { return {200,240,430,190}; }
     static ra2engine::SbRect status_rect() { return {15, 458, 454, 19}; }
     static ra2engine::SbRect type_list_rect() { return {30, 126, 195, 260}; }
-    static ra2engine::SbRect map_list_rect() { return {252, 126, 195, 260}; }
+    static ra2engine::SbRect map_list_rect() { return {10,30,180,398}; }
 
     static constexpr int kBtnX = 484, kBtnW = 156, kBtnH = 42;
     std::vector<ShellButton> buttons() const {
         auto btn = [](int row, const std::string& s, bool en, int act) {
             return ShellButton{{kBtnX, 199 + 42 * row, kBtnW, kBtnH}, s, en, act, PAGE_SINGLE};
         };
+        if (mode_ == MODE_SETUP) return {ShellButton{{10,435,140,35},text_.start,true,A_START,PAGE_SINGLE},
+            ShellButton{{490,435,140,35},text_.back,true,A_BACK,PAGE_SINGLE}};
         if (mode_ == MODE_CUSTOMIZE)   // dialog 0x6B (§1.7)
             return {btn(0, text_.use_map, true, A_USEMAP), btn(1, text_.random_map, false, A_RANDMAP),
                     btn(5, text_.cancel, true, A_CANCEL)};
@@ -413,12 +416,12 @@ private:
             }
             list_.visible = 7;                 // msg 0x4DE, 7
         } else if(kind==CB_TEAM) {
-            for(int team=-1;team<4;++team) {
-                list_.items.push_back(team<0 ? "-" : std::to_string(team+1));
+            for(int team=-1;team<ra2engine::kLobbyTeams;++team) {
+                list_.items.push_back(ra2engine::lobby_team_label(team));
                 list_.data.push_back(team);
                 if(team==st_.rows[row].team) cur=static_cast<int>(list_.data.size())-1;
             }
-            list_.visible=5;
+            list_.visible=8;
         } else {
             for (int c : ra2engine::lobby_color_choices(st_, row)) {
                 list_.items.push_back(color_label(c));
@@ -486,7 +489,7 @@ private:
             map_list_.items.push_back(maps()[(size_t)i].display_name);
             map_list_.data.push_back(i);
         }
-        map_list_.visible = 16;
+        map_list_.visible = 24;
         map_list_.sel = map_ix_;
         map_list_.reveal(map_ix_);
     }
@@ -596,6 +599,7 @@ private:
     Scene* next_ = nullptr;
     // Preview cache: map file -> decoded size (0 = no preview).
     mutable std::map<std::string, std::pair<int, int>> preview_size_;
+    mutable std::map<std::string,std::vector<std::pair<int,int>>> preview_starts_;
     SDL_Texture* preview_tex(ra2engine::TextureCache& tc, int map_i) const {
         const auto* m = map_at(map_i);
         if (!m || !catalog_) return nullptr;
@@ -607,7 +611,15 @@ private:
         try {
             if (const ra2assets::MixEntry* e = catalog_->maps.find(m->file_name)) {
                 const std::vector<uint8_t> raw = catalog_->maps.read(*e);
-                skp::decode_preview(std::string(raw.begin(), raw.end()), w, h, rgba);
+                const std::string text(raw.begin(),raw.end());
+                skp::decode_preview(text,w,h,rgba);
+                const auto ini=Ini::parse(text);
+                const int sx=std::atoi(ini.get("Header","StartX").c_str()),sy=std::atoi(ini.get("Header","StartY").c_str());
+                for(int i=1;i<=8;++i){int x=0,y=0;
+                    const auto point=ini.get("Header","Waypoint"+std::to_string(i));
+                    if(std::sscanf(point.c_str(),"%d,%d",&x,&y)==2 && (x||y))
+                        preview_starts_[m->file_name].push_back({(x-sx)*2,y-sy});}
+
             }
         } catch (const std::exception&) { w = h = 0; }
         preview_size_[m->file_name] = {w, h};
@@ -645,7 +657,7 @@ std::string SkirmishSetupScene::tooltip_at(int lx, int ly) const {
         if (flag_rect(k).contains(lx, ly)) return tip("STT:SkirmishPictureFlag");
         if (country_rect(k).contains(lx, ly)) return tip("STT:SkirmishComboCountry");
         if (color_rect(k).contains(lx, ly)) return tip("STT:SkirmishComboColor");
-        if (team_rect(k).contains(lx,ly)) return "Same team number = allies. - = no team.";
+        if (team_rect(k).contains(lx,ly)) return "Same team letter = allies. - = no team.";
     }
     static const char* kChk[CK_COUNT] = {"STT:SkirmishCBoxShortGame", "STT:SkirmishCBoxRedeploys",
                                          "STT:SkirmishCBoxCrates", "STT:SkirmishCBoxSWAllowed",
@@ -775,10 +787,13 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
     for (int i = 0; i < static_cast<int>(btns.size()); ++i)
         if (btns[i].enabled && btns[i].rect.contains(lmx, lmy)) { hover_ix = i; break; }
     const int pressed_ix = (hover_ix >= 0 && down_) ? hover_ix : -1;
-    draw_shell(plat, tc, art_, xf, btns, hover_ix, pressed_ix,
-               mode_ == MODE_CUSTOMIZE ? text_.choose : text_.header, "v1.006",
-               /*monitor_frame=*/-1, /*bink_tex=*/nullptr, /*sdtp_frame=*/1);
-    const ShellPainter p{ren, tc, art_, xf};
+    SDL_SetRenderDrawColor(ren,12,12,22,255);SDL_RenderClear(ren);
+    const ShellPainter p{ren,tc,art_,xf};
+    p.label("MAPS",10,5,180,20,1);p.label("Players / Side / Color / Team",200,5,300,20,1);
+    if(mode_==MODE_SETUP)map_list_.draw(p,false);
+    for(const auto& button:btns){const SDL_Rect r=p.dev(button.rect);p.fill(r,65,20,24);
+        SDL_SetRenderDrawColor(ren,180,135,65,255);SDL_RenderDrawRect(ren,&r);
+        p.label(button.label,button.rect.x,button.rect.y,button.rect.w,button.rect.h,1,button.enabled);}
 
     // --- sidebar: preview well 0x468 (aspect-fit, black frame) ---
     {
@@ -797,24 +812,19 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
             const SDL_Rect d = xf.dev(pr.x + (pr.w - w) / 2, pr.y + (pr.h - h) / 2, w, h);
             SDL_SetTextureColorMod(t, 255, 255, 255);
             SDL_RenderCopy(ren, t, nullptr, &d);
-        }
-    }
-    if (mode_ == MODE_SETUP) {
-        // 0x6EC game type + 0x5A8 map name (2 lines, centred).
-        p.label(maps().empty() ? text_.none_label : text_.battle, 490, 167, 135, 16, 1);
-        const auto* m = map_at(map_ix_);
-        std::string nm = m ? m->display_name : text_.none_label;
-        std::string l1 = nm, l2;
-        if (p.text_w(nm, 12.0) > 135) {          // word-wrap onto the second line
-            const std::size_t cut = nm.find_last_of(' ', nm.size() / 2 + 6);
-            if (cut != std::string::npos) { l1 = nm.substr(0, cut); l2 = nm.substr(cut + 1); }
-        }
-        p.label(p.fit(l1, 135), 490, l2.empty() ? 196 : 188, 135, 16, 1);
-        if (!l2.empty()) p.label(p.fit(l2, 135), 490, 204, 135, 16, 1);
-    }
+            const auto& starts=preview_starts_[m->file_name];
+            for(std::size_t i=0;i<starts.size();++i){
+                const int x=pr.x+(pr.w-w)/2+int(starts[i].first*sc);
+                const int y=pr.y+(pr.h-h)/2+int(starts[i].second*sc);
+                if(x<pr.x || y<pr.y || x>=pr.x+pr.w || y>=pr.y+pr.h)continue;
+                const SDL_Rect marker=p.dev(x-7,y-8,15,17);p.fill(marker,12,12,12);
+                p.label(std::to_string(i+1),x-7,y-8,15,17,1);
+            }
 
+        }
+    }
     if (mode_ == MODE_SETUP) {
-        p.label("Team",433,0,34,16,1);
+        
         // --- 8 player rows (hidden past the map's max) ---
         for (int k = 0; k < visible_rows(); ++k) {
             const bool active = ra2engine::lobby_row_active(st_, k);
@@ -837,7 +847,7 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
             const SDL_Color sw = swatch_of(active ? r.color : -1);
             p.combo(color_rect(k), active ? color_label(r.color) : text_.random_color, active,
                     combo_ == CB_COLOR && combo_row_ == k, sw.a ? &sw : nullptr);
-            p.combo(team_rect(k),r.team<0 ? "-" : std::to_string(r.team+1),active,
+            p.combo(team_rect(k),ra2engine::lobby_team_label(r.team),active,
                     combo_==CB_TEAM && combo_row_==k);
         }
         // --- options: checkboxes (left), labelled sliders (right) ---
@@ -951,6 +961,11 @@ void SkirmishSetupScene::handle(const ra2engine::InputEvent& ev) {
     for (const ShellButton& b : buttons())
         if (b.enabled && b.rect.contains(lx, ly)) { set_editing(false); press(b.action, ev); return; }
 
+    if (mode_ == MODE_SETUP && map_list_rect().contains(lx,ly)) {
+        if(map_list_.strip_up().contains(lx,ly)){map_list_.scroll(-6);return;}
+        if(map_list_.strip_down().contains(lx,ly)){map_list_.scroll(6);return;}
+        const int picked=map_list_.hit(lx,ly);if(picked>=0){map_list_.sel=picked;map_ix_=picked;ra2engine::lobby_apply_max_players(st_,map_max());}return;
+    }
     if (mode_ == MODE_CUSTOMIZE) {
         if (map_list_.scrolls() && map_list_.strip_up().contains(lx, ly)) { map_list_.scroll(-map_list_.visible); return; }
         if (map_list_.scrolls() && map_list_.strip_down().contains(lx, ly)) { map_list_.scroll(+map_list_.visible); return; }
