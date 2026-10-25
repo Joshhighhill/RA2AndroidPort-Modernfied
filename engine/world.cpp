@@ -6371,7 +6371,8 @@ void World::step(double dt) {
                 // the Water/Beach under the deck is not its ground. Tanya crossing
                 // a bridge played the Swim set and the enter-water sound.
                 if (u.on_deck) c.in_water = false;
-                c.has_target = u.target >= 0 || u.target_building >= 0;
+                c.has_target = u.target >= 0 || u.target_building >= 0 || u.attack_cell_x>=0;
+                c.continuous_secondary=u.w5.p.airstrike_team>0;
                 c.dying = u.die_time >= 0.0;
                 c.deployed = u.deployed;
                 c.fire_flash = u.fire_flash;

@@ -32,6 +32,24 @@ InfTable gi_table() {
 }
 }  // namespace
 
+TEST_CASE("inf_anim: secondary punches finish once but a designator may sustain its animation") {
+    auto t=gi_table();t.e[kSqSecondaryFire]={196,10,10,-1,true};
+    for(bool designator:{false,true}) {
+        InfAnimState s;s.armed=true;InfTickCtx c;c.has_target=true;c.fire_slot=1;c.continuous_secondary=designator;
+        int facing=0;inf_anim_tick(s,t,facing,c);c.fire_flash=0.4;inf_anim_tick(s,t,facing,c);
+        REQUIRE(s.seq==kSqSecondaryFire);
+        for(int i=0;i<12;++i){c.fire_flash=std::max(0.0,c.fire_flash-1.0/15);inf_anim_tick(s,t,facing,c);}
+        CHECK(s.seq==(designator?kSqSecondaryFire:kSqReady));
+    }
+}
+TEST_CASE("inf_anim: combat interrupts idle fidgets and ground firing suppresses new idle actions") {
+    auto t=gi_table();InfAnimState s;s.armed=true;InfTickCtx c;int facing=0;
+    inf_anim_tick(s,t,facing,c);s.seq=kSqIdle1;s.stage=2;c.has_target=true;
+    inf_anim_tick(s,t,facing,c);CHECK(s.seq==kSqReady);
+    s.seq=kSqIdle2;c.fire_flash=0.4;inf_anim_tick(s,t,facing,c);CHECK(s.seq==kSqFireUp);
+    c.fire_flash=0;for(int i=0;i<100;++i){s.idle_timer=1;inf_anim_tick(s,t,facing,c);CHECK(s.seq!=kSqIdle1);CHECK(s.seq!=kSqIdle2);}
+}
+
 TEST_CASE("inf_anim: DoControls rates from gamemd 0x7E9F7C") {
     CHECK(inf_do_control(kSqReady).rate == 0);
     CHECK(inf_do_control(kSqWalk).rate == 3);

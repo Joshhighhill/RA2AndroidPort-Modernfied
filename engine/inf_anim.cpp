@@ -153,7 +153,7 @@ void finished(InfAnimState& s, const InfTable& t, int& facing, const InfTickCtx&
     // W7-12-10 [RE: FUN_00520810 default branch]: while the slot-1 target
     // lives, a finished SecondaryFire / SecondaryProne replays (forced) --
     // Boris holding his flare on the building.
-    if ((q == kSqSecondaryFire || q == kSqSecondaryProne) && c.has_target && c.fire_slot == 1) {
+    if ((q == kSqSecondaryFire || q == kSqSecondaryProne) && c.has_target && c.fire_slot == 1 && c.continuous_secondary) {
         s.stage = 0;
         return;
     }
@@ -258,6 +258,8 @@ int inf_anim_tick(InfAnimState& s, const InfTable& t, int& facing, const InfTick
         else if (!c.deployed && s.was_deployed) play(s, t, kSqUndeploy, c.in_water, true);
         s.was_deployed = c.deployed;
         // ---- a shot ----
+        if(c.has_target && (s.seq==kSqIdle1 || s.seq==kSqIdle2 || s.seq==kSqWetIdle1 || s.seq==kSqWetIdle2))
+            play(s,t,c.deployed?kSqDeployed:s.prone?kSqProne:kSqReady,c.in_water,true);
         // W7-12-10 [RE: 0x5203E0]: the sequence follows the weapon index
         // SelectWeapon picked -- the deploy group fires DeployedFire; slot 0
         // FireProne / FireUp; another slot SecondaryProne (prone, count != 0),
@@ -272,7 +274,8 @@ int inf_anim_tick(InfAnimState& s, const InfTable& t, int& facing, const InfTick
                 if (s.prone && t.e[kSqSecondaryProne].has && t.e[kSqSecondaryProne].count > 0) q = kSqSecondaryProne;
                 else if (t.e[kSqSecondaryFire].has && t.e[kSqSecondaryFire].count > 0) q = kSqSecondaryFire;
             }
-            play(s, t, q, c.in_water, false);
+            const bool fidget=s.seq==kSqIdle1 || s.seq==kSqIdle2 || s.seq==kSqWetIdle1 || s.seq==kSqWetIdle2 || s.seq==kSqDeployedIdle;
+            play(s, t, q, c.in_water, fidget);
         }
         // ---- cheer (MakeHouseCheer / victory) ----
         if (s.cheer) {
