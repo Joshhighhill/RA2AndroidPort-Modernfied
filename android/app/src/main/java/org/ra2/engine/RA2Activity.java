@@ -195,6 +195,16 @@ public class RA2Activity extends SDLActivity implements AudioManager.OnAudioFocu
     private static native void nativeKeepAutosave();
 
     @Override
+    public void finish() {
+        if (!isFinishing()) {
+            Intent launcher = new Intent(this, SetupActivity.class);
+            launcher.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            startActivity(launcher);
+        }
+        super.finish();
+    }
+
+    @Override
     protected void onDestroy() {
         // W6-01-10: destroyed without the player quitting (a configuration
         // change the activity cannot take in place, e.g. switching to gesture
@@ -217,12 +227,8 @@ public class RA2Activity extends SDLActivity implements AudioManager.OnAudioFocu
         // after SDL's own teardown (an exit() from the SDL thread crashed).
         if (isFinishing()) {
             Diagnostics.finish(this);
-            // Setup lives in :setup. Recreate its task only AFTER SDL has
-            // joined the native thread and flushed the session's diagnostics.
-            // The launcher does not auto-start onCreate, so Quit stays quit.
-            Intent launcher = new Intent(this, SetupActivity.class);
-            launcher.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            startActivity(launcher);
+            // Setup already resumed through finish(); only the native process
+            // ends here, after SDL teardown and diagnostic completion.
             android.os.Process.killProcess(android.os.Process.myPid());
         }
     }

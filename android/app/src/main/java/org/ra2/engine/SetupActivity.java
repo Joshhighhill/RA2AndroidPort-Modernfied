@@ -90,6 +90,22 @@ public class SetupActivity extends Activity {
     private Button importButton, startButton, exitButton, detailsButton;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private volatile boolean copying = false;
+    private static final String[] THEMES={"Command Center","Allied Blue","Soviet Red","Yuri Violet","Emerald","Desert Gold","Arctic","Midnight OLED"};
+    // Background, surface, accent. All text retains a high-contrast light color.
+    private static final int[][] PALETTES={
+        {0xff0a1219,0xff1c2a34,0xff70cdc1},{0xff081526,0xff152c45,0xff83c9ff},
+        {0xff200b10,0xff3b1a22,0xffffaaaa},{0xff180e26,0xff30203f,0xffd5adff},
+        {0xff071b17,0xff14382e,0xff8de4b4},{0xff20190c,0xff37301d,0xfff0d291},
+        {0xff101d29,0xff263c4a,0xffb8e9fa},{0xff000000,0xff111316,0xffc7cedb}};
+    private int[] theme(){int n=getPreferences(MODE_PRIVATE).getInt("launcher_theme",0);return PALETTES[Math.max(0,Math.min(PALETTES.length-1,n))];}
+    private void chooseTheme(){
+        if(copying)return;
+        new android.app.AlertDialog.Builder(this).setTitle("Launcher appearance")
+            .setSingleChoiceItems(THEMES,getPreferences(MODE_PRIVATE).getInt("launcher_theme",0),(dialog,which)->{
+                getPreferences(MODE_PRIVATE).edit().putInt("launcher_theme",which).apply();
+                dialog.dismiss();buildUi();refresh();
+            }).setNegativeButton("Close",null).show();
+    }
     // R-161: the copy thread is owned by the activity; leaving (finish /
     // destroy) cancels it, and its partial file is deleted.
     private Thread importThread;
@@ -147,7 +163,7 @@ public class SetupActivity extends Activity {
         b.setTextColor(Color.rgb(225, 234, 240));
         b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         b.setAllCaps(false);
-        b.setBackground(panel(Color.rgb(28, 42, 52), Color.rgb(61, 80, 92)));
+        b.setBackground(panel(theme()[1],theme()[2]));
         b.setOnClickListener(l);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.setMargins(0, dp(6), 0, dp(6));
@@ -180,14 +196,14 @@ public class SetupActivity extends Activity {
         ScrollView page = new ScrollView(this);
         page.setFillViewport(true);
         page.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{Color.rgb(10,18,25),Color.rgb(19,35,43),Color.rgb(10,18,25)}));
+                new int[]{theme()[0],theme()[1],theme()[0]}));
         FrameLayout centered=new FrameLayout(this);
         centered.addView(root,new FrameLayout.LayoutParams(
                 Math.min(getResources().getDisplayMetrics().widthPixels,dp(600)),
                 ViewGroup.LayoutParams.WRAP_CONTENT,Gravity.TOP|Gravity.CENTER_HORIZONTAL));
         page.addView(centered);
 
-        TextView eyebrow=label("BRYLE13  /  ANDROID EDITION",11,Color.rgb(112,205,193));
+        TextView eyebrow=label("BRYLE13  /  ANDROID EDITION",11,theme()[2]);
         eyebrow.setLetterSpacing(0.12f);
         root.addView(eyebrow);
         title = label("RA2 PORT", 36, Color.rgb(244,240,223));
@@ -199,7 +215,7 @@ public class SetupActivity extends Activity {
         hero.setLineSpacing(dp(3),1f);
         hero.setPadding(dp(22),dp(24),dp(22),dp(24));
         GradientDrawable heroArt=new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{Color.rgb(44,67,68),Color.rgb(25,40,47),Color.rgb(58,45,33)});
+                new int[]{theme()[1],theme()[0],theme()[1]});
         heroArt.setCornerRadius(dp(20));heroArt.setStroke(dp(1),Color.rgb(91,110,104));
         hero.setBackground(heroArt);
         LinearLayout.LayoutParams heroSpace=new LinearLayout.LayoutParams(-1,-2);
@@ -238,6 +254,7 @@ public class SetupActivity extends Activity {
         root.addView(progress);
 
         root.addView(label("SUPPORT & PREFERENCES",12,Color.rgb(135,163,181)));
+        root.addView(button("Launcher theme",v->chooseTheme()));
         exitButton = button(getString(R.string.setup_exit), v -> finish());
         root.addView(button("Share game report", v -> Diagnostics.share(this)));
         root.addView(button("Refresh file status", v -> { if (!copying) refresh(); }));
@@ -443,6 +460,7 @@ public class SetupActivity extends Activity {
         Intent i = new Intent(this, RA2Activity.class);
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(i);
-        finish();
+          // Keep the portrait launcher behind the separate native-game task.
+          // Final Quit can uncover it without an intermediate home screen.
     }
 }
