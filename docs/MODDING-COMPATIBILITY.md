@@ -56,4 +56,4 @@ Build 900036 offers an independently drawn **Command Center (experimental)** mai
 - https://modenc.renegadeprojects.com/HarvestRate
 - https://github.com/r-melvin/gagarin/tree/aedf638cea5e96a3ee8be5151296f41936192e44
 
-ModEnc and Phobos tags can describe bugs/extensions; they are references, not substitute proof of original PC behavior. The newly supplied slope/bunker videos do not show slave-worker collision, so they cannot establish whether that request applies to mobile, deployed or both forms. General collision bypass is not introduced without that distinction.
+ModEnc and Phobos tags can describe bugs/extensions; they are references, not substitute proof of original PC behavior. The newly supplied slope/bunker videos do not show slave-worker collision. The user separately confirmed both mobile and deployed forms. Build 900036 implements an independently written, manager-linked passage exception with corridor, ore-scan, ownership, bridge-layer and saved occupancy regressions. This is not a general collision bypass or a byte-matched Gagarin implementation.

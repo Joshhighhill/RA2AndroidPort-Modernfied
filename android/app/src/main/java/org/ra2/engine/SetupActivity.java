@@ -257,7 +257,7 @@ public class SetupActivity extends Activity {
         root.addView(button("Launcher theme",v->chooseTheme()));
         root.addView(button("Game main menu",v->{
             if(copying)return;
-            new AlertDialog.Builder(this).setTitle("Game main menu")
+            new android.app.AlertDialog.Builder(this).setTitle("Game main menu")
                 .setSingleChoiceItems(new String[]{"Original Yuri's Revenge","Command Center (experimental)"},
                     getSharedPreferences("interface",MODE_PRIVATE).getBoolean("command_menu",false)?1:0,
                     (dialog,which)->{getSharedPreferences("interface",MODE_PRIVATE).edit()
