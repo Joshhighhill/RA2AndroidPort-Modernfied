@@ -253,7 +253,12 @@ private:
     enum Act { A_NONE, A_START, A_CHOOSE, A_BACK, A_USEMAP, A_RANDMAP, A_CANCEL };
 
     static constexpr int kWinW = 1280, kWinH = 720;
-    static ShellXform xform() { return ShellXform::make(g_ui_w, g_ui_h); }
+    static ShellXform xform() {
+        // This independent panel has no retail shell/sidebar slices. Applying
+        // yuri_shell_rect to its sub-controls distorts arrows and readouts.
+        const double s=std::min(g_ui_w/640.0,g_ui_h/480.0);
+        return {s,(g_ui_w-640*s)/2,(g_ui_h-480*s)/2,false};
+    }
     static void to_logical(int dx, int dy, int& lx, int& ly) {
         const ShellXform xf = xform();
         const auto point=xf.logical(dx,dy);lx=point.first;ly=point.second;
@@ -274,10 +279,10 @@ private:
             {535,130,95,17}};
         return k[c];
     }
-    static ra2engine::SbRect slider_rect(int s) { return {535,170+s*24,95,21}; }
-    static ra2engine::SbRect slider_label(int s) { return {535,slider_rect(s).y-12,95,12}; }
-    static ra2engine::SbRect preview_rect() { return {200,240,430,190}; }
-    static ra2engine::SbRect status_rect() { return {15, 458, 454, 19}; }
+    static ra2engine::SbRect slider_rect(int s) { return {535,172+s*43,95,21}; }
+    static ra2engine::SbRect slider_label(int s) { return {535,slider_rect(s).y-19,95,17}; }
+    static ra2engine::SbRect preview_rect() { return {200,240,328,180}; }
+    static ra2engine::SbRect status_rect() { return {200, 420, 328, 14}; }
     static ra2engine::SbRect type_list_rect() { return {30, 126, 195, 260}; }
     static ra2engine::SbRect map_list_rect() { return {10,30,180,398}; }
 
@@ -808,7 +813,11 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
     const int pressed_ix = (hover_ix >= 0 && down_) ? hover_ix : -1;
     SDL_SetRenderDrawColor(ren,12,12,22,255);SDL_RenderClear(ren);
     const ShellPainter p{ren,tc,art_,xf};
-    p.label("MAPS",10,5,180,20,1);p.label("Players / Side / Color / Team / Start",200,5,300,20,1);
+    p.fill(p.dev(8,27,184,403),18,20,30);p.fill(p.dev(198,27,332,202),18,20,30);
+    p.fill(p.dev(533,27,99,396),18,20,30);
+    p.label("MAPS",10,5,180,20,1);
+    p.label("Players",200,5,72,20,0);p.label("Side",315,5,95,20,0);
+    p.label("Color",416,5,45,20,0);p.label("Team",467,5,34,20,0);p.label("Start",503,5,28,20,0);
     if(mode_==MODE_SETUP)map_list_.draw(p,false);
     for(const auto& button:btns){const SDL_Rect r=p.dev(button.rect);p.fill(r,65,20,24);
         SDL_SetRenderDrawColor(ren,180,135,65,255);SDL_RenderDrawRect(ren,&r);
@@ -824,20 +833,20 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
             const auto sz = preview_size_[m->file_name];
             // [RE-FALLBACK, audit Q4: scaling mode not recovered] aspect-fit,
             // centred, nearest-neighbour.
-            const double sc = std::min(static_cast<double>(pr.w - 2) / sz.first,
-                                       static_cast<double>(pr.h - 2) / sz.second);
-            const int w = std::max(1, static_cast<int>(sz.first * sc));
-            const int h = std::max(1, static_cast<int>(sz.second * sc));
-            const SDL_Rect d = xf.dev(pr.x + (pr.w - w) / 2, pr.y + (pr.h - h) / 2, w, h);
+            const auto image=ra2engine::fit_skirmish_image(sz.first,sz.second,{pr.x+1,pr.y+1,pr.w-2,pr.h-2});
+            const double sc=std::min(double(image.w)/sz.first,double(image.h)/sz.second);
+            const int w=image.w,h=image.h;
+            const SDL_Rect d=p.dev(image);
             SDL_SetTextureColorMod(t, 255, 255, 255);
             SDL_RenderCopy(ren, t, nullptr, &d);
             const auto& starts=preview_starts_[m->file_name];
             for(std::size_t i=0;i<starts.size();++i){
-                const int x=pr.x+(pr.w-w)/2+int(starts[i].first*sc);
-                const int y=pr.y+(pr.h-h)/2+int(starts[i].second*sc);
+                const int x=image.x+int(starts[i].first*sc);
+                const int y=image.y+int(starts[i].second*sc);
                 if(x<pr.x || y<pr.y || x>=pr.x+pr.w || y>=pr.y+pr.h)continue;
-                const SDL_Rect marker=p.dev(x-7,y-8,15,17);p.fill(marker,12,12,12);
-                p.label(std::to_string(i+1),x-7,y-8,15,17,1);
+                const auto mark=ra2engine::skirmish_marker(x,y,image);
+                p.fill(p.dev(mark),12,12,12);
+                p.label(std::to_string(i+1),mark.x,mark.y,mark.w,mark.h,1);
             }
 
         }
@@ -858,8 +867,9 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
             const ra2engine::SbRect fr = flag_rect(k);
             if (art_.flags[fi]) {
                 const std::string key = "skp:flag" + std::to_string(fi);
-                p.pcx(key.c_str(), art_.flags[fi], p.dev(fr.x, fr.y - 2, art_.flags[fi]->w,
-                                                         art_.flags[fi]->h), /*key_magenta=*/true);
+                if(active && r.country>=0 && r.country<int(countries_.size()) && countries_[r.country]=="YuriCountry") {
+                    p.fill(p.dev(fr),65,25,85);p.label("Y",fr.x,fr.y,fr.w,fr.h,1);
+                } else p.pcx(key.c_str(),art_.flags[fi],p.dev(ra2engine::fit_skirmish_image(art_.flags[fi]->w,art_.flags[fi]->h,fr)),true);
             }
             p.combo(country_rect(k), active ? country_label(r.country) : text_.random_country, active,
                     combo_ == CB_COUNTRY && combo_row_ == k);
@@ -871,6 +881,7 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
                     combo_==CB_TEAM && combo_row_==k);
         }
         // --- options: checkboxes (left), labelled sliders (right) ---
+        p.header(p.fit(map_at(shown_map())?map_at(shown_map())->display_name:"Map preview",328),200,220,328,18);
         for (int c = 0; c < CK_COUNT; ++c)
             p.checkbox(check_rect(c), check_val(c), check_label(c), check_enabled(c));
         const std::string sl_lbl[SL_COUNT] = {text_.speed, text_.credits, text_.units};

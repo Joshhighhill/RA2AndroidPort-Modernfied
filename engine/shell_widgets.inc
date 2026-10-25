@@ -151,7 +151,8 @@ struct ShellPainter {
 
     // The drop arrow: a solid red down-pointing triangle at the right edge.
     void arrow(const ra2engine::SbRect& r, bool en) const {
-        const SDL_Rect a = dev(r.x + r.w - 15, r.y + r.h / 2 - 3, 10, 6);
+        const bool compact=r.w<40;
+        const SDL_Rect a = dev(r.x + r.w - (compact?7:15), r.y + r.h / 2 - 3, compact?5:10, 6);
         SDL_SetRenderDrawColor(ren, en ? 255 : 159, 0, 0, 255);
         for (int k = 0; k < a.h; ++k) {
             const int inset = a.w * k / (2 * std::max(1, a.h));
@@ -163,6 +164,10 @@ struct ShellPainter {
                const SDL_Color* swatch = nullptr) const {
         if (hot && en) fill(dev(r), 60, 0, 0, 255);
         frame(dev(r), en);
+        if(r.w<40) {
+            label(fit(s,r.w-12),r.x+2,r.y,r.w-11,r.h,1,en);
+            arrow(r,en);return;
+        }
         int tx = r.x + 4;
         if (swatch) {
             const SDL_Rect sw = dev(r.x + 3, r.y + 4, 5, r.h - 8);

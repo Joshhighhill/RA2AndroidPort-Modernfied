@@ -2,6 +2,7 @@
 #include "faction_support.hpp"
 #include "menu_readability.hpp"
 #include "ra2assets/rules.hpp"
+#include "skirmish_layout.hpp"
 TEST_CASE("Yuri country remains a distinct side with its own default") {
  using namespace ra2engine;
  CHECK(faction_side("YuriCountry","ThirdSide")==World::Side::Yuri);
@@ -23,4 +24,17 @@ TEST_CASE("touch menu bitmap text uses whole pixels instead of uneven fractional
  CHECK(menu_font_scale(0.75,12,true)==1);
  CHECK(touch*16<=1.5*19); // Fits the 19-logical-pixel country combobox.
  CHECK(menu_font_scale(1.5,14,true)==touch); // fit() and drawing agree.
+}
+TEST_CASE("Skirmish layout: flags and spawn badges stay inside their image bounds") {
+ using namespace ra2engine;
+ const auto flag=fit_skirmish_image(64,48,{277,30,32,19});
+ CHECK(flag.w<=32);CHECK(flag.h<=19);CHECK(flag.x>=277);CHECK(flag.y>=30);
+ for(const auto& box:{SbRect{200,240,328,180},SbRect{0,0,1,1},SbRect{4,7,15,17}}) {
+  for(int x:{box.x-100,box.x,box.x+box.w+100})for(int y:{box.y-100,box.y,box.y+box.h+100}) {
+   const auto mark=skirmish_marker(x,y,box);
+   CHECK(mark.x>=box.x);CHECK(mark.y>=box.y);
+   CHECK(mark.x+mark.w<=box.x+box.w);CHECK(mark.y+mark.h<=box.y+box.h);
+  }
+ }
+ CHECK(fit_skirmish_image(0,0,{0,0,32,19}).w==0);
 }
