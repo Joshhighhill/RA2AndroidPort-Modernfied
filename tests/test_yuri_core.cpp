@@ -5,6 +5,7 @@
 #include "weapon_resolve.hpp"
 #include "ra2assets/rules.hpp"
 #include "weapon_sound_loop.hpp"
+#include "audio_mixer.hpp"
 #include "weapon_unit.hpp"
 #include "report_probe.hpp"
 #include "psychic_links.hpp"
@@ -473,6 +474,69 @@ TEST_CASE("Yuri core: firing report loop has one owner and stops on stop or dist
     loop.update(audio,true,2,2);CHECK(audio.starts==2);
     audio.audible=true;loop.shot(audio,"Gattling",2,2);loop.shot(audio,"Cannon",2,2);
     CHECK(audio.stops==2);CHECK(audio.oneshots==1);CHECK(loop.handle==0);
+}
+TEST_CASE("Yuri core: building audio retains ground Force Fire and stops on low power") {
+    CHECK(building_weapon_loop_active(true,false,false,3,0.4,true,1));
+    CHECK(building_weapon_loop_active(true,false,false,3,0,true,200));
+    CHECK_FALSE(building_weapon_loop_active(true,false,false,0,0.4,true,200));
+    CHECK_FALSE(building_weapon_loop_active(true,true,true,1,0.4,true,200));
+    CHECK_FALSE(building_weapon_loop_active(false,false,true,1,0.4,true,200));
+    CHECK(building_weapon_loop_active(true,false,true,1,0,true,200));
+    CHECK_FALSE(building_weapon_loop_active(true,false,true,1,0,false,0));
+}
+TEST_CASE("Yuri core: staged defense fire events drive audible mixer loops for ground and air") {
+    // Tiny stage thresholds make this deterministic integration fixture fast;
+    // the numbered ground/air pairs and Report names follow retail rules.
+    const auto ini=ra2assets::Ini::parse(
+        "[YAGGUN]\nIsGattling=yes\nWeaponCount=6\nWeaponStages=3\nStage1=2\nStage2=4\nStage3=6\n"
+        "Weapon1=G1\nWeapon2=A1\nWeapon3=G2\nWeapon4=A2\nWeapon5=G3\nWeapon6=A3\n"
+        "[G1]\nDamage=1\nROF=1\nRange=6\nProjectile=Ground\nReport=GattlingGunAttackLoop1\n"
+        "[G2]\nDamage=1\nROF=1\nRange=6\nProjectile=Ground\nReport=GattlingGunAttackLoop2\n"
+        "[G3]\nDamage=1\nROF=1\nRange=6\nProjectile=Ground\nReport=GattlingGunAttackLoop3\n"
+        "[A1]\nDamage=1\nROF=1\nRange=12\nProjectile=Air\nReport=GattlingGunAttackLoop1\n"
+        "[A2]\nDamage=1\nROF=1\nRange=12\nProjectile=Air\nReport=GattlingGunAttackLoop2\n"
+        "[A3]\nDamage=1\nROF=1\nRange=12\nProjectile=Air\nReport=GattlingGunAttackLoop3\n"
+        "[Ground]\nAG=yes\nAA=no\n[Air]\nAG=no\nAA=yes\n");
+    const auto rules=ra2assets::Rules::load(ini);
+    for(bool air:{false,true})for(bool force:{false,true}) {
+        if(air && force)continue; // A ground-cell order cannot select an AA target.
+        Rig r;World w(r.map);BuildingTypeDef d;d.id="YAGGUN";d.strength=500;
+        fill_building_weapons(rules,d.id,d);REQUIRE(d.gattling.enabled());
+        w.set_economy({d},{},OreValues{},1000,0,0);w.add_building(0,8,8,1,1,0,500,0,0,true);
+        if(force)REQUIRE(w.order_building_attack(0,0,-1,-1,10,8,true));
+        else {auto enemy=unit("TARGET");enemy.is_aircraft=air;enemy.strength=10000;w.add_combat_unit(10,8,1,enemy);}
+        struct Audio {
+            SoundBank bank;Mixer mixer;Audio():mixer(bank,1) {
+                const int clip=bank.add(std::vector<int16_t>(20,1000));
+                for(int i=1;i<=3;++i){MixerSound s;s.variants={clip};s.loop=true;s.volume=100;
+                    mixer.register_sound("GattlingGunAttackLoop"+std::to_string(i),s);}
+            }
+            bool sound_loops(const std::string& s){auto* p=mixer.sound(s);return p && p->loop;}
+            unsigned loop_at(const std::string& s,double,double){return mixer.play_at(s,0,8192);}
+            void stop_loop(unsigned h){mixer.stop_voice(h);}
+            bool update_loop(unsigned h,double,double){return mixer.update_voice(h,0,8192);}
+            void play_at(const std::string& s,double,double,const char*){mixer.play_at(s,0,8192);}
+        } audio;
+        WeaponSoundLoop loop;bool sounded=false,top_stage=false;int shots=0;
+        for(int frame=0;frame<50;++frame) {
+            if(air)w.units()[0].altitude=500;
+            w.step(1.0/15);const auto& b=w.buildings()[0];
+            for(const auto& e:w.take_fire_events())if(e.building==0) {
+                ++shots;CHECK(e.slot==(air?1:0));CHECK_FALSE(e.weapon.empty());
+                const auto report=ini.get(e.weapon,"Report");CHECK_FALSE(report.empty());
+                if(report=="GattlingGunAttackLoop3")top_stage=true;
+                loop.shot(audio,report,8,8);
+            }
+            loop.update(audio,building_weapon_loop_active(b.alive && !b.power_off,b.def_offline,
+                b.def_target>=0 || b.w6.def_target_building>=0,b.attack_order_kind,b.def_fire_flash,true,b.gattling_charge),8,8);
+            int16_t samples[8]{};audio.mixer.render(samples,8);
+            for(auto sample:samples)sounded|=sample!=0;
+        }
+        INFO("air="<<air<<" force="<<force);CHECK(shots>0);CHECK(sounded);CHECK(top_stage);
+        const auto sim=save::save_world(w);loop.update(audio,false,8,8);
+        CHECK(save::save_world(w)==sim);CHECK(loop.handle==0);
+        int16_t sample=1;audio.mixer.render(&sample,1);CHECK(sample==0);
+    }
 }
 TEST_CASE("Yuri core: mobile slave miner satisfies PROC but not other prerequisites") {
     Rig r; World w(r.map);

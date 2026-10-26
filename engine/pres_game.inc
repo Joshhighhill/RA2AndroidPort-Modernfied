@@ -1236,7 +1236,24 @@ public:
             if (e.building < 0 || e.building >= static_cast<int>(bs.size()) || e.weapon.empty()) continue;
             const ra2engine::Building& b = bs[e.building];
             const double fx = b.cx + (b.fw - 1) / 2.0, fy = b.cy + (b.fh - 1) / 2.0;
-            building_shot_loops_[e.building].shot(snd_,fx_.weapon_report(e.weapon),fx,fy);
+            const std::string report=pick_report(fx_.weapon_report_list(e.weapon));
+            building_shot_loops_[e.building].shot(snd_,report,fx,fy);
+            // Only changes of a staged weapon's report/start result are
+            // recorded, not every shot or MIX lookup. A silent phone report
+            // can then distinguish missing events/assets from mixer limits.
+            const bool staged=b.type>=0 && b.type<static_cast<int>(w.btypes().size()) && w.btypes()[b.type].gattling.enabled();
+            if(staged && ra2engine::diag::state().enabled.load()) {
+                building_audio_trace_.resize(bs.size());
+                const auto& loop=building_shot_loops_[e.building];
+                const std::string state=e.weapon+"|"+report+"|"+(loop.handle?"playing":"unavailable");
+                if(building_audio_trace_[e.building]!=state) {
+                    building_audio_trace_[e.building]=state;
+                    const auto* sound=audio_ && audio_->mixer?audio_->mixer->sound(report):nullptr;
+                    ra2engine::diag::note("WEAPON_AUDIO building=%d type=%s weapon=%s slot=%d charge=%d report=%s handle=%u enabled=%d variants=%d loop=%d",
+                        e.building,w.btypes()[b.type].id.c_str(),e.weapon.c_str(),e.slot,b.gattling_charge,
+                        report.c_str(),loop.handle,audio_ && audio_->enabled,sound?int(sound->variants.size()):0,snd_.sound_loops(report));
+                }
+            }
             if (b.house != g_local_house && !w.object_visible_at(g_local_house, b.cx, b.cy)) continue;
             // W2-GA-15: Tesla Coil bolts / Prism Tower beams from the tower top.
             const FxWeapon& bw = fx_.weapon_def(e.weapon);
@@ -1286,10 +1303,18 @@ public:
         for (std::size_t i=0;i<bs.size();++i) {
             const auto& b=bs[i];
             const bool staged=b.type>=0 && b.type<static_cast<int>(w.btypes().size()) && w.btypes()[b.type].gattling.enabled();
-            building_shot_loops_[i].update(snd_,ra2engine::weapon_loop_active(
+            const auto old_handle=building_shot_loops_[i].handle;
+            const bool firing=ra2engine::building_weapon_loop_active(
                 b.alive && b.state==ra2engine::Building::State::Idle && !b.selling && !b.power_off,
-                b.def_target>=0 || b.w6.def_target_building>=0,b.def_fire_flash,staged,b.gattling_charge),
+                b.def_offline,b.def_target>=0 || b.w6.def_target_building>=0,b.attack_order_kind,
+                b.def_fire_flash,staged,b.gattling_charge);
+            building_shot_loops_[i].update(snd_,firing,
                 b.cx+(b.fw-1)/2.0,b.cy+(b.fh-1)/2.0);
+            if(staged && old_handle && !building_shot_loops_[i].handle) {
+                if(i<building_audio_trace_.size())building_audio_trace_[i].clear();
+                ra2engine::diag::note("WEAPON_AUDIO stop building=%d firing=%d offline=%d order=%d target=%d building_target=%d charge=%d",
+                    int(i),firing,b.def_offline,b.attack_order_kind,b.def_target,b.w6.def_target_building,b.gattling_charge);
+            }
         }
     }
 
@@ -1941,6 +1966,7 @@ private:
     std::vector<std::pair<double, double>> prev_;
     std::vector<ra2engine::WeaponSoundLoop> shot_loops_;
     std::vector<ra2engine::WeaponSoundLoop> building_shot_loops_;
+    std::vector<std::string> building_audio_trace_;
     bool low_power_ = false;
     bool sw_ready_ = false;
     bool radar_online_ = false;

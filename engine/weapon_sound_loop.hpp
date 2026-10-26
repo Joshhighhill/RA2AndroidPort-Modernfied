@@ -7,6 +7,13 @@ inline bool weapon_loop_active(bool enabled,bool target,double flash,bool staged
     return enabled && target && (flash>0 || (staged && charge>0));
 }
 
+// Building cell attacks have no unit/building target pointer. Keep the
+// report controller alive for those orders too, but never through low power.
+inline bool building_weapon_loop_active(bool enabled,bool offline,bool target,
+                                       int order_kind,double flash,bool staged,int charge) {
+    return weapon_loop_active(enabled && !offline,target || order_kind==3,flash,staged,charge);
+}
+
 // One report loop per shooter. Audio owns attenuation and handle lifetime.
 struct WeaponSoundLoop {
     std::uint32_t handle=0;
