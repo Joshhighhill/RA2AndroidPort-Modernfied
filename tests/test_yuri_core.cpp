@@ -1231,6 +1231,23 @@ TEST_CASE("Slave Miner: planned legal ore site drives and deploys quietly across
  for(const auto& e:w.take_deploy_events())CHECK(e.kind!=World::DeployEvent::Kind::CannotDeploy);
 }
 
+TEST_CASE("Slave Miner: planned deployment route reaches its exact site beside an isolated plateau") {
+ Rig r;
+ for(auto& cell:const_cast<std::vector<ra2assets::MapCell>&>(r.map.cells()))
+   if(cell.x>=14 && cell.x<=16 && cell.y>=14 && cell.y<=16)cell.level=3;
+ World w(r.map);BuildingTypeDef d;d.id="YAREFN";d.fw=d.fh=2;d.strength=500;d.slave_count=2;
+ d.slave_combat=unit("SLAV");w.set_economy({d},{0},OreValues{},1000,0,0);
+ auto miner=unit("SMIN");miner.is_vehicle=true;miner.rot=8;miner.deploys_into="YAREFN";
+ w.set_undeploy_unit(0,miner);w.add_combat_unit(2,2,0,miner);w.ore().set(17,17,OreKind::Ore,5,0);
+ w.step_yuri_workers();const auto& u=w.units()[0];
+ REQUIRE(u.deploy_mission==4);REQUIRE(u.moving());
+ CHECK(u.path.back().x==u.deploy_goal_x);CHECK(u.path.back().y==u.deploy_goal_y);
+ World copy(r.map);REQUIRE(save::load_world(copy,save::save_world(w)));
+ for(int n=0;n<900 && w.buildings().empty();++n){w.step(1.0/15);copy.step(1.0/15);}
+ REQUIRE_FALSE(w.buildings().empty());CHECK(w.buildings()[0].alive);
+ CHECK(save::save_world(w)==save::save_world(copy));
+}
+
 TEST_CASE("Traffic yield: blocked walking units accept forced clearance but retain player scatter rules") {
  Rig r;World w(r.map);auto c=unit("BRUTE");c.is_infantry=true;w.add_combat_unit(8,8,0,c);
  w.order_unit_move(0,15,8);REQUIRE(w.units()[0].moving());w.units()[0].wait_time=4;

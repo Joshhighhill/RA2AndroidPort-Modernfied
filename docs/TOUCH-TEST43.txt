@@ -1,0 +1,20 @@
+Build 900043 — Gatling audio investigation
+
+Use a fresh match, sound enabled. Preserve confirmed Bunker, Force Fire and
+Citadel wall acceptance. Nuclear visuals remain unverified.
+
+1. Place one powered Yuri Gatling Cannon with no tank firing beside it.
+2. Attack a ground enemy, then an aircraft. Sustain fire through three stages.
+3. Force Fire a bare ground cell. Check sound persists rather than cutting out.
+4. Retarget, Stop, turn power off/on, then fire again. Loops must stop correctly.
+5. Repeat with a Gatling Tank. Its working audio must stay intact. Retail sound
+   Limit=2 can reject additional same-key voices; compare one and two shooters.
+6. Share diagnostics with a short description naming target and command.
+   WEAPON_AUDIO shows event weapon, slot, charge, report, handle and variants.
+   A zero handle is not alone proof of missing assets: range/mixer limits and
+   disabled audio also prevent a start.
+7. Recheck ordinary tank shells and accepted building Force Fire/bunker entry.
+
+Automated mixer tests use synthetic PCM and are not phone speaker verification.
+This build does not implement Disc draining, Magnetron lifting or new powers.
+See FIDELITY-AUDIT43.md for the prioritized source comparison and next work.

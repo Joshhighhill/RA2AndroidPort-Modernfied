@@ -165,3 +165,7 @@ ENGINE-REFERENCES40.md for phone checks, research links and remaining limits.
 Automated validation: 1255 cases / 276810 assertions passed, zero failures;
 one optional absent-retail landmark fixture excluded. No phone/GPU/thermal
 measurement or universal bridge/animation parity is claimed.
+Build 900043: see docs/TOUCH-TEST43.txt for the stationary Gatling audio test.
+The correction covers cell Force Fire loop lifetime and low-power stopping;
+ordinary turret silence still needs phone verification with WEAPON_AUDIO logs.
+Existing bunker, building Force Fire, wall and touch behavior is preserved.
