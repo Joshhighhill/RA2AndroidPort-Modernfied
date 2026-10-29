@@ -12,7 +12,7 @@ jobs:
           java-version: 17
       - name: Install NDK and CMake
         run: |
-          yes | sdkmanager "ndk;27.1.12297006" "cmake;3.22.1"
+          yes | sdkmanager "ndk;27.2.12479018" "cmake;3.22.1"
       - name: Fetch SDL2 via desktop configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
       - name: Build debug APK
