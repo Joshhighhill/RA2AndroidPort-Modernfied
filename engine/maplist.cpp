@@ -4,6 +4,9 @@
 #include <algorithm>
 #include <cctype>
 #include <stdexcept>
+#include <filesystem>
+#include <system_error>
+#include <cstdlib>
 
 namespace ra2engine {
 namespace {
@@ -20,6 +23,36 @@ std::string narrow(const std::u16string& u) {
     out.reserve(u.size());
     for (char16_t c : u) out.push_back(c < 0x80 ? (char)c : '?');
     return out;
+}
+
+std::string trim(std::string v) {
+    const char* ws = " \t\r";
+    const std::size_t a = v.find_first_not_of(ws);
+    if (a == std::string::npos) return std::string();
+    return v.substr(a, v.find_last_not_of(ws) - a + 1);
+}
+
+// Value of key in [section] (case-insensitive, ';' comments).
+std::string ini_get(const std::string& text, const std::string& section, const std::string& key) {
+    const std::string want = "[" + lower(section) + "]";
+    bool in = false;
+    std::size_t pos = 0;
+    while (pos < text.size()) {
+        std::size_t eol = text.find('\n', pos);
+        if (eol == std::string::npos) eol = text.size();
+        std::string line = text.substr(pos, eol - pos);
+        pos = eol + 1;
+        const std::size_t sc = line.find(';');
+        if (sc != std::string::npos) line.resize(sc);
+        line = trim(line);
+        if (line.empty()) continue;
+        if (line[0] == '[') { in = lower(line) == want; continue; }
+        if (!in) continue;
+        const std::size_t eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        if (lower(trim(line.substr(0, eq))) == lower(key)) return trim(line.substr(eq + 1));
+    }
+    return std::string();
 }
 
 }  // namespace
@@ -63,6 +96,8 @@ MapCatalog load_yr_map_catalog(const std::string& dir, const std::string& mode_t
     // (missionsmd.pkt) and the string table (ra2md.csf) live in langmd.mix.
     ra2assets::MixFile maps = ra2assets::MixFile::open_path(dir + "multimd.mix");
     ra2assets::MixFile lang = ra2assets::MixFile::open_path(dir + "langmd.mix");
+    // Scan <dir>/Maps for .yrm/.mpr/.map files and append them. Returns the count.
+int append_loose_maps(MapCatalog& cat, const std::string& dir);
 
     const ra2assets::MixEntry* pe = lang.find(std::string("missionsmd.pkt"));
     if (!pe) throw std::runtime_error("missionsmd.pkt not found in langmd.mix");
@@ -83,7 +118,43 @@ MapCatalog load_yr_map_catalog(const std::string& dir, const std::string& mode_t
 
     MapCatalog cat{build_map_catalog(pkt_text, maps, have_csf ? &csf : nullptr, mode_tag),
                    std::move(maps)};
+    append_loose_maps(cat, dir);
     return cat;
+}
+
+int append_loose_maps(MapCatalog& cat, const std::string& dir) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    int added = 0;
+    fs::directory_iterator it(dir + "Maps", ec), end;
+    for (; !ec && it != end; it.increment(ec)) {
+        if (!it->is_regular_file(ec)) continue;
+        const std::string ext = lower(it->path().extension().string());
+        if (ext != ".yrm" && ext != ".mpr" && ext != ".map") continue;
+        const auto raw = ra2assets::read_file(it->path().string());
+        if (raw.empty()) continue;
+        const std::string text(raw.begin(), raw.end());
+        MapEntry e;
+        e.file_name  = it->path().filename().string();
+        e.base_name  = it->path().stem().string();
+        e.loose_path = it->path().string();
+        const std::string nm = ini_get(text, "Basic", "Name");
+        e.display_name = nm.empty() ? e.base_name : nm;
+        e.game_modes = {"standard"};
+        e.theater    = map_theater_of(text);
+        const int n  = std::atoi(ini_get(text, "Header", "NumberStartingPoints").c_str());
+        e.min_players = 2;
+        e.max_players = n >= 2 ? n : 8;
+        cat.entries.push_back(std::move(e));
+        ++added;
+    }
+    std::stable_sort(cat.entries.begin(), cat.entries.end(),
+                     [](const MapEntry& a, const MapEntry& b) {
+                         const std::string la = lower(a.display_name), lb = lower(b.display_name);
+                         if (la != lb) return la < lb;
+                         return a.file_name < b.file_name;
+                     });
+    return added;
 }
 
 std::string map_theater_of(const std::string& text) {
