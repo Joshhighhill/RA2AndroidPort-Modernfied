@@ -99,6 +99,17 @@ MapCatalog load_yr_map_catalog(const std::string& dir, const std::string& mode_t
     // Scan <dir>/Maps for .yrm/.mpr/.map files and append them. Returns the count.
 int append_loose_maps(MapCatalog& cat, const std::string& dir);
 
+    bool read_catalog_map(const MapCatalog& cat, const MapEntry& e, std::vector<uint8_t>& out) {
+    if (!e.loose_path.empty()) {
+        out = ra2assets::read_file(e.loose_path);
+        return !out.empty();
+    }
+    const ra2assets::MixEntry* me = cat.maps.find(e.file_name);
+    if (!me) return false;
+    out = cat.maps.read(*me);
+    return true;
+    }
+
     const ra2assets::MixEntry* pe = lang.find(std::string("missionsmd.pkt"));
     if (!pe) throw std::runtime_error("missionsmd.pkt not found in langmd.mix");
     const auto praw = lang.read(*pe);
