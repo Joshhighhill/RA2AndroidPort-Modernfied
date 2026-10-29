@@ -20,7 +20,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
-import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -82,30 +81,15 @@ public class SetupActivity extends Activity {
         if (l.equals("thememd.mix")) return l;
         if (l.matches("(movies\\d\\d|movmd\\d\\d)\\.mix")) return l;
         if (l.endsWith(".bik") && l.length() > 4) return "Movies/" + l;
+        if (l.endsWith(".yrm") || l.endsWith(".mpr") || l.endsWith(".map")) return "Maps/" + name;
         return null;
     }
 
     private TextView status, title, readiness;
     private ProgressBar progress;
-    private Button importButton, startButton, exitButton, detailsButton;
+    private Button importButton, startButton, exitButton;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private volatile boolean copying = false;
-    private static final String[] THEMES={"Command Center","Allied Blue","Soviet Red","Yuri Violet","Emerald","Desert Gold","Arctic","Midnight OLED"};
-    // Background, surface, accent. All text retains a high-contrast light color.
-    private static final int[][] PALETTES={
-        {0xff0a1219,0xff1c2a34,0xff70cdc1},{0xff081526,0xff152c45,0xff83c9ff},
-        {0xff200b10,0xff3b1a22,0xffffaaaa},{0xff180e26,0xff30203f,0xffd5adff},
-        {0xff071b17,0xff14382e,0xff8de4b4},{0xff20190c,0xff37301d,0xfff0d291},
-        {0xff101d29,0xff263c4a,0xffb8e9fa},{0xff000000,0xff111316,0xffc7cedb}};
-    private int[] theme(){int n=getPreferences(MODE_PRIVATE).getInt("launcher_theme",0);return PALETTES[Math.max(0,Math.min(PALETTES.length-1,n))];}
-    private void chooseTheme(){
-        if(copying)return;
-        new android.app.AlertDialog.Builder(this).setTitle("Launcher appearance")
-            .setSingleChoiceItems(THEMES,getPreferences(MODE_PRIVATE).getInt("launcher_theme",0),(dialog,which)->{
-                getPreferences(MODE_PRIVATE).edit().putInt("launcher_theme",which).apply();
-                dialog.dismiss();buildUi();refresh();
-            }).setNegativeButton("Close",null).show();
-    }
     // R-161: the copy thread is owned by the activity; leaving (finish /
     // destroy) cancels it, and its partial file is deleted.
     private Thread importThread;
@@ -149,7 +133,6 @@ public class SetupActivity extends Activity {
         // Keep the launcher reachable after a crash so reports can be shared.
         buildUi();
         refresh();
-        if (!LegalNotice.accepted(this)) LegalNotice.show(this,this::refresh);
     }
 
     private int dp(int v) {
@@ -163,11 +146,10 @@ public class SetupActivity extends Activity {
         b.setTextColor(Color.rgb(225, 234, 240));
         b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         b.setAllCaps(false);
-        b.setBackground(panel(theme()[1],theme()[2]));
+        b.setBackground(panel(Color.rgb(28, 42, 52), Color.rgb(61, 80, 92)));
         b.setOnClickListener(l);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(0, dp(6), 0, dp(6));
-        b.setPadding(dp(18),dp(12),dp(18),dp(12));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        lp.setMargins(dp(6), dp(6), dp(6), dp(6));
         b.setLayoutParams(lp);
         return b;
     }
@@ -192,85 +174,50 @@ public class SetupActivity extends Activity {
     private void buildUi() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(22), dp(28), dp(22), dp(24));
+        root.setBackgroundColor(Color.rgb(12, 20, 27));
+        root.setPadding(dp(16), dp(12), dp(16), dp(12));
         ScrollView page = new ScrollView(this);
         page.setFillViewport(true);
-        page.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{theme()[0],theme()[1],theme()[0]}));
-        FrameLayout centered=new FrameLayout(this);
-        centered.addView(root,new FrameLayout.LayoutParams(
-                Math.min(getResources().getDisplayMetrics().widthPixels,dp(600)),
-                ViewGroup.LayoutParams.WRAP_CONTENT,Gravity.TOP|Gravity.CENTER_HORIZONTAL));
-        page.addView(centered);
+        page.addView(root);
 
-        TextView eyebrow=label("BRYLE13  /  ANDROID EDITION",11,theme()[2]);
-        eyebrow.setLetterSpacing(0.12f);
-        root.addView(eyebrow);
-        title = label("RA2 PORT", 36, Color.rgb(244,240,223));
+        title = label(getString(R.string.setup_title), 25, Color.rgb(255, 200, 90));
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         root.addView(title);
-        root.addView(label("Your battlefield. Anywhere.",16,Color.rgb(160,182,193)));
-        TextView hero=label("YURI'S REVENGE\n\nAllied. Soviet. Yuri.\nChoose your side. Build your legacy.",18,Color.rgb(237,226,189));
-        hero.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
-        hero.setLineSpacing(dp(3),1f);
-        hero.setPadding(dp(22),dp(24),dp(22),dp(24));
-        GradientDrawable heroArt=new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{theme()[1],theme()[0],theme()[1]});
-        heroArt.setCornerRadius(dp(20));heroArt.setStroke(dp(1),Color.rgb(91,110,104));
-        hero.setBackground(heroArt);
-        LinearLayout.LayoutParams heroSpace=new LinearLayout.LayoutParams(-1,-2);
-        heroSpace.setMargins(0,dp(20),0,dp(16));root.addView(hero,heroSpace);
+        root.addView(label("COMMAND & CONQUER  /  ANDROID", 11, Color.rgb(135, 163, 181)));
         readiness = label("Checking game files...", 15, Color.rgb(140, 225, 185));
         readiness.setBackground(panel(Color.rgb(20, 39, 43), Color.rgb(45, 92, 86)));
         readiness.setPadding(dp(16), dp(12), dp(16), dp(12));
         root.addView(readiness);
 
-        startButton = button("PLAY YURI'S REVENGE", v -> startGame());
-        startButton.setMinHeight(dp(72));
+        startButton = button(getString(R.string.setup_start), v -> startGame());
         startButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 19);
         startButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        startButton.setTextColor(Color.rgb(22,31,32));
-        startButton.setBackgroundTintList(null);
-        startButton.setBackground(panel(Color.rgb(224,191,115), Color.rgb(247,220,156)));
-        root.addView(startButton);
-        root.addView(label("Uses the game files from your own PC copy.",12,Color.rgb(135,163,181)));
-        root.addView(label("YOUR GAME LIBRARY", 12, Color.rgb(135, 163, 181)));
-        importButton = button("Import or update game files", v -> pickFolder());
-        root.addView(importButton);
+        startButton.setBackground(panel(Color.rgb(36, 106, 99), Color.rgb(73, 169, 148)));
+        LinearLayout launch = new LinearLayout(this);
+        launch.addView(startButton);
+        root.addView(launch);
+        root.addView(label("GAME FILES & DIAGNOSTICS", 12, Color.rgb(135, 163, 181)));
         status = label("", 14, Color.rgb(220, 230, 237));
         status.setPadding(dp(16), dp(12), dp(16), dp(12));
         status.setBackground(panel(Color.rgb(20, 31, 41), Color.rgb(44, 61, 73)));
-        status.setVisibility(View.GONE);
-        detailsButton=button("Game files & setup details  +",v->{
-            boolean open=status.getVisibility()!=View.VISIBLE;
-            status.setVisibility(open?View.VISIBLE:View.GONE);
-            ((Button)v).setText(open?"Hide setup details  −":"Game files & setup details  +");
-        });
-        root.addView(detailsButton);root.addView(status);
+        root.addView(status);
 
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progress.setMax(1000);
         progress.setVisibility(View.GONE);
         root.addView(progress);
 
-        root.addView(label("SUPPORT & PREFERENCES",12,Color.rgb(135,163,181)));
-        root.addView(button("Launcher theme",v->chooseTheme()));
-        root.addView(button("Game main menu",v->{
-            if(copying)return;
-            new android.app.AlertDialog.Builder(this).setTitle("Game main menu")
-                .setSingleChoiceItems(new String[]{"Original Yuri's Revenge","Command Center (experimental)"},
-                    getSharedPreferences("interface",MODE_PRIVATE).getBoolean("command_menu",false)?1:0,
-                    (dialog,which)->{getSharedPreferences("interface",MODE_PRIVATE).edit()
-                        .putBoolean("command_menu",which==1).apply();dialog.dismiss();})
-                .setNegativeButton("Close",null).show();
-        }));
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER);
+        importButton = button(getString(R.string.setup_import), v -> pickFolder());
         exitButton = button(getString(R.string.setup_exit), v -> finish());
-        root.addView(button("Share game report", v -> Diagnostics.share(this)));
-        root.addView(button("Refresh file status", v -> { if (!copying) refresh(); }));
-        root.addView(button("Terms & game files",v->LegalNotice.show(this,this::refresh)));
-        root.addView(button("Credits & licenses",v->LegalNotice.credits(this)));
-        root.addView(exitButton);
-        root.addView(label("Android fork by Bryle13. Original engine by Omar El Arab. EA has not endorsed and does not support this product.",12,Color.rgb(135,163,181)));
+        row.addView(importButton);
+        row.addView(button("Share game report", v -> Diagnostics.share(this)));
+        root.addView(row);
+        LinearLayout footer = new LinearLayout(this);
+        footer.addView(button("Refresh file status", v -> { if (!copying) refresh(); }));
+        footer.addView(exitButton);
+        root.addView(footer);
         root.addView(label("Uses your own PC game files. Display and touch options are available in the game's Options menu.", 12, Color.rgb(135, 163, 181)));
         setContentView(page);
     }
@@ -284,7 +231,7 @@ public class SetupActivity extends Activity {
         sb.append("After a crash, tap Share game report before starting another game.\n\n");
         sb.append(getString(R.string.setup_folder)).append("\n  ").append(dir.getAbsolutePath()).append("\n\n");
         // W6-06-05: opened to add / replace files with everything present.
-        title.setText("RA2 PORT");
+        title.setText(req.isEmpty() ? R.string.setup_title_ready : R.string.setup_title);
         readiness.setText(copying ? "IMPORTING GAME FILES..." :
                 (req.isEmpty() ? "READY TO PLAY - Yuri's Revenge" :
                  "SETUP REQUIRED - " + req.size() + " required files missing"));
@@ -303,10 +250,7 @@ public class SetupActivity extends Activity {
         sb.append("\n").append(getString(R.string.setup_how));
         sb.append("\n\n").append(getString(R.string.setup_reimport_note));   // W6-06-05
         status.setText(sb.toString());
-        if (!req.isEmpty() || copying) status.setVisibility(View.VISIBLE);
-        detailsButton.setText(status.getVisibility()==View.VISIBLE?"Hide setup details  −":"Game files & setup details  +");
         startButton.setEnabled(req.isEmpty() && !copying);
-        startButton.setAlpha(req.isEmpty() && !copying ? 1f : 0.45f);
         importButton.setEnabled(!copying);
         exitButton.setEnabled(!copying);   // R-161: no Exit in the middle of a copy
     }
@@ -328,7 +272,6 @@ public class SetupActivity extends Activity {
     }
 
     private void pickFolder() {
-        if (!LegalNotice.accepted(this)) { LegalNotice.show(this,this::pickFolder); return; }
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         // R-160: open the picker at Download/RA2 (where the instructions say
@@ -402,11 +345,11 @@ public class SetupActivity extends Activity {
                 // W6-06-06: a Movies folder next to the files is always read;
                 // R-160: other sub-folders only when the picked folder holds
                 // none of the required files (the folder that CONTAINS RA2).
-                if (!anyRequired || sub[1].equalsIgnoreCase("movies"))
+                if (!anyRequired || sub[1].equalsIgnoreCase("movies") || sub[1].equalsIgnoreCase("maps"))
                     scan(cr, tree, sub[0], found, sizes, anyRequired ? null : deeper);
             }
             for (String[] sub : deeper)
-                if (sub[1].equalsIgnoreCase("movies")) scan(cr, tree, sub[0], found, sizes, null);
+                if (sub[1].equalsIgnoreCase("movies") || sub[1].equalsIgnoreCase("maps")) scan(cr, tree, sub[0], found, sizes, null);
             if (found.isEmpty()) throw new java.io.IOException(getString(R.string.setup_no_files));
             for (Long sz : sizes.values()) total += sz;
             long done = 0;
@@ -456,20 +399,16 @@ public class SetupActivity extends Activity {
             String head = err != null ? getString(R.string.setup_failed, err)
                                       : getString(R.string.setup_imported, count);
             status.setText(head + "\n\n" + status.getText());
-            status.setVisibility(View.VISIBLE);
-            detailsButton.setText("Hide setup details  −");
             if (err == null && missing(dataDir(this), true).isEmpty()) startGame();
         });
     }
 
     private void startGame() {
-        if (!LegalNotice.accepted(this)) { LegalNotice.show(this,this::startGame); return; }
         // NEW_TASK only: RA2Activity is singleInstance, so a running game
         // (backgrounded with Home) is brought back as it was, not restarted.
         Intent i = new Intent(this, RA2Activity.class);
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(i);
-          // Keep the portrait launcher behind the separate native-game task.
-          // Final Quit can uncover it without an intermediate home screen.
+        finish();
     }
-}
+        }
