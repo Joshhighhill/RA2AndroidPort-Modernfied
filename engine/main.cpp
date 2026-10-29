@@ -340,10 +340,17 @@ Assets load_assets(const std::string& dir, const ra2assets::MixFile& ra2,
     // the old hardcoded one (mapsmd03.mix / 0x133a0cb2).
     MixFile maps = MixFile::open_path(dir + sel.mix);
     const MixEntry* me = sel.name.empty() ? maps.find(sel.id) : maps.find(sel.name);
-    if (!me) throw std::runtime_error("map entry not found in " + sel.mix + ": " +
-                                      (sel.name.empty() ? "id 0x133a0cb2" : sel.name));
-    auto map_raw = maps.read(*me);
-    if(ra2engine::diag::state().enabled.load())ra2engine::diag::note("MAP archive=%s entry=%s id=%08x bytes=%zu fnv1a64=%016llx",sel.mix.c_str(),sel.name.c_str(),me->id,map_raw.size(),static_cast<unsigned long long>(ra2engine::diag::fingerprint(map_raw.data(),map_raw.size())));
+    std::vector<uint8_t> map_raw;
+    if (me) {
+        map_raw = maps.read(*me);
+    } else if (!sel.name.empty()) {
+        // Custom map: a loose file in <data dir>/Maps/ (archive entries win).
+        map_raw = ra2assets::read_file(dir + "Maps/" + sel.name);
+    }
+    if (map_raw.empty())
+        throw std::runtime_error("map entry not found in " + sel.mix + ": " +
+                                 (sel.name.empty() ? "id 0x133a0cb2" : sel.name));
+    if(ra2engine::diag::state().enabled.load())ra2engine::diag::note("MAP archive=%s entry=%s id=%08x bytes=%zu fnv1a64=%016llx",sel.mix.c_str(),sel.name.c_str(),me?me->id:0u,map_raw.size(),static_cast<unsigned long long>(ra2engine::diag::fingerprint(map_raw.data(),map_raw.size())));
     MapFile map = MapFile::parse(std::string(map_raw.begin(), map_raw.end()));
 
     // Theater chain [RE: maps.md §6 + §9.4]. Replaces the old TEMPERATE-only
