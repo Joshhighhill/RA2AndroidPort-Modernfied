@@ -54,6 +54,10 @@ struct MapCatalog {
 // (maps.md §7 rule 5: no unconditional mix slurps at startup).
 MapCatalog load_yr_map_catalog(const std::string& dir, const std::string& mode_tag = "standard");
 
+// Bytes of a catalog map: the loose file when the entry has loose_path,
+// otherwise its multimd.mix entry. false = not found.
+bool read_catalog_map(const MapCatalog& cat, const MapEntry& e, std::vector<uint8_t>& out);
+
 // Scan <dir>/Maps for .yrm/.mpr/.map files and append them. Returns the count.
 int append_loose_maps(MapCatalog& cat, const std::string& dir);
 
