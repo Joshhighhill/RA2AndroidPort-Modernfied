@@ -16,6 +16,7 @@ struct MapEntry {
     int min_players = 0;
     int max_players = 0;
     std::string theater;       // W5-PRES R-105: [Map] Theater= (upper case), filled by filter_lobby_theaters
+    std::string loose_path;    // non-empty = a loose file on disk, not in multimd.mix
 };
 
 // Build the skirmish map list. Steps, in EXACTLY this order [RE: maps.md §2]:
@@ -52,6 +53,9 @@ struct MapCatalog {
 // engine's default map. NEVER called from load_assets or any gate path
 // (maps.md §7 rule 5: no unconditional mix slurps at startup).
 MapCatalog load_yr_map_catalog(const std::string& dir, const std::string& mode_tag = "standard");
+
+// Scan <dir>/Maps for .yrm/.mpr/.map files and append them. Returns the count.
+int append_loose_maps(MapCatalog& cat, const std::string& dir);
 
 // W5-PRES R-105 [presentation choice, not original behaviour]: the clone
 // draws only the RA2 theaters (TEMPERATE/SNOW/URBAN) with their own art; the
