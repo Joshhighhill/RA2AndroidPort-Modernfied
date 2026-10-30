@@ -24,8 +24,8 @@ AI, timing and so on) were worked out by studying how the original game
 behaves. The notes in [`docs/re/`](docs/re/) record those findings in our own
 words.
 
-> **Status: playable beta (0.9).** The Allied and Soviet campaigns, skirmish
-> against the AI and LAN / Internet multiplayer work on desktop and Android.
+> **Status: playable beta (0.10).** The Allied and Soviet campaigns, skirmish
+> Map importing works for most maps ending in (.yrm/.mpr/.map).
 > It is not yet a 1:1 copy of the original: see [Known limitations](#known-limitations).
 
 ## What you need
