@@ -23,6 +23,8 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.provider.OpenableColumns;
+import android.widget.ImageButton;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -73,6 +75,22 @@ public class SetupActivity extends Activity {
      * engine/movie_player.inc finds in the data dir and its Movies/ folder,
      * case-insensitively) are copied too.
      */
+
+        private static final int REQ_MAPS = 2;
+
+    static boolean isMapFile(String name) {
+        if (name == null) return false;
+        String l = name.toLowerCase(Locale.ROOT);
+        return l.endsWith(".yrm") || l.endsWith(".mpr") || l.endsWith(".map");
+    }
+
+    static File mapsDir(Activity a) {
+        File d = new File(dataDir(a), "Maps");
+        //noinspection ResultOfMethodCallIgnored
+        d.mkdirs();
+        return d;
+    }
+    
     static String target(String name) {
         if (name == null) return null;
         String l = name.toLowerCase(Locale.ROOT);
@@ -87,7 +105,7 @@ public class SetupActivity extends Activity {
 
     private TextView status, title, readiness;
     private ProgressBar progress;
-    private Button importButton, startButton, exitButton;
+    private Button importButton, mapsButton, startButton, exitButton;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private volatile boolean copying = false;
     // R-161: the copy thread is owned by the activity; leaving (finish /
@@ -119,7 +137,7 @@ public class SetupActivity extends Activity {
         if (list == null) return 0;
         for (File f : list) {
             if (f.isFile() && f.getName().endsWith(".part") && f.delete()) ++n;
-            else if (f.isDirectory() && f.getName().equals("Movies")) n += cleanParts(f);
+            else if ((f.getName().equals("Movies") || f.getName().equals("Maps"))) n += cleanParts(f);
         }
         if (n > 0) Log.i(TAG, "removed " + n + " partial file(s) of an interrupted import");
         return n;
@@ -130,6 +148,7 @@ public class SetupActivity extends Activity {
         super.onCreate(state);
         File dir = dataDir(this);
         cleanParts(dir);
+        mapsDir(this);   // Maps/ always exists, so users can also drop files in by hand
         // Keep the launcher reachable after a crash so reports can be shared.
         buildUi();
         refresh();
@@ -182,7 +201,18 @@ public class SetupActivity extends Activity {
 
         title = label(getString(R.string.setup_title), 25, Color.rgb(255, 200, 90));
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        root.addView(title);
+                LinearLayout head = new LinearLayout(this);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        title.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        head.addView(title);
+        ImageButton rep = new ImageButton(this);
+        rep.setImageResource(android.R.drawable.ic_menu_share);
+        rep.setColorFilter(Color.rgb(135, 163, 181));
+        rep.setBackground(panel(Color.rgb(28, 42, 52), Color.rgb(61, 80, 92)));
+        rep.setContentDescription("Share game report");
+        rep.setOnClickListener(v -> Diagnostics.share(this));
+        head.addView(rep, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        root.addView(head);
         root.addView(label("COMMAND & CONQUER  /  ANDROID", 11, Color.rgb(135, 163, 181)));
         readiness = label("Checking game files...", 15, Color.rgb(140, 225, 185));
         readiness.setBackground(panel(Color.rgb(20, 39, 43), Color.rgb(45, 92, 86)));
@@ -212,7 +242,8 @@ public class SetupActivity extends Activity {
         importButton = button(getString(R.string.setup_import), v -> pickFolder());
         exitButton = button(getString(R.string.setup_exit), v -> finish());
         row.addView(importButton);
-        row.addView(button("Share game report", v -> Diagnostics.share(this)));
+        mapsButton = button("Import maps", v -> pickMaps());
+        row.addView(mapsButton);
         root.addView(row);
         LinearLayout footer = new LinearLayout(this);
         footer.addView(button("Refresh file status", v -> { if (!copying) refresh(); }));
@@ -228,7 +259,8 @@ public class SetupActivity extends Activity {
         List<String> all = missing(dir, false);
         StringBuilder sb = new StringBuilder();
         sb.append(getString(R.string.setup_intro)).append("\n\n");
-        sb.append("After a crash, tap Share game report before starting another game.\n\n");
+        sb.append("After a crash, tap the share icon (top right) before starting another game.\n\n");
+        sb.append("Custom maps: tap Import maps and pick .yrm / .mpr / .map files.\n\n");
         sb.append(getString(R.string.setup_folder)).append("\n  ").append(dir.getAbsolutePath()).append("\n\n");
         // W6-06-05: opened to add / replace files with everything present.
         title.setText(req.isEmpty() ? R.string.setup_title_ready : R.string.setup_title);
@@ -252,6 +284,7 @@ public class SetupActivity extends Activity {
         status.setText(sb.toString());
         startButton.setEnabled(req.isEmpty() && !copying);
         importButton.setEnabled(!copying);
+        mapsButton.setEnabled(!copying);
         exitButton.setEnabled(!copying);   // R-161: no Exit in the middle of a copy
     }
 
@@ -287,6 +320,7 @@ public class SetupActivity extends Activity {
     @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
+        if (req == REQ_MAPS) { if (res == RESULT_OK && data != null) importMapsFrom(data); return; }
         if (req != REQ_TREE || res != RESULT_OK || data == null || data.getData() == null) return;
         final Uri tree = data.getData();
         copying = true;
@@ -401,6 +435,58 @@ public class SetupActivity extends Activity {
             status.setText(head + "\n\n" + status.getText());
             if (err == null && missing(dataDir(this), true).isEmpty()) startGame();
         });
+    }
+
+        private void pickMaps() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("*/*");   // .yrm/.mpr have no MIME type; filtered by extension below
+        i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        startActivityForResult(i, REQ_MAPS);
+    }
+
+    private void importMapsFrom(Intent data) {
+        final List<Uri> uris = new ArrayList<>();
+        if (data.getClipData() != null)
+            for (int k = 0; k < data.getClipData().getItemCount(); ++k)
+                uris.add(data.getClipData().getItemAt(k).getUri());
+        else if (data.getData() != null) uris.add(data.getData());
+        if (uris.isEmpty()) return;
+        copying = true;
+        refresh();
+        new Thread(() -> {
+            ContentResolver cr = getContentResolver();
+            File maps = mapsDir(this);
+            int ok = 0, skipped = 0;
+            for (Uri u : uris) {
+                String name = null;
+                try (Cursor c = cr.query(u, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+                    if (c != null && c.moveToFirst()) name = c.getString(0);
+                } catch (Exception ignored) { }
+                if (!isMapFile(name)) { ++skipped; continue; }
+                name = name.replaceAll("[\\\\/:*?\"<>|]", "_").replaceAll("^\\.+", "");
+                File out = new File(maps, name), tmp = new File(maps, name + ".part");
+                try (InputStream in = cr.openInputStream(u); OutputStream os = new FileOutputStream(tmp)) {
+                    if (in == null) throw new java.io.IOException("cannot open");
+                    byte[] buf = new byte[64 * 1024];
+                    int n;
+                    while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
+                } catch (Exception ex) {
+                    Log.e(TAG, "map import failed: " + name, ex);
+                    //noinspection ResultOfMethodCallIgnored
+                    tmp.delete(); ++skipped; continue;
+                }
+                //noinspection ResultOfMethodCallIgnored
+                out.delete();
+                if (tmp.renameTo(out)) ++ok; else ++skipped;
+            }
+            final String msg = "Imported " + ok + " map(s)" + (skipped > 0 ? ", skipped " + skipped : "") + ".";
+            ui.post(() -> {
+                copying = false;
+                refresh();
+                status.setText(msg + "\n\n" + status.getText());
+            });
+        }, "ra2-map-import").start();
     }
 
     private void startGame() {
