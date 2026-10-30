@@ -495,7 +495,8 @@ private:
             map_list_.items.push_back(maps()[(size_t)i].display_name);
             map_list_.data.push_back(i);
         }
-        map_list_.visible = 26;
+        map_list_.strip_w = 26;
+        map_list_.visible = std::max(1, (map_list_.r.h - 2) / map_list_.item_h);   // only rows that really fit
         int r = row_of(want_catalog_ix);
         if (r < 0 && !map_list_.items.empty()) r = 0;
         map_list_.sel = r;
