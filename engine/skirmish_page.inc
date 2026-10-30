@@ -620,10 +620,10 @@ private:
         int w = 0, h = 0;
         std::vector<uint8_t> rgba;
         try {
-            if (const ra2assets::MixEntry* e = catalog_->maps.find(m->file_name)) {
-                const std::vector<uint8_t> raw = catalog_->maps.read(*e);
+                        std::vector<uint8_t> raw;
+            if (ra2engine::read_catalog_map(*catalog_, *m, raw)) {
                 const std::string text(raw.begin(),raw.end());
-                skp::decode_preview(text,w,h,rgba);
+                if (!skp::decode_preview(text,w,h,rgba)) w = h = 0;
                 const auto ini=Ini::parse(text);
                 const int sx=std::atoi(ini.get("Header","StartX").c_str()),sy=std::atoi(ini.get("Header","StartY").c_str());
                 for(int i=1;i<=8;++i){int x=0,y=0;
