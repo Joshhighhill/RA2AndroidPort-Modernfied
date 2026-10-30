@@ -285,6 +285,8 @@ private:
     static ra2engine::SbRect status_rect() { return {200, 420, 328, 14}; }
     static ra2engine::SbRect type_list_rect() { return {30, 126, 195, 260}; }
     static ra2engine::SbRect map_list_rect() { return {10,30,180,398}; }
+    static ra2engine::SbRect tab_stock_rect()  { return {10,5,88,20}; }
+    static ra2engine::SbRect tab_custom_rect() { return {102,5,88,20}; }
 
     static constexpr int kBtnX = 484, kBtnW = 156, kBtnH = 42;
     std::vector<ShellButton> buttons() const {
@@ -838,7 +840,17 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
     const ShellPainter p{ren,tc,art_,xf};
     p.fill(p.dev(8,27,184,403),18,20,30);p.fill(p.dev(198,27,332,202),18,20,30);
     p.fill(p.dev(533,27,99,396),18,20,30);
-    p.label("MAPS",10,5,180,20,1);
+        if(has_custom()){
+        for(int k=0;k<2;++k){
+            const ra2engine::SbRect tr=k?tab_custom_rect():tab_stock_rect();
+            const SDL_Rect r=p.dev(tr);
+            const bool on=((k==1)==show_custom_);
+            p.fill(r,on?65:30,on?20:22,on?24:30);
+            SDL_SetRenderDrawColor(ren,on?180:90,on?135:80,on?65:60,255);
+            SDL_RenderDrawRect(ren,&r);
+            p.label(k?"CUSTOM":"STOCK",tr.x,tr.y,tr.w,tr.h,1);
+        }
+    } else p.label("MAPS",10,5,180,20,1);
     p.label("Players",200,5,72,20,0);p.label("Side",315,5,95,20,0);
     p.label("Color",416,5,45,20,0);p.label("Team",467,5,34,20,0);p.label("Start",503,5,28,20,0);
     if(mode_==MODE_SETUP)map_list_.draw(p,false);
@@ -1014,10 +1026,26 @@ void SkirmishSetupScene::handle(const ra2engine::InputEvent& ev) {
     for (const ShellButton& b : buttons())
         if (b.enabled && b.rect.contains(lx, ly)) { set_editing(false); press(b.action, ev); return; }
 
+    if (mode_ == MODE_SETUP && has_custom()) {
+        for (int k = 0; k < 2; ++k)
+            if ((k ? tab_custom_rect() : tab_stock_rect()).contains(lx, ly)) {
+                if ((k == 1) != show_custom_) {
+                    show_custom_ = (k == 1);
+                    fill_map_list(show_custom_, -1);
+                    if (!map_list_.data.empty()) {   // keep the lobby in step with the highlighted row
+                        map_ix_ = map_list_.data[(size_t)map_list_.sel];
+                        ra2engine::lobby_apply_max_players(st_, map_max());
+                    }
+                    play_ui("menu:click");
+                }
+                return;
+            }
+    }
+
     if (mode_ == MODE_SETUP && map_list_rect().contains(lx,ly)) {
         if(map_list_.strip_up().contains(lx,ly)){map_list_.scroll(-6);return;}
         if(map_list_.strip_down().contains(lx,ly)){map_list_.scroll(6);return;}
-        const int picked=map_list_.hit(lx,ly);if(picked>=0){map_list_.sel=picked;map_ix_=picked;ra2engine::lobby_apply_max_players(st_,map_max());}return;
+        const int picked=map_list_.hit(lx,ly);if(picked>=0){map_list_.sel=picked;map_ix_=map_list_.data[(size_t)picked];ra2engine::lobby_apply_max_players(st_,map_max());}return;
     }
     if (mode_ == MODE_CUSTOMIZE) {
         if (map_list_.scrolls() && map_list_.strip_up().contains(lx, ly)) { map_list_.scroll(-map_list_.visible); return; }
