@@ -639,7 +639,6 @@ private:
     Scene* next_ = nullptr;
     // Preview cache: map file -> decoded size (0 = no preview).
     mutable std::map<std::string, std::pair<int, int>> preview_size_;
-    mutable std::map<std::string, std::string> preview_why_;   // diag
     mutable std::map<std::string,std::vector<std::pair<int,int>>> preview_starts_;
     SDL_Texture* preview_tex(ra2engine::TextureCache& tc, int map_i) const {
         const auto* m = map_at(map_i);
@@ -656,7 +655,7 @@ private:
                         std::vector<uint8_t> raw;
             if (ra2engine::read_catalog_map(*catalog_, *m, raw)) {
                 const std::string text(raw.begin(),raw.end());
-                if (!skp::decode_preview(text,w,h,rgba)) { w = h = 0; preview_why_[m->file_name] = "D" + std::to_string(raw.size()); }
+                if (!skp::decode_preview(text,w,h,rgba)) w = h = 0;
                 const auto ini=Ini::parse(text);
                 preview_starts_[m->file_name].clear();
                 const int sx=std::atoi(ini.get("Header","StartX").c_str()),sy=std::atoi(ini.get("Header","StartY").c_str());
@@ -679,15 +678,10 @@ private:
 
 
             }
-        } catch (const std::exception& ex) { w = h = 0; preview_why_[m->file_name] = std::string("E ") + ex.what(); }
-                preview_size_[m->file_name] = {w, h};
-        if (w <= 0 || h <= 0) {
-            if (!preview_why_.count(m->file_name)) preview_why_[m->file_name] = "N";
-            return nullptr;
-        }
-        SDL_Texture* made = static_cast<SDL_Texture*>(tc.get_rgba(key, rgba.data(), w, h));
-        if (!made) preview_why_[m->file_name] = "T " + std::to_string(tc.bytes() / 1048576) + "MB/" + std::to_string(tc.size());
-        return made;
+        } catch (const std::exception&) { w = h = 0; }
+         preview_size_[m->file_name] = {w, h};
+        if (w <= 0 || h <= 0) return nullptr;
+        return static_cast<SDL_Texture*>(tc.get_rgba(key, rgba.data(), w, h));
     }
 };
 
@@ -877,7 +871,7 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
         const ra2engine::SbRect pr = preview_rect();
         p.fill(p.dev(pr), 0, 0, 0);
         const int mi = shown_map();
-        SDL_Texture* t = preview_tex(tc, mi);
+        if (SDL_Texture* t = preview_tex(tc, mi)) {
         if (!t) {
             const auto* wm = map_at(mi);
             const auto why = wm ? preview_why_.find(wm->file_name) : preview_why_.end();
