@@ -485,33 +485,46 @@ private:
     }
 
     // --- Customize Battle (dialog 0x6B) ---
-    void enter_customize() {
-        mode_ = MODE_CUSTOMIZE;
-        type_list_ = ShellList{};
-        type_list_.r = type_list_rect();
-        type_list_.items = {text_.battle};
-        type_list_.data = {1};
-        type_list_.sel = 0;
-        type_list_.visible = 16;
+    void fill_map_list(bool custom, int want_catalog_ix) {
         map_list_ = ShellList{};
         map_list_.r = map_list_rect();
         for (int i = 0; i < static_cast<int>(maps().size()); ++i) {
+            if (maps()[(size_t)i].loose_path.empty() == custom) continue;
             map_list_.items.push_back(maps()[(size_t)i].display_name);
             map_list_.data.push_back(i);
         }
         map_list_.visible = 24;
-        map_list_.sel = map_ix_;
-        map_list_.reveal(map_ix_);
+        int r = row_of(want_catalog_ix);
+        if (r < 0 && !map_list_.items.empty()) r = 0;
+        map_list_.sel = r;
+        if (r >= 0) map_list_.reveal(r);
+    }
+    void enter_customize() {
+        mode_ = MODE_CUSTOMIZE;
+        const auto* cur = map_at(map_ix_);
+        show_custom_ = cur && !cur->loose_path.empty();   // open on the list the current map belongs to
+        type_list_ = ShellList{};
+        type_list_.r = type_list_rect();
+        type_list_.items = {text_.battle};
+        type_list_.data = {1};
+        if (has_custom()) { type_list_.items.push_back("Custom Maps"); type_list_.data.push_back(2); }
+        type_list_.sel = show_custom_ ? 1 : 0;
+        type_list_.visible = 16;
+        fill_map_list(show_custom_, map_ix_);
     }
     void leave_customize(bool use) {
-        if (use && map_list_.sel >= 0) {
-            map_ix_ = map_list_.sel;
-            ra2engine::lobby_apply_max_players(st_, map_max());   // 0x683920 / 0x6836F0
+        if (use && map_list_.sel >= 0 && map_list_.sel < static_cast<int>(map_list_.data.size())) {
+            map_ix_ = map_list_.data[(size_t)map_list_.sel];   // row -> catalog index
+            ra2engine::lobby_apply_max_players(st_, map_max());
         }
         mode_ = MODE_SETUP;
     }
     // The map shown in the preview well (the pending pick on 0x6B).
-    int shown_map() const { return mode_ == MODE_CUSTOMIZE ? map_list_.sel : map_ix_; }
+    int shown_map() const {
+        if (mode_ != MODE_CUSTOMIZE) return map_ix_;
+        return (map_list_.sel >= 0 && map_list_.sel < static_cast<int>(map_list_.data.size()))
+                   ? map_list_.data[(size_t)map_list_.sel] : -1;
+    }
 
     // --- persistence (0x6829F0 commit -> 0x00670380 / 0x005D91B0) ---
     void commit_and_save() {
@@ -599,6 +612,16 @@ private:
     Mode mode_ = MODE_SETUP;
     Combo combo_ = CB_NONE;
     int combo_row_ = 0;
+    bool show_custom_ = false;                        // Customize Battle: showing the Custom Maps list
+    bool has_custom() const {
+        for (const auto& m : maps()) if (!m.loose_path.empty()) return true;
+        return false;
+    }
+    int row_of(int catalog_ix) const {                // list row showing this catalog index, or -1
+        for (int r = 0; r < static_cast<int>(map_list_.data.size()); ++r)
+            if (map_list_.data[(size_t)r] == catalog_ix) return r;
+        return -1;
+    }
     ShellList list_, type_list_, map_list_;
     bool editing_ = false;
     bool text_was_active_ = true;
@@ -706,7 +729,7 @@ std::map<std::string, ra2engine::SbRect> SkirmishSetupScene::targets() const {
     if (confirm_.open()) return t;                             // the message box owns input
     if (mode_ == MODE_CUSTOMIZE) {
         for (int i = map_list_.top; i < map_list_.top + map_list_.rows(); ++i)
-            t["map:" + maps()[(size_t)i].file_name] = map_list_.item_rect(i);
+            t["map:" + maps()[(size_t)map_list_.data[(size_t)i]].file_name] = map_list_.item_rect(i);
         if (map_list_.scrolls()) {
             t["list:up"] = map_list_.strip_up();
             t["list:down"] = map_list_.strip_down();
@@ -1002,7 +1025,12 @@ void SkirmishSetupScene::handle(const ra2engine::InputEvent& ev) {
         const int i = map_list_.hit(lx, ly);
         if (i >= 0) { map_list_.sel = i; play_ui("menu:click"); }
         const int t = type_list_.hit(lx, ly);
-        if (t >= 0) type_list_.sel = t;
+        if (t >= 0 && t != type_list_.sel) {
+            type_list_.sel = t;
+            show_custom_ = (type_list_.data[(size_t)t] == 2);
+            fill_map_list(show_custom_, -1);
+            play_ui("menu:click");
+        }
         return;
     }
     // --- name edit (focus) ---
