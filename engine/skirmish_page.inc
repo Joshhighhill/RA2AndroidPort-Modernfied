@@ -645,9 +645,11 @@ private:
         const auto* m = map_at(map_i);
         if (!m || !catalog_) return nullptr;
         const std::string key = "skp:prev:" + m->file_name;
-        if (void* t = tc.peek(key)) return static_cast<SDL_Texture*>(t);
-        const auto known = preview_size_.find(m->file_name);
-        if (known != preview_size_.end() && known->second.first <= 0) return nullptr;   // known: no preview
+                const auto known = preview_size_.find(m->file_name);
+        if (known != preview_size_.end()) {
+            if (known->second.first <= 0) return nullptr;                       // known: no preview
+            if (void* t = tc.peek(key)) return static_cast<SDL_Texture*>(t);   // cached and we know its size
+        }
         int w = 0, h = 0;
         std::vector<uint8_t> rgba;
         try {
