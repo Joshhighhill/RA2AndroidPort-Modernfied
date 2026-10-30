@@ -645,7 +645,8 @@ private:
         if (!m || !catalog_) return nullptr;
         const std::string key = "skp:prev:" + m->file_name;
         if (void* t = tc.peek(key)) return static_cast<SDL_Texture*>(t);
-        if (preview_size_.count(m->file_name)) return nullptr;   // known: no preview
+        const auto known = preview_size_.find(m->file_name);
+        if (known != preview_size_.end() && known->second.first <= 0) return nullptr;   // known: no preview
         int w = 0, h = 0;
         std::vector<uint8_t> rgba;
         try {
@@ -654,6 +655,7 @@ private:
                 const std::string text(raw.begin(),raw.end());
                 if (!skp::decode_preview(text,w,h,rgba)) w = h = 0;
                 const auto ini=Ini::parse(text);
+                preview_starts_[m->file_name].clear();
                 const int sx=std::atoi(ini.get("Header","StartX").c_str()),sy=std::atoi(ini.get("Header","StartY").c_str());
                 for(int i=1;i<=8;++i){int x=0,y=0;
                     const auto point=ini.get("Header","Waypoint"+std::to_string(i));
