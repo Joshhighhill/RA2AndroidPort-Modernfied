@@ -20,7 +20,8 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          printf 'storeFile=app/ra2beta.keystore\nstorePassword=android\nkeyAlias=ra2beta\nkeyPassword=android\n' > keystore.properties
+          ./gradlew assembleDebug -Pra2.debugUseConfiguredSigning=true -Pra2.buildNumber=$((GITHUB_RUN_NUMBER % 1000))
       - uses: actions/upload-artifact@v4
         with:
           name: ra2-debug-apk
