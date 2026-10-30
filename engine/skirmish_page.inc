@@ -495,7 +495,7 @@ private:
             map_list_.items.push_back(maps()[(size_t)i].display_name);
             map_list_.data.push_back(i);
         }
-        map_list_.visible = 24;
+        map_list_.visible = 26;
         int r = row_of(want_catalog_ix);
         if (r < 0 && !map_list_.items.empty()) r = 0;
         map_list_.sel = r;
@@ -630,6 +630,7 @@ private:
     int drag_ = -1;
     bool list_press_ = false, list_swiped_ = false;
     int list_press_y_ = 0, list_press_top_ = 0;
+    int list_pan_acc_ = 0, list_pan_x0_ = -1, list_pan_y0_ = -1;
     int mx_ = -1, my_ = -1;
     bool down_ = false;
     double clock_ = 0.0;
@@ -962,6 +963,26 @@ void SkirmishSetupScene::handle(const ra2engine::InputEvent& ev) {
     if (confirm_.open()) { confirm_.handle(ev); return; }
     int lx = 0, ly = 0;
     to_logical(ev.x, ev.y, lx, ly);
+
+    // --- finger drag on the map list arrives as a Pan event ---
+    if (ev.kind == InputEvent::Pan && mode_ == MODE_SETUP && combo_ == CB_NONE) {
+        int sx = 0, sy = 0;
+        to_logical(ev.x0, ev.y0, sx, sy);                    // where the drag started
+        if (map_list_rect().contains(sx, sy) && !map_list_.items.empty()) {
+            if (ev.x0 != list_pan_x0_ || ev.y0 != list_pan_y0_) {   // a new drag
+                list_pan_x0_ = ev.x0; list_pan_y0_ = ev.y0; list_pan_acc_ = 0;
+            }
+            list_swiped_ = true;                             // so the lift-off never counts as a tap
+            const int rh = std::max(1, xform().hit(map_list_.item_rect(map_list_.top)).h);
+            list_pan_acc_ += ev.dy;
+            const int rows = list_pan_acc_ / rh;             // whole rows; the remainder carries over
+            if (rows != 0) {
+                list_pan_acc_ -= rows * rh;
+                map_list_.scroll(-rows);                     // drag down = list moves down
+            }
+            return;
+        }
+    }
 
     // --- keyboard ---
     if (ev.kind == InputEvent::Key) {
