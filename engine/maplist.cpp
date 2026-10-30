@@ -150,7 +150,9 @@ int append_loose_maps(MapCatalog& cat, const std::string& dir) {
         ++added;
     }
     std::stable_sort(cat.entries.begin(), cat.entries.end(),
-                     [](const MapEntry& a, const MapEntry& b) {
+                         [](const MapEntry& a, const MapEntry& b) {
+                         const bool ca = !a.loose_path.empty(), cb = !b.loose_path.empty();
+                         if (ca != cb) return cb;   // stock maps first, custom after
                          const std::string la = lower(a.display_name), lb = lower(b.display_name);
                          if (la != lb) return la < lb;
                          return a.file_name < b.file_name;
@@ -213,6 +215,7 @@ int filter_lobby_theaters(MapCatalog& cat) {
     std::vector<MapEntry> keep;
     keep.reserve(cat.entries.size());
     for (MapEntry& e : cat.entries) {
+      if (!e.loose_path.empty()) { keep.push_back(std::move(e)); continue; }   // custom maps are never hidden
         if (const ra2assets::MixEntry* me = cat.maps.find(e.file_name)) {
             try {
                 const auto raw = cat.maps.read(*me);
