@@ -18,9 +18,14 @@ jobs:
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
       - name: Build debug APK
         working-directory: android
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           chmod +x gradlew
-          printf 'storeFile=app/ra2beta.keystore\nstorePassword=android\nkeyAlias=ra2beta\nkeyPassword=android\n' > keystore.properties
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/ra2.keystore"
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$RUNNER_TEMP/ra2.keystore" "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEYSTORE_PASSWORD" > keystore.properties
           ./gradlew assembleDebug -Pra2.debugUseConfiguredSigning=true -Pra2.buildNumber=$((GITHUB_RUN_NUMBER % 1000))
       - uses: actions/upload-artifact@v4
         with:
