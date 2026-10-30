@@ -116,7 +116,7 @@ Developer documentation, including the test and determinism gates, the
 
 ## Known limitations
 
-- some custom maps (Spacificly "LUNAR", "NEWURBAN" and "DESERT" theater maps) don't work, although "NEWURBAN" does kinda work with some visual artifacting
+- some custom maps (Spacificly "LUNAR" and "NEWURBAN" theater maps) don't work, although "NEWURBAN" does kinda work with some visual artifacting
 
 ## Legal
 
