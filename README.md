@@ -55,24 +55,15 @@ What the files are for:
 | `expand01.mix`, `ecache01.mix`, `expandmd01.mix` … | if present | official patch data |
 | `MOVIES01.MIX`, `MOVIES02.MIX`, `MOVMD03.MIX` | if present | campaign cutscenes; some digital versions ship them as tiny placeholder files |
 
+#⭐ Fork Note!
+  > you should use "XCC Mixer" to extract "ra2.csf" from language.mix, you can use winlator for this too.
+
 Only the four required files stop the game from starting. Without the
 others you lose that part of the game: music, campaigns, cutscenes or patch
 rules. If a required file is missing, the game opens a **GAME FILES NEEDED**
 page that lists what is missing and where it looked.
 
-### 2a. Windows
-
-1. Download the Windows zip from the [Releases](../../releases) page and unzip
-   it anywhere, or [build from source](#build-from-source).
-2. Either put the game files in the same folder as `ra2game.exe`, or just start
-   `ra2game.exe`. If it cannot find the files, the **GAME FILES NEEDED** page
-   has a **BROWSE** button to pick your Red Alert 2 folder, and it remembers
-   the choice.
-
-The game also finds a standard retail install from the Windows registry, so on
-a PC that already has Red Alert 2 installed it usually just starts.
-
-### 2b. Android
+### 2. Android
 
 1. Install the APK from the [Releases](../../releases) page.
 2. Copy the game files to the phone, for example into `Download/RA2`, using a
@@ -125,14 +116,7 @@ Developer documentation, including the test and determinism gates, the
 
 ## Known limitations
 
-- Yuri's faction is not playable (Allied and Soviet only); the Yuri's Revenge
-  campaign is not included in the campaign menu yet.
-- Some details still differ from the original: for example units tilting on
-  slopes, the Siege Chopper deploy, the Spy Plane and the random map
-  generator.
-- Phone-versus-PC multiplayer is switched off by default until it has been
-  tested more on real phones.
-- Saved games do not carry over between engine versions yet.
+- some custom maps (Spacificly "LUNAR", "NEWURBAN" and "DESERT" theater maps) don't work, although "NEWURBAN" does kinda work with some visual artifacting
 
 ## Legal
 
