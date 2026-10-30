@@ -628,6 +628,8 @@ private:
     bool editing_ = false;
     bool text_was_active_ = true;
     int drag_ = -1;
+    bool list_press_ = false, list_swiped_ = false;
+    int list_press_y_ = 0, list_press_top_ = 0;
     int mx_ = -1, my_ = -1;
     bool down_ = false;
     double clock_ = 0.0;
@@ -1005,6 +1007,41 @@ void SkirmishSetupScene::handle(const ra2engine::InputEvent& ev) {
                                                        ra2engine::kTrackbarReadoutW);
         set_slider_pos(s, pos);
     };
+    // --- swipe-to-scroll on the map list; a plain tap still selects ---
+    if (mode_ == MODE_SETUP && combo_ == CB_NONE) {
+        if (ev.kind == InputEvent::PointerDown && ev.button == InputEvent::Left &&
+            map_list_rect().contains(lx, ly) &&
+            !map_list_.strip_up().contains(lx, ly) && !map_list_.strip_down().contains(lx, ly)) {
+            list_press_ = true;
+            list_swiped_ = false;
+            list_press_y_ = ly;
+            list_press_top_ = map_list_.top;
+            return;
+        }
+        if (list_press_ && ev.kind == InputEvent::PointerMove) {
+            const int dy = ly - list_press_y_;
+            if (dy > 4 || dy < -4) list_swiped_ = true;
+            if (list_swiped_ && !map_list_.items.empty()) {
+                const int rh = std::max(1, map_list_.item_rect(map_list_.top).h);
+                const int max_top = std::max(0, static_cast<int>(map_list_.items.size()) - map_list_.visible);
+                const int want = std::max(0, std::min(max_top, list_press_top_ - dy / rh));
+                if (want != map_list_.top) map_list_.scroll(want - map_list_.top);
+            }
+            return;
+        }
+        if (list_press_ && ev.kind == InputEvent::PointerUp && ev.button == InputEvent::Left) {
+            list_press_ = false;
+            if (!list_swiped_) {
+                const int picked = map_list_.hit(lx, ly);
+                if (picked >= 0) {
+                    map_list_.sel = picked;
+                    map_ix_ = map_list_.data[(size_t)picked];
+                    ra2engine::lobby_apply_max_players(st_, map_max());
+                }
+            }
+            return;
+        }
+    }
     if (ev.kind == InputEvent::PointerMove && drag_ >= 0) { set_from_x(drag_); return; }
     if (ev.kind == InputEvent::PointerUp && ev.button == InputEvent::Left && drag_ >= 0) {
         set_from_x(drag_);
