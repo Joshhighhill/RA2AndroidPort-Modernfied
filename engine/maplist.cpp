@@ -138,12 +138,14 @@ int append_loose_maps(MapCatalog& cat, const std::string& dir) {
         e.base_name  = it->path().stem().string();
         e.loose_path = it->path().string();
         const std::string nm = ini_get(text, "Basic", "Name");
-        e.display_name = nm.empty() ? e.base_name : nm;
-        e.game_modes = {"standard"};
-        e.theater    = map_theater_of(text);
         const int n  = std::atoi(ini_get(text, "Header", "NumberStartingPoints").c_str());
         e.min_players = 2;
         e.max_players = n >= 2 ? n : 8;
+        const std::string base = nm.empty() ? e.base_name : nm;
+        e.display_name = (n > 2) ? base + " (2-" + std::to_string(n) + ")"
+                       : (n == 2) ? base + " (2)" : base;
+        e.game_modes = {"standard"};
+        e.theater    = map_theater_of(text);
         cat.entries.push_back(std::move(e));
         ++added;
     }
