@@ -97,18 +97,6 @@ MapCatalog load_yr_map_catalog(const std::string& dir, const std::string& mode_t
     ra2assets::MixFile maps = ra2assets::MixFile::open_path(dir + "multimd.mix");
     ra2assets::MixFile lang = ra2assets::MixFile::open_path(dir + "langmd.mix");
     // Scan <dir>/Maps for .yrm/.mpr/.map files and append them. Returns the count.
-int append_loose_maps(MapCatalog& cat, const std::string& dir);
-
-    bool read_catalog_map(const MapCatalog& cat, const MapEntry& e, std::vector<uint8_t>& out) {
-    if (!e.loose_path.empty()) {
-        out = ra2assets::read_file(e.loose_path);
-        return !out.empty();
-    }
-    const ra2assets::MixEntry* me = cat.maps.find(e.file_name);
-    if (!me) return false;
-    out = cat.maps.read(*me);
-    return true;
-    }
 
     const ra2assets::MixEntry* pe = lang.find(std::string("missionsmd.pkt"));
     if (!pe) throw std::runtime_error("missionsmd.pkt not found in langmd.mix");
@@ -166,6 +154,17 @@ int append_loose_maps(MapCatalog& cat, const std::string& dir) {
                          return a.file_name < b.file_name;
                      });
     return added;
+}
+
+bool read_catalog_map(const MapCatalog& cat, const MapEntry& e, std::vector<uint8_t>& out) {
+    if (!e.loose_path.empty()) {
+        out = ra2assets::read_file(e.loose_path);
+        return !out.empty();
+    }
+    const ra2assets::MixEntry* me = cat.maps.find(e.file_name);
+    if (!me) return false;
+    out = cat.maps.read(*me);
+    return true;
 }
 
 std::string map_theater_of(const std::string& text) {
