@@ -87,6 +87,10 @@ public class SetupActivity extends Activity {
         d.mkdirs();
         return d;
     }
+    static File[] modFiles(Activity a) {
+        File[] l = modsDir(a).listFiles((d, n) -> n.toLowerCase(Locale.ROOT).endsWith(".ini"));
+        return l == null ? new File[0] : l;
+        }
 
     private void confirmClearMods() {
         final File[] files = modFiles(this);
