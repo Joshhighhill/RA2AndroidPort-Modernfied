@@ -872,13 +872,6 @@ void SkirmishSetupScene::render(ra2engine::Platform& plat, ra2engine::TextureCac
         p.fill(p.dev(pr), 0, 0, 0);
         const int mi = shown_map();
         if (SDL_Texture* t = preview_tex(tc, mi)) {
-        if (!t) {
-            const auto* wm = map_at(mi);
-            const auto why = wm ? preview_why_.find(wm->file_name) : preview_why_.end();
-            if (why != preview_why_.end())
-                p.label(p.fit("why: " + why->second, pr.w - 4), pr.x + 2, pr.y + 2, pr.w - 4, 16, 0);
-        }
-        if (t) {
             const auto* m = map_at(mi);
             const auto sz = preview_size_[m->file_name];
             // [RE-FALLBACK, audit Q4: scaling mode not recovered] aspect-fit,
