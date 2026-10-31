@@ -762,7 +762,8 @@ std::vector<uint8_t> read_ra2md_file(const std::string& dir, const std::string& 
     // Mod overlay: <data dir>/Mods/<name> is appended after the stock file, so its
     // entries come later and override the stock ones. Missing file = no change.
     {
-        const std::vector<uint8_t> mod = ra2assets::read_file(dir + "Mods/" + name);
+        std::vector<uint8_t> mod;
+        try { mod = ra2assets::read_file(dir + "Mods/" + name); } catch (const std::exception&) {}
         if (!mod.empty()) {
             ini_bytes.push_back('\n');
             ini_bytes.insert(ini_bytes.end(), mod.begin(), mod.end());
