@@ -77,6 +77,16 @@ public class SetupActivity extends Activity {
      */
 
         private static final int REQ_MAPS = 2;
+        private static final int REQ_MODS = 3;
+    static boolean isModFile(String name) {
+        return name != null && name.toLowerCase(Locale.ROOT).endsWith(".ini");
+    }
+    static File modsDir(Activity a) {
+        File d = new File(dataDir(a), "Mods");
+        //noinspection ResultOfMethodCallIgnored
+        d.mkdirs();
+        return d;
+    }
 
     static boolean isMapFile(String name) {
         if (name == null) return false;
@@ -105,7 +115,7 @@ public class SetupActivity extends Activity {
 
     private TextView status, title, readiness;
     private ProgressBar progress;
-    private Button importButton, mapsButton, startButton, exitButton;
+    private Button importButton, mapsButton, modsButton, startButton, exitButton;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private volatile boolean copying = false;
     // R-161: the copy thread is owned by the activity; leaving (finish /
@@ -149,6 +159,7 @@ public class SetupActivity extends Activity {
         File dir = dataDir(this);
         cleanParts(dir);
         mapsDir(this);   // Maps/ always exists, so users can also drop files in by hand
+        modsDir(this);
         // Keep the launcher reachable after a crash so reports can be shared.
         buildUi();
         refresh();
@@ -245,6 +256,10 @@ public class SetupActivity extends Activity {
         mapsButton = button("Import maps", v -> pickMaps());
         row.addView(mapsButton);
         root.addView(row);
+        LinearLayout modRow = new LinearLayout(this);
+        modsButton = button("Import mods", v -> pickMods());
+        modRow.addView(modsButton);
+        root.addView(modRow);
         LinearLayout footer = new LinearLayout(this);
         footer.addView(button("Refresh file status", v -> { if (!copying) refresh(); }));
         footer.addView(exitButton);
@@ -285,6 +300,7 @@ public class SetupActivity extends Activity {
         startButton.setEnabled(req.isEmpty() && !copying);
         importButton.setEnabled(!copying);
         mapsButton.setEnabled(!copying);
+        modsButton.setEnabled(!copying);
         exitButton.setEnabled(!copying);   // R-161: no Exit in the middle of a copy
     }
 
@@ -320,7 +336,7 @@ public class SetupActivity extends Activity {
     @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
-        if (req == REQ_MAPS) { if (res == RESULT_OK && data != null) importMapsFrom(data); return; }
+                if (req == REQ_MAPS || req == REQ_MODS) { if (res == RESULT_OK && data != null) importFilesFrom(data, req == REQ_MODS); return; }
         if (req != REQ_TREE || res != RESULT_OK || data == null || data.getData() == null) return;
         final Uri tree = data.getData();
         copying = true;
@@ -444,8 +460,16 @@ public class SetupActivity extends Activity {
         i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
         startActivityForResult(i, REQ_MAPS);
     }
+    
+    private void pickMods() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("*/*");
+        i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        startActivityForResult(i, REQ_MODS);
+    }
 
-    private void importMapsFrom(Intent data) {
+        private void importFilesFrom(Intent data, final boolean mods) {
         final List<Uri> uris = new ArrayList<>();
         if (data.getClipData() != null)
             for (int k = 0; k < data.getClipData().getItemCount(); ++k)
@@ -456,15 +480,16 @@ public class SetupActivity extends Activity {
         refresh();
         new Thread(() -> {
             ContentResolver cr = getContentResolver();
-            File maps = mapsDir(this);
+            File maps = mods ? modsDir(this) : mapsDir(this);
             int ok = 0, skipped = 0;
             for (Uri u : uris) {
                 String name = null;
                 try (Cursor c = cr.query(u, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
                     if (c != null && c.moveToFirst()) name = c.getString(0);
                 } catch (Exception ignored) { }
-                if (!isMapFile(name)) { ++skipped; continue; }
+                if (!(mods ? isModFile(name) : isMapFile(name))) { ++skipped; continue; }
                 name = name.replaceAll("[\\\\/:*?\"<>|]", "_").replaceAll("^\\.+", "");
+                if (mods) name = name.toLowerCase(Locale.ROOT);
                 File out = new File(maps, name), tmp = new File(maps, name + ".part");
                 try (InputStream in = cr.openInputStream(u); OutputStream os = new FileOutputStream(tmp)) {
                     if (in == null) throw new java.io.IOException("cannot open");
@@ -480,7 +505,7 @@ public class SetupActivity extends Activity {
                 out.delete();
                 if (tmp.renameTo(out)) ++ok; else ++skipped;
             }
-            final String msg = "Imported " + ok + " map(s)" + (skipped > 0 ? ", skipped " + skipped : "") + ".";
+               final String msg = "Imported " + ok + (mods ? " mod file(s)" : " map(s)") + (skipped > 0 ? ", skipped " + skipped : "") + ".";
             ui.post(() -> {
                 copying = false;
                 refresh();
