@@ -759,6 +759,15 @@ std::vector<uint8_t> read_ra2md_file(const std::string& dir, const std::string& 
     }
     if (ini_bytes.empty())
         throw std::runtime_error(name + " not found in ra2md.mix (top level or nested)");
+    // Mod overlay: <data dir>/Mods/<name> is appended after the stock file, so its
+    // entries come later and override the stock ones. Missing file = no change.
+    {
+        const std::vector<uint8_t> mod = ra2assets::read_file(dir + "Mods/" + name);
+        if (!mod.empty()) {
+            ini_bytes.push_back('\n');
+            ini_bytes.insert(ini_bytes.end(), mod.begin(), mod.end());
+        }
+    }
     return ini_bytes;
 }
 
