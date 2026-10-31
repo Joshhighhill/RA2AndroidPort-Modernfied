@@ -87,27 +87,30 @@ public class SetupActivity extends Activity {
         d.mkdirs();
         return d;
     }
-    static File[] modFiles(Activity a) {
-        File[] l = modsDir(a).listFiles((d, n) -> n.toLowerCase(Locale.ROOT).endsWith(".ini"));
-        return l == null ? new File[0] : l;
-        }
+    static File[] modFiles(Activity a) { return modFiles(a, false); }
 
-    private void confirmClearMods() {
-        final File[] files = modFiles(this);
+    static File[] modFiles(Activity a, boolean disabled) {
+        final String suffix = disabled ? ".ini.disabled" : ".ini";
+        File[] l = modsDir(a).listFiles((d, n) -> n.toLowerCase(Locale.ROOT).endsWith(suffix));
+        return l == null ? new File[0] : l;
+    }
+
+        private void toggleMods() {
+        final File[] on = modFiles(this, false);
+        final boolean enabling = on.length == 0;
+        final File[] files = enabling ? modFiles(this, true) : on;
         if (files.length == 0) return;
-        new android.app.AlertDialog.Builder(this)
-            .setTitle("Remove mods?")
-            .setMessage("Deletes " + files.length + " mod file(s). The game goes back to the stock rules.")
-            .setPositiveButton("Remove", (d, w) -> {
-                for (File f : files) {
-                    //noinspection ResultOfMethodCallIgnored
-                    f.delete();
-                }
-                refresh();
-                status.setText("Removed " + files.length + " mod file(s).\n\n" + status.getText());
-            })
-            .setNegativeButton("Cancel", null)
-            .show();
+        for (File f : files) {
+            final String n = f.getName();
+            final File to = new File(f.getParentFile(),
+                    enabling ? n.substring(0, n.length() - ".disabled".length()) : n + ".disabled");
+            //noinspection ResultOfMethodCallIgnored
+            to.delete();
+            //noinspection ResultOfMethodCallIgnored
+            f.renameTo(to);
+        }
+        refresh();
+        status.setText((enabling ? "Enabled " : "Disabled ") + files.length + " mod file(s).\n\n" + status.getText());
     }
 
     static boolean isMapFile(String name) {
@@ -280,7 +283,7 @@ public class SetupActivity extends Activity {
         root.addView(row);
         LinearLayout modRow = new LinearLayout(this);
         modsButton = button("Import mods", v -> pickMods());
-        clearModsButton = button("Remove mods", v -> confirmClearMods());
+        clearModsButton = button("Disable mods", v -> toggleMods());
         modRow.addView(modsButton);
         modRow.addView(clearModsButton);
         root.addView(modRow);
@@ -325,9 +328,9 @@ public class SetupActivity extends Activity {
         importButton.setEnabled(!copying);
         mapsButton.setEnabled(!copying);
         modsButton.setEnabled(!copying);
-        final int nMods = modFiles(this).length;
-        clearModsButton.setText(nMods > 0 ? "Remove mods (" + nMods + ")" : "Remove mods");
-        clearModsButton.setEnabled(!copying && nMods > 0);
+        final int nOn = modFiles(this).length, nOff = modFiles(this, true).length;
+        clearModsButton.setText(nOn > 0 ? "Disable mods (" + nOn + ")" : nOff > 0 ? "Enable mods (" + nOff + ")" : "No mods");
+        clearModsButton.setEnabled(!copying && (nOn > 0 || nOff > 0));
         exitButton.setEnabled(!copying);   // R-161: no Exit in the middle of a copy
     }
 
@@ -530,7 +533,10 @@ public class SetupActivity extends Activity {
                 }
                 //noinspection ResultOfMethodCallIgnored
                 out.delete();
-                if (tmp.renameTo(out)) ++ok; else ++skipped;
+                                if (tmp.renameTo(out)) {
+                    ++ok;
+                    if (mods) new File(maps, name + ".disabled").delete();   // a fresh import replaces an old disabled copy
+                } else ++skipped;
             }
                final String msg = "Imported " + ok + (mods ? " mod file(s)" : " map(s)") + (skipped > 0 ? ", skipped " + skipped : "") + ".";
             ui.post(() -> {
