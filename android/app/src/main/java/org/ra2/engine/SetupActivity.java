@@ -88,6 +88,24 @@ public class SetupActivity extends Activity {
         return d;
     }
 
+    private void confirmClearMods() {
+        final File[] files = modFiles(this);
+        if (files.length == 0) return;
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Remove mods?")
+            .setMessage("Deletes " + files.length + " mod file(s). The game goes back to the stock rules.")
+            .setPositiveButton("Remove", (d, w) -> {
+                for (File f : files) {
+                    //noinspection ResultOfMethodCallIgnored
+                    f.delete();
+                }
+                refresh();
+                status.setText("Removed " + files.length + " mod file(s).\n\n" + status.getText());
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
+    }
+
     static boolean isMapFile(String name) {
         if (name == null) return false;
         String l = name.toLowerCase(Locale.ROOT);
@@ -115,7 +133,7 @@ public class SetupActivity extends Activity {
 
     private TextView status, title, readiness;
     private ProgressBar progress;
-    private Button importButton, mapsButton, modsButton, startButton, exitButton;
+    private Button importButton, mapsButton, modsButton, clearModsButton, startButton, exitButton;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private volatile boolean copying = false;
     // R-161: the copy thread is owned by the activity; leaving (finish /
@@ -258,7 +276,9 @@ public class SetupActivity extends Activity {
         root.addView(row);
         LinearLayout modRow = new LinearLayout(this);
         modsButton = button("Import mods", v -> pickMods());
+        clearModsButton = button("Remove mods", v -> confirmClearMods());
         modRow.addView(modsButton);
+        modRow.addView(clearModsButton);
         root.addView(modRow);
         LinearLayout footer = new LinearLayout(this);
         footer.addView(button("Refresh file status", v -> { if (!copying) refresh(); }));
@@ -301,6 +321,9 @@ public class SetupActivity extends Activity {
         importButton.setEnabled(!copying);
         mapsButton.setEnabled(!copying);
         modsButton.setEnabled(!copying);
+        final int nMods = modFiles(this).length;
+        clearModsButton.setText(nMods > 0 ? "Remove mods (" + nMods + ")" : "Remove mods");
+        clearModsButton.setEnabled(!copying && nMods > 0);
         exitButton.setEnabled(!copying);   // R-161: no Exit in the middle of a copy
     }
 
