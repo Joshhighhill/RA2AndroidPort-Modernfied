@@ -3,6 +3,10 @@
 
 #include <cctype>
 #include <cstdio>
+#include <algorithm>
+#include <filesystem>
+#include <system_error>
+#include "ra2assets/fileio.hpp"
 
 namespace ra2assets {
 
@@ -124,12 +128,48 @@ AssetFS::AssetFS(const std::string& install_dir, const TheaterChain* chain)
         } catch (...) {}
     }
     if (yr_begin_ == static_cast<std::size_t>(-1)) yr_begin_ = mixes_.size();
+    // Mod overlay: each enabled Mods/<name>/ folder (alphabetical, ".disabled" = off).
+    // Later mods win: their loose files overwrite earlier ones, their mixes are searched first.
+    {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        std::vector<std::string> mods;
+        for (fs::directory_iterator it(install_dir + "Mods", ec), end; !ec && it != end; it.increment(ec)) {
+            if (!it->is_directory(ec)) continue;
+            const std::string n = it->path().filename().string();
+            if (n.size() > 9 && n.compare(n.size() - 9, 9, ".disabled") == 0) continue;
+            mods.push_back(n);
+        }
+        std::sort(mods.begin(), mods.end());
+        for (const std::string& m : mods) {
+            ec.clear();
+            std::vector<std::string> mixes;
+            for (fs::directory_iterator it(install_dir + "Mods/" + m, ec), end; !ec && it != end; it.increment(ec)) {
+                if (!it->is_regular_file(ec)) continue;
+                const std::string fn = lower(it->path().filename().string());
+                if (fn.size() > 4 && fn.compare(fn.size() - 4, 4, ".mix") == 0) mixes.push_back(it->path().string());
+                else loose_[fn] = it->path().string();
+            }
+            std::sort(mixes.begin(), mixes.end());
+            for (const std::string& p : mixes) {
+                try { mod_mixes_.insert(mod_mixes_.begin(), std::make_shared<MixFile>(MixFile::open_path(p))); }
+                catch (...) {}
+            }
+        }
+    }
 }
 
 const MixEntry* AssetFS::find(const std::string& name, const MixFile** owner, std::string* label,
                               bool ra2_only, bool prefer_yr) const {
     if (name.empty()) return nullptr;
     const uint32_t id = mix_id(name);
+    for (const auto& mm : mod_mixes_)
+        if (const MixEntry* e = mm->find(id)) {
+            if (owner) *owner = mm.get();
+            if (label) *label = "mod";
+            trace_asset("resolve", name, "mod", e->size);
+            return e;
+        }
     const std::size_t end = ra2_only ? yr_begin_ : mixes_.size();
     // Opt-in YR override: retain relative archive order in each group and
     // fall back to classic assets when the expansion has no replacement.
@@ -148,6 +188,14 @@ const MixEntry* AssetFS::find(const std::string& name, const MixFile** owner, st
 }
 
 bool AssetFS::read(const std::string& name, std::vector<uint8_t>& out) const {
+    if (read_loose(name, out)) return true;
+      bool AssetFS::read_loose(const std::string& name, std::vector<uint8_t>& out) const {
+    if (loose_.empty()) return false;
+    const auto it = loose_.find(lower(name));
+    if (it == loose_.end()) return false;
+    try { out = read_file(it->second); } catch (...) { return false; }
+    return !out.empty();
+      }
     const MixFile* m = nullptr;
     const MixEntry* e = find(name, &m);
     if (!e) return false;
@@ -185,6 +233,8 @@ std::string find_art(const AssetFS& fs, const std::vector<std::string>& bases,
     for (const std::string& ext : exts)
         for (const std::string& b : bases) {
             const std::string f = b + ext;
+            std::vector<uint8_t> loose;
+            if (fs.read_loose(f, loose)) { if (data) *data = std::move(loose); return f; }
             const MixFile* m = nullptr;
             if (const MixEntry* e = fs.find(f, &m, nullptr, ra2_only)) {
                 if (data) *data = m->read(*e);
