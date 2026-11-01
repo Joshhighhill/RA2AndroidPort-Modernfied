@@ -758,13 +758,24 @@ std::vector<uint8_t> read_ra2md_file(const std::string& dir, const std::string& 
         }
     }
     if (ini_bytes.empty())
-        throw std::runtime_error(name + " not found in ra2md.mix (top level or nested)");
-    // Mod overlay: <data dir>/Mods/<name> is appended after the stock file, so its
-    // entries come later and override the stock ones. Missing file = no change.
+        throw std::runtime_error(name + " not found in ra2md.mix (top level or nested)")
+    // Mod overlay: each enabled folder under <dir>/Mods/ (alphabetical; names ending
+    // ".disabled" are off) appends its copy of <name>, so later mods win.
     {
-        std::vector<uint8_t> mod;
-        try { mod = ra2assets::read_file(dir + "Mods/" + name); } catch (const std::exception&) {}
-        if (!mod.empty()) {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        std::vector<std::string> mods;
+        for (fs::directory_iterator it(dir + "Mods", ec), end; !ec && it != end; it.increment(ec)) {
+            if (!it->is_directory(ec)) continue;
+            const std::string n = it->path().filename().string();
+            if (n.size() > 9 && n.compare(n.size() - 9, 9, ".disabled") == 0) continue;
+            mods.push_back(n);
+        }
+        std::sort(mods.begin(), mods.end());
+        for (const std::string& m : mods) {
+            std::vector<uint8_t> mod;
+            try { mod = ra2assets::read_file(dir + "Mods/" + m + "/" + name); } catch (const std::exception&) {}
+            if (mod.empty()) continue;
             ini_bytes.push_back('\n');
             ini_bytes.insert(ini_bytes.end(), mod.begin(), mod.end());
         }
