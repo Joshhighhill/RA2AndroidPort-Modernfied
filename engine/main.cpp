@@ -9536,6 +9536,7 @@ private:
                     // at any time (the launcher only offers it when a
                     // required file is missing).
                     btn(2, "Game Files", true, ACT_IMPORT, PAGE_OPTIONS),
+                    btn(4, "Mods", true, ACT_IMPORT, PAGE_OPTIONS),
 #endif
                     // W6-06-16: version, licence, third-party notices, disclaimer.
                     btn(3, "About",     true,  ACT_ABOUT, PAGE_OPTIONS),
@@ -9593,6 +9594,7 @@ private:
                               : page_ == PAGE_OPTIONS ? "STT:MainOptButtonBack" : "STT:OptionsButtonBack", "");
             if (b.label == "Network" && page_ == PAGE_OPTIONS) return gf_csf("STT:MainOptButtonNetwork", "");
             if (b.label == "Game Files") return "Add or replace the game files (the game restarts)";
+            if (b.label == "Mods") return "Import, enable or disable mods (the game restarts)";
             if (b.label == "About") return "Version, licence and third-party notices";
             const char* k = stt_key(b.label);
             return k ? gf_csf(k, "") : std::string();
