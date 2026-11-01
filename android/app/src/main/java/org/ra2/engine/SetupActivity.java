@@ -30,6 +30,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -87,30 +88,95 @@ public class SetupActivity extends Activity {
         d.mkdirs();
         return d;
     }
-    static File[] modFiles(Activity a) { return modFiles(a, false); }
-
-    static File[] modFiles(Activity a, boolean disabled) {
-        final String suffix = disabled ? ".ini.disabled" : ".ini";
-        File[] l = modsDir(a).listFiles((d, n) -> n.toLowerCase(Locale.ROOT).endsWith(suffix));
-        return l == null ? new File[0] : l;
+    static File[] modFolders(Activity a) {
+        File[] l = modsDir(a).listFiles(File::isDirectory);
+        if (l == null) return new File[0];
+        Arrays.sort(l);
+        return l;
     }
 
-        private void toggleMods() {
-        final File[] on = modFiles(this, false);
-        final boolean enabling = on.length == 0;
-        final File[] files = enabling ? modFiles(this, true) : on;
-        if (files.length == 0) return;
-        for (File f : files) {
-            final String n = f.getName();
-            final File to = new File(f.getParentFile(),
-                    enabling ? n.substring(0, n.length() - ".disabled".length()) : n + ".disabled");
-            //noinspection ResultOfMethodCallIgnored
-            to.delete();
-            //noinspection ResultOfMethodCallIgnored
-            f.renameTo(to);
+    private String displayName(Uri u) {
+        try (Cursor c = getContentResolver().query(u, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (c != null && c.moveToFirst()) return c.getString(0);
+        } catch (Exception ignored) { }
+        return null;
+    }
+
+    private void showModManager() {
+        final File[] dirs = modFolders(this);
+        if (dirs.length == 0) return;
+        final String[] labels = new String[dirs.length];
+        final boolean[] on = new boolean[dirs.length], was = new boolean[dirs.length];
+        for (int i = 0; i < dirs.length; ++i) {
+            final String n = dirs[i].getName();
+            was[i] = on[i] = !n.endsWith(".disabled");
+            labels[i] = was[i] ? n : n.substring(0, n.length() - ".disabled".length());
         }
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Mods (checked = on)")
+            .setMultiChoiceItems(labels, on, (d, i, checked) -> on[i] = checked)
+            .setPositiveButton("Apply", (d, w) -> {
+                for (int i = 0; i < dirs.length; ++i) {
+                    if (on[i] == was[i]) continue;
+                    File to = new File(dirs[i].getParentFile(), on[i] ? labels[i] : labels[i] + ".disabled");
+                    if (!to.exists()) //noinspection ResultOfMethodCallIgnored
+                        dirs[i].renameTo(to);
+                }
+                refresh();
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
+    }
+
+    private void askModName(Intent data) {
+        final List<Uri> uris = new ArrayList<>();
+        if (data.getClipData() != null)
+            for (int k = 0; k < data.getClipData().getItemCount(); ++k)
+                uris.add(data.getClipData().getItemAt(k).getUri());
+        else if (data.getData() != null) uris.add(data.getData());
+        if (uris.isEmpty()) return;
+        final android.widget.EditText box = new android.widget.EditText(this);
+        box.setText("my-mod");
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Name this mod")
+            .setView(box)
+            .setPositiveButton("Import", (d, w) -> importIni(uris, box.getText().toString()))
+            .setNegativeButton("Cancel", null)
+            .show();
+    }
+
+    private void importIni(final List<Uri> uris, String rawName) {
+        final String mod = rawName.trim().replaceAll("[^A-Za-z0-9 _.-]", "_").replaceAll("^\\.+", "");
+        if (mod.isEmpty()) return;
+        copying = true;
         refresh();
-        status.setText((enabling ? "Enabled " : "Disabled ") + files.length + " mod file(s).\n\n" + status.getText());
+        new Thread(() -> {
+            ContentResolver cr = getContentResolver();
+            File dir = new File(modsDir(this), mod);
+            //noinspection ResultOfMethodCallIgnored
+            dir.mkdirs();
+            int ok = 0, skipped = 0;
+            for (Uri u : uris) {
+                String name = displayName(u);
+                if (!isModFile(name)) { ++skipped; continue; }
+                name = name.toLowerCase(Locale.ROOT).replaceAll("[\\\\/:*?\"<>|]", "_");
+                File out = new File(dir, name), tmp = new File(dir, name + ".part");
+                try (InputStream in = cr.openInputStream(u); OutputStream os = new FileOutputStream(tmp)) {
+                    if (in == null) throw new java.io.IOException("cannot open");
+                    byte[] buf = new byte[64 * 1024];
+                    int n;
+                    while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
+                } catch (Exception ex) {
+                    //noinspection ResultOfMethodCallIgnored
+                    tmp.delete(); ++skipped; continue;
+                }
+                //noinspection ResultOfMethodCallIgnored
+                out.delete();
+                if (tmp.renameTo(out)) ++ok; else ++skipped;
+            }
+            final String msg = "Mod \"" + mod + "\": " + ok + " file(s)" + (skipped > 0 ? ", skipped " + skipped : "") + ".";
+            ui.post(() -> { copying = false; refresh(); status.setText(msg + "\n\n" + status.getText()); });
+        }, "ra2-mod-import").start();
     }
 
     static boolean isMapFile(String name) {
@@ -283,7 +349,7 @@ public class SetupActivity extends Activity {
         root.addView(row);
         LinearLayout modRow = new LinearLayout(this);
         modsButton = button("Import mods", v -> pickMods());
-        clearModsButton = button("Disable mods", v -> toggleMods());
+        clearModsButton = button("Manage mods", v -> showModManager());
         modRow.addView(modsButton);
         modRow.addView(clearModsButton);
         root.addView(modRow);
@@ -328,9 +394,11 @@ public class SetupActivity extends Activity {
         importButton.setEnabled(!copying);
         mapsButton.setEnabled(!copying);
         modsButton.setEnabled(!copying);
-        final int nOn = modFiles(this).length, nOff = modFiles(this, true).length;
-        clearModsButton.setText(nOn > 0 ? "Disable mods (" + nOn + ")" : nOff > 0 ? "Enable mods (" + nOff + ")" : "No mods");
-        clearModsButton.setEnabled(!copying && (nOn > 0 || nOff > 0));
+        final File[] mf = modFolders(this);
+        int nOn = 0;
+        for (File f : mf) if (!f.getName().endsWith(".disabled")) ++nOn;
+        clearModsButton.setText(mf.length > 0 ? "Manage mods (" + nOn + "/" + mf.length + ")" : "Manage mods");
+        clearModsButton.setEnabled(!copying && mf.length > 0);
         exitButton.setEnabled(!copying);   // R-161: no Exit in the middle of a copy
     }
 
@@ -366,7 +434,8 @@ public class SetupActivity extends Activity {
     @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
-                if (req == REQ_MAPS || req == REQ_MODS) { if (res == RESULT_OK && data != null) importFilesFrom(data, req == REQ_MODS); return; }
+        if (req == REQ_MAPS) { if (res == RESULT_OK && data != null) importFilesFrom(data, false); return; }
+        if (req == REQ_MODS) { if (res == RESULT_OK && data != null) askModName(data); return; }
         if (req != REQ_TREE || res != RESULT_OK || data == null || data.getData() == null) return;
         final Uri tree = data.getData();
         copying = true;
