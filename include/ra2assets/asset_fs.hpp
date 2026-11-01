@@ -22,6 +22,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 namespace ra2assets {
 
@@ -59,15 +60,18 @@ public:
     bool read(const std::string& name, std::vector<uint8_t>& out) const;
     // The archive label holding `name`, or "" when absent (diagnostics).
     std::string where(const std::string& name) const;
+    // Mod overlay: a loose file named `name` in an enabled Mods/<name>/ folder.
+    bool read_loose(const std::string& name, std::vector<uint8_t>& out) const;
 
     const TheaterChain& chain() const { return *chain_; }
     // Opened archives, in search order.
     const std::vector<std::pair<std::string, std::shared_ptr<MixFile>>>& mixes() const { return mixes_; }
-
 private:
     const TheaterChain* chain_ = nullptr;
     std::vector<std::pair<std::string, std::shared_ptr<MixFile>>> mixes_;
     std::size_t yr_begin_ = 0;   // index of the first YR (ra2md.mix) archive
+    std::vector<std::shared_ptr<MixFile>> mod_mixes_;                // mod .mix files, highest priority first
+    std::unordered_map<std::string, std::string> loose_;            // lower-case file name -> path inside a mod folder
 };
 
 // The candidate BASE NAMES (no extension, lower case) the original tries for
