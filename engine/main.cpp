@@ -758,7 +758,7 @@ std::vector<uint8_t> read_ra2md_file(const std::string& dir, const std::string& 
         }
     }
     if (ini_bytes.empty())
-        throw std::runtime_error(name + " not found in ra2md.mix (top level or nested)")
+        throw std::runtime_error(name + " not found in ra2md.mix (top level or nested)");
     // Mod overlay: each enabled folder under <dir>/Mods/ (alphabetical; names ending
     // ".disabled" are off) appends its copy of <name>, so later mods win.
     {
