@@ -189,18 +189,19 @@ const MixEntry* AssetFS::find(const std::string& name, const MixFile** owner, st
 
 bool AssetFS::read(const std::string& name, std::vector<uint8_t>& out) const {
     if (read_loose(name, out)) return true;
-      bool AssetFS::read_loose(const std::string& name, std::vector<uint8_t>& out) const {
-    if (loose_.empty()) return false;
-    const auto it = loose_.find(lower(name));
-    if (it == loose_.end()) return false;
-    try { out = read_file(it->second); } catch (...) { return false; }
-    return !out.empty();
-      }
     const MixFile* m = nullptr;
     const MixEntry* e = find(name, &m);
     if (!e) return false;
     out = m->read(*e);
     return true;
+}
+
+bool AssetFS::read_loose(const std::string& name, std::vector<uint8_t>& out) const {
+    if (loose_.empty()) return false;
+    const auto it = loose_.find(lower(name));
+    if (it == loose_.end()) return false;
+    try { out = read_file(it->second); } catch (...) { return false; }
+    return !out.empty();
 }
 
 std::string AssetFS::where(const std::string& name) const {
