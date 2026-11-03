@@ -29,6 +29,24 @@ std::string lower(std::string s) {
 // then the YR tail [RE-FALLBACK], in gamemd's relative order (FUN_005301a0 +
 // its Init_Theater "%sMD.MIX"): md patches, CACHEMD, LOCALMD, CONQMD, GENERMD,
 // ISOGENMD, CAMEOMD, then the theater md overlays.
+
+// Builds a plain (unencrypted) mix image from (id, bytes) pairs.
+std::vector<uint8_t> build_plain_mix(std::vector<std::pair<uint32_t, std::vector<uint8_t>>>& files) {
+    std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::vector<uint8_t> out;
+    auto p32 = [&](uint32_t v) { for (int i = 0; i < 4; ++i) out.push_back(static_cast<uint8_t>(v >> (8 * i))); };
+    auto p16 = [&](uint16_t v) { out.push_back(static_cast<uint8_t>(v & 0xFF)); out.push_back(static_cast<uint8_t>(v >> 8)); };
+    uint32_t body = 0;
+    for (const auto& f : files) body += static_cast<uint32_t>(f.second.size());
+    p32(0);                                   // flags: no encryption, no checksum
+    p16(static_cast<uint16_t>(files.size()));
+    p32(body);
+    uint32_t off = 0;
+    for (const auto& f : files) { p32(f.first); p32(off); p32(static_cast<uint32_t>(f.second.size())); off += static_cast<uint32_t>(f.second.size()); }
+    for (const auto& f : files) out.insert(out.end(), f.second.begin(), f.second.end());
+    return out;
+}
+
 std::vector<AssetMixSpec> asset_search_order(const TheaterChain* chain,
                                              const std::vector<std::string>& patch_tops) {
     const TheaterChain* c = chain ? chain : theater_chain("TEMPERATE");
@@ -144,17 +162,31 @@ AssetFS::AssetFS(const std::string& install_dir, const TheaterChain* chain)
         for (const std::string& m : mods) {
             ec.clear();
             std::vector<std::string> mixes;
+            std::vector<std::pair<uint32_t, std::vector<uint8_t>>> blobs;
             for (fs::directory_iterator it(install_dir + "Mods/" + m, ec), end; !ec && it != end; it.increment(ec)) {
                 if (!it->is_regular_file(ec)) continue;
                 const std::string fn = lower(it->path().filename().string());
                 if (fn.size() > 4 && fn.compare(fn.size() - 4, 4, ".mix") == 0) mixes.push_back(it->path().string());
-                else loose_[fn] = it->path().string();
+                        else {
+                    loose_[fn] = it->path().string();
+                    const bool text = fn.size() > 4 && (fn.compare(fn.size() - 4, 4, ".ini") == 0 || fn.compare(fn.size() - 4, 4, ".txt") == 0);
+                    if (!text) {
+                        try {
+                            std::vector<uint8_t> b = read_file(it->path().string());
+                            if (!b.empty() && b.size() < (64u << 20)) blobs.emplace_back(mix_id(fn), std::move(b));
+                        } catch (...) {}
+                    }
+                }
             }
             std::sort(mixes.begin(), mixes.end());
             for (const std::string& p : mixes) {
                 try { mod_mixes_.insert(mod_mixes_.begin(), std::make_shared<MixFile>(MixFile::open_path(p))); }
                 catch (...) {}
             }
+            if (!blobs.empty()) {
+                try { mod_mixes_.insert(mod_mixes_.begin(), std::make_shared<MixFile>(MixFile::open(build_plain_mix(blobs)))); }
+                catch (...) {}
+           }
         }
     }
 }
