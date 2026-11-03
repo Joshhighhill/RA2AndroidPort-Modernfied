@@ -2296,7 +2296,23 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
             // Cameo SHP (guarded; absence only downgrades the sidebar icon).
             ra2assets::ShpFile cshp;
             bool have_cameo = false;
-            if (cameo_mix) {
+                        {
+                std::string cn = d.cameo;
+                for (char& ch : cn) ch = (char)std::tolower((unsigned char)ch);
+                std::vector<uint8_t> modbytes;
+                if (asset_fs().read_loose(cn + ".shp", modbytes)) {
+                    try { cshp = ShpFile::load(modbytes); have_cameo = true; } catch (const std::exception&) {}
+                } else if (const MixEntry* mc = asset_fs().find(cn + ".shp", nullptr, nullptr)) {
+                    // only trust the mod mix list here; stock cameos stay on the old path below
+                    std::string lbl; const MixFile* own = nullptr;
+                    const MixEntry* hit = asset_fs().find(cn + ".shp", &own, &lbl);
+                    if (hit && lbl == "mod") {
+                        try { cshp = ShpFile::load(own->read(*hit)); have_cameo = true; } catch (const std::exception&) {}
+                    }
+                    (void)mc;
+                }
+            }
+            if (!have_cameo && cameo_mix) {
                 std::string cn = d.cameo;
                 for (char& ch : cn) ch = (char)std::tolower((unsigned char)ch);
                 if (const MixEntry* ce = cameo_mix->find(cn + ".shp")) {
@@ -2304,7 +2320,7 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
                     catch (const std::exception&) { have_cameo = false; }
                 }
             }
-
+            
             if (!have_cameo) have_cameo = asset_cameo_fallback(d.cameo, cshp);
 
             if (e.vehicle && !art.voxel(image) &&
