@@ -773,6 +773,26 @@ std::vector<uint8_t> read_ra2md_file(const std::string& dir, const std::string& 
         }
         std::sort(mods.begin(), mods.end());
         for (const std::string& m : mods) {
+            {
+                std::error_code ec2;
+                std::vector<std::string> mixes;
+                for (fs::directory_iterator it2(dir + "Mods/" + m, ec2), end2; !ec2 && it2 != end2; it2.increment(ec2)) {
+                    if (!it2->is_regular_file(ec2)) continue;
+                    std::string fn = it2->path().filename().string();
+                    for (char& c : fn) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    if (fn.size() > 4 && fn.compare(fn.size() - 4, 4, ".mix") == 0) mixes.push_back(it2->path().string());
+                }
+                std::sort(mixes.begin(), mixes.end());
+                for (const std::string& mp : mixes) {
+                    try {
+                        MixFile mm = MixFile::open_path(mp);
+                        if (const MixEntry* me = mm.find(mix_id(name))) {
+                            const std::vector<uint8_t> b = mm.read(*me);
+                            if (!b.empty()) { ini_bytes.push_back('\n'); ini_bytes.insert(ini_bytes.end(), b.begin(), b.end()); }
+                        }
+                    } catch (const std::exception&) {}
+                }
+}
             std::vector<uint8_t> mod;
             try { mod = ra2assets::read_file(dir + "Mods/" + m + "/" + name); } catch (const std::exception&) {}
             if (mod.empty()) continue;
