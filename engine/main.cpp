@@ -254,6 +254,20 @@ inline const ra2assets::TheaterChain& art_chain() {
 }
 #include "asset_search.inc"   // W3-FIX-A: one MIX search list per theater
 
+// Mod overlay: true when an enabled Mods/<name>/ folder supplies `file` (loose or inside a mod .mix).
+inline bool mod_asset_bytes(const std::string& file, std::vector<uint8_t>& out) {
+    const ra2assets::MixFile* own = nullptr;
+    std::string lbl;
+    if (const ra2assets::MixEntry* e = asset_fs().find(file, &own, &lbl))
+        if (lbl == "mod") { out = own->read(*e); return !out.empty(); }
+    return false;
+}
+inline bool mod_shp(const std::string& file, ra2assets::ShpFile& out) {
+    std::vector<uint8_t> b;
+    if (!mod_asset_bytes(file, b)) return false;
+    try { out = ra2assets::ShpFile::load(b); return true; } catch (const std::exception&) { return false; }
+}
+
 // Which map load_assets should read [RE: maps.md §7 rule 2]. The DEFAULT
 // reproduces today's hardcoded selection EXACTLY -- mapsmd03.mix entry
 // 0x133a0cb2, which the hunt identified as the campaign mission sov07tmd.map --
@@ -2295,33 +2309,16 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
 
             // Cameo SHP (guarded; absence only downgrades the sidebar icon).
             ra2assets::ShpFile cshp;
-            bool have_cameo = false;
                         {
                 std::string cn = d.cameo;
                 for (char& ch : cn) ch = (char)std::tolower((unsigned char)ch);
-                std::vector<uint8_t> modbytes;
-                if (asset_fs().read_loose(cn + ".shp", modbytes)) {
-                    try { cshp = ShpFile::load(modbytes); have_cameo = true; } catch (const std::exception&) {}
-                } else if (const MixEntry* mc = asset_fs().find(cn + ".shp", nullptr, nullptr)) {
-                    // only trust the mod mix list here; stock cameos stay on the old path below
-                    std::string lbl; const MixFile* own = nullptr;
-                    const MixEntry* hit = asset_fs().find(cn + ".shp", &own, &lbl);
-                    if (hit && lbl == "mod") {
-                        try { cshp = ShpFile::load(own->read(*hit)); have_cameo = true; } catch (const std::exception&) {}
+                have_cameo = mod_shp(cn + ".shp", cshp);
+                if (!have_cameo && cameo_mix)
+                    if (const MixEntry* ce = cameo_mix->find(cn + ".shp")) {
+                        try { cshp = ShpFile::load(cameo_mix->read(*ce)); have_cameo = true; }
+                        catch (const std::exception&) {}
                     }
-                    (void)mc;
-                }
             }
-            if (!have_cameo && cameo_mix) {
-                std::string cn = d.cameo;
-                for (char& ch : cn) ch = (char)std::tolower((unsigned char)ch);
-                if (const MixEntry* ce = cameo_mix->find(cn + ".shp")) {
-                    try { cshp = ShpFile::load(cameo_mix->read(*ce)); have_cameo = true; }
-                    catch (const std::exception&) { have_cameo = false; }
-                }
-            }
-            
-            if (!have_cameo) have_cameo = asset_cameo_fallback(d.cameo, cshp);
 
             if (e.vehicle && !art.voxel(image) &&
                 to_lower(rules.section_string(e.id, "Locomotor", "")).find("2bea74e1") != std::string::npos) {
@@ -3046,6 +3043,8 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
             std::cerr << "[building] " << g_sidebar_mix << "/sidebar.pal missing; chrome uses cameo.pal\n";
         }
         auto load_sb = [&](const char* fn) -> ShpFile {
+            ShpFile modshp;
+            if (mod_shp(std::string(fn), modshp)) return modshp;
             const MixEntry* e = sb.find(std::string(fn));
             if (!e) throw std::runtime_error(std::string("sidebar SHP missing: ") + fn);
             return ShpFile::load(sb.read(*e));
