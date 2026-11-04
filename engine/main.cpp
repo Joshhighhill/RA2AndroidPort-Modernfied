@@ -901,8 +901,6 @@ ra2engine::MixerSound resolve_sound_event(AudioSystem& audio, const ra2assets::S
                                           const std::vector<uint8_t>& bag, const std::string& key) {
     const ra2assets::SoundEntry e = sounds.entry(key);
     ra2engine::MixerSound ms;
-    for (const std::string& variant : e.sounds) {
-        std::vector<uint8_t> wav;
         for (const std::string& variant : e.sounds) {
         const ra2assets::BagClip* clip = idx.find(variant);
         if (!clip) {
