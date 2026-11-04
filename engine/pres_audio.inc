@@ -286,6 +286,13 @@ public:
         ra2engine::MixerSound ms;
         for (const std::string& v : e.sounds) {
             bool found = false;
+            {
+                std::vector<int16_t> modpcm;
+                if (mod_wav_pcm(v, modpcm)) {
+                    ms.variants.push_back(audio_->bank.add(std::move(modpcm)));
+                    continue;   // a mod sample wins over the stock bags
+                }
+            }
             for (const Bag& b : bags_) {
                 const ra2assets::BagClip* c = b.idx.find(v);
                 if (!c || b.bag.empty()) continue;
@@ -670,7 +677,9 @@ private:
         auto c = eva_clips_.find(clip);
         if (c == eva_clips_.end()) {
             std::vector<int16_t> pcm;
+            mod_wav_pcm(pres_lower(clip), pcm);   // a mod clip wins over the stock archives
             for (const auto& m : wav_mixes_) {
+                if (!pcm.empty()) break;
                 const MixEntry* e = m->find(pres_lower(clip) + ".wav");
                 if (!e) continue;
                 try {
