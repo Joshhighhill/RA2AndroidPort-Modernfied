@@ -903,14 +903,7 @@ ra2engine::MixerSound resolve_sound_event(AudioSystem& audio, const ra2assets::S
     ra2engine::MixerSound ms;
     for (const std::string& variant : e.sounds) {
         std::vector<uint8_t> wav;
-        if (mod_asset_bytes(variant + ".wav", wav)) {
-            try {
-                ra2assets::WavInfo winfo;
-                std::vector<int16_t> pcm = pres_to_sink(ra2assets::load_wav_ima(wav.data(), wav.size(), winfo),
-                                                        winfo.sample_rate, winfo.channels);
-                if (!pcm.empty()) { ms.variants.push_back(audio.bank.add(std::move(pcm))); continue; }
-            } catch (const std::exception&) {}
-        }
+        for (const std::string& variant : e.sounds) {
         const ra2assets::BagClip* clip = idx.find(variant);
         if (!clip) {
             std::cerr << "[audio] missing clip " << variant << " (key " << key << ")\n";
