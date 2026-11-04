@@ -902,6 +902,15 @@ ra2engine::MixerSound resolve_sound_event(AudioSystem& audio, const ra2assets::S
     const ra2assets::SoundEntry e = sounds.entry(key);
     ra2engine::MixerSound ms;
     for (const std::string& variant : e.sounds) {
+        std::vector<uint8_t> wav;
+        if (mod_asset_bytes(variant + ".wav", wav)) {
+            try {
+                ra2assets::WavInfo winfo;
+                std::vector<int16_t> pcm = pres_to_sink(ra2assets::load_wav_ima(wav.data(), wav.size(), winfo),
+                                                        winfo.sample_rate, winfo.channels);
+                if (!pcm.empty()) { ms.variants.push_back(audio.bank.add(std::move(pcm))); continue; }
+            } catch (const std::exception&) {}
+        }
         const ra2assets::BagClip* clip = idx.find(variant);
         if (!clip) {
             std::cerr << "[audio] missing clip " << variant << " (key " << key << ")\n";
@@ -2939,15 +2948,20 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
                 } catch (const std::exception&) { slot.has_buildup = false; }
             }
             if (!d.cameo.empty()) {
-                try {
-                    MixFile cameo_mix = language.open_nested("cameo.mix");
+                                {
                     std::string cn = d.cameo;
                     for (char& ch : cn) ch = (char)std::tolower((unsigned char)ch);
-                    if (const MixEntry* ce = cameo_mix.find(cn + ".shp")) {
-                        slot.cameo = ShpFile::load(cameo_mix.read(*ce));
-                        slot.has_cameo = true;
+                    slot.has_cameo = mod_shp(cn + ".shp", slot.cameo);
+                    if (!slot.has_cameo) {
+                        try {
+                            MixFile cameo_mix = language.open_nested("cameo.mix");
+                            if (const MixEntry* ce = cameo_mix.find(cn + ".shp")) {
+                                slot.cameo = ShpFile::load(cameo_mix.read(*ce));
+                                slot.has_cameo = true;
+                            }
+                        } catch (const std::exception&) { slot.has_cameo = false; }
                     }
-                } catch (const std::exception&) { slot.has_cameo = false; }
+                }
                 if (!slot.has_cameo) slot.has_cameo = asset_cameo_fallback(d.cameo, slot.cameo);
             }
         } catch (const std::exception& ex) {
@@ -3119,11 +3133,15 @@ BuildingAssets load_building_assets(const ra2assets::MixFile& ra2,
             {ra2engine::SuperweaponType::ChronoWarp, "chroicon"},
             {ra2engine::SuperweaponType::ParaDrop, "paraicon"},
             {ra2engine::SuperweaponType::AmerParaDrop, "aparicon"}};
-        for (const auto& kv : kSwIcons)
-            if (const MixEntry* ce = cameo_mix.find(std::string(kv.second) + ".shp")) {
-                ra2assets::ShpFile shp = ShpFile::load(cameo_mix.read(*ce));
+       for (const auto& kv : kSwIcons) {
+            ra2assets::ShpFile shp;
+            if (mod_shp(std::string(kv.second) + ".shp", shp) && shp.count() > 0) {
+                ba.sw_cameos[static_cast<int>(kv.first)] = std::move(shp);
+            } else if (const MixEntry* ce = cameo_mix.find(std::string(kv.second) + ".shp")) {
+                shp = ShpFile::load(cameo_mix.read(*ce));
                 if (shp.count() > 0) ba.sw_cameos[static_cast<int>(kv.first)] = std::move(shp);
             }
+        }
     } catch (const std::exception&) {}
     std::cerr << "[sw] SW cameos loaded=" << ba.sw_cameos.size() << "\n";
     try {
