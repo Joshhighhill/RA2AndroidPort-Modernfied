@@ -268,6 +268,22 @@ inline bool mod_shp(const std::string& file, ra2assets::ShpFile& out) {
     try { out = ra2assets::ShpFile::load(b); return true; } catch (const std::exception&) { return false; }
 }
 
+// defined later in pres_audio.inc (same anonymous namespace)
+inline std::vector<int16_t> pres_to_sink(std::vector<int16_t> pcm, int rate, int channels);
+// A mod's <name>.wav (loose or inside a mod .mix), decoded to the 22050 Hz mono sink format.
+inline bool mod_wav_pcm(const std::string& name, std::vector<int16_t>& pcm) {
+    std::vector<uint8_t> b;
+    if (!mod_asset_bytes(name + ".wav", b)) return false;
+    try {
+        ra2assets::WavInfo info;
+        std::vector<int16_t> p = pres_to_sink(ra2assets::load_wav_ima(b.data(), b.size(), info),
+                                              info.sample_rate, info.channels);
+        if (p.empty()) return false;
+        pcm = std::move(p);
+        return true;
+    } catch (const std::exception&) { return false; }
+}
+
 // Which map load_assets should read [RE: maps.md §7 rule 2]. The DEFAULT
 // reproduces today's hardcoded selection EXACTLY -- mapsmd03.mix entry
 // 0x133a0cb2, which the hunt identified as the campaign mission sov07tmd.map --
@@ -901,7 +917,9 @@ ra2engine::MixerSound resolve_sound_event(AudioSystem& audio, const ra2assets::S
                                           const std::vector<uint8_t>& bag, const std::string& key) {
     const ra2assets::SoundEntry e = sounds.entry(key);
     ra2engine::MixerSound ms;
-        for (const std::string& variant : e.sounds) {
+      for (const std::string& variant : e.sounds) {
+        std::vector<int16_t> modpcm;
+        if (mod_wav_pcm(variant, modpcm)) { ms.variants.push_back(audio.bank.add(std::move(modpcm))); continue; }
         const ra2assets::BagClip* clip = idx.find(variant);
         if (!clip) {
             std::cerr << "[audio] missing clip " << variant << " (key " << key << ")\n";
