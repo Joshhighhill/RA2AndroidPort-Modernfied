@@ -2309,7 +2309,8 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
 
             // Cameo SHP (guarded; absence only downgrades the sidebar icon).
             ra2assets::ShpFile cshp;
-                        {
+            bool have_cameo = false;                          
+            {
                 std::string cn = d.cameo;
                 for (char& ch : cn) ch = (char)std::tolower((unsigned char)ch);
                 have_cameo = mod_shp(cn + ".shp", cshp);
@@ -2319,7 +2320,7 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
                         catch (const std::exception&) {}
                     }
             }
-            if (!have_cameo) have_cameo = asset_cameo_fallback(d.cameo, cshp);
+            if (!have_cameo) have_cameo = asset_cameo_fallback(d.cameo, cshp);  
 
             if (e.vehicle && !art.voxel(image) &&
                 to_lower(rules.section_string(e.id, "Locomotor", "")).find("2bea74e1") != std::string::npos) {
