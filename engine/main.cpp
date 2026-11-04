@@ -2328,6 +2328,7 @@ UnitRoster load_unit_roster_table(const std::string& dir, const ra2assets::MixFi
                         catch (const std::exception&) {}
                     }
             }
+            if (!have_cameo) have_cameo = asset_cameo_fallback(d.cameo, cshp);
 
             if (e.vehicle && !art.voxel(image) &&
                 to_lower(rules.section_string(e.id, "Locomotor", "")).find("2bea74e1") != std::string::npos) {
