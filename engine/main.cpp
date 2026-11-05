@@ -284,6 +284,43 @@ inline bool mod_wav_pcm(const std::string& name, std::vector<int16_t>& pcm) {
     } catch (const std::exception&) { return false; }
 }
 
+// Appends every enabled mod's copy of INI `name` (alphabetical, last wins) to `bytes`.
+inline void append_mod_ini(const std::string& dir, const std::string& name, std::vector<uint8_t>& bytes) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    std::vector<std::string> mods;
+    for (fs::directory_iterator it(dir + "Mods", ec), end; !ec && it != end; it.increment(ec)) {
+        if (!it->is_directory(ec)) continue;
+        const std::string n = it->path().filename().string();
+        if (n.size() > 9 && n.compare(n.size() - 9, 9, ".disabled") == 0) continue;
+        mods.push_back(n);
+    }
+    std::sort(mods.begin(), mods.end());
+    for (const std::string& m : mods) {
+        std::vector<uint8_t> b;
+        try { b = ra2assets::read_file(dir + "Mods/" + m + "/" + name); } catch (const std::exception&) {}
+        if (!b.empty()) { bytes.push_back('\n'); bytes.insert(bytes.end(), b.begin(), b.end()); }
+        std::error_code ec2;
+        std::vector<std::string> mixes;
+        for (fs::directory_iterator it2(dir + "Mods/" + m, ec2), end2; !ec2 && it2 != end2; it2.increment(ec2)) {
+            if (!it2->is_regular_file(ec2)) continue;
+            std::string fn = it2->path().filename().string();
+            for (char& c : fn) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (fn.size() > 4 && fn.compare(fn.size() - 4, 4, ".mix") == 0) mixes.push_back(it2->path().string());
+        }
+        std::sort(mixes.begin(), mixes.end());
+        for (const std::string& mp : mixes) {
+            try {
+                MixFile mm = MixFile::open_path(mp);
+                if (const MixEntry* me = mm.find(mix_id(name))) {
+                    const std::vector<uint8_t> mb = mm.read(*me);
+                    if (!mb.empty()) { bytes.push_back('\n'); bytes.insert(bytes.end(), mb.begin(), mb.end()); }
+                }
+            } catch (const std::exception&) {}
+        }
+    }
+}
+
 // Which map load_assets should read [RE: maps.md §7 rule 2]. The DEFAULT
 // reproduces today's hardcoded selection EXACTLY -- mapsmd03.mix entry
 // 0x133a0cb2, which the hunt identified as the campaign mission sov07tmd.map --
