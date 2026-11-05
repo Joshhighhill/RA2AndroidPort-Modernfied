@@ -224,7 +224,8 @@ public:
         try {
             MixFile local = MixFile::open_path(dir + "ra2.mix").open_nested("local.mix");
             if (const MixEntry* e = local.find(std::string("theme.ini"))) {
-                const std::vector<uint8_t> b = local.read(*e);
+                std::vector<uint8_t> b = local.read(*e);
+                append_mod_ini(dir, "theme.ini", b);
                 read_themes(Ini::parse(std::string(b.begin(), b.end())));
                 theme_mix_name_ = "theme.mix";
             }
