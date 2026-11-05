@@ -143,6 +143,7 @@ ra2engine::UnitPresentation g_unit_motion;
 #include "weapon_unit.hpp"     // Shared combat/presentation weapon facing
 #include "gamespeed.hpp"       // Gap fix C: RE-T1 logic rate per GameSpeed
 #include "world.hpp"
+#include "pcm_wav.hpp"
 #include "abil_w5_rules.hpp"   // wave-5 (agent C): requires_stolen_bits
 
 #include "ra2assets/art.hpp"
@@ -275,9 +276,16 @@ inline bool mod_wav_pcm(const std::string& name, std::vector<int16_t>& pcm) {
     std::vector<uint8_t> b;
     if (!mod_asset_bytes(name + ".wav", b)) return false;
     try {
-        ra2assets::WavInfo info;
-        std::vector<int16_t> p = pres_to_sink(ra2assets::load_wav_ima(b.data(), b.size(), info),
-                                              info.sample_rate, info.channels);
+        std::vector<int16_t> p;
+        ra2engine::PcmWavView v;
+        if (ra2engine::parse_pcm_wav(b.data(), b.size(), v)) {
+            std::vector<int16_t> raw;
+            ra2engine::pcmw_read(v, 0, v.frames(), raw);
+            p = pres_to_sink(std::move(raw), v.rate, v.channels);
+        } else {
+            ra2assets::WavInfo info;
+            p = pres_to_sink(ra2assets::load_wav_ima(b.data(), b.size(), info), info.sample_rate, info.channels);
+        }
         if (p.empty()) return false;
         pcm = std::move(p);
         return true;
