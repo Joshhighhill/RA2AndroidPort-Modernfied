@@ -618,6 +618,12 @@ private:
     const MixFile* theme_source(int ti) {
         Theme& t = themes_[static_cast<std::size_t>(ti)];
         const std::string file = pres_lower(t.sound) + ".wav";
+        {   // a mod's track wins over the stock theme archives
+            const MixFile* own = nullptr;
+            std::string lbl;
+            const MixEntry* me = asset_fs().find(file, &own, &lbl);
+            if (me && lbl == "mod" && me->size >= 12) { t.avail = 1; return own; }
+        }
         for (const auto& m : theme_mixes_) {
             const MixEntry* e = m->find(file);
             if (!e || e->size < 12) continue;
